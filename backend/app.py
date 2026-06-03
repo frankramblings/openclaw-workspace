@@ -34,8 +34,13 @@ async def health():
 
 @app.post("/api/chat_stream")
 async def chat_stream(message: str = Form(...), session: str = Form(default="")):
-    """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE."""
-    generator = bridge.stream_turn(message)
+    """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE.
+
+    Routes to the dedicated web session (config.WEB_SESSION_KEY) so the UI never
+    contends with Signal on agent:main:main. The posted `session` is the SPA's
+    local session id (used for its own history grouping), not a gateway key.
+    """
+    generator = bridge.stream_turn(message, session_key=config.WEB_SESSION_KEY)
     return StreamingResponse(generator, media_type="text/event-stream")
 
 
@@ -63,9 +68,17 @@ async def stream_status(session_id: str):
 
 @app.get("/api/models")
 async def models():
-    return [{"endpoint_id": "openclaw", "endpoint_name": "OpenClaw (subscription)",
-             "url": config.gateway_ws_url(), "models": ["openclaw"],
-             "models_display": ["OpenClaw"], "category": "agent"}]
+    # The SPA's models.js reads `data.items` (NOT a bare array). Returning a
+    # list leaves the model-picker cache empty → blank picker → "no session".
+    # category must be "api" (not "agent"): models.js buckets anything that
+    # isn't "local" into the api group, but the category order list only renders
+    # known keys. url is the WS endpoint, echoed into the session, never routed.
+    return {"items": [
+        {"endpoint_id": "openclaw", "endpoint_name": "OpenClaw",
+         "url": config.gateway_ws_url(), "category": "api",
+         "models": ["openclaw"], "models_display": ["OpenClaw"],
+         "models_extra": [], "models_extra_display": [], "offline": False},
+    ]}
 
 
 @app.get("/api/default-chat")

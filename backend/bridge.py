@@ -209,14 +209,20 @@ async def _relay_events(ws, run_id):
                 continue  # reply-delivery tool, not a user-facing action
             label = data.get("name") or data.get("title") or data.get("kind")
             detail = data.get("meta") or data.get("title") or ""
+            # The gateway's stable per-item id. The agent runs commands
+            # concurrently (start A, start B, end B, end A), so the frontend
+            # MUST pair each end to its own card by this id — without it the
+            # single "current tool" slot mis-pairs and the first card spins
+            # forever ("never finish").
+            tool_id = data.get("itemId")
             if data.get("phase") == "start":
                 tool_since_text = True
                 yield _sse({"type": "tool_start", "tool": label,
-                            "command": detail, "round": 1})
+                            "tool_id": tool_id, "command": detail, "round": 1})
             elif data.get("phase") == "end":
                 tool_since_text = True
                 yield _sse({"type": "tool_output", "tool": label,
-                            "output": detail,
+                            "tool_id": tool_id, "output": detail,
                             "exit_code": 0 if data.get("status") == "completed" else 1})
 
         elif stream == "lifecycle":

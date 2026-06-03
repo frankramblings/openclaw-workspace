@@ -43,9 +43,15 @@ def gateway_password() -> str | None:
     return _openclaw_json().get("gateway", {}).get("auth", {}).get("password")
 
 
-# Canonical agent session so chat shares memory/context with the Signal channel.
-# Override if a live smoke-test shows the gateway wants the connection-scoped key.
+# Canonical agent session. agent:main:main is ALSO Signal's session — a session
+# runs one turn at a time, so sharing it makes the web UI and Signal contend (a
+# long turn in one surfaces as "Something went wrong… use /new" in the other).
 SESSION_KEY = os.environ.get("OPENCLAW_SESSION_KEY", "agent:main:main")
+
+# The web UI gets its OWN session key so it never contends with Signal. Same
+# agent → same brain/memory/tools, just an isolated conversation thread.
+# Verified live: agent:main:web connects + runs turns fine (2026-06-03).
+WEB_SESSION_KEY = os.environ.get("OPENCLAW_WEB_SESSION_KEY", "agent:main:web")
 
 # Existing triage-dashboard (unified inbox feed). Proxied for the Inbox tab.
 TRIAGE_URL = os.environ.get("TRIAGE_URL", "http://127.0.0.1:3456")

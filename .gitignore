@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Env / secrets
+.env
+*.local
+
+# The Odysseus frontend is SYNCED into ./frontend, not vendored here.
+# Remove this line if you decide to commit a pinned copy.
+/frontend/
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/

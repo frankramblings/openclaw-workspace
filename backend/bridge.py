@@ -26,17 +26,39 @@ def _sse(payload: dict | str) -> str:
 
 def _connect_params() -> dict:
     return {
+        # Running gateway negotiates protocol 4 (newer than the v3 source tree).
         "minProtocol": 3,
-        "maxProtocol": 3,
+        "maxProtocol": 4,
         "client": {
-            "id": "openclaw-workspace",
+            # MUST be gateway-client + backend mode. That pair is the ONLY device-less,
+            # password-only identity the gateway lets keep operator scopes: a direct-local
+            # backend doing shared-auth control-plane coordination
+            # (shouldSkipLocalBackendSelfPairing). Any other id (cli, webchat-ui, …) has
+            # its self-declared scopes wiped on connect → "missing scope: operator.write".
+            "id": "gateway-client",
             "displayName": "OpenClaw Workspace",
             "version": "0.1.0",
             "platform": "node",
-            "mode": "ui",
+            "mode": "backend",
         },
+        # Top-level capability declaration. Without "tool-events" the gateway never
+        # registers us as a tool-event recipient, so tool cards would never fire
+        # even though chat text streams fine (server-methods/chat.ts onAgentRunStart).
+        "caps": ["tool-events"],
         "role": "operator",
-        "auth": {"token": config.gateway_password()},
+        # Operator scopes must be requested explicitly; chat.send needs operator.write.
+        # This mirrors CLI_DEFAULT_OPERATOR_SCOPES.
+        "scopes": [
+            "operator.admin",
+            "operator.read",
+            "operator.write",
+            "operator.approvals",
+            "operator.pairing",
+            "operator.talk.secrets",
+        ],
+        # Shared-password auth reads auth.password (auth.token is for device/bearer
+        # tokens) — putting it in "token" yields AUTH_PASSWORD_MISSING.
+        "auth": {"password": config.gateway_password()},
     }
 
 
@@ -57,8 +79,11 @@ async def stream_turn(message: str, session_key: str | None = None):
 
     try:
         async with websockets.connect(url, max_size=None,
-                                       open_timeout=15,
-                                       ping_interval=20) as ws:
+                                       open_timeout=30,
+                                       # A slow/cold codex turn can take >20s with no
+                                       # frames; default client pings would trip a
+                                       # keepalive timeout and kill the WS mid-turn.
+                                       ping_interval=None) as ws:
             # 1. Handshake: wait for the challenge, then send connect.
             await _wait_for_challenge(ws)
             connect_id = uuid.uuid4().hex
@@ -116,44 +141,83 @@ async def _await_response(ws, req_id: str) -> dict:
             return frame
 
 
+# Item `kind`s that represent an agent tool action worth a card. `analysis`
+# (reasoning) and `preamble` are skipped — they're not tool calls.
+_TOOL_ITEM_KINDS = {"command", "tool"}
+
+
 async def _relay_events(ws, run_id):
-    """Translate gateway events for `run_id` into Odysseus SSE chunks."""
+    """Translate gateway events for `run_id` into Odysseus SSE chunks.
+
+    Live v4 mapping (verified 2026-06-03 against gpt-5.5):
+      - assistant text   -> event:"chat",  message.content[0].text (CUMULATIVE)
+      - chat error        -> event:"chat",  state:"error", errorMessage
+      - tool/command card -> event:"agent", stream:"item",
+                             data:{itemId, phase:start|end, kind, title, name, status, meta}
+      - turn end          -> event:"agent", stream:"lifecycle", data.phase:"end"|"error"
+
+    Streams `codex_app_server.*` are metadata-only and ignored. Concurrent cron /
+    heartbeat runs carry a different runId and are filtered out.
+    """
     emitted_len = 0  # gateway sends cumulative text; we emit only the new suffix
     while True:
         frame = await _recv_json(ws)
         if frame.get("type") != "event":
             continue
-        payload = frame.get("payload") or {}
-        if run_id and payload.get("runId") not in (run_id, None):
-            continue
-
         event = frame.get("event")
+        payload = frame.get("payload") or {}
+        frame_run = payload.get("runId")
+        if run_id and frame_run is not None and frame_run != run_id:
+            continue  # scope strictly to this turn
 
         if event == "chat":
+            if payload.get("state") == "error":
+                yield _sse({"type": "tool_output", "tool": "agent",
+                            "output": _error_text(payload.get("errorMessage")),
+                            "exit_code": 1})
+                continue
             text = _extract_text(payload)
             if text is not None and len(text) > emitted_len:
                 yield _sse({"delta": text[emitted_len:]})
                 emitted_len = len(text)
-            if payload.get("state") == "final":
-                # final reply delivered; lifecycle end still closes the turn
-                continue
+            continue
 
-        elif event == "agent":
-            stream = payload.get("stream")
-            data = payload.get("data") or {}
-            if stream == "tool":
-                if data.get("phase") == "start":
-                    yield _sse({"type": "tool_start",
-                                "tool": data.get("name", "tool"),
-                                "command": _as_text(data.get("args")),
-                                "round": 1})
-                elif data.get("phase") == "end":
-                    yield _sse({"type": "tool_output",
-                                "tool": data.get("name", "tool"),
-                                "output": _as_text(data.get("result")),
-                                "exit_code": 0})
-            elif stream == "lifecycle" and data.get("phase") == "end":
+        if event != "agent":
+            continue
+        stream = payload.get("stream")
+        data = payload.get("data") or {}
+
+        if stream == "item" and data.get("kind") in _TOOL_ITEM_KINDS:
+            label = data.get("name") or data.get("title") or data.get("kind")
+            detail = data.get("meta") or data.get("title") or ""
+            if data.get("phase") == "start":
+                yield _sse({"type": "tool_start", "tool": label,
+                            "command": detail, "round": 1})
+            elif data.get("phase") == "end":
+                yield _sse({"type": "tool_output", "tool": label,
+                            "output": detail,
+                            "exit_code": 0 if data.get("status") == "completed" else 1})
+
+        elif stream == "lifecycle":
+            phase = data.get("phase")
+            if phase == "error":
+                yield _sse({"type": "tool_output", "tool": "agent",
+                            "output": _error_text(data.get("error")), "exit_code": 1})
                 return
+            if phase == "end":
+                return
+
+
+def _error_text(raw) -> str:
+    """Pull a human message out of the gateway's JSON-encoded error string."""
+    if not raw:
+        return "agent run failed"
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw).get("error", {}).get("message") or raw
+        except Exception:  # noqa: BLE001
+            return raw
+    return _as_text(raw)
 
 
 def _extract_text(payload: dict):

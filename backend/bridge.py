@@ -150,16 +150,26 @@ async def _relay_events(ws, run_id):
     """Translate gateway events for `run_id` into Odysseus SSE chunks.
 
     Live v4 mapping (verified 2026-06-03 against gpt-5.5):
-      - assistant text   -> event:"chat",  message.content[0].text (CUMULATIVE)
+      - assistant text   -> event:"chat",  data.deltaText (per-token increment;
+                            falls back to diffing cumulative message.content[0].text)
       - chat error        -> event:"chat",  state:"error", errorMessage
       - tool/command card -> event:"agent", stream:"item",
                              data:{itemId, phase:start|end, kind, title, name, status, meta}
       - turn end          -> event:"agent", stream:"lifecycle", data.phase:"end"|"error"
 
+    Two Odysseus-frontend quirks handled here:
+      - It only opens a NEW assistant bubble on an `agent_step` event, so text that
+        arrives AFTER a tool would render into the hidden/finalized bubble. We emit
+        `agent_step` before the first post-tool delta to open a fresh bubble.
+      - The `message` tool is the agent's reply-DELIVERY mechanism (its real channel
+        is Signal), not a user-facing action — its reply arrives as a chat delta, so
+        we skip its (otherwise blank) tool card.
+
     Streams `codex_app_server.*` are metadata-only and ignored. Concurrent cron /
     heartbeat runs carry a different runId and are filtered out.
     """
-    emitted_len = 0  # gateway sends cumulative text; we emit only the new suffix
+    emitted_len = 0        # fallback cumulative-text cursor
+    tool_since_text = False  # a tool card emitted since the last text delta?
     while True:
         frame = await _recv_json(ws)
         if frame.get("type") != "event":
@@ -176,10 +186,17 @@ async def _relay_events(ws, run_id):
                             "output": _error_text(payload.get("errorMessage")),
                             "exit_code": 1})
                 continue
-            text = _extract_text(payload)
-            if text is not None and len(text) > emitted_len:
-                yield _sse({"delta": text[emitted_len:]})
-                emitted_len = len(text)
+            delta = payload.get("deltaText")
+            if not delta:
+                text = _extract_text(payload)
+                if text is not None and len(text) > emitted_len:
+                    delta = text[emitted_len:]
+                    emitted_len = len(text)
+            if delta:
+                if tool_since_text:
+                    yield _sse({"type": "agent_step"})  # open a fresh bubble
+                    tool_since_text = False
+                yield _sse({"delta": delta})
             continue
 
         if event != "agent":
@@ -188,12 +205,16 @@ async def _relay_events(ws, run_id):
         data = payload.get("data") or {}
 
         if stream == "item" and data.get("kind") in _TOOL_ITEM_KINDS:
+            if data.get("name") == "message":
+                continue  # reply-delivery tool, not a user-facing action
             label = data.get("name") or data.get("title") or data.get("kind")
             detail = data.get("meta") or data.get("title") or ""
             if data.get("phase") == "start":
+                tool_since_text = True
                 yield _sse({"type": "tool_start", "tool": label,
                             "command": detail, "round": 1})
             elif data.get("phase") == "end":
+                tool_since_text = True
                 yield _sse({"type": "tool_output", "tool": label,
                             "output": detail,
                             "exit_code": 0 if data.get("status") == "completed" else 1})

@@ -13,7 +13,7 @@ from fastapi import FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import bridge, config
+from . import bridge, config, sessions_store
 from .inbox import router as inbox_router
 
 app = FastAPI(title="OpenClaw Workspace")
@@ -36,24 +36,80 @@ async def health():
 async def chat_stream(message: str = Form(...), session: str = Form(default="")):
     """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE.
 
-    Routes to the dedicated web session (config.WEB_SESSION_KEY) so the UI never
-    contends with Signal on agent:main:main. The posted `session` is the SPA's
-    local session id (used for its own history grouping), not a gateway key.
+    The posted `session` is the SPA's session id; we resolve it to that chat's
+    own gateway sessionKey (agent:main:web-<id>) so each Library chat is an
+    isolated thread and none contend with Signal on agent:main:main. Unknown
+    ids fall back to the shared web key.
     """
-    generator = bridge.stream_turn(message, session_key=config.WEB_SESSION_KEY)
+    session_key = sessions_store.session_key_for(session) if session else config.WEB_SESSION_KEY
+    generator = bridge.stream_turn(message, session_key=session_key)
     return StreamingResponse(generator, media_type="text/event-stream")
 
 
-# --- Minimal stubs so the SPA mounts cleanly (flesh out in v2) --------------
+# --- Session persistence: metadata here, message content from the brain ------
 
 @app.get("/api/sessions")
 async def sessions():
-    return []
+    return sessions_store.list_sessions()
 
 
 @app.post("/api/session")
-async def create_session():
-    return {"id": "main", "name": "Workspace", "model": "openclaw"}
+async def create_session(name: str = Form(default=""), model: str = Form(default=""),
+                         endpoint_url: str = Form(default=""),
+                         endpoint_id: str = Form(default="")):
+    return sessions_store.create(name=name or None, model=model or None,
+                                 endpoint_url=endpoint_url or None,
+                                 endpoint_id=endpoint_id or None)
+
+
+@app.get("/api/history/{session_id}")
+async def history(session_id: str):
+    """The session's saved transcript, read live from the brain via chat.history."""
+    sess = sessions_store.get(session_id)
+    if not sess:
+        return {"history": [], "model": None}
+    data = await bridge.fetch_history(sess["sessionKey"])
+    # Prefer the record's chosen model label; fall back to whatever the brain used.
+    data["model"] = sess.get("model") or data.get("model")
+    return data
+
+
+@app.patch("/api/session/{session_id}")
+async def patch_session(session_id: str, name: str = Form(default=None),
+                        model: str = Form(default=None), folder: str = Form(default=None),
+                        endpoint_url: str = Form(default=None),
+                        endpoint_id: str = Form(default=None)):
+    fields = {k: v for k, v in {
+        "name": name, "model": model, "folder": folder,
+        "endpoint_url": endpoint_url, "endpoint_id": endpoint_id,
+    }.items() if v is not None}
+    return sessions_store.update(session_id, **fields) or JSONResponse(
+        status_code=404, content={"detail": "no such session"})
+
+
+@app.delete("/api/session/{session_id}")
+async def delete_session(session_id: str):
+    return {"ok": sessions_store.delete(session_id)}
+
+
+@app.post("/api/session/{session_id}/important")
+async def set_important(session_id: str, important: str = Form(default="true")):
+    val = str(important).lower() not in ("false", "0", "")
+    sessions_store.update(session_id, important=val)
+    return {"ok": True, "important": val}
+
+
+@app.post("/api/session/{session_id}/archive")
+async def archive_session(session_id: str):
+    sessions_store.update(session_id, archived=True)
+    return {"ok": True}
+
+
+@app.post("/api/session/{session_id}/unarchive")
+@app.post("/api/session/{session_id}/restore")
+async def unarchive_session(session_id: str):
+    sessions_store.update(session_id, archived=False)
+    return {"ok": True}
 
 
 @app.get("/api/chat/resume/{session_id}")

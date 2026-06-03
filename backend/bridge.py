@@ -126,6 +126,69 @@ async def stream_turn(message: str, session_key: str | None = None):
     yield _sse("[DONE]")
 
 
+async def fetch_history(session_key: str, limit: int = 200) -> dict:
+    """Read a session's transcript from the brain via chat.history and map it to
+    the SPA's history shape: {"history": [{role, content}], "model": str|None}.
+
+    The brain stores rich messages — user (content is a plain string), assistant
+    (content is a block list: text OR toolCall), and toolResult. The Library's
+    history view renders conversation TEXT only, so we keep user strings and
+    assistant text blocks and drop toolCall/toolResult messages (live tool cards
+    are a streaming concern, not part of the saved transcript view).
+    """
+    url = config.gateway_ws_url()
+    async with websockets.connect(url, max_size=None, open_timeout=30,
+                                  ping_interval=None) as ws:
+        await _wait_for_challenge(ws)
+        connect_id = uuid.uuid4().hex
+        await ws.send(json.dumps({"type": "req", "id": connect_id,
+                                  "method": "connect", "params": _connect_params()}))
+        hello = await _await_response(ws, connect_id)
+        if not hello.get("ok"):
+            return {"history": [], "model": None}
+        hist_id = uuid.uuid4().hex
+        await ws.send(json.dumps({"type": "req", "id": hist_id, "method": "chat.history",
+                                  "params": {"sessionKey": session_key, "limit": limit}}))
+        res = await _await_response(ws, hist_id)
+    if not res.get("ok"):
+        return {"history": [], "model": None}
+    payload = res.get("payload") or {}
+    return _map_history(payload.get("messages") or [])
+
+
+def _map_history(messages: list) -> dict:
+    history = []
+    model = None
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        if role == "user":
+            text = _content_text(msg.get("content"))
+            if text.strip():
+                history.append({"role": "user", "content": text})
+        elif role == "assistant":
+            if msg.get("model"):
+                model = msg["model"]  # last assistant model wins → picker label
+            text = _content_text(msg.get("content"))  # text blocks only
+            if text.strip():
+                history.append({"role": "assistant", "content": text})
+        # toolResult and toolCall-only assistant turns are intentionally skipped.
+    return {"history": history, "model": model}
+
+
+def _content_text(content) -> str:
+    """Pull plain text out of a message content field (string or block list).
+    Only `text` blocks contribute — toolCall/toolResult blocks are ignored."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [b.get("text", "") for b in content
+                 if isinstance(b, dict) and b.get("type") == "text"]
+        return "".join(parts)
+    return ""
+
+
 async def _wait_for_challenge(ws) -> None:
     while True:
         frame = await _recv_json(ws)

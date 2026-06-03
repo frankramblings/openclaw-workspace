@@ -19,3 +19,6 @@ venv/
 # Editor
 .vscode/
 .idea/
+
+# Local session metadata store
+/.data/

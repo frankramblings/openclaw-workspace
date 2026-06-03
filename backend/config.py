@@ -53,6 +53,15 @@ SESSION_KEY = os.environ.get("OPENCLAW_SESSION_KEY", "agent:main:main")
 # Verified live: agent:main:web connects + runs turns fine (2026-06-03).
 WEB_SESSION_KEY = os.environ.get("OPENCLAW_WEB_SESSION_KEY", "agent:main:web")
 
+# Each Library "chat" mints its own gateway thread under this prefix:
+# agent:main:web-<id>. Same agent ("main") → same brain/memory, isolated thread.
+WEB_SESSION_PREFIX = os.environ.get("OPENCLAW_WEB_SESSION_PREFIX", "agent:main:web")
+
+# Where the workspace persists its own lightweight session METADATA (id↔gateway
+# sessionKey, name, model, flags). Message CONTENT is never stored here — it
+# lives in the brain and is read back via chat.history. Gitignored.
+DATA_DIR = Path(os.environ.get("WORKSPACE_DATA_DIR", REPO_ROOT / ".data"))
+
 # Existing triage-dashboard (unified inbox feed). Proxied for the Inbox tab.
 TRIAGE_URL = os.environ.get("TRIAGE_URL", "http://127.0.0.1:3456")
 

@@ -70,7 +70,45 @@ async def models():
 
 @app.get("/api/default-chat")
 async def default_chat():
-    return {"endpoint_id": "openclaw", "model": "openclaw"}
+    # endpoint_url is REQUIRED: chat.js auto-creates the session only when both
+    # endpoint_url and model are truthy. It's stored + echoed back to /api/session
+    # but never used to route — every turn goes through the bridge regardless.
+    return {"endpoint_id": "openclaw", "endpoint_url": config.gateway_ws_url(),
+            "model": "openclaw"}
+
+
+# Auth stubs: single-user/no-auth deployment behind Tailscale. Return a logged-in
+# admin with all privileges so the SPA shows every tool and never redirects to /login.
+@app.get("/api/auth/status")
+async def auth_status():
+    return {
+        "authenticated": True, "is_admin": True, "username": "frank",
+        "privileges": {
+            "can_use_agent": True, "can_use_bash": True, "can_use_documents": True,
+            "can_use_research": True, "can_generate_images": True,
+        },
+    }
+
+
+@app.get("/api/auth/features")
+async def auth_features():
+    return {"auth_required": False, "features": {}}
+
+
+@app.get("/api/auth/settings")
+async def auth_settings():
+    return {}
+
+
+# --- Catch-all for Odysseus feature tabs v1 doesn't implement yet ------------
+# calendar, email, notes, cookbook, research, prefs, memory, skills, tts… each
+# polls its own backend. Returning [] is universally safe: Odysseus's consumers
+# all do either `data.forEach(...)` (works on []) or `data.key || []` (→ []), so
+# this quiets the 404 flood without breaking any module. Registered AFTER every
+# real route, so health/items/models/chat/auth/sessions still win.
+@app.get("/api/{path:path}")
+async def _unimplemented_api(path: str):
+    return []
 
 
 # --- Serve the reused Odysseus SPA ------------------------------------------

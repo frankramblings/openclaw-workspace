@@ -15,9 +15,11 @@ from fastapi.staticfiles import StaticFiles
 
 from . import bridge, config, sessions_store
 from .inbox import router as inbox_router
+from .memory import router as memory_router
 
 app = FastAPI(title="OpenClaw Workspace")
 app.include_router(inbox_router)
+app.include_router(memory_router)
 
 
 @app.get("/api/health")
@@ -124,17 +126,23 @@ async def stream_status(session_id: str):
 
 @app.get("/api/models")
 async def models():
-    # The SPA's models.js reads `data.items` (NOT a bare array). Returning a
-    # list leaves the model-picker cache empty → blank picker → "no session".
-    # category must be "api" (not "agent"): models.js buckets anything that
-    # isn't "local" into the api group, but the category order list only renders
-    # known keys. url is the WS endpoint, echoed into the session, never routed.
-    return {"items": [
-        {"endpoint_id": "openclaw", "endpoint_name": "OpenClaw",
-         "url": config.gateway_ws_url(), "category": "api",
-         "models": ["openclaw"], "models_display": ["OpenClaw"],
-         "models_extra": [], "models_extra_display": [], "offline": False},
-    ]}
+    # The SPA's models.js reads `data.items` (NOT a bare array). We serve the
+    # REAL gateway catalog (models.list + models.authStatus), grouped one
+    # endpoint per provider (Codex / Claude), with `offline` reflecting each
+    # provider's auth status. category must be "api" (models.js buckets anything
+    # non-"local" there). url is the WS endpoint, echoed into the session, never
+    # routed — every turn goes through the bridge regardless of picked model.
+    # If the gateway is unreachable, fall back to a single honest placeholder so
+    # the picker still renders (rather than going blank → "no session").
+    try:
+        return await bridge.fetch_models()
+    except Exception:  # noqa: BLE001
+        return {"items": [
+            {"endpoint_id": "openclaw", "endpoint_name": "OpenClaw",
+             "url": config.gateway_ws_url(), "category": "api",
+             "models": ["openclaw"], "models_display": ["OpenClaw"],
+             "models_extra": [], "models_extra_display": [], "offline": True},
+        ]}
 
 
 @app.get("/api/default-chat")
@@ -142,8 +150,10 @@ async def default_chat():
     # endpoint_url is REQUIRED: chat.js auto-creates the session only when both
     # endpoint_url and model are truthy. It's stored + echoed back to /api/session
     # but never used to route — every turn goes through the bridge regardless.
-    return {"endpoint_id": "openclaw", "endpoint_url": config.gateway_ws_url(),
-            "model": "openclaw"}
+    # Land on the primary agent's configured model so the picker opens on it.
+    provider, model = config.default_model()
+    return {"endpoint_id": provider, "endpoint_url": config.gateway_ws_url(),
+            "model": model}
 
 
 # Auth stubs: single-user/no-auth deployment behind Tailscale. Return a logged-in

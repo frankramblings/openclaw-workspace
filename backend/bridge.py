@@ -189,6 +189,103 @@ def _content_text(content) -> str:
     return ""
 
 
+async def _request(ws, method: str, params: dict | None = None) -> dict:
+    """Send one req on an already-connected/authed ws and return its response frame."""
+    req_id = uuid.uuid4().hex
+    await ws.send(json.dumps({"type": "req", "id": req_id,
+                              "method": method, "params": params or {}}))
+    return await _await_response(ws, req_id)
+
+
+# --- Model catalog: real gateway model list, mapped to the SPA's picker shape -
+
+_PROVIDER_META = {
+    "openai": {"endpoint_id": "openai", "endpoint_name": "Codex"},
+    "anthropic": {"endpoint_id": "anthropic", "endpoint_name": "Claude"},
+}
+# An auth provider counts as usable in these states (expiring still works).
+_OK_AUTH = {"ok", "expiring", "active", "valid"}
+# model.provider -> substrings to look for among authStatus provider names.
+_AUTH_ROOTS = {"openai": ("openai",), "anthropic": ("claude", "anthropic")}
+
+
+def _pretty_model(model_id: str) -> str:
+    """A human label for a model id (gpt-5.4-mini -> 'GPT-5.4 Mini')."""
+    s = model_id
+    if s.startswith("gpt-"):
+        return "GPT-" + s[4:].replace("-mini", " Mini").replace("-Mini", " Mini")
+    if s.startswith("claude-"):
+        parts = s.split("-")  # claude-opus-4-7 -> [claude, opus, 4, 7]
+        fam = parts[1].capitalize() if len(parts) > 1 else "Claude"
+        ver = ".".join(parts[2:]) if len(parts) > 2 else ""
+        return f"Claude {fam} {ver}".strip()
+    return model_id
+
+
+def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
+    roots = _AUTH_ROOTS.get(model_provider, (model_provider,))
+    for name, status in auth_status.items():
+        if any(r in name.lower() for r in roots):
+            return status in _OK_AUTH
+    return True  # no auth info for this provider → don't hide it
+
+
+def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
+    """Map models.list + models.authStatus onto the SPA's {items:[...]} shape."""
+    auth_status = {p.get("provider", ""): p.get("status", "")
+                   for p in (auth_payload.get("providers") or [])}
+
+    # Group model ids by provider, preserving gateway order.
+    by_provider: dict[str, list[str]] = {}
+    for m in models_payload.get("models") or []:
+        by_provider.setdefault(m.get("provider", "other"), []).append(m.get("id"))
+
+    # Default provider (the configured primary agent's) sorts first.
+    default_provider, _default_model = config.default_model()
+    order = sorted(by_provider, key=lambda p: (p != default_provider, p))
+
+    items = []
+    for provider in order:
+        ids = [i for i in by_provider[provider] if i]
+        if not ids:
+            continue
+        meta = _PROVIDER_META.get(
+            provider, {"endpoint_id": provider, "endpoint_name": provider.title()})
+        items.append({
+            "endpoint_id": meta["endpoint_id"],
+            "endpoint_name": meta["endpoint_name"],
+            "url": config.gateway_ws_url(),
+            "category": "api",
+            "model_type": "llm",
+            "offline": not _provider_online(provider, auth_status),
+            "models": ids,
+            "models_display": [_pretty_model(i) for i in ids],
+            "models_extra": [],
+            "models_extra_display": [],
+        })
+    return {"items": items}
+
+
+async def fetch_models() -> dict:
+    """Real model catalog from the gateway, in the SPA picker's {items:[...]} shape."""
+    url = config.gateway_ws_url()
+    async with websockets.connect(url, max_size=None, open_timeout=30,
+                                  ping_interval=None) as ws:
+        await _wait_for_challenge(ws)
+        hello = await _request(ws, "connect", _connect_params())
+        if not hello.get("ok"):
+            raise RuntimeError(f"gateway connect failed: {hello}")
+        models_res = await _request(ws, "models.list")
+        try:
+            auth_res = await _request(ws, "models.authStatus")
+            auth_payload = auth_res.get("payload") or {}
+        except Exception:  # noqa: BLE001 - auth status is best-effort
+            auth_payload = {}
+    if not models_res.get("ok"):
+        raise RuntimeError(f"models.list failed: {models_res}")
+    return _build_model_items(models_res.get("payload") or {}, auth_payload)
+
+
 async def _wait_for_challenge(ws) -> None:
     while True:
         frame = await _recv_json(ws)

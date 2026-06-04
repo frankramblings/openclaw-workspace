@@ -1,0 +1,16 @@
+/* OpenClaw Workspace — frontend overrides, applied AFTER the Odysseus sync.
+   This file is the durable home for workspace-specific styling so it is never
+   clobbered by `scripts/sync-frontend.sh` (which rsync --deletes frontend/ from
+   Odysseus). See frontend-overrides/README.md. Loaded via a <link> the sync
+   script injects into index.html before </head>. */
+
+/* --- Inbox: unified-feed source chips ------------------------------------
+   The Inbox renders triage items through the Odysseus email UI; each item's
+   source is a tag pill (.email-tag-<source>). Odysseus styles category tags
+   (work/personal/…) but not these, so without this they fall back to the
+   neutral base chip. Give each source a distinct, readable accent that fits
+   the existing pastel-on-dark palette. */
+.email-tag-gmail    { background: rgba(234, 67, 53, 0.18);  color: #ef4444; }
+.email-tag-slack    { background: rgba(56, 189, 248, 0.18); color: #38bdf8; }
+.email-tag-asana    { background: rgba(240, 106, 106, 0.18); color: #fb7185; }
+.email-tag-obsidian { background: rgba(139, 92, 246, 0.18); color: #a78bfa; }

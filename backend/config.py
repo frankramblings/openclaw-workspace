@@ -43,6 +43,25 @@ def gateway_password() -> str | None:
     return _openclaw_json().get("gateway", {}).get("auth", {}).get("password")
 
 
+def default_model() -> tuple[str, str]:
+    """The primary agent's configured model as (provider, model_id).
+
+    Read from openclaw.json `agents.list[0].model`, formatted "provider/model"
+    (e.g. "openai/gpt-5.5"). This is the model a fresh web chat lands on. Falls
+    back to the known codex primary if the config can't be read.
+    """
+    raw = os.environ.get("OPENCLAW_DEFAULT_MODEL")
+    if not raw:
+        try:
+            raw = _openclaw_json()["agents"]["list"][0]["model"]
+        except (KeyError, IndexError, TypeError):
+            raw = "openai/gpt-5.5"
+    provider, _, model = raw.partition("/")
+    if not model:  # no provider prefix
+        provider, model = "openai", provider
+    return provider, model
+
+
 # Canonical agent session. agent:main:main is ALSO Signal's session — a session
 # runs one turn at a time, so sharing it makes the web UI and Signal contend (a
 # long turn in one surfaces as "Something went wrong… use /new" in the other).

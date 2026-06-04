@@ -16,10 +16,10 @@ from email.policy import default as _email_policy
 from email.utils import parseaddr
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
-from . import himalaya_cli
+from . import bridge, config, himalaya_cli
 
 router = APIRouter()
 
@@ -47,7 +47,23 @@ def _account_address() -> str:
     return ""
 
 
+def _account_name() -> str:
+    try:
+        cfg = tomllib.loads(_HIMALAYA_CONFIG.read_text())
+        for acct in (cfg.get("accounts") or {}).values():
+            if acct.get("default"):
+                return acct.get("display-name") or ""
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
+
+
 ACCOUNT_ADDRESS = _account_address()
+ACCOUNT_NAME = _account_name()
+
+
+def _from_header() -> str:
+    return f"{ACCOUNT_NAME} <{ACCOUNT_ADDRESS}>" if ACCOUNT_NAME else ACCOUNT_ADDRESS
 
 
 @router.get("/api/email/accounts")
@@ -231,7 +247,8 @@ TRASH_FOLDER = "[Gmail]/Trash"
 
 async def _move(uid: str, src: str, dest: str):
     try:
-        await himalaya_cli.run_raw(["message", "move", uid, dest, "-f", src])
+        # himalaya: message move <TARGET> <ID>... -f <SOURCE>
+        await himalaya_cli.run_raw(["message", "move", dest, uid, "-f", src])
         return {"ok": True}
     except himalaya_cli.HimalayaError as exc:
         return JSONResponse(status_code=502, content={"ok": False, "error": str(exc)})
@@ -268,3 +285,118 @@ async def email_search(folder: str = "INBOX", q: str = "", limit: int = 100):
         return JSONResponse({"emails": [], "total": 0, "error": str(exc)})
     envs = data if isinstance(data, list) else (data.get("envelopes") or [])
     return {"emails": [envelope_to_email(e) for e in envs], "total": len(envs)}
+
+
+# --- send (compose / reply / forward all post here) --------------------------
+
+def build_mime(*, from_addr: str, to: str, cc, bcc, subject: str, body: str,
+               body_html, in_reply_to, references) -> bytes:
+    """Assemble an RFC-822 message (text + optional HTML alt + threading hdrs)."""
+    m = email.message.EmailMessage()
+    m["From"] = from_addr
+    m["To"] = to
+    if cc:
+        m["Cc"] = cc
+    if bcc:
+        m["Bcc"] = bcc
+    m["Subject"] = subject or ""
+    if in_reply_to:
+        m["In-Reply-To"] = in_reply_to
+    if references:
+        m["References"] = references
+    m.set_content(body or "")
+    if body_html:
+        m.add_alternative(body_html, subtype="html")
+    return m.as_bytes()
+
+
+@router.post("/api/email/send")
+async def email_send(payload: dict = Body(...)):
+    raw = build_mime(
+        from_addr=_from_header(),
+        to=payload.get("to") or "", cc=payload.get("cc"), bcc=payload.get("bcc"),
+        subject=payload.get("subject") or "", body=payload.get("body") or "",
+        body_html=payload.get("body_html"),
+        in_reply_to=payload.get("in_reply_to"),
+        references=payload.get("references"),
+    )
+    try:
+        await himalaya_cli.run_raw(["message", "send"], stdin=raw)
+    except himalaya_cli.HimalayaError as exc:
+        return JSONResponse(status_code=502, content={"error": str(exc)})
+    return {"ok": True, "sent": True}
+
+
+# --- AI-reply: draft a reply with the OpenClaw brain -------------------------
+
+async def _brain_once(prompt: str) -> str:
+    """Run one turn on the shared web session via the bridge; return its text."""
+    chunks: list[str] = []
+    async for sse in bridge.stream_turn(prompt, session_key=config.WEB_SESSION_KEY):
+        if not sse.startswith("data:"):
+            continue
+        line = sse[5:].strip()
+        if not line or line == "[DONE]":
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(obj, dict) and obj.get("delta"):
+            chunks.append(obj["delta"])
+    return "".join(chunks).strip()
+
+
+@router.post("/api/email/ai-reply")
+async def ai_reply(payload: dict = Body(default=None)):
+    payload = payload or {}
+    subj = payload.get("subject") or ""
+    frm = payload.get("from_address") or ""
+    orig = (payload.get("original_body") or payload.get("body") or "")[:4000]
+    prompt = ("Draft a concise, friendly reply to this email. Output ONLY the "
+              f"reply body — no preamble, no subject line.\n\n"
+              f"From: {frm}\nSubject: {subj}\n\n{orig}")
+    try:
+        reply = await _brain_once(prompt)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=502, content={"error": f"{exc!r}"})
+    if not reply:
+        # Brain produced an empty turn (codex stall / throttle). Don't hand the
+        # composer a blank draft — surface it so the UI shows a real message.
+        return JSONResponse(status_code=503,
+                            content={"error": "AI draft unavailable — the brain "
+                                     "returned no text (try again in a moment)."})
+    return {"reply": reply, "cached_ai_reply": reply}
+
+
+# --- stubs: rich-UI endpoints himalaya/this deployment has no primitive for ---
+# (Declared so the email modules never error; literal paths before any {uid}.)
+
+@router.get("/api/email/urgency-state")
+async def urgency_state():
+    return {"per_uid": {}}
+
+
+@router.get("/api/email/scheduled")
+async def scheduled():
+    return []
+
+
+@router.delete("/api/email/scheduled/{sid}")
+async def scheduled_delete(sid: str):
+    return {"ok": True}
+
+
+@router.get("/api/email/odysseus/reminders")
+async def reminders():
+    return []
+
+
+@router.get("/api/email/contacts")
+async def contacts():
+    return {"contacts": []}
+
+
+@router.post("/api/email/{uid}/unflag-spam")
+async def unflag_spam(uid: str, folder: str = "INBOX"):
+    return {"ok": True}

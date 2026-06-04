@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import bridge, config, sessions_store
 from .cron import router as cron_router
+from .email_himalaya import router as email_router
 from .inbox import router as inbox_router
 from .memory import router as memory_router
 from .skills import router as skills_router
@@ -24,6 +25,7 @@ app.include_router(inbox_router)
 app.include_router(memory_router)
 app.include_router(skills_router)
 app.include_router(cron_router)
+app.include_router(email_router)
 
 
 @app.get("/api/health")

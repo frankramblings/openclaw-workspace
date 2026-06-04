@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import bridge, config, sessions_store
+from .calendar_google import router as calendar_router
 from .cron import router as cron_router
 from .email_himalaya import router as email_router
 from .inbox import router as inbox_router
@@ -26,6 +27,7 @@ app.include_router(memory_router)
 app.include_router(skills_router)
 app.include_router(cron_router)
 app.include_router(email_router)
+app.include_router(calendar_router)
 
 
 @app.get("/api/health")

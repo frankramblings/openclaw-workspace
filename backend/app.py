@@ -16,10 +16,12 @@ from fastapi.staticfiles import StaticFiles
 from . import bridge, config, sessions_store
 from .inbox import router as inbox_router
 from .memory import router as memory_router
+from .skills import router as skills_router
 
 app = FastAPI(title="OpenClaw Workspace")
 app.include_router(inbox_router)
 app.include_router(memory_router)
+app.include_router(skills_router)
 
 
 @app.get("/api/health")
@@ -34,6 +36,24 @@ async def health():
 
 # --- The one real, load-bearing endpoint: chat ------------------------------
 
+def _model_ref(rec: dict | None) -> str | None:
+    """Build a gateway model ref ("provider/model") from a session record, or
+    None to leave the model at the agent default. Returns None for the
+    "openclaw" placeholder (legacy/bootstrap) AND when the pick already equals
+    the configured default — so we only set an override when it actually
+    differs (no per-turn sessions.create churn for default chats)."""
+    if not rec:
+        return None
+    model = (rec.get("model") or "").strip()
+    if not model or model == "openclaw":
+        return None
+    provider = (rec.get("endpoint_id") or "").strip()
+    def_provider, def_model = config.default_model()
+    if model == def_model and (not provider or provider in (def_provider, "openclaw")):
+        return None
+    return f"{provider}/{model}" if provider and provider != "openclaw" else model
+
+
 @app.post("/api/chat_stream")
 async def chat_stream(message: str = Form(...), session: str = Form(default="")):
     """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE.
@@ -41,10 +61,13 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""))
     The posted `session` is the SPA's session id; we resolve it to that chat's
     own gateway sessionKey (agent:main:web-<id>) so each Library chat is an
     isolated thread and none contend with Signal on agent:main:main. Unknown
-    ids fall back to the shared web key.
+    ids fall back to the shared web key. The session's picked model (if any) is
+    applied to that session only, so the picker actually switches the model.
     """
-    session_key = sessions_store.session_key_for(session) if session else config.WEB_SESSION_KEY
-    generator = bridge.stream_turn(message, session_key=session_key)
+    rec = sessions_store.get(session) if session else None
+    session_key = rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+    generator = bridge.stream_turn(message, session_key=session_key,
+                                   model_ref=_model_ref(rec))
     return StreamingResponse(generator, media_type="text/event-stream")
 
 

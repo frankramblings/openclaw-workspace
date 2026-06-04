@@ -67,12 +67,18 @@ async def _recv_json(ws):
     return json.loads(raw)
 
 
-async def stream_turn(message: str, session_key: str | None = None):
+async def stream_turn(message: str, session_key: str | None = None,
+                      model_ref: str | None = None):
     """Async generator yielding SSE strings for one user turn.
 
     Connects, authenticates (shared-password / allowInsecureAuth — no device
-    signature needed), sends chat.send, then translates gateway events to SSE
-    until the turn's lifecycle ends.
+    signature needed), optionally pins this session's model, sends chat.send,
+    then translates gateway events to SSE until the turn's lifecycle ends.
+
+    `model_ref` (e.g. "openai/gpt-5.5") sets THIS session's modelOverride via
+    sessions.create before the turn — so the web picker actually switches the
+    model for this chat only. Agent `main`'s default (shared with Signal) is
+    never touched; the runtime reads sessionEntry.modelOverride || configDefault.
     """
     session_key = session_key or config.SESSION_KEY
     url = config.gateway_ws_url()
@@ -97,6 +103,15 @@ async def stream_turn(message: str, session_key: str | None = None):
                             "output": f"gateway connect failed: {hello}", "exit_code": 1})
                 yield _sse("[DONE]")
                 return
+
+            # 1b. Pin this session's model (best-effort; never block the turn).
+            # sessions.create upserts the entry's modelOverride for this key only.
+            if model_ref:
+                try:
+                    await _request(ws, "sessions.create",
+                                   {"key": session_key, "model": model_ref})
+                except Exception:  # noqa: BLE001 - fall back to the default model
+                    pass
 
             # 2. Send the user message.
             send_id = uuid.uuid4().hex

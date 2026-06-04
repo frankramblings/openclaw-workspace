@@ -14,3 +14,68 @@
 .email-tag-slack    { background: rgba(56, 189, 248, 0.18); color: #38bdf8; }
 .email-tag-asana    { background: rgba(240, 106, 106, 0.18); color: #fb7185; }
 .email-tag-obsidian { background: rgba(139, 92, 246, 0.18); color: #a78bfa; }
+
+/* --- Cron tab (added by frontend-overrides/js/cron.js) -------------------- */
+.cron-modal-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px);
+}
+.cron-modal-card {
+  width: min(720px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
+  background: var(--panel, #14181f); color: var(--fg, #e6e6e6);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 14px; box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45); overflow: hidden;
+}
+.cron-modal-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+.cron-modal-title { font-weight: 600; font-size: 15px; }
+.cron-modal-count { font-size: 12px; opacity: 0.55; }
+.cron-modal-close {
+  margin-left: auto; background: none; border: none; color: inherit;
+  opacity: 0.6; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px;
+}
+.cron-modal-close:hover { opacity: 1; }
+.cron-modal-body { padding: 8px; overflow-y: auto; }
+.cron-empty { padding: 28px; text-align: center; opacity: 0.6; font-size: 13px; }
+.cron-job {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 12px; border-radius: 10px;
+  border: 1px solid transparent; transition: background 0.12s;
+}
+.cron-job:hover { background: rgba(127, 127, 127, 0.08); }
+.cron-job + .cron-job { border-top: 1px solid var(--border, rgba(255, 255, 255, 0.05)); }
+.cron-job-off { opacity: 0.5; }
+.cron-job-main { flex: 1; min-width: 0; }
+.cron-job-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.cron-job-name { font-weight: 550; font-size: 13.5px; }
+.cron-job-sched {
+  font-size: 11px; padding: 1px 6px; border-radius: 6px;
+  background: rgba(127, 127, 127, 0.16); color: var(--accent, #6ea8fe);
+  white-space: nowrap;
+}
+.cron-job-msg {
+  font-size: 12px; opacity: 0.6; margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 480px;
+}
+.cron-job-meta { font-size: 11px; opacity: 0.45; margin-top: 4px; }
+.cron-job-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.cron-btn {
+  font-size: 12px; padding: 4px 10px; border-radius: 7px; cursor: pointer;
+  background: rgba(127, 127, 127, 0.14); color: var(--fg, #e6e6e6);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1)); min-width: 38px;
+}
+.cron-btn:hover { background: rgba(127, 127, 127, 0.24); }
+.cron-toggle {
+  width: 34px; height: 19px; border-radius: 19px; cursor: pointer;
+  background: rgba(127, 127, 127, 0.3); border: none; position: relative; padding: 0;
+  transition: background 0.15s;
+}
+.cron-toggle.on { background: var(--accent, #6ea8fe); }
+.cron-toggle span {
+  position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+  border-radius: 50%; background: #fff; transition: left 0.15s;
+}
+.cron-toggle.on span { left: 17px; }

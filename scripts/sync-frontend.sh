@@ -43,4 +43,20 @@ if [[ -d "$OVERRIDES" ]]; then
     ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
     echo "injected workspace.css <link> into index.html"
   fi
+
+  # Inject the Cron tab add-on once, just before </body> (idempotent).
+  SCRIPT='<script src="/static/js/cron.js" defer></script>'
+  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/cron.js" ]] \
+     && ! grep -qF "js/cron.js" "$INDEX"; then
+    awk -v s="  $SCRIPT" '
+      { lines[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (!done && lines[i] ~ /<\/body>/) { print s; done = 1 }
+          print lines[i]
+        }
+      }
+    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    echo "injected cron.js <script> into index.html"
+  fi
 fi

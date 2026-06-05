@@ -135,3 +135,14 @@ New icon-rail tab "Inbox" injected by `frontend-overrides/js/inbox.js`:
 - UI is a new tab (not the Email-UI adapter, not a landing widget).
 - Action model: one primary action per source + dismiss/snooze/open + Hand to
   Gary (user-approved 2026-06-05).
+
+## Status
+
+Implemented + live-smoke-tested 2026-06-05 (see plan
+`docs/superpowers/plans/2026-06-05-native-inbox.md`). Verified live: merged
+feed (gmail/asana/obsidian + slack error-isolated), snooze/dismiss round-trip,
+gmail archive (left INBOX), asana complete (throwaway task round-trip),
+Hand-to-Gary spinoff. Slack mark-read untested — the signals snapshot was
+empty at test time (mcporter cold-start timeout in slack-refresh; pre-existing
+environment issue surfaced correctly as an error chip). Triage-dashboard
+launchd job decommissioned (port 3456 dark); its directory left on disk.

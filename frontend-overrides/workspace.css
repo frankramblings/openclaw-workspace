@@ -91,3 +91,15 @@
   -webkit-mask: url(/static/logo.svg) center / contain no-repeat;
           mask: url(/static/logo.svg) center / contain no-repeat;
 }
+
+/* --- Hide dead/unwired Odysseus surfaces -----------------------------------
+   These tabs have no backend in this workspace (they hit the [] catch-all),
+   so we hide both their icon-rail button and their sidebar Tools entry:
+     Tasks (use the Cron tab instead), Gallery, Cookbook, Compare.
+   TTS per-message speaker buttons are hidden too (no TTS backend wired).
+   STT/voice is disabled by dropping voiceRecorder.js from index.html. */
+#rail-tasks,    #tool-tasks-btn,
+#rail-gallery,  #tool-gallery-btn,
+#rail-cookbook, #tool-cookbook-btn,
+#rail-compare,  #tool-compare-btn,
+.ai-tts-button { display: none !important; }

@@ -20,11 +20,14 @@ from fastapi.staticfiles import StaticFiles
 from . import bridge, config, sessions_store
 from .calendar_google import router as calendar_router
 from .cron import router as cron_router
+from .documents import router as documents_router
 from .email_himalaya import router as email_router
 from .inbox import router as inbox_router
 from .memory import router as memory_router
+from .notes import router as notes_router
 from .settings_status import router as settings_router
 from .skills import router as skills_router
+from .uploads import router as uploads_router
 
 app = FastAPI(title="OpenClaw Workspace")
 app.include_router(inbox_router)
@@ -34,6 +37,9 @@ app.include_router(cron_router)
 app.include_router(email_router)
 app.include_router(calendar_router)
 app.include_router(settings_router)
+app.include_router(notes_router)
+app.include_router(documents_router)
+app.include_router(uploads_router)
 
 
 @app.get("/api/health")

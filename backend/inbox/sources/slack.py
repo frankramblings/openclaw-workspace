@@ -141,8 +141,8 @@ async def fetch() -> list[dict]:
     mentions = parse_csv_lines(raw.get("mentions_raw"))
     if not unreads and not mentions and raw.get("unreads_raw") in (None, "null"):
         raise RuntimeError(
-            "slack signals empty (refresh produced no rows — kicked "
-            f"{REFRESH_JOB}; check keychain access)")
+            "slack signals empty (refresh produced no rows — check keychain "
+            f"access; try: launchctl kickstart -k gui/$UID/{REFRESH_JOB})")
     return map_items(unreads, mentions, _handle_map(),
                      now_ms=int(time.time() * 1000))
 

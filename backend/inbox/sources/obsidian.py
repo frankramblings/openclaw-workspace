@@ -51,9 +51,16 @@ def extract_actions(raw: str) -> list[dict]:
         if header:
             in_section = bool(_ACTION_SECTIONS.match(header.group(1).strip()))
             continue
-        if not line.strip():
+        if not line.strip():  # Blank lines do not end a section (only the next header does)
             continue
         if in_section:
+            # Check for unchecked checkbox first
+            checkbox_m = _ACTION_PATTERNS[0][0].match(line)
+            if checkbox_m:
+                text = checkbox_m.group(1).strip()
+                if _real_action(text):
+                    out.append({"kind": "unchecked-todo", "text": text, "line": i + 1})
+                continue
             am = _ASSIGNEE_RE.match(line)
             if am:
                 assignee, text = am.group(1).strip(), am.group(2).strip()
@@ -100,7 +107,8 @@ def map_items(name: str, file_path: str, actions: list[dict], file_ts: float,
             "id": item_id, "source": "obsidian",
             "title": a["text"][:140],
             "subtitle": re.sub(r"\.md$", "", name),
-            "snippet": a["kind"], "ts": int(file_ts), "ageHours": age_h,
+            "snippet": a["kind"], "ts": int(file_ts),  # epoch ms — the cross-source item contract is ts(ms)
+            "ageHours": age_h,
             "score": score,
             "meta": {"file": name, "line": a["line"], "kind": a["kind"],
                      "fullText": a["text"], "assignee": a.get("assignee"),
@@ -122,14 +130,14 @@ async def fetch() -> list[dict]:
     for p in sorted(VAULT.iterdir()):
         if not (p.is_file() and p.name.endswith(".md")):
             continue
-        m = _FILENAME_DATE_RE.match(p.name)
-        file_ts = (time.mktime(time.strptime(m.group(0), "%Y-%m-%d")) * 1000
-                   if m else p.stat().st_mtime * 1000)
-        if file_ts < cutoff:
-            continue
         try:
+            m = _FILENAME_DATE_RE.match(p.name)
+            file_ts = (time.mktime(time.strptime(m.group(0), "%Y-%m-%d")) * 1000
+                       if m else p.stat().st_mtime * 1000)
+            if file_ts < cutoff:
+                continue
             actions = extract_actions(p.read_text(encoding="utf-8"))
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         if actions:
             items.extend(map_items(p.name, str(p), actions, file_ts, now_ms))

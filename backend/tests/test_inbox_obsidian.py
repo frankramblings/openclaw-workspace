@@ -32,6 +32,13 @@ def test_short_or_decorative_lines_are_skipped():
     assert obsidian.extract_actions("## Action items\n- ok\n- [[link]]\n") == []
 
 
+def test_checkbox_inside_action_section_is_unchecked_todo():
+    note = "## Action items\n- [ ] fix the analytics bug\n"
+    actions = obsidian.extract_actions(note)
+    assert actions == [
+        {"kind": "unchecked-todo", "text": "fix the analytics bug", "line": 2}]
+
+
 def test_map_items_scores_and_shapes():
     actions = obsidian.extract_actions(NOTE)
     now = 10**12

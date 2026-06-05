@@ -1,0 +1,13 @@
+{
+  "name": "gary-icon-gen",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Render Gary PNG/PWA icons from gary.svg using sharp.",
+  "type": "module",
+  "scripts": {
+    "gen": "node gen-icons.mjs"
+  },
+  "dependencies": {
+    "sharp": "^0.33.5"
+  }
+}

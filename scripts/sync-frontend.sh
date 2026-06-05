@@ -60,3 +60,18 @@ if [[ -d "$OVERRIDES" ]]; then
     echo "injected cron.js <script> into index.html"
   fi
 fi
+
+# --- Gary rebrand of app.js -------------------------------------------------
+# index.html / login.html / landing.html / manifest.json / the icon files are
+# full-file overrides (copied above), so their "Gary" branding survives the
+# rsync automatically. app.js is NOT overridden (it's large and changes often
+# upstream), so re-apply its visible-text rebrand here. This is a safe global
+# swap: only the capitalized brand word "Odysseus" is touched, which covers the
+# user-facing strings AND the internally-consistent startOdysseusApp() symbol,
+# while leaving lowercase functional identifiers (odysseus-theme localStorage
+# key, _odysseusLoadTime, etc.) untouched. Idempotent: a no-op once renamed.
+APPJS="$DEST/app.js"
+if [[ -f "$APPJS" ]] && grep -q "Odysseus" "$APPJS"; then
+  sed -i '' 's/Odysseus/Gary/g' "$APPJS"
+  echo "rebranded Odysseus -> Gary in app.js"
+fi

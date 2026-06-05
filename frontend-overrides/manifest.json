@@ -1,0 +1,19 @@
+{
+  "name": "Gary",
+  "short_name": "Gary",
+  "description": "Self-hosted AI chat with memory, documents, and tools",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#282c34",
+  "theme_color": "#282c34",
+  "icons": [
+    { "src": "/static/favicon-16x16.png", "sizes": "16x16", "type": "image/png" },
+    { "src": "/static/favicon-32x32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/static/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/maskable-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

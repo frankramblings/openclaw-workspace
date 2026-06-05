@@ -13,6 +13,9 @@ venv/
 # Remove this line if you decide to commit a pinned copy.
 /frontend/
 
+# Node (icon generator deps)
+node_modules/
+
 # OS
 .DS_Store
 

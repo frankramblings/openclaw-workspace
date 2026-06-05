@@ -13,11 +13,12 @@ import asyncio
 import json
 import re
 
-from fastapi import FastAPI, Form
+from fastapi import Body, FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import bridge, config, sessions_store
+from . import bridge, config, sessions_store, websearch
+from .memory import maybe_auto_extract
 from .calendar_google import router as calendar_router
 from .cron import router as cron_router
 from .documents import router as documents_router
@@ -134,7 +135,8 @@ async def _generate_ai_title(message: str) -> str:
 
 
 @app.post("/api/chat_stream")
-async def chat_stream(message: str = Form(...), session: str = Form(default="")):
+async def chat_stream(message: str = Form(...), session: str = Form(default=""),
+                      use_web: str = Form(default="")):
     """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE.
 
     The posted `session` is the SPA's session id; we resolve it to that chat's
@@ -156,8 +158,34 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""))
         title_task = asyncio.create_task(_generate_ai_title(message))
 
     async def gen():
+        brain_message = message
         try:
-            async for chunk in bridge.stream_turn(message, session_key=session_key,
+            # Web search (the composer's globe toggle posts use_web=true).
+            # Search failures degrade to a visible failed tool card — never
+            # break the turn itself.
+            if use_web.lower() in ("true", "1", "on", "yes"):
+                s = websearch.load_settings()
+                if s.get("search_provider") != "disabled":
+                    yield bridge._sse({"type": "tool_start", "tool": "web_search",
+                                       "tool_id": "websearch",
+                                       "command": message[:120], "round": 1})
+                    try:
+                        results = await websearch.search(
+                            message, int(s.get("search_result_count") or 5))
+                        yield bridge._sse({
+                            "type": "tool_output", "tool": "web_search",
+                            "tool_id": "websearch", "exit_code": 0,
+                            "output": "\n".join(f"[{i+1}] {r['title']} — {r['url']}"
+                                                for i, r in enumerate(results))
+                                      or "no results"})
+                        if results:
+                            brain_message = websearch.context_block(message, results)
+                    except Exception as exc:  # noqa: BLE001
+                        yield bridge._sse({"type": "tool_output", "tool": "web_search",
+                                           "tool_id": "websearch",
+                                           "output": f"web search failed: {exc}",
+                                           "exit_code": 1})
+            async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
                                                   model_ref=_model_ref(rec)):
                 if "[DONE]" in chunk:
                     continue  # hold DONE until the title settles, then send our own
@@ -170,6 +198,8 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""))
                         sessions_store.update(rec["id"], name=ai)
                 except Exception:  # noqa: BLE001 - keep the first-chars fallback
                     title_task.cancel()
+            # Auto-extract memories (gated inside: toggle pref + cooldown).
+            asyncio.create_task(maybe_auto_extract(session_key))
             yield _DONE_SSE
 
     return StreamingResponse(gen(), media_type="text/event-stream")
@@ -307,7 +337,14 @@ async def auth_features():
 
 @app.get("/api/auth/settings")
 async def auth_settings():
-    return {}
+    """Settings the SPA reads (search provider/result count etc.). Persisted
+    in .data/settings.json; search execution lives in websearch.py."""
+    return websearch.load_settings()
+
+
+@app.post("/api/auth/settings")
+async def save_auth_settings(payload: dict = Body(default=None)):
+    return websearch.save_settings(payload or {})
 
 
 # --- Catch-all for Odysseus feature tabs v1 doesn't implement yet ------------

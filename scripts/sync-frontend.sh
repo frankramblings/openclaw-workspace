@@ -89,3 +89,15 @@ if [[ -f "$MODELS" ]] && grep -q "Yours for the voyage\." "$MODELS"; then
   sed -i '' 's/Yours for the voyage\./Merely an automaton, here to serve./g' "$MODELS"
   echo "rebranded welcome subtitle in js/models.js"
 fi
+
+# --- SerpAPI as a first-class search provider --------------------------------
+# settings.js is NOT overridden (large, changes upstream); patch its provider
+# maps in place after each sync (idempotent). The <option> lives in the
+# index.html override; search.js is a full-file override. The actual search
+# runs server-side via backend/websearch.py (key from OpenClaw's serpapi skill).
+SETTINGS="$DEST/js/settings.js"
+if [[ -f "$SETTINGS" ]] && ! grep -q "serpapi: 'SerpAPI'" "$SETTINGS"; then
+  sed -i '' "s|var _searchLabels = {|var _searchLabels = { serpapi: 'SerpAPI',|" "$SETTINGS"
+  sed -i '' "s|var _SEARCH_PROVIDER_LOGOS = {|var _SEARCH_PROVIDER_LOGOS = { serpapi: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/><path d=\"M8.5 11a2.5 2.5 0 0 1 5 0c0 1.5-1.2 2-2.5 2\"/></svg>',|" "$SETTINGS"
+  echo "patched serpapi into settings.js provider maps"
+fi

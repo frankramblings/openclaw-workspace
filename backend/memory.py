@@ -257,9 +257,97 @@ async def audit():
     return {"ok": True, "memory": list_memories()}
 
 
+# --- extraction: REAL auto/manual memory extraction via the brain -------------
+# Manual: the panel's "Extract memories from this session" button posts here and
+# renders the returned `suggestions` in a review modal (user approves → add).
+# Auto: app.chat_stream fires maybe_auto_extract() after each web turn; gated by
+# the #auto-memory-toggle pref (`auto_memory`), a per-session cooldown, and
+# dedupe against the existing curated set. Approved facts land in the brain's
+# own MEMORY.md via add_memory(), so the agent itself benefits too.
+
+_EXTRACT_SESSION = "agent:main:web-memex"  # utility thread; never a visible chat
+_AUTO_COOLDOWN_S = 600.0
+_AUTO_CATEGORY = "Auto-extracted"
+_last_auto: dict[str, float] = {}
+
+
+def _norm(t: str) -> str:
+    return re.sub(r"\s+", " ", t.strip().lower())
+
+
+def _extract_prompt(transcript: str, existing: list[str]) -> str:
+    known = "\n".join(f"- {t[:120]}" for t in existing[:60]) or "(none yet)"
+    return (
+        "You maintain a curated long-term memory about the user. From the "
+        "conversation below, extract durable NEW facts worth remembering "
+        "across sessions: stable preferences, decisions, projects, people, "
+        "constraints. NOT task chatter, NOT one-off details, NOT anything "
+        "already known.\n\n"
+        f"Already known (do not repeat):\n{known}\n\n"
+        f"Conversation:\n{transcript}\n\n"
+        "Output ONLY '- ' bullet lines, one self-contained fact each, max 5. "
+        "If there is nothing new and durable, output exactly: NONE"
+    )
+
+
+def auto_memory_enabled() -> bool:
+    # The toggle ships checked in the UI, so an unset pref means enabled.
+    val = _read_json(_PREFS, {}).get("auto_memory")
+    return True if val is None else bool(val)
+
+
+async def extract_suggestions(session_key: str, limit_msgs: int = 30) -> list[str]:
+    """One brain turn over the session's recent transcript → novel fact list."""
+    from . import bridge  # late import: bridge pulls websockets at import time
+
+    hist = await bridge.fetch_history(session_key, limit=limit_msgs)
+    msgs = hist.get("history") or []
+    if not msgs:
+        return []
+    transcript = "\n".join(
+        f"{m.get('role', '?')}: {str(m.get('content', ''))[:500]}"
+        for m in msgs[-limit_msgs:])
+    existing = {_norm(m["text"]) for m in list_memories()}
+    raw = await bridge.run_text(
+        _extract_prompt(transcript, sorted(existing)), _EXTRACT_SESSION)
+    out: list[str] = []
+    for line in raw.splitlines():
+        m = _BULLET.match(line.strip())
+        if not m:
+            continue
+        fact = m.group(1).strip()
+        if fact and _norm(fact) not in existing:
+            out.append(fact)
+    return out[:5]
+
+
+async def maybe_auto_extract(session_key: str) -> None:
+    """Background, best-effort: extract + directly add new facts. Cooldown is
+    stamped up front so a stalled brain isn't re-hit every message."""
+    if not auto_memory_enabled():
+        return
+    now = time.monotonic()
+    if now - _last_auto.get(session_key, 0.0) < _AUTO_COOLDOWN_S:
+        return
+    _last_auto[session_key] = now
+    try:
+        for fact in await extract_suggestions(session_key, limit_msgs=16):
+            add_memory(fact, category=_AUTO_CATEGORY)
+    except Exception:  # noqa: BLE001 - never break or noise up the chat path
+        pass
+
+
 @router.post("/api/memory/extract")
 async def extract(session: str = Form(default="")):
-    return {"ok": True, "added": 0, "memories": []}
+    from . import sessions_store
+    rec = sessions_store.get(session) if session else None
+    key = rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+    try:
+        suggestions = await extract_suggestions(key)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=502, content={"ok": False, "error": f"{exc!r}"})
+    return {"ok": True, "suggestions": suggestions,
+            "added": 0, "memories": []}  # legacy keys some panel paths read
 
 
 @router.post("/api/memory/import")

@@ -141,6 +141,29 @@ async def stream_turn(message: str, session_key: str | None = None,
     yield _sse("[DONE]")
 
 
+async def run_text(prompt: str, session_key: str) -> str:
+    """One brain turn → just the assistant text (no SSE plumbing).
+
+    Shared helper for backend features that need a single utility turn
+    (memory extraction, titles, email drafting). Runs on whatever session_key
+    the caller picks — use a dedicated key for utility work so it doesn't
+    pollute a visible chat thread's history."""
+    chunks: list[str] = []
+    async for sse in stream_turn(prompt, session_key=session_key):
+        if not sse.startswith("data:"):
+            continue
+        body = sse[5:].strip()
+        if not body or body == "[DONE]":
+            continue
+        try:
+            obj = json.loads(body)
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(obj, dict) and obj.get("delta"):
+            chunks.append(obj["delta"])
+    return "".join(chunks).strip()
+
+
 async def fetch_history(session_key: str, limit: int = 200) -> dict:
     """Read a session's transcript from the brain via chat.history and map it to
     the SPA's history shape: {"history": [{role, content}], "model": str|None}.

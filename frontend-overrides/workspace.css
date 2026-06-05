@@ -103,3 +103,21 @@
 #rail-cookbook, #tool-cookbook-btn,
 #rail-compare,  #tool-compare-btn,
 .ai-tts-button { display: none !important; }
+
+/* --- PWA safe-area: keep the top nav below the phone status bar ------------
+   Odysseus handled only safe-area-inset-BOTTOM; with the black-translucent
+   iOS status bar the TOP chrome (hamburger, icon rail, sidebar header, chat
+   top bar) was drawn under the status bar/notch in the installed PWA. Add the
+   top inset to each (bases mirror style.css so only the inset is added).
+   env(safe-area-inset-top) is 0 in normal browsers → no-op on desktop. */
+.hamburger-btn  { top: calc(12px + env(safe-area-inset-top, 0px)) !important; }
+.icon-rail      { padding-top: calc(48px + env(safe-area-inset-top, 0px)) !important; }
+.sidebar-header { padding-top: calc(15px + env(safe-area-inset-top, 0px)) !important; }
+.chat-top-bar   { padding-top: calc(5px  + env(safe-area-inset-top, 0px)) !important; }
+
+@media (max-width: 768px) {
+  .hamburger-btn  { top: calc(6px  + env(safe-area-inset-top, 0px)) !important; }
+  .sidebar-header { padding-top: calc(18px + env(safe-area-inset-top, 0px)) !important; }
+  .chat-top-bar   { padding-top: calc(31px + env(safe-area-inset-top, 0px)) !important; }
+  /* .icon-rail.mobile-mini reuses the .icon-rail rule above (same element). */
+}

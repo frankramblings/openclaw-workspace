@@ -61,17 +61,31 @@ if [[ -d "$OVERRIDES" ]]; then
   fi
 fi
 
-# --- Gary rebrand of app.js -------------------------------------------------
-# index.html / login.html / landing.html / manifest.json / the icon files are
-# full-file overrides (copied above), so their "Gary" branding survives the
-# rsync automatically. app.js is NOT overridden (it's large and changes often
-# upstream), so re-apply its visible-text rebrand here. This is a safe global
-# swap: only the capitalized brand word "Odysseus" is touched, which covers the
-# user-facing strings AND the internally-consistent startOdysseusApp() symbol,
-# while leaving lowercase functional identifiers (odysseus-theme localStorage
-# key, _odysseusLoadTime, etc.) untouched. Idempotent: a no-op once renamed.
-APPJS="$DEST/app.js"
-if [[ -f "$APPJS" ]] && grep -q "Odysseus" "$APPJS"; then
-  sed -i '' 's/Odysseus/Gary/g' "$APPJS"
-  echo "rebranded Odysseus -> Gary in app.js"
+# --- Gary rebrand of app.js + js/ modules -----------------------------------
+# index.html / login.html / landing.html / manifest.json / the icon files and a
+# few js/ modules (chat.js, theme.js, cron.js) are full-file overrides (copied
+# above), so their "Gary" branding survives the rsync automatically. The rest of
+# app.js and js/*.js are NOT overridden (large, frequently changed upstream), so
+# re-apply their visible-text rebrand here.
+#
+# Safe global swap: only the capitalized brand word "Odysseus" -> "Gary". This
+# covers user-facing strings AND the internally-consistent startOdysseusApp()
+# symbol, while leaving lowercase functional identifiers (odysseus-theme
+# localStorage key, _odysseusLoadTime, etc.) untouched. Idempotent.
+#
+# Excluded — intentionally NOT rebranded (literary/persona content, not chrome):
+#   - js/presets.js                 the "Odysseus" character persona preset
+#   - js/research/panel.js          a research-query example about the myth
+#   - any line matching /Laertes/   the Homer "I am Odysseus…" quote in /quote
+rebrand() { [[ -f "$1" ]] && grep -q "Odysseus" "$1" && sed -i '' '/Laertes/!s/Odysseus/Gary/g' "$1" && echo "rebranded $1"; }
+rebrand "$DEST/app.js"
+while IFS= read -r -d '' f; do rebrand "$f"; done < <(
+  find "$DEST/js" -type f -name '*.js' \
+    ! -path '*/lib/*' ! -name 'presets.js' ! -path '*/research/panel.js' -print0
+)
+# Welcome-screen subtitle (a specific phrase, not an Odysseus->Gary swap).
+MODELS="$DEST/js/models.js"
+if [[ -f "$MODELS" ]] && grep -q "Yours for the voyage\." "$MODELS"; then
+  sed -i '' 's/Yours for the voyage\./Merely an automaton, here to serve./g' "$MODELS"
+  echo "rebranded welcome subtitle in js/models.js"
 fi

@@ -1,12 +1,12 @@
 /* OpenClaw Workspace — Cron tab (overlay add-on).
  *
- * The Odysseus SPA has no scheduled-jobs view, so this self-contained module
+ * The Gary SPA has no scheduled-jobs view, so this self-contained module
  * adds one without editing the synced index.html: on load it injects a rail
  * button (#rail-cron) and a themed modal, then renders the gateway's cron jobs
  * from the backend /api/cron adapter. Loaded via a <script> the sync injects.
  *
  * Self-contained on purpose (builds its own DOM, uses the SPA's theme vars) so
- * it survives Odysseus updates as long as #icon-rail exists.
+ * it survives Gary updates as long as #icon-rail exists.
  */
 (function () {
   'use strict';

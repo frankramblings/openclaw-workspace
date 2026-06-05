@@ -62,11 +62,17 @@ survives the Odysseus sync:
   **Gary** mark instead, tinted to the live accent — it fetches `/static/logo.svg`
   (mono mask shape, ink `#000`) and recolors the ink to the accent, so the tab
   icon tracks the theme exactly as the boat did. Per-route glyphs are unchanged.
-- **app.js** is NOT overridden (large, frequently changed upstream). Its visible
-  strings are rebranded by a `sed` step in `scripts/sync-frontend.sh` that runs
-  after the override copy. Internal lowercase identifiers (`odysseus-theme`
-  localStorage key, `_odysseusLoadTime`, …) and code comments are intentionally
-  left as-is.
+- **app.js + most js/ modules** are NOT overridden (large, frequently changed
+  upstream). Their visible "Odysseus" strings (assistant role label, "Odysseus
+  Chat", the `/tour` text, settings/email/cookbook help, welcome subtitle, …)
+  are rebranded by a `sed` step in `scripts/sync-frontend.sh` that runs after the
+  override copy: a capitalized `Odysseus` → `Gary` swap, which leaves lowercase
+  functional identifiers (`odysseus-theme` key, `_odysseusLoadTime`) intact.
+  **Intentionally excluded** (literary/persona content, not chrome): `js/presets.js`
+  (the "Odysseus" character persona), `js/research/panel.js` (a myth example
+  query), and any line matching `/Laertes/` (the Homer "I am Odysseus…" quote in
+  `/quote`). The welcome subtitle "Yours for the voyage." is replaced with
+  "Merely an automaton, here to serve." by a separate sed in the same step.
 
 ## Adding an override
 

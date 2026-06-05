@@ -328,16 +328,7 @@ const _ROUTE_FAVICON_SHAPES = {
 function _updateFavicon(fg) {
   const path = (window.location.pathname || '').toLowerCase();
   const routeShape = _ROUTE_FAVICON_SHAPES[path];
-  let href, appleHref;
-  if (routeShape) {
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>${routeShape.split('__C__').join(fg)}</svg>`;
-    href = appleHref = 'data:image/svg+xml,' + encodeURIComponent(svg);
-  } else {
-    // Default (root) path: the Gary brand favicon (static asset). This replaces
-    // the old accent-tinted boat. Keep ?v= in sync with index.html's <link>s.
-    href = '/static/favicon.svg?v=gary1';
-    appleHref = '/static/icon-192.png?v=gary1';
-  }
+
   let link = document.querySelector("link[rel='icon']");
   if (!link) {
     link = document.createElement('link');
@@ -345,14 +336,40 @@ function _updateFavicon(fg) {
     link.type = 'image/svg+xml';
     document.head.appendChild(link);
   }
-  link.href = href;
   let apple = document.querySelector("link[rel='apple-touch-icon']");
   if (!apple) {
     apple = document.createElement('link');
     apple.rel = 'apple-touch-icon';
     document.head.appendChild(apple);
   }
-  apple.href = appleHref;
+
+  if (routeShape) {
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>${routeShape.split('__C__').join(fg)}</svg>`;
+    const href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+    link.href = href;
+    apple.href = href;
+  } else {
+    // Default (root) path: rebuild the Gary mark tinted to the accent on every
+    // theme apply — the same dynamic behavior the boat favicon used to have.
+    // Shape = /static/logo.svg (mono mask: ink = #000, rest transparent),
+    // re-tinted to `fg`. apple-touch stays the static PNG (can't cheaply tint).
+    _setGaryFavicon(fg, link);
+    apple.href = '/static/icon-192.png?v=gary1';
+  }
+}
+
+// Cached raw text of the mono Gary mark, fetched once then re-tinted per call.
+let _garyMarkSvg = null;
+function _setGaryFavicon(fg, link) {
+  const apply = (txt) => {
+    const tinted = txt.replace(/fill:\s*#000;?/i, `fill: ${fg};`);
+    link.href = 'data:image/svg+xml,' + encodeURIComponent(tinted);
+  };
+  if (_garyMarkSvg != null) { apply(_garyMarkSvg); return; }
+  fetch('/static/logo.svg')
+    .then((r) => r.text())
+    .then((t) => { _garyMarkSvg = t; apply(t); })
+    .catch(() => { link.href = '/static/favicon.svg?v=gary1'; });
 }
 
 // Cache of discovered custom fonts: { "Family Name": [ {file, url, format} ] }

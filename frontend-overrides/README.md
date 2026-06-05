@@ -55,6 +55,11 @@ survives the Odysseus sync:
   - `favicon.svg` + the PNGs bake in the current accent (cyan `#4fe3d1`) since a
     tab/launcher icon can't read page color. Re-run the generator after changing
     the accent in `scripts/icons/gen-icons.mjs`.
+- **js/theme.js** — full-file override. `_updateFavicon()` regenerates the
+  favicon from the theme accent on every theme apply; upstream it rebuilt the
+  boat for the root path, which overwrote the static Gary `<link>` on boot
+  ("Gary flashes, then reverts to the boat"). The root branch now points at
+  `/static/favicon.svg` instead. Per-route favicon glyphs are unchanged.
 - **app.js** is NOT overridden (large, frequently changed upstream). Its visible
   strings are rebranded by a `sed` step in `scripts/sync-frontend.sh` that runs
   after the override copy. Internal lowercase identifiers (`odysseus-theme`

@@ -11,7 +11,7 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from . import config
+from .. import config
 
 router = APIRouter()
 

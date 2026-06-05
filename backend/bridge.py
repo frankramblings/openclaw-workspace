@@ -178,16 +178,20 @@ def _map_history(messages: list) -> dict:
         if not isinstance(msg, dict):
             continue
         role = msg.get("role")
+        # The brain stamps every message with an epoch-ms `timestamp`. The SPA
+        # renders it via msg.metadata.timestamp and falls back to now() when it's
+        # absent — which made every loaded message show the page-reload time.
+        meta = {"timestamp": msg.get("timestamp")}
         if role == "user":
             text = _content_text(msg.get("content"))
             if text.strip():
-                history.append({"role": "user", "content": text})
+                history.append({"role": "user", "content": text, "metadata": meta})
         elif role == "assistant":
             if msg.get("model"):
                 model = msg["model"]  # last assistant model wins → picker label
             text = _content_text(msg.get("content"))  # text blocks only
             if text.strip():
-                history.append({"role": "assistant", "content": text})
+                history.append({"role": "assistant", "content": text, "metadata": meta})
         # toolResult and toolCall-only assistant turns are intentionally skipped.
     return {"history": history, "model": model}
 

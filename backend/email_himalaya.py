@@ -7,10 +7,12 @@ I/O paths are verified live against the mailbox.
 """
 from __future__ import annotations
 
+import asyncio
 import email
 import html as _html
 import json
 import os
+import re
 import tomllib
 from email.policy import default as _email_policy
 from email.utils import parseaddr
@@ -327,6 +329,195 @@ async def email_send(payload: dict = Body(...)):
     return {"ok": True, "sent": True}
 
 
+# --- draft: save a composed message into Gmail Drafts (no send) ---------------
+
+DRAFTS_FOLDER = "[Gmail]/Drafts"
+# This 2014 host is slow + its IMAP TLS handshake to Gmail blips under load
+# (observed "cannot connect to TLS stream" that succeeds on retry), so mailbox
+# writes get a longer budget and one retry. See [[project_hardware_constraint]].
+_MAILBOX_TIMEOUT = 75.0
+
+
+async def _himalaya_with_retry(args, *, stdin=None, attempts=2):
+    last = None
+    for i in range(attempts):
+        try:
+            return await himalaya_cli.run_raw(args, stdin=stdin,
+                                              timeout=_MAILBOX_TIMEOUT)
+        except himalaya_cli.HimalayaError as exc:
+            last = exc
+            if i + 1 < attempts:
+                await asyncio.sleep(2)
+    raise last
+
+
+@router.post("/api/email/draft")
+async def save_draft(payload: dict = Body(default=None)):
+    """Append a composed message to the Drafts folder via IMAP (no send).
+
+    Same MIME builder as /send; the frontend's #doc-email-draft-btn reads only
+    {success, error}."""
+    payload = payload or {}
+    raw = build_mime(
+        from_addr=_from_header(),
+        to=payload.get("to") or "", cc=payload.get("cc"), bcc=payload.get("bcc"),
+        subject=payload.get("subject") or "", body=payload.get("body") or "",
+        body_html=payload.get("body_html"),
+        in_reply_to=payload.get("in_reply_to"),
+        references=payload.get("references"),
+    )
+    try:
+        await _himalaya_with_retry(
+            ["message", "save", "-f", DRAFTS_FOLDER], stdin=raw)
+    except himalaya_cli.HimalayaError as exc:
+        return {"success": False, "error": str(exc)}
+    return {"success": True}
+
+
+# --- writing style: stored preference + brain extraction from sent mail -------
+
+_STYLE_FILE = config.DATA_DIR / "email_style.json"
+SENT_FOLDER = "[Gmail]/Sent Mail"
+_STYLE_MAX_SAMPLES = 5  # cap himalaya reads — each is a slow subprocess on this host
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_tags(s: str) -> str:
+    """Crude HTML→text: drop tags, unescape entities, collapse whitespace.
+    Normalizes non-breaking/zero-width spaces (common in HTML mail) first so the
+    horizontal-whitespace collapse actually catches them."""
+    txt = _html.unescape(_TAG_RE.sub(" ", s or "")).replace("\xa0", " ").replace("​", "")
+    return re.sub(r"[ \t]+", " ", txt).strip()
+
+
+def _message_plain(raw: bytes) -> str:
+    """Best-effort plain text of a raw message (text/plain, else stripped HTML)."""
+    msg = email.message_from_bytes(raw, policy=_email_policy)
+    plain, html_body = "", ""
+    for part in msg.walk():
+        if part.get_content_maintype() == "multipart":
+            continue
+        if part.get_content_disposition() == "attachment":
+            continue
+        try:
+            content = part.get_content()
+        except Exception:  # noqa: BLE001
+            content = ""
+        ctype = part.get_content_type()
+        if ctype == "text/plain" and not plain:
+            plain = content
+        elif ctype == "text/html" and not html_body:
+            html_body = content
+    return plain.strip() or _strip_tags(html_body)
+
+
+def _load_style() -> str:
+    try:
+        return (json.loads(_STYLE_FILE.read_text()).get("style") or "").strip()
+    except Exception:  # noqa: BLE001 - absent/corrupt → no style
+        return ""
+
+
+def _save_style(style: str) -> None:
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = _STYLE_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"style": style or ""}))
+    tmp.replace(_STYLE_FILE)  # atomic
+
+
+def _style_extract_prompt(samples: list[str]) -> str:
+    joined = "\n\n--- next email ---\n\n".join(samples)
+    return (
+        "Below are several emails I have written. Analyze MY writing style and "
+        "produce a concise, reusable style guide (tone, greeting + sign-off "
+        "habits, formality, typical sentence length, recurring phrases or "
+        "quirks) that another writer could follow to sound like me. Output ONLY "
+        "the guide as short bullet points — no preamble.\n\n" + joined)
+
+
+@router.get("/api/email/style")
+async def get_style():
+    return {"style": _load_style()}
+
+
+@router.put("/api/email/style")
+async def put_style(payload: dict = Body(default=None)):
+    _save_style((payload or {}).get("style") or "")
+    return {"success": True}
+
+
+async def _recent_sent_bodies(n: int) -> list[str]:
+    """Plain-text bodies of the most recent sent messages (best-effort)."""
+    try:
+        data = await himalaya_cli.run_json(
+            ["envelope", "list", "-f", SENT_FOLDER, "-s", str(n)],
+            timeout=_MAILBOX_TIMEOUT)
+    except himalaya_cli.HimalayaError:
+        return []
+    envs = data if isinstance(data, list) else (data.get("envelopes") or [])
+    bodies: list[str] = []
+    for env in envs[:n]:
+        uid = str(env.get("id") or env.get("uid") or "").strip()
+        if not uid:
+            continue
+        try:
+            raw = await _himalaya_with_retry(
+                ["message", "export", uid, "-F", "-f", SENT_FOLDER])
+        except himalaya_cli.HimalayaError:
+            continue
+        text = _message_plain(raw)
+        if text:
+            bodies.append(text[:800])
+    return bodies
+
+
+@router.post("/api/email/extract-style")
+async def extract_style(payload: dict = Body(default=None)):
+    """Infer the user's writing style from recent sent mail (one brain turn)."""
+    want = int((payload or {}).get("sample_count") or 15)
+    n = max(1, min(want, _STYLE_MAX_SAMPLES))
+    bodies = await _recent_sent_bodies(n)
+    if not bodies:
+        return {"success": False,
+                "error": "No sent emails found to analyze."}
+    try:
+        style = await _brain_once(_style_extract_prompt(bodies))
+    except Exception as exc:  # noqa: BLE001
+        return {"success": False, "error": f"{exc!r}"}
+    if not style:
+        return {"success": False,
+                "error": "The brain returned no text — try again in a moment."}
+    return {"success": True, "style": style}
+
+
+# --- summarize: condense an email with the OpenClaw brain --------------------
+
+def _summary_prompt(subject: str, frm: str, body: str) -> str:
+    return (
+        "Summarize this email in 2-4 short sentences (or tight bullets). Capture "
+        "the key point and any action or ask. Output ONLY the summary.\n\n"
+        f"From: {frm}\nSubject: {subject}\n\n{body[:4000]}")
+
+
+@router.post("/api/email/summarize")
+async def summarize(payload: dict = Body(default=None)):
+    payload = payload or {}
+    body = _strip_tags(payload.get("body") or "")
+    if not body:
+        return {"success": False, "error": "Nothing to summarize."}
+    prompt = _summary_prompt(payload.get("subject") or "",
+                             payload.get("from") or "", body)
+    try:
+        summary = await _brain_once(prompt)
+    except Exception as exc:  # noqa: BLE001
+        return {"success": False, "error": f"{exc!r}"}
+    if not summary:
+        return {"success": False,
+                "error": "AI summary unavailable — the brain returned no text "
+                         "(try again in a moment)."}
+    return {"success": True, "summary": summary}
+
+
 # --- AI-reply: draft a reply with the OpenClaw brain -------------------------
 
 async def _brain_once(prompt: str) -> str:
@@ -353,8 +544,10 @@ async def ai_reply(payload: dict = Body(default=None)):
     subj = payload.get("subject") or ""
     frm = payload.get("from_address") or ""
     orig = (payload.get("original_body") or payload.get("body") or "")[:4000]
+    style = _load_style()
+    style_block = f"\n\nWrite in MY style:\n{style}" if style else ""
     prompt = ("Draft a concise, friendly reply to this email. Output ONLY the "
-              f"reply body — no preamble, no subject line.\n\n"
+              f"reply body — no preamble, no subject line.{style_block}\n\n"
               f"From: {frm}\nSubject: {subj}\n\n{orig}")
     try:
         reply = await _brain_once(prompt)

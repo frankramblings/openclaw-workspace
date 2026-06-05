@@ -1,8 +1,10 @@
 """Unit tests for the pure functions in email_himalaya (no himalaya/network)."""
 from backend.email_himalaya import (
     envelope_to_email, _norm_date, folders_from_himalaya, build_mime,
-    message_to_read,
+    message_to_read, _strip_tags, _message_plain, _load_style, _save_style,
+    _summary_prompt, _style_extract_prompt,
 )
+from backend import email_himalaya
 
 
 def test_folders_from_himalaya():
@@ -38,6 +40,42 @@ def test_norm_date_space_to_iso():
     # himalaya emits "2026-06-04 11:45+00:00"; JS Date wants the T separator.
     assert _norm_date("2026-06-04 11:45+00:00") == "2026-06-04T11:45+00:00"
     assert _norm_date("") == ""
+
+
+def test_strip_tags():
+    assert _strip_tags("<p>Hi&nbsp;<b>there</b></p>") == "Hi there"
+    assert _strip_tags("plain text") == "plain text"
+    assert _strip_tags("") == ""
+
+
+def test_message_plain_prefers_text_over_html():
+    eml = (b"From: a@x.com\r\nSubject: S\r\n"
+           b'Content-Type: multipart/alternative; boundary="b"\r\n\r\n'
+           b"--b\r\nContent-Type: text/plain\r\n\r\nplain part\r\n"
+           b"--b\r\nContent-Type: text/html\r\n\r\n<p>html part</p>\r\n--b--\r\n")
+    assert _message_plain(eml) == "plain part"
+
+
+def test_message_plain_falls_back_to_stripped_html():
+    eml = (b"From: a@x.com\r\nSubject: S\r\n"
+           b"Content-Type: text/html\r\n\r\n<p>only <i>html</i></p>\r\n")
+    assert _message_plain(eml) == "only html"
+
+
+def test_style_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(email_himalaya, "_STYLE_FILE", tmp_path / "email_style.json")
+    monkeypatch.setattr(email_himalaya.config, "DATA_DIR", tmp_path)
+    assert _load_style() == ""            # absent → empty
+    _save_style("  warm, brief, sign off with –F  ")
+    # stored verbatim; _load_style strips surrounding whitespace
+    assert _load_style() == "warm, brief, sign off with –F"
+
+
+def test_prompts_include_inputs():
+    p = _summary_prompt("Subj", "sam@x.com", "the body")
+    assert "Subj" in p and "sam@x.com" in p and "the body" in p and "Summarize" in p
+    sp = _style_extract_prompt(["email one", "email two"])
+    assert "email one" in sp and "email two" in sp and "--- next email ---" in sp
 
 
 def test_envelope_to_email_basic():

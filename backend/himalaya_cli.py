@@ -45,7 +45,10 @@ async def run_raw(args: list[str], *, stdin: bytes | None = None,
     try:
         out, err = await asyncio.wait_for(proc.communicate(stdin), timeout=timeout)
     except asyncio.TimeoutError as exc:
-        proc.kill()
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass  # already exited — killing it would mask the timeout as a 500
         raise HimalayaError(f"himalaya {args[:2]} timed out after {timeout}s") from exc
     if proc.returncode != 0:
         tail = (err or b"").decode(errors="replace").strip()[-400:]

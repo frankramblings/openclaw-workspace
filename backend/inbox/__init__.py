@@ -1,38 +1,139 @@
-"""Triage feed proxy: `/api/items` surfaces the triage-dashboard unified feed
-(gmail+slack+asana+granola) for anything that wants it.
+"""Unified Inbox: native collectors merged behind /api/items.
 
-The Email tab no longer lives here — it's a real himalaya Gmail mailbox in
-`email_himalaya.py`. This module is now just the thin `/api/items` proxy; the
-unified triage view keeps its own home in the triage-dashboard app (:3456).
-"""
+Replaces the triage-dashboard proxy (the dashboard was a wedged pre-alpha;
+decision + design in docs/superpowers/specs/2026-06-05-native-inbox-design.md).
+Each source fetches concurrently with per-source error isolation; local
+dismiss/snooze state filters the merge. Response keeps the dashboard's shape:
+{items, total, sources: {name: count}, errors: {name: msg}, generatedAt}."""
 from __future__ import annotations
 
-import httpx
-from fastapi import APIRouter, Request
+import asyncio
+import time
+
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from .. import config
+from .. import email_himalaya, sessions_store
+from ..research import _agent_turn
+from . import state
+from .sources import asana, gmail, obsidian, slack
 
 router = APIRouter()
 
+SOURCES = {
+    "gmail": gmail.fetch,
+    "slack": slack.fetch,
+    "asana": asana.fetch,
+    "obsidian": obsidian.fetch,
+}
 
-async def _fetch_feed(params: dict | None = None) -> dict:
-    """Fetch the unified triage feed. Raises on transport failure (caller maps)."""
-    url = f"{config.TRIAGE_URL}/api/items"
-    async with httpx.AsyncClient(timeout=40) as client:
-        resp = await client.get(url, params=params or {"limit": 500})
-    resp.raise_for_status()
-    return resp.json()
+# Per-source 60s cache: (ts_ms, items). Cleared by actions on that source.
+_cache: dict[str, tuple[float, list]] = {}
+CACHE_TTL_MS = 60_000
+
+
+async def _fetch_source(name: str) -> list[dict]:
+    now = time.time() * 1000
+    hit = _cache.get(name)
+    if hit and now - hit[0] < CACHE_TTL_MS:
+        return hit[1]
+    items = await SOURCES[name]()
+    _cache[name] = (now, items)
+    return items
 
 
 @router.get("/api/items")
-async def items(request: Request):
-    """Proxy the unified triage feed, passing query params through unchanged."""
+async def items(sources: str = "", limit: int = 200):
+    wanted = [s for s in (sources.split(",") if sources else list(SOURCES))
+              if s in SOURCES]
+    # Slack staleness guard: kick the refresh job, then serve what we have.
+    if "slack" in wanted and slack.signals_stale():
+        slack.kick_refresh()
+
+    async def safe(name: str):
+        try:
+            return name, await _fetch_source(name), None
+        except Exception as exc:  # noqa: BLE001 - per-source isolation
+            return name, [], str(exc)
+
+    results = await asyncio.gather(*(safe(n) for n in wanted))
+    now_ms = int(time.time() * 1000)
+    merged, errors, counts = [], {}, {}
+    for name, src_items, err in results:
+        if err:
+            errors[name] = err
+        visible = [i for i in src_items
+                   if not state.hidden(i["source"], i["id"], now_ms)]
+        counts[name] = len(visible)
+        merged.extend(visible)
+    merged.sort(key=lambda i: (-i["score"], i["ageHours"]))
+    limit = max(1, min(500, limit))
+    return {"items": merged[:limit], "total": len(merged),
+            "sources": counts, "errors": errors, "generatedAt": now_ms}
+
+
+def _bad(msg: str):
+    return JSONResponse(status_code=400, content={"ok": False, "error": msg})
+
+
+@router.post("/api/items/action")
+async def action(payload: dict):
+    source = payload.get("source")
+    item_id = str(payload.get("id") or "")
+    act = payload.get("action")
+    meta = payload.get("meta") or {}
+    if source not in SOURCES or not item_id:
+        return _bad("source and id are required")
     try:
-        data = await _fetch_feed(dict(request.query_params) or None)
-        return JSONResponse(content=data)
+        if act == "dismiss":
+            state.dismiss(source, item_id)
+        elif act == "snooze":
+            until = payload.get("until")
+            if not isinstance(until, (int, float)) or until <= 0:
+                return _bad("snooze requires until (epoch ms)")
+            state.snooze(source, item_id, int(until))
+        elif act == "reviewed" and source == "obsidian":
+            state.dismiss(source, item_id, "reviewed")
+        elif act == "archive" and source == "gmail":
+            await email_himalaya.archive(item_id)        # same path as Email tab
+            state.dismiss(source, item_id, "archived")
+        elif act == "mark_read" and source == "slack":
+            await slack.mark_read(item_id, meta.get("channel") or "")
+            state.dismiss(source, item_id, "mark_read")
+        elif act == "complete" and source == "asana":
+            await asana.complete(item_id)
+            state.dismiss(source, item_id, "completed")
+        else:
+            return _bad(f"unknown action '{act}' for source '{source}'")
+    except Exception as exc:  # noqa: BLE001 - surface to the card toast
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": str(exc)})
+    _cache.pop(source, None)
+    return {"ok": True}
+
+
+@router.post("/api/items/spinoff")
+async def spinoff(payload: dict):
+    """'Hand to Gary': mint a chat session seeded with the item (the client
+    sends the rendered card fields). Same awaited-seed pattern as
+    research.spinoff."""
+    item = payload.get("item") or {}
+    title = (item.get("title") or "").strip()
+    if not title:
+        return _bad("item.title is required")
+    sess = sessions_store.create(name=f"Inbox: {title[:48]}")
+    seed = ("Context for this conversation — an item from my unified inbox "
+            f"({item.get('source', '?')}):\n\nTitle: {title}\n"
+            f"From/where: {item.get('subtitle', '')}\n"
+            f"Details: {item.get('snippet', '')}\n"
+            f"Link: {(item.get('meta') or {}).get('url') or 'n/a'}\n\n"
+            "Reply with one short sentence confirming you have the context; "
+            "the user will say what they need next.")
+    try:
+        await asyncio.wait_for(_agent_turn(seed, sess["sessionKey"], None),
+                               timeout=120)
     except Exception as exc:  # noqa: BLE001
-        return JSONResponse(
-            status_code=502,
-            content={"items": [], "total": 0,
-                     "error": f"triage feed unreachable: {exc!r}"})
+        sessions_store.delete(sess["id"])
+        return JSONResponse(status_code=502,
+                            content={"detail": f"could not seed the chat: {exc}"})
+    return {"session_id": sess["id"]}

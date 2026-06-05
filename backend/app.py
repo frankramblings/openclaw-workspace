@@ -2,7 +2,7 @@
 
 Serves the (reused) Odysseus SPA and wires:
   - /api/chat_stream  → the bridge to OpenClaw's gateway brain  (REAL, v1)
-  - /api/items        → the triage-dashboard unified inbox feed (proxy, v1)
+  - /api/items        → native unified inbox (gmail/slack/asana/obsidian collectors)
   - a handful of minimal stubs so the SPA loads without console errors
 
 Run:  uvicorn backend.app:app --reload --port 8800   (from the repo root)

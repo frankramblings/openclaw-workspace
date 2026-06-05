@@ -81,8 +81,5 @@ WEB_SESSION_PREFIX = os.environ.get("OPENCLAW_WEB_SESSION_PREFIX", "agent:main:w
 # lives in the brain and is read back via chat.history. Gitignored.
 DATA_DIR = Path(os.environ.get("WORKSPACE_DATA_DIR", REPO_ROOT / ".data"))
 
-# Existing triage-dashboard (unified inbox feed). Proxied for the Inbox tab.
-TRIAGE_URL = os.environ.get("TRIAGE_URL", "http://127.0.0.1:3456")
-
 # How long to wait on a single chat turn before giving up.
 TURN_TIMEOUT_S = float(os.environ.get("WORKSPACE_TURN_TIMEOUT_S", "180"))

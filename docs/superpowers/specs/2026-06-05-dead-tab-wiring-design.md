@@ -31,11 +31,46 @@ the web UI and the agent share one store (the vault is `agents.defaults.workspac
 (use Cron), **Gallery**, **Cookbook**, **Compare**, plus `.ai-tts-button` (TTS).
 STT/voice disabled by commenting out `voiceRecorder.js` in `index.html`.
 
-## Deferred: Deep Research (item 2)
+### Deep Research → the agent IS the engine (built 2026-06-05)
 
-Not glue — a real multi-round web-research engine with a bespoke streaming
-protocol. Captured contract (from `js/research/{panel,jobs}.js`,
-`js/researchSynapse.js`) for the next session:
+`backend/research.py`. No separate research stack: codex already has web
+search/fetch tools, so a job = 1–3 bridge turns on a dedicated gateway session
+(`agent:main:web-research-<id>`) — each round prompts "search the web, reply
+with a cumulative findings JSON block"; the report turn runs on a FRESH
+`…-write` session with the findings + round notes inlined. Tool cards from the
+turns drive the live phases (search-ish → `searching`, web-fetch-ish →
+`reading` + source counter, agent file-housekeeping ignored); counters are
+cumulative as the synapse requires. Reports persist to the vault
+(`Research/<id>.md`, same frontmatter codec as Notes/Documents) so the agent
+can read its own research.
+
+Two failure modes found by live smoke-testing shaped the engine:
+- **Late delivery**: the agent often replies via its `message` tool, whose text
+  lands in the transcript seconds AFTER the run's lifecycle end — the live
+  stream only carries a one-line stub. `_turn()` therefore polls
+  `chat.history` briefly when the streamed text fails its `expect` predicate.
+- **Token-cap thread reset**: one research round pushed the session to 80.5k
+  tokens (cap 70k) and the gateway silently started a fresh thread, orphaning
+  a same-session report turn (it hung > 15 min). Hence the self-contained
+  report prompt on a fresh session.
+
+All captured endpoints implemented, plus two found during the build:
+`GET /api/research/report/{id}` (standalone dark-mode HTML page; renders via
+the SPA's own `markdown.js`, `<pre>` fallback) and `GET /api/model-endpoints`
+(gateway catalog → research panel's endpoint picker). `spinoff` mints a real
+chat session and seeds the report into its gateway thread (awaited) before
+returning the session id. `max_rounds` is honored 1–3 (gap-fill prompts on
+rounds ≥2); `search_provider` is accepted but moot — the agent picks its own
+tools. Pure parts unit-tested in `backend/tests/test_research.py`.
+
+Also flipped `can_generate_images` → `False` in `/api/auth/status` (no image
+backend; hides `#tool-image-btn` — Gallery chrome was already CSS-hidden).
+Tasks/Gallery/Cookbook/Compare have **no** per-feature `can_use_*` flags in the
+SPA, so the CSS overrides above remain the mechanism for those.
+
+## Captured contract (now implemented)
+
+From `js/research/{panel,jobs}.js`, `js/researchSynapse.js`:
 
 - `POST /api/research/start {query, ...settings}` → `{session_id}`
 - `GET /api/research/stream/{id}` (SSE): JSON-per-line progress events with

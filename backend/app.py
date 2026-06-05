@@ -25,6 +25,7 @@ from .email_himalaya import router as email_router
 from .inbox import router as inbox_router
 from .memory import router as memory_router
 from .notes import router as notes_router
+from .research import router as research_router
 from .settings_status import router as settings_router
 from .skills import router as skills_router
 from .uploads import router as uploads_router
@@ -40,6 +41,7 @@ app.include_router(settings_router)
 app.include_router(notes_router)
 app.include_router(documents_router)
 app.include_router(uploads_router)
+app.include_router(research_router)
 
 
 @app.get("/api/health")
@@ -282,14 +284,18 @@ async def default_chat():
 
 
 # Auth stubs: single-user/no-auth deployment behind Tailscale. Return a logged-in
-# admin with all privileges so the SPA shows every tool and never redirects to /login.
+# admin so the SPA never redirects to /login. Privileges double as feature flags:
+# False hides that feature's chrome (init.js/app.js read these), so anything
+# with no backend here is flipped off rather than advertised as working.
 @app.get("/api/auth/status")
 async def auth_status():
     return {
         "authenticated": True, "is_admin": True, "username": "frank",
         "privileges": {
             "can_use_agent": True, "can_use_bash": True, "can_use_documents": True,
-            "can_use_research": True, "can_generate_images": True,
+            "can_use_research": True,
+            # No image-gen backend (hides #tool-image-btn; Gallery is CSS-hidden).
+            "can_generate_images": False,
         },
     }
 
@@ -305,7 +311,7 @@ async def auth_settings():
 
 
 # --- Catch-all for Odysseus feature tabs v1 doesn't implement yet ------------
-# calendar, email, notes, cookbook, research, prefs, memory, skills, tts… each
+# cookbook, prefs, tts… each
 # polls its own backend. Returning [] is universally safe: Odysseus's consumers
 # all do either `data.forEach(...)` (works on []) or `data.key || []` (→ []), so
 # this quiets the 404 flood without breaking any module. Registered AFTER every

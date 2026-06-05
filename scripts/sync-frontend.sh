@@ -59,6 +59,22 @@ if [[ -d "$OVERRIDES" ]]; then
     ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
     echo "injected cron.js <script> into index.html"
   fi
+
+  # Inject the Inbox tab add-on once, just before </body> (idempotent).
+  SCRIPT_INBOX='<script src="/static/js/inbox.js" defer></script>'
+  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/inbox.js" ]] \
+     && ! grep -qF "js/inbox.js" "$INDEX"; then
+    awk -v s="  $SCRIPT_INBOX" '
+      { lines[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (!done && lines[i] ~ /<\/body>/) { print s; done = 1 }
+          print lines[i]
+        }
+      }
+    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    echo "injected inbox.js <script> into index.html"
+  fi
 fi
 
 # --- Gary rebrand of app.js + js/ modules -----------------------------------

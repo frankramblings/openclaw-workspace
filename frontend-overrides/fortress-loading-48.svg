@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Loading">
+  <style>
+    :root {
+      color: var(--loader-color, currentColor);
+    }
+
+    .crystal {
+      transform-box: fill-box;
+      transform-origin: 50% 100%;
+      animation: grow 1.35s cubic-bezier(.2,.8,.2,1) infinite;
+    }
+
+    .c1 { animation-delay: 0ms; }
+    .c2 { animation-delay: 90ms; }
+    .c3 { animation-delay: 170ms; }
+    .c4 { animation-delay: 250ms; }
+    .c5 { animation-delay: 330ms; }
+    .c6 { animation-delay: 410ms; }
+    .c7 { animation-delay: 490ms; }
+
+    .shard {
+      transform-box: fill-box;
+      transform-origin: 50% 50%;
+      animation: shard 1.35s ease-out infinite;
+      opacity: 0;
+    }
+
+    .s1 { animation-delay: 720ms; }
+    .s2 { animation-delay: 790ms; }
+    .s3 { animation-delay: 860ms; }
+
+    @keyframes grow {
+      0% { transform: scaleY(.08) translateY(7px); opacity: 0; }
+      22% { opacity: 1; }
+      58% { transform: scaleY(1) translateY(-2px); opacity: 1; }
+      76% { transform: scaleY(.82) translateY(-4px) rotate(2deg); opacity: .85; }
+      100% { transform: scaleY(.08) translateY(7px) rotate(-2deg); opacity: 0; }
+    }
+
+    @keyframes shard {
+      0%, 45% { transform: translate(0,0) scale(.3); opacity: 0; }
+      58% { opacity: 1; }
+      100% { transform: translate(var(--dx), var(--dy)) scale(.15) rotate(50deg); opacity: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .crystal, .shard { animation: none; opacity: 1; }
+    }
+  </style>
+
+  <ellipse cx="24" cy="38.5" rx="15" ry="3.5" fill="currentColor" opacity=".14"/>
+
+  <g stroke-linejoin="round">
+    <path class="crystal c1" d="M23.6 38 L20.8 16 L24 6 L27.2 16 L24.4 38 Z" fill="currentColor" fill-opacity=".82" stroke="currentColor" stroke-opacity="1" stroke-width=".9"/>
+    <path class="crystal c2" d="M17.5 38 L15.2 23 L18.4 12 L21.1 26 L20 38 Z" fill="currentColor" fill-opacity=".62" stroke="currentColor" stroke-opacity=".9" stroke-width=".8"/>
+    <path class="crystal c3" d="M29 38 L27.4 25 L31.5 10 L34.4 24 L32.4 38 Z" fill="currentColor" fill-opacity=".62" stroke="currentColor" stroke-opacity=".9" stroke-width=".8"/>
+    <path class="crystal c4" d="M12.7 39 L11.5 29 L14.6 20 L17 31 L16 39 Z" fill="currentColor" fill-opacity=".44" stroke="currentColor" stroke-opacity=".74" stroke-width=".75"/>
+    <path class="crystal c5" d="M35.2 39 L33.7 30 L37.6 19 L40.1 31 L38.7 39 Z" fill="currentColor" fill-opacity=".44" stroke="currentColor" stroke-opacity=".74" stroke-width=".75"/>
+    <path class="crystal c6" d="M20.3 39 L19.3 28 L22.1 19 L24.2 30 L23.2 39 Z" fill="currentColor" fill-opacity=".7" stroke="currentColor" stroke-opacity=".82" stroke-width=".65"/>
+    <path class="crystal c7" d="M26.5 39 L25.8 29 L28.3 18 L30.7 30 L29.5 39 Z" fill="currentColor" fill-opacity=".7" stroke="currentColor" stroke-opacity=".82" stroke-width=".65"/>
+  </g>
+
+  <g fill="currentColor">
+    <path class="shard s1" style="--dx:-8px;--dy:-12px" d="M15 18 l2 -3 l1 4 z"/>
+    <path class="shard s2" style="--dx:9px;--dy:-15px" d="M32 16 l3 -2 l-1 4 z"/>
+    <path class="shard s3" style="--dx:2px;--dy:-18px" d="M24 11 l2 -2 l1 3 z"/>
+  </g>
+</svg>

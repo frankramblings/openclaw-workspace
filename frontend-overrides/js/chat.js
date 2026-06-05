@@ -1505,13 +1505,13 @@ import createResearchSynapse from './researchSynapse.js';
                     _thinkTimerRAF = requestAnimationFrame(_tickThinkTimer);
                   }
                   _thinkTimerRAF = requestAnimationFrame(_tickThinkTimer);
-                  // Whirlpool spinner
+                  // Fortress loader (AI-thinking — workspace override)
                   if (_liveThinkSpinnerSlot) {
-                    var _wp = spinnerModule.createWhirlpool(12);
+                    var _wp = spinnerModule.createFortress(12);
                     _wp.element.style.margin = '0';
                     _wp.element.style.width = '12px';
                     _wp.element.style.height = '12px';
-                    _wp.element.style.transform = 'translateY(-1px)'; // align the whirlpool with the header text
+                    _wp.element.style.transform = 'translateY(-1px)'; // align the loader with the header text
                     _liveThinkSpinnerSlot.appendChild(_wp.element);
                   }
                 } else if (hasUnclosedThink && isThinking) {
@@ -4238,7 +4238,7 @@ import createResearchSynapse from './researchSynapse.js';
     let _rwSpin = null;
     if (bodyEl) {
       bodyEl.innerHTML = '';
-      _rwSpin = spinnerModule.createWhirlpool(18);
+      _rwSpin = spinnerModule.createFortress(18);  // AI-busy — workspace override
       _rwSpin.element.style.margin = '4px 0';
       bodyEl.appendChild(_rwSpin.element);
     }

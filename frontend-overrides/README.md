@@ -30,6 +30,32 @@ frontend-overrides/
   own `chat.js` changes do **not** flow through until this copy is re-merged.
   When upstream `chat.js` changes meaningfully, diff and re-apply the fix.
 
+## Fortress loader (boot loader + AI-thinking spinner)
+
+The animated "fortress crystals" SVG replaces the boot loader and every
+AI-thinking spinner. Pieces (all must stay in sync):
+
+- **fortress-loading-48.svg** — the canonical asset (copied from
+  `~/.openclaw/workspace/tmp/`). NOT inlined as-is: its internal `<style>` has a
+  `:root` rule and generic `.crystal`/`.shard` classes that would leak page-wide
+  when inlined. The markup is duplicated *namespaced* (`fl-*` classes, no
+  `<style>`) in `index.html` (boot loader, 88px) and `js/spinner.js`
+  (`FORTRESS_BODY`).
+- **workspace.css** — carries the single copy of the `fl-*` animation rules +
+  `fl-grow`/`fl-shard` keyframes + reduced-motion fallback.
+- **index.html** — `#app-loader` contains the inline fortress SVG (was the
+  ASCII `▁▂▃` wave); the frame-cycling script is gone, only the 5s failsafe
+  remains (app.js still does the real removal).
+- **js/spinner.js** — FULL-FILE override: `create()`'s text animations
+  (`spinner`/`wave`/`sinewave`/default) all render the fortress, which covers
+  every in-chat AI-thinking spinner (Initializing / Thinking / Generating
+  response / reconnect banners). Canvas `createWhirlpool`/`createLoadingRow`
+  are untouched (list/image loading, not AI thinking). Adds
+  `createFortress(size)` with the same `{element, stop, destroy}` shape as
+  `createWhirlpool`. Re-merge when upstream spinner.js changes.
+- **js/chat.js** — two AI-activity call sites swapped to `createFortress`:
+  the live-think header (12px) and the rewrite/reconnect placeholder (18px).
+
 ## Gary rebrand (UI named "Gary", not "Odysseus")
 
 The UI is branded **Gary**. The brand lives here as durable overrides so it

@@ -121,3 +121,48 @@
   .chat-top-bar   { padding-top: calc(31px + env(safe-area-inset-top, 0px)) !important; }
   /* .icon-rail.mobile-mini reuses the .icon-rail rule above (same element). */
 }
+
+/* ── Fortress loader (animated crystals) ─────────────────────────────────────
+   Shared by the full-screen boot loader (index.html #app-loader) and the
+   in-chat AI-thinking spinner (js/spinner.js 'wave'/default → fortress).
+   The SVG markup is inlined at each call site with fl-* classes and NO
+   internal <style> — the original asset's <style> has a :root rule and generic
+   class names (.crystal/.shard) that would leak into the page when inlined.
+   Source asset: frontend-overrides/fortress-loading-48.svg */
+.fl-svg { display: inline-block; vertical-align: middle; }
+.fl-crystal {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: fl-grow 1.35s cubic-bezier(.2,.8,.2,1) infinite;
+}
+.fl-c1 { animation-delay: 0ms; }
+.fl-c2 { animation-delay: 90ms; }
+.fl-c3 { animation-delay: 170ms; }
+.fl-c4 { animation-delay: 250ms; }
+.fl-c5 { animation-delay: 330ms; }
+.fl-c6 { animation-delay: 410ms; }
+.fl-c7 { animation-delay: 490ms; }
+.fl-shard {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: fl-shard 1.35s ease-out infinite;
+  opacity: 0;
+}
+.fl-s1 { animation-delay: 720ms; }
+.fl-s2 { animation-delay: 790ms; }
+.fl-s3 { animation-delay: 860ms; }
+@keyframes fl-grow {
+  0% { transform: scaleY(.08) translateY(7px); opacity: 0; }
+  22% { opacity: 1; }
+  58% { transform: scaleY(1) translateY(-2px); opacity: 1; }
+  76% { transform: scaleY(.82) translateY(-4px) rotate(2deg); opacity: .85; }
+  100% { transform: scaleY(.08) translateY(7px) rotate(-2deg); opacity: 0; }
+}
+@keyframes fl-shard {
+  0%, 45% { transform: translate(0,0) scale(.3); opacity: 0; }
+  58% { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(.15) rotate(50deg); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fl-crystal, .fl-shard { animation: none; opacity: 1; }
+}

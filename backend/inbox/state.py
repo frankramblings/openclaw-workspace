@@ -24,6 +24,8 @@ def _load() -> dict:
             _mem = json.loads(STATE_FILE.read_text())
         except (FileNotFoundError, json.JSONDecodeError):
             _mem = {}
+        if not isinstance(_mem, dict):
+            _mem = {}
     _mem.setdefault("dismissed", {})
     _mem.setdefault("snoozed", {})
     return _mem

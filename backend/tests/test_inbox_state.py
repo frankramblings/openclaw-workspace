@@ -1,12 +1,10 @@
 """Unit tests for the Inbox local triage state store."""
-import importlib
-
 from backend.inbox import state
 
 
 def _fresh(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "STATE_FILE", tmp_path / "inbox-state.json")
-    state._mem = None  # drop cache so each test starts clean
+    monkeypatch.setattr(state, "_mem", None)  # drop cache so each test starts clean
     return state
 
 
@@ -38,3 +36,11 @@ def test_sources_do_not_collide(tmp_path, monkeypatch):
     s = _fresh(tmp_path, monkeypatch)
     s.dismiss("gmail", "x")
     assert not s.hidden("slack", "x", now_ms=0)
+
+
+def test_corrupt_state_file_resets_cleanly(tmp_path, monkeypatch):
+    s = _fresh(tmp_path, monkeypatch)
+    s.STATE_FILE.write_text("[]")  # valid JSON, wrong shape
+    assert not s.hidden("gmail", "x", now_ms=0)
+    s.dismiss("gmail", "x")
+    assert s.hidden("gmail", "x", now_ms=0)

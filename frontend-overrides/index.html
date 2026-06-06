@@ -2272,6 +2272,10 @@
 <script type="module" src="/static/js/init.js"></script>
 <script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
   <script src="/static/js/cron.js" defer></script>
+  <!-- Inbox tab: durable home for this tag. The sync script's injector only
+       writes to frontend/ (gitignored), so the tag was silently lost whenever
+       index.html was refreshed from this override — keep it HERE. -->
+  <script src="/static/js/inbox.js" defer></script>
   <script src="/static/js/pull-to-refresh.js" defer></script>
 </body>
 </html>

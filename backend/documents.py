@@ -22,8 +22,15 @@ PDF import/export/render are stubbed (501) — not supported by the vault store.
 """
 from __future__ import annotations
 
+import asyncio
+import os
+import shutil
+import subprocess
+import tempfile
+
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 
 from . import vault_store as vs
 
@@ -238,6 +245,44 @@ async def restore_version(doc_id: str, num: int):
     doc["version_count"] = doc.get("version_count", 1) + 1
     doc["updated_at"] = vs.now_iso()
     return JSONResponse(_write(doc))
+
+
+@router.get("/api/document/{doc_id}/export")
+async def export_document(doc_id: str, format: str = "docx"):
+    """Render the doc body to .docx via pandoc (real lists/tables/links).
+    The SPA's client-side docx.js export remains as its fallback when this
+    returns 501 (pandoc not installed)."""
+    if format != "docx":
+        return JSONResponse({"error": f"unsupported format '{format}'"},
+                            status_code=400)
+    doc = _load(doc_id)
+    if doc is None:
+        return JSONResponse({"error": "not found"}, status_code=404)
+    pandoc = shutil.which("pandoc")
+    if not pandoc:
+        return JSONResponse(
+            {"error": "pandoc is not installed — brew install pandoc (or the "
+                      "binary release from github.com/jgm/pandoc/releases)"},
+            status_code=501)
+    out = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
+    out.close()
+    proc = await asyncio.to_thread(
+        subprocess.run,
+        [pandoc, "-f", "markdown", "-t", "docx", "-o", out.name],
+        input=(doc.get("current_content") or "").encode("utf-8"),
+        capture_output=True, timeout=60)
+    if proc.returncode != 0:
+        os.unlink(out.name)
+        return JSONResponse(
+            {"error": f"pandoc failed: {proc.stderr.decode(errors='replace')[:300]}"},
+            status_code=500)
+    name = "".join(c for c in (doc.get("title") or "")
+                   if c.isalnum() or c in " -_").strip()
+    return FileResponse(
+        out.name, filename=f"{name or 'document'}.docx",
+        media_type=("application/vnd.openxmlformats-officedocument"
+                    ".wordprocessingml.document"),
+        background=BackgroundTask(os.unlink, out.name))
 
 
 # --- PDF import/export not supported by the vault store ---------------------

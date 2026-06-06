@@ -87,6 +87,17 @@ Ambient context ("check the email thread with X and update the timeline section"
 - **pytest (backend):** snapshot-created-before-turn; export endpoint (golden-file smoke + 501 path); staleness collector (fresh doc excluded, stale doc included, archived excluded).
 - **Manual smoke (frontend):** open doc in Draft mode → side-by-side renders; send a turn asking for a one-word change → doc updates without reload; reopen doc next session → chat history present; export button downloads a valid .docx. Follow the established concurrent-session smoke-test pattern (don't restart the gateway repeatedly; Mac mini cold-boot cost).
 
+## Revisions (2026-06-05, at planning)
+
+Grounded against the actual code while writing the implementation plan
+(`docs/superpowers/plans/2026-06-05-documents-drafting-mode.md`):
+
+- **Per-doc sessions**: no new `agent:main:web-doc-<docid>` key scheme. Odysseus already binds docs to chat sessions (`doc.session_id` ↔ session ↔ `agent:main:web-<id>`), the Library's "Open" restores doc + session together, and `sessions.js` reloads a session's docs on open. Same persistence property, zero new machinery.
+- **Turn loop is backend-only**: chat.js already posts `active_doc_id` (auto-saving first, auto-escalating to agent mode), and already renders a `doc_update` SSE event (`handleDocUpdate`). The backend emits one `doc_update` at turn end — the spec's "tool-event highlight pulse" is deferred with the other fast-follows.
+- **Layout**: desktop side-by-side + drag divider already exist in the synced Odysseus frontend; no layout work.
+- **Header chip dropped**: `#doc-version-badge` already shows vN; chat timestamps show recency.
+- **Export**: an existing client-side docx.js export remains as the fallback when pandoc is absent (501).
+
 ## Fast-follows (explicitly not v1)
 
 1. **Discuss-selection chip:** select text in the doc → chip quotes it into the chat input. Removes "the third paragraph under Background…" describing entirely. Frontend-only.

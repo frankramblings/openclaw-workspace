@@ -279,6 +279,8 @@ def search_query(subject: str, from_addr: str) -> str:
 async def find_uid(folder: str, subject: str, from_addr: str) -> str | None:
     """Resolve a message's uid IN `folder` (IMAP uids are per-folder, so the
     pre-move uid is useless after archive/delete). Returns the newest match."""
+    if not subject.replace('"', "").rstrip().rstrip("…").strip():
+        return None  # empty subject => IMAP match-all; refuse to guess
     data = await himalaya_cli.run_json(
         ["envelope", "list", "-f", folder, "-s", "10",
          search_query(subject, from_addr)])

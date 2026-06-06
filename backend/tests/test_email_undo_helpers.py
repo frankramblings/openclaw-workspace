@@ -37,6 +37,15 @@ async def test_find_uid_none_when_no_match(monkeypatch):
     assert await email_himalaya.find_uid("[Gmail]/Trash", "X y z", "") is None
 
 
+@pytest.mark.anyio
+async def test_find_uid_refuses_empty_subject(monkeypatch):
+    async def explode(args):
+        raise AssertionError("must not query IMAP with a match-all subject")
+    monkeypatch.setattr(email_himalaya.himalaya_cli, "run_json", explode)
+    assert await email_himalaya.find_uid("[Gmail]/Trash", '""…', "a@b.c") is None
+    assert await email_himalaya.find_uid("[Gmail]/Trash", "   ", "") is None
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"

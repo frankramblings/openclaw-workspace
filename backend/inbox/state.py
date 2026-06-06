@@ -28,6 +28,9 @@ def _load() -> dict:
             _mem = {}
     _mem.setdefault("dismissed", {})
     _mem.setdefault("snoozed", {})
+    _mem.setdefault("history", [])
+    _mem.setdefault("stats", {})
+    _mem.setdefault("recs", {})
     return _mem
 
 
@@ -67,3 +70,98 @@ def hidden(source: str, item_id: str, now_ms: int | None = None) -> bool:
             del data["snoozed"][key]
             _save()
     return False
+
+
+# --- v2.1: action history (undo), stat counters, AI-recs cache ---------------
+
+HISTORY_CAP = 100
+REC_TTL_MS = 7 * 24 * 3600_000
+
+
+def log_action(source: str, item_id: str, title: str, action: str,
+               undo: dict | None, stat_key: str | None) -> int:
+    """Append a history entry (newest first); returns its unique ts key.
+    `undo` carries whatever the /undo endpoint needs (None = not undoable
+    beyond restoring the card); `stat_key` is echoed so undo can decrement."""
+    with _LOCK:
+        data = _load()
+        hist = data["history"]
+        ts = int(time.time() * 1000)
+        while any(e["ts"] == ts for e in hist):
+            ts += 1  # ts doubles as the undo key — keep it unique
+        hist.insert(0, {"source": source, "id": item_id, "title": title,
+                        "action": action, "ts": ts, "undo": undo,
+                        "statKey": stat_key})
+        del hist[HISTORY_CAP:]
+        _save()
+        return ts
+
+
+def history(limit: int = 20) -> list[dict]:
+    with _LOCK:
+        return [dict(e) for e in _load()["history"][:limit]]
+
+
+def pop_history(ts: int) -> dict | None:
+    with _LOCK:
+        data = _load()
+        for i, e in enumerate(data["history"]):
+            if e["ts"] == ts:
+                del data["history"][i]
+                _save()
+                return e
+    return None
+
+
+def bump_stat(key: str, action: str) -> None:
+    with _LOCK:
+        entry = _load()["stats"].setdefault(key, {})
+        entry[action] = entry.get(action, 0) + 1
+        _save()
+
+
+def drop_stat(key: str, action: str) -> None:
+    with _LOCK:
+        data = _load()
+        entry = data["stats"].get(key)
+        if not entry or action not in entry:
+            return
+        entry[action] -= 1
+        if entry[action] <= 0:
+            del entry[action]
+        if not entry:
+            del data["stats"][key]
+        _save()
+
+
+def stats() -> dict:
+    with _LOCK:
+        return {k: dict(v) for k, v in _load()["stats"].items()}
+
+
+def undismiss(source: str, item_id: str) -> None:
+    """Remove dismissed AND snoozed state so the card returns."""
+    key = f"{source}:{item_id}"
+    with _LOCK:
+        data = _load()
+        data["dismissed"].pop(key, None)
+        data["snoozed"].pop(key, None)
+        _save()
+
+
+def recs() -> dict:
+    with _LOCK:
+        return {k: dict(v) for k, v in _load()["recs"].items()}
+
+
+def set_recs(new: dict, live_keys: set[str], now_ms: int | None = None) -> None:
+    """Merge triage results into the cache; prune entries older than 7 days
+    that are also absent from the current feed (spec §4 step 4)."""
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    with _LOCK:
+        cache = _load()["recs"]
+        cache.update(new)
+        for k in [k for k, v in cache.items()
+                  if k not in live_keys and now_ms - v.get("ts", 0) > REC_TTL_MS]:
+            del cache[k]
+        _save()

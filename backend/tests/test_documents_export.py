@@ -21,8 +21,11 @@ def test_export_unsupported_format_400(vault_docs):
 
 
 def test_export_without_pandoc_501(vault_docs, monkeypatch):
+    import backend.documents as docs_mod
     doc = vault_docs()
-    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    # Patch the module-level helper so the 501 path is reached regardless of
+    # whether /usr/local/bin/pandoc happens to exist on this machine.
+    monkeypatch.setattr(docs_mod, "_find_pandoc", lambda: None)
     res = client.get(f"/api/document/{doc['id']}/export?format=docx")
     assert res.status_code == 501
     assert "pandoc" in res.json()["error"]

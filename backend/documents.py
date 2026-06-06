@@ -82,6 +82,16 @@ def _preview(text: str, n: int = 200) -> str:
     return (text or "").strip()[:n]
 
 
+def _find_pandoc() -> str | None:
+    """Locate pandoc, falling back to /usr/local/bin where launchd's minimal
+    PATH omits it.  Kept as a function so tests can monkeypatch cleanly."""
+    found = shutil.which("pandoc")
+    if found:
+        return found
+    fallback = "/usr/local/bin/pandoc"
+    return fallback if os.path.exists(fallback) else None
+
+
 @router.post("/api/document")
 async def create_document(request: Request):
     body = await request.json()
@@ -258,7 +268,7 @@ async def export_document(doc_id: str, format: str = "docx"):
     doc = _load(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    pandoc = shutil.which("pandoc")
+    pandoc = _find_pandoc()
     if not pandoc:
         return JSONResponse(
             {"error": "pandoc is not installed — brew install pandoc (or the "

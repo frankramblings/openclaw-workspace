@@ -42,6 +42,16 @@ The gateway password is read at runtime from `~/.openclaw/openclaw.json`
 (`gateway.auth.password`) — it is never stored in this repo. Override any setting via env
 (`OPENCLAW_GATEWAY_WS`, `OPENCLAW_GATEWAY_PASSWORD`, `OPENCLAW_SESSION_KEY`, `TRIAGE_URL`).
 
+### Optional dependencies
+
+- **pandoc** (optional, for Documents → "Export as Word"): the binary release is
+  installed at `/usr/local/bin/pandoc` (3.6.3). Without it the export button
+  falls back to a lower-fidelity client-side converter. On the 8GB mini prefer
+  the binary release over a brew source build:
+  https://github.com/jgm/pandoc/releases
+- `DOCS_STALE_DAYS` (default 4): days before an in-flight document surfaces
+  as a nudge in the Inbox tab.
+
 ## Layout
 
 ```

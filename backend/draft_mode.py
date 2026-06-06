@@ -29,11 +29,16 @@ def pre_turn(doc_id: str) -> dict | None:
     doc = documents._load(doc_id)
     if doc is None:
         return None
+    # Always snapshot, even right after the SPA's pre-send auto-save (which has
+    # its own snapshot of the *pre-save* body): this one captures the body the
+    # agent is about to edit. Skipping it would leave that body unrecoverable.
+    # Cost: an occasional duplicate-content version entry. Cheap undo > tidy history.
     documents._snapshot(doc)
     return doc
 
 
 def wrap_message(message: str, doc: dict) -> str:
+    """Prefix the user message with the co-drafting context note for this doc."""
     path = documents._path(doc["id"])
     note = (
         f'[draft mode] We are co-drafting the document "{doc.get("title") or "Untitled"}" '
@@ -51,7 +56,8 @@ def post_turn_payload(doc: dict) -> dict | None:
 
     `doc` is the dict pre_turn returned (its current_content is the pre-turn
     body — the SPA auto-saves before sending, so it's fresh). Returns None when
-    the body is unchanged or the file vanished."""
+    the body is unchanged or the file vanished. NOTE: mutates `doc` in place
+    (content/version/updated_at) — don't reuse it as pre-turn state afterwards."""
     p = documents._path(doc["id"])
     if not p.exists():
         return None

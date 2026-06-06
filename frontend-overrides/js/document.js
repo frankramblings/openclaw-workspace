@@ -9393,6 +9393,81 @@ import * as Modals from './modalManager.js';
     if (pane) pane.classList.toggle('draft-locked', !!locked);
   }
 
+  // ── Discuss-selection chip (draft mode) ──────────────────────────────────
+  // Select text in the doc (edit textarea OR rendered preview) → a chip
+  // appears under the toolbar; clicking it quotes the passage into the chat
+  // composer, so section-level asks need zero "where it is" describing.
+  // Deliberately independent of the pinned-_selections overlay system above,
+  // which no-ops when the textarea wraps outside fullscreen — prose in the
+  // split view is exactly the wrapped case.
+  function _docSelectionText() {
+    const ta = document.getElementById('doc-editor-textarea');
+    if (ta && ta.offsetParent !== null && ta.selectionStart !== ta.selectionEnd) {
+      return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+    }
+    const sel = window.getSelection && window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return '';
+    const pane = document.querySelector('.doc-editor-pane');
+    if (!pane || !pane.contains(sel.anchorNode)) return '';
+    return String(sel);
+  }
+
+  function _discussSelection() {
+    const text = _docSelectionText().trim();
+    if (!text) return;
+    const input = document.getElementById('message');
+    if (!input) return;
+    const quote = text.split('\n').map(l => '> ' + l).join('\n');
+    const lead = input.value.trim() ? input.value.replace(/\s+$/, '') + '\n\n' : '';
+    input.value = lead + 'About this passage:\n' + quote + '\n\n';
+    input.dispatchEvent(new Event('input', { bubbles: true }));  // autosize hook
+    input.focus();
+    input.selectionStart = input.selectionEnd = input.value.length;
+    _hideDiscussChip();
+  }
+
+  let _discussChipEl = null;
+  function _ensureDiscussChip() {
+    if (_discussChipEl) return _discussChipEl;
+    const btn = document.createElement('button');
+    btn.id = 'doc-discuss-chip';
+    btn.type = 'button';
+    btn.className = 'doc-discuss-chip';
+    btn.textContent = '✏️ Discuss selection';
+    // mousedown, not click: click lands after the textarea drops its
+    // selection on some platforms; mousedown still sees it.
+    btn.addEventListener('mousedown', (e) => { e.preventDefault(); _discussSelection(); });
+    _discussChipEl = btn;
+    return btn;
+  }
+
+  function _hideDiscussChip() {
+    if (_discussChipEl && _discussChipEl.parentNode) _discussChipEl.remove();
+  }
+
+  function _updateDiscussChip() {
+    if (!_docSelectionText().trim()) { _hideDiscussChip(); return; }
+    const chip = _ensureDiscussChip();
+    if (chip.parentNode) return;
+    // Same anchor strategy as the selection badge: under the formatting
+    // toolbar, else at the front of the editor header.
+    const toolbar = document.getElementById('doc-md-toolbar');
+    if (toolbar && toolbar.parentNode) {
+      toolbar.insertAdjacentElement('afterend', chip);
+    } else {
+      const header = document.querySelector('.doc-editor-header');
+      if (header) header.insertBefore(chip, header.firstChild);
+    }
+  }
+
+  // selectionchange covers textarea AND rendered-preview selections; cheap
+  // because the handler bails immediately while the doc pane is closed.
+  document.addEventListener('selectionchange', () => {
+    if (!isOpen) { _hideDiscussChip(); return; }
+    clearTimeout(_updateDiscussChip._t);
+    _updateDiscussChip._t = setTimeout(_updateDiscussChip, 120);
+  });
+
   export function isPanelOpen() {
     return isOpen;
   }

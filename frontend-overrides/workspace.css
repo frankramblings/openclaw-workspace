@@ -247,3 +247,24 @@
 @media (display-mode: standalone) {
   html, body { overscroll-behavior-y: none; }
 }
+
+/* Discuss-selection chip (draft mode): shown under the doc toolbar while text
+   is selected in the doc pane; quotes the passage into the chat composer. */
+.doc-discuss-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  margin: 4px 10px 2px;
+  padding: 3px 10px;
+  font-size: 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.doc-discuss-chip:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}

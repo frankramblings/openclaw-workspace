@@ -17,7 +17,7 @@ from fastapi import Body, FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import bridge, config, sessions_store, websearch
+from . import bridge, config, draft_mode, sessions_store, websearch
 from .memory import maybe_auto_extract
 from .calendar_google import router as calendar_router
 from .cron import router as cron_router
@@ -136,7 +136,8 @@ async def _generate_ai_title(message: str) -> str:
 
 @app.post("/api/chat_stream")
 async def chat_stream(message: str = Form(...), session: str = Form(default=""),
-                      use_web: str = Form(default="")):
+                      use_web: str = Form(default=""),
+                      active_doc_id: str = Form(default="")):
     """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE.
 
     The posted `session` is the SPA's session id; we resolve it to that chat's
@@ -149,6 +150,11 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     """
     rec = sessions_store.get(session) if session else None
     session_key = rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+
+    # Draft mode: chat.js posts active_doc_id whenever the document panel is
+    # open (auto-saving the doc first). Snapshot now (the user's undo), wrap
+    # the message in gen(), detect agent edits after the turn (draft_mode.py).
+    draft_doc = draft_mode.pre_turn(active_doc_id) if active_doc_id else None
 
     title_task = None
     if rec and message.strip() and _needs_title(rec):
@@ -185,12 +191,21 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                                            "tool_id": "websearch",
                                            "output": f"web search failed: {exc}",
                                            "exit_code": 1})
+            if draft_doc is not None:
+                brain_message = draft_mode.wrap_message(brain_message, draft_doc)
             async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
                                                   model_ref=_model_ref(rec)):
                 if "[DONE]" in chunk:
                     continue  # hold DONE until the title settles, then send our own
                 yield chunk
         finally:
+            if draft_doc is not None:
+                try:
+                    update = draft_mode.post_turn_payload(draft_doc)
+                    if update:
+                        yield bridge._sse(update)
+                except Exception:  # noqa: BLE001 - never break the turn close
+                    pass
             if title_task is not None:
                 try:
                     ai = await asyncio.wait_for(title_task, timeout=12)

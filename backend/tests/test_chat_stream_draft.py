@@ -63,7 +63,7 @@ def test_doc_bound_turn_wraps_and_emits_doc_update(vault_docs, monkeypatch):
     assert "First draft." in snap.read_text(encoding="utf-8")
 
 
-def test_turn_without_doc_unchanged(monkeypatch):
+def test_turn_without_doc_unchanged(vault_docs, monkeypatch):
     async def fake_stream_turn(message, session_key=None, model_ref=None):
         assert "[draft mode]" not in message
         yield bridge._sse({"delta": "hi"})
@@ -76,6 +76,29 @@ def test_turn_without_doc_unchanged(monkeypatch):
 
     client = TestClient(app)
     res = client.post("/api/chat_stream", data={"message": "hello", "session": ""})
+    assert res.status_code == 200
+    assert "doc_update" not in res.text
+    assert "[DONE]" in res.text
+
+
+def test_doc_deleted_mid_turn_emits_no_update(vault_docs, monkeypatch):
+    doc = vault_docs()
+
+    async def fake_stream_turn(message, session_key=None, model_ref=None):
+        documents._path(doc["id"]).unlink()
+        yield bridge._sse({"delta": "removed it"})
+        yield bridge._sse("[DONE]")
+
+    async def fake_extract(session_key):
+        return None
+
+    monkeypatch.setattr(bridge, "stream_turn", fake_stream_turn)
+    monkeypatch.setattr(app_module, "maybe_auto_extract", fake_extract)
+
+    client = TestClient(app)
+    res = client.post("/api/chat_stream",
+                      data={"message": "delete the doc", "session": "",
+                            "active_doc_id": doc["id"]})
     assert res.status_code == 200
     assert "doc_update" not in res.text
     assert "[DONE]" in res.text

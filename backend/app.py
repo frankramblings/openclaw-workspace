@@ -203,6 +203,10 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                 try:
                     update = draft_mode.post_turn_payload(draft_doc)
                     if update:
+                        # NOTE: a yield in finally is deliberate (matches _DONE_SSE
+                        # below). On client disconnect (GeneratorExit) the frame is
+                        # silently discarded — the browser refetches the doc on
+                        # session reopen, so no state is lost.
                         yield bridge._sse(update)
                 except Exception:  # noqa: BLE001 - never break the turn close
                     pass

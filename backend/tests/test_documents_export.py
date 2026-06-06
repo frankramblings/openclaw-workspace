@@ -34,4 +34,5 @@ def test_export_docx_roundtrip(vault_docs):
     res = client.get(f"/api/document/{doc['id']}/export?format=docx")
     assert res.status_code == 200
     assert res.content[:2] == b"PK"  # docx is a zip
-    assert "Test Doc.docx" in res.headers.get("content-disposition", "")
+    # Starlette emits the RFC 5987 form: filename*=utf-8''Test%20Doc.docx
+    assert "Test%20Doc.docx" in res.headers.get("content-disposition", "")

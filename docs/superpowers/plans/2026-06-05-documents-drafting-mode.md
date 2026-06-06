@@ -617,10 +617,10 @@ git commit -m "feat(documents): Export-as-Word prefers backend pandoc, docx.js f
 
 ### Task 6: Draft lock — doc editor read-only while a doc-bound turn streams
 
-**Files:**
-- Modify: `frontend/js/document.js` (new export, near the other small exports ~line 9360)
-- Modify: `frontend/js/chat.js:198,204` (inside `updateSubmitButton`)
-- Modify: `frontend/style.css` (one rule, append near the doc-editor styles ~line 10770)
+**Files** (CORRECTED during execution — `frontend/` is gitignored and rsync-synced; durable edits live in `frontend-overrides/` and are mirrored into `frontend/`, see frontend-overrides/README.md):
+- Modify: `frontend-overrides/js/document.js` (full-file override; new export near the other small exports ~line 9360) — then copy to `frontend/js/document.js`
+- Modify: `frontend-overrides/js/chat.js` (full-file override, currently identical to live; edits inside `updateSubmitButton` at ~lines 198/204) — then copy to `frontend/js/chat.js`
+- Modify: `frontend-overrides/workspace.css` (the additive workspace stylesheet — NOT style.css, which is sync-owned) — then copy to `frontend/workspace.css`
 
 Spec's single-writer rule: while the agent may be editing the file, the user's textarea is disabled so a `doc_update` can never clobber in-progress typing (chat.js already auto-saves the doc *before* sending). `updateSubmitButton` is the choke point every stream start/end path funnels through (including stall recovery), so lock/unlock lives there. `handleDocUpdate` already re-enables the textarea independently — harmless overlap.
 

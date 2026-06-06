@@ -10,10 +10,11 @@
    (work/personal/…) but not these, so without this they fall back to the
    neutral base chip. Give each source a distinct, readable accent that fits
    the existing pastel-on-dark palette. */
-.email-tag-gmail    { background: rgba(234, 67, 53, 0.18);  color: #ef4444; }
-.email-tag-slack    { background: rgba(56, 189, 248, 0.18); color: #38bdf8; }
-.email-tag-asana    { background: rgba(240, 106, 106, 0.18); color: #fb7185; }
-.email-tag-obsidian { background: rgba(139, 92, 246, 0.18); color: #a78bfa; }
+.email-tag-gmail      { background: rgba(234, 67, 53, 0.18);  color: #ef4444; }
+.email-tag-slack     { background: rgba(56, 189, 248, 0.18); color: #38bdf8; }
+.email-tag-asana     { background: rgba(240, 106, 106, 0.18); color: #fb7185; }
+.email-tag-obsidian  { background: rgba(139, 92, 246, 0.18); color: #a78bfa; }
+.email-tag-documents { background: rgba(20, 184, 166, 0.18);  color: #14b8a6; }
 
 /* --- Cron tab (added by frontend-overrides/js/cron.js) -------------------- */
 .cron-modal-overlay {

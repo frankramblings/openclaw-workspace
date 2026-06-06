@@ -112,3 +112,7 @@ async def fetch() -> list[dict]:
 
 async def complete(gid: str) -> None:
     await _api("PUT", f"/tasks/{gid}", {"data": {"completed": True}})
+
+
+async def uncomplete(gid: str) -> None:
+    await _api("PUT", f"/tasks/{gid}", {"data": {"completed": False}})

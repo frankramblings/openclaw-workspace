@@ -256,6 +256,36 @@ async def _move(uid: str, src: str, dest: str):
         return JSONResponse(status_code=502, content={"ok": False, "error": str(exc)})
 
 
+async def move_message(uid: str, src: str, dest: str) -> None:
+    """Like _move but RAISES HimalayaError instead of returning a JSONResponse.
+    For callers (the inbox router) that need failures to propagate — the
+    endpoint-shaped _move swallows errors into a 502 response object, which a
+    plain `await` silently ignores."""
+    await himalaya_cli.run_raw(["message", "move", dest, uid, "-f", src])
+
+
+def search_query(subject: str, from_addr: str) -> str:
+    """Build a himalaya envelope-list query. The query grammar supports only
+    from/to/subject/body/date/flag (NO header search — verified v1.2.0), and
+    list-output subjects may carry a trailing truncation ellipsis. Strip
+    quotes + ellipsis; IMAP SEARCH is substring-based so a prefix matches."""
+    subj = subject.replace('"', "").rstrip().rstrip("…").strip()[:80]
+    q = f'subject "{subj}"'
+    if from_addr:
+        q += f' and from "{from_addr.replace(chr(34), "")}"'
+    return q
+
+
+async def find_uid(folder: str, subject: str, from_addr: str) -> str | None:
+    """Resolve a message's uid IN `folder` (IMAP uids are per-folder, so the
+    pre-move uid is useless after archive/delete). Returns the newest match."""
+    data = await himalaya_cli.run_json(
+        ["envelope", "list", "-f", folder, "-s", "10",
+         search_query(subject, from_addr)])
+    envs = data if isinstance(data, list) else (data.get("envelopes") or [])
+    return str(envs[0]["id"]) if envs else None
+
+
 @router.post("/api/email/archive/{uid}")
 async def archive(uid: str, folder: str = "INBOX"):
     return await _move(uid, folder, ARCHIVE_FOLDER)

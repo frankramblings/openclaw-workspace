@@ -196,12 +196,18 @@ import createResearchSynapse from './researchSynapse.js';
       submitBtn.dataset.mode = 'streaming';
       submitBtn.dataset.phase = 'processing';
       isStreaming = true;
+      // Draft mode: freeze the doc editor while the agent may be editing the file
+      if (documentModule && documentModule.setDraftLock && documentModule.isPanelOpen()
+          && documentModule.getCurrentDocId()) {
+        documentModule.setDraftLock(true);
+      }
       _startStallWatchdog();
     } else if (state === 'idle') {
       submitBtn.dataset.mode = '';
       delete submitBtn.dataset.phase;
       submitBtn.classList.remove('recording');
       isStreaming = false;
+      if (documentModule && documentModule.setDraftLock) documentModule.setDraftLock(false);
       _stopStallWatchdog();
       // Defer to global updater which handles mic/newchat/send modes
       if (window._updateSendBtnIcon) {

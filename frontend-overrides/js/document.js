@@ -9383,6 +9383,16 @@ import * as Modals from './modalManager.js';
     _syncDocIndicator();
   }
 
+  /** Draft mode: lock the editor while a doc-bound turn streams so an
+   *  incoming doc_update can't clobber in-progress typing (chat.js calls
+   *  this from updateSubmitButton on stream start/end). */
+  export function setDraftLock(locked) {
+    const ta = document.getElementById('doc-editor-textarea');
+    if (ta) ta.disabled = !!locked;
+    const pane = document.querySelector('.doc-editor-pane');
+    if (pane) pane.classList.toggle('draft-locked', !!locked);
+  }
+
   export function isPanelOpen() {
     return isOpen;
   }

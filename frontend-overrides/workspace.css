@@ -211,3 +211,9 @@
   .inbox-item { flex-direction: column; }
   .inbox-item-actions { align-self: flex-end; }
 }
+
+/* Draft mode: editor frozen while a doc-bound turn streams (chat.js sets it). */
+.doc-editor-pane.draft-locked #doc-editor-textarea {
+  opacity: 0.6;
+  cursor: wait;
+}

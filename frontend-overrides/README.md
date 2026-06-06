@@ -60,6 +60,17 @@ AI-thinking spinner. Pieces (all must stay in sync):
 - **js/chat.js** — two AI-activity call sites swapped to `createFortress`:
   the live-think header (12px) and the rewrite/reconnect placeholder (18px).
 
+## Pull-to-refresh (PWA)
+
+- **js/pull-to-refresh.js** — additive script (loaded via a `<script defer>`
+  tag in the index.html override, next to cron.js). Active ONLY in installed/
+  standalone mode on touch devices: pulling down when every scrollable pane
+  under the finger is at its top shows the fortress-loader chip and reloads
+  the app past ~72px. Desktop and in-browser Safari are untouched.
+- **workspace.css** — `.ptr-indicator` chip styles + a standalone-mode
+  `overscroll-behavior-y: none` guard so iOS rubber-banding doesn't eat the
+  gesture.
+
 ## Gary rebrand (UI named "Gary", not "Odysseus")
 
 The UI is branded **Gary**. The brand lives here as durable overrides so it

@@ -218,3 +218,32 @@
   opacity: 0.6;
   cursor: wait;
 }
+
+/* ── Pull-to-refresh (PWA standalone; js/pull-to-refresh.js) ─────────────────
+   Indicator = the fortress loader in a floating chip; --ptr (px) is set by JS
+   as the finger pulls. Only ever shown in installed/standalone mode. */
+.ptr-indicator {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 2px);
+  left: 50%;
+  z-index: 100000;
+  pointer-events: none;
+  opacity: 0;
+  color: var(--brand-color, var(--red, #e06c75));
+  background: var(--bg-secondary, rgba(22, 24, 32, 0.92));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  border-radius: 50%;
+  padding: 8px;
+  line-height: 0;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, calc(var(--ptr, 0px) - 64px));
+  transition: transform 0.12s ease-out, opacity 0.15s;
+}
+.ptr-indicator.ptr-visible { opacity: 1; }
+.ptr-indicator.ptr-ready svg { transform: scale(1.18); transition: transform 0.12s; }
+.ptr-indicator.ptr-refreshing { opacity: 1; }
+
+/* Stop iOS body rubber-banding from eating the gesture in installed mode. */
+@media (display-mode: standalone) {
+  html, body { overscroll-behavior-y: none; }
+}

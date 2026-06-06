@@ -19,6 +19,7 @@ script copies everything here into `frontend/`, overwriting the synced files:
 frontend-overrides/
   workspace.css      → frontend/workspace.css   (served at /static/workspace.css)
   js/chat.js         → frontend/js/chat.js       (FULL-FILE override, see below)
+  js/document.js     → frontend/js/document.js   (FULL-FILE override, see below)
 ```
 
 - **workspace.css** — additive styling (e.g. Inbox source-chip colors). The sync
@@ -29,6 +30,9 @@ frontend-overrides/
   spin forever when tools interleave). Because it's a whole-file copy, Odysseus's
   own `chat.js` changes do **not** flow through until this copy is re-merged.
   When upstream `chat.js` changes meaningfully, diff and re-apply the fix.
+- **js/document.js** — a **full-file** override carrying the draft-mode
+  customizations (backend pandoc "Export as Word" with docx.js fallback; more
+  draft-mode wiring lands here). Same re-merge caveat as chat.js.
 
 ## Fortress loader (boot loader + AI-thinking spinner)
 

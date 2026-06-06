@@ -266,11 +266,15 @@ async def export_document(doc_id: str, format: str = "docx"):
             status_code=501)
     out = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
     out.close()
-    proc = await asyncio.to_thread(
-        subprocess.run,
-        [pandoc, "-f", "markdown", "-t", "docx", "-o", out.name],
-        input=(doc.get("current_content") or "").encode("utf-8"),
-        capture_output=True, timeout=60)
+    try:
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            [pandoc, "-f", "markdown", "-t", "docx", "-o", out.name],
+            input=(doc.get("current_content") or "").encode("utf-8"),
+            capture_output=True, timeout=60)
+    except Exception as exc:  # noqa: BLE001 - e.g. TimeoutExpired; don't orphan the tmp
+        os.unlink(out.name)
+        return JSONResponse({"error": f"pandoc failed: {exc!r}"}, status_code=500)
     if proc.returncode != 0:
         os.unlink(out.name)
         return JSONResponse(

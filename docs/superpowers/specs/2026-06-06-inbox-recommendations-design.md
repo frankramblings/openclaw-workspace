@@ -69,17 +69,21 @@ Two new top-level keys in `inbox-state.json` (same atomic-write + lock):
 | complete (asana) | `PUT /tasks/{gid} {completed: false}` + remove dismissed key |
 | archive / delete (gmail) | move the message back to INBOX by **Message-ID** + remove dismissed key |
 
-Gmail specifics: before executing archive/delete, the router fetches the
-envelope's Message-ID (`email_himalaya` read path, `mark_seen=false`) and
-stores it in `undo: {message_id, folder: "Archive"|"Trash"}`. Undo searches
-that folder for the Message-ID, resolves the message's uid *in that folder*
-(IMAP uids are per-folder — the original uid is useless after a move), and
-moves it to INBOX. New helper in `email_himalaya.py`:
-`move_by_message_id(message_id, from_folder, to_folder)`. Himalaya search
-syntax for a Message-ID header match must be verified during implementation;
-fallback strategy: envelope-list the folder and match subject+date. If the
-Message-ID fetch fails (rare), the action still executes but the history entry
-records `undo: null` and the drawer row shows "not undoable".
+Gmail specifics (adjusted 2026-06-06 after live verification): himalaya's
+query grammar supports only from/to/subject/body/date/flag — there is NO
+header (Message-ID) search. Undo therefore stores `undo: {folder:
+"[Gmail]/All Mail"|"[Gmail]/Trash", from}` plus the item title (= subject),
+and resolves the message's uid *in the target folder* (IMAP uids are
+per-folder — the original uid is useless after a move) with a
+`subject "..." and from "..."` query (verified working). Subjects from
+himalaya envelope lists can carry a trailing truncation `…` and embedded
+quotes — both are stripped; IMAP SEARCH is substring-based so the prefix
+matches. New helpers in `email_himalaya.py`: `move_message(uid, src, dest)`
+(raises on failure — also fixes a latent bug where the router awaited the
+endpoint-shaped `archive()`, which returns a JSONResponse on error, so failed
+IMAP moves still dismissed the card) and `find_uid(folder, subject,
+from_addr)`. If the search finds no match at undo time, undo returns 502 and
+the history entry is restored for retry.
 
 ### Endpoints
 

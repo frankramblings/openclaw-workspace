@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import posixpath
 import shutil
 import subprocess
 import tempfile
@@ -44,6 +45,7 @@ _META_KEYS = (
     "version_count", "is_active", "archived", "created", "updated_at",
     "source_email_uid", "source_email_folder",
     "source_email_account_id", "source_email_message_id",
+    "vault_path",
 )
 
 
@@ -68,6 +70,16 @@ def _write(doc: dict):
     meta = {k: doc[k] for k in _META_KEYS if k in doc}
     vs.save_entry(_path(doc["id"]), meta, body)
     doc["current_content"] = body
+    # Vault-linked doc (opened via /api/vault/open): mirror the body back to
+    # the original vault file so UI/agent edits land where the file lives.
+    # Best-effort — the library copy stays canonical for the editor.
+    if doc.get("vault_path"):
+        try:
+            target = vs.WORKSPACE / doc["vault_path"]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8")
+        except OSError:
+            pass
     return doc
 
 
@@ -90,6 +102,26 @@ def _find_pandoc() -> str | None:
         return found
     fallback = "/usr/local/bin/pandoc"
     return fallback if os.path.exists(fallback) else None
+
+
+def _vault_rel(raw: str) -> str | None:
+    """Normalize a vault file reference (absolute path, ~ form, or relative)
+    to a path relative to the vault root. None when it escapes the vault.
+    Lexical confinement (normpath, no '..'): symlinked files inside the vault
+    stay reachable; traversal out of it does not."""
+    s = (raw or "").strip()
+    marker = ".openclaw/workspace/"
+    i = s.find(marker)
+    if i != -1:
+        s = s[i + len(marker):]
+    elif s.startswith(("/", "~")):
+        # Absolute/home path that isn't inside the vault — don't silently
+        # reinterpret it as vault-relative.
+        return None
+    s = posixpath.normpath(s)
+    if not s or s == "." or s.startswith(".."):
+        return None
+    return s
 
 
 @router.post("/api/document")
@@ -297,6 +329,54 @@ async def export_document(doc_id: str, format: str = "docx"):
         media_type=("application/vnd.openxmlformats-officedocument"
                     ".wordprocessingml.document"),
         background=BackgroundTask(os.unlink, out.name))
+
+
+# --- Vault-file links: open any vault .md as a (wrapped) library doc --------
+# Chat messages often link agent-written files by absolute vault path (e.g.
+# memory/proactive-drafts/x.md). frontend js/vaultLinks.js intercepts those
+# anchors and calls this; the doc it returns opens in the document editor.
+# Wrapper docs carry `vault_path` in frontmatter: _write mirrors edits back to
+# the file, and reopening refreshes the wrapper when the file changed on disk.
+@router.get("/api/vault/open")
+async def open_vault_file(path: str):
+    rel = _vault_rel(path)
+    if rel is None or not rel.endswith(".md"):
+        return JSONResponse({"error": "not a vault markdown file"}, status_code=400)
+    f = vs.WORKSPACE / rel
+    if not f.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    # A library doc referenced by its own storage path → return it directly.
+    if rel.startswith("Documents/"):
+        doc = _load(rel[len("Documents/"):-len(".md")])
+        if doc:
+            return doc
+    body = f.read_text(encoding="utf-8")
+    # Reuse an existing wrapper for this path; refresh it if the file moved on.
+    if DOCS_DIR.exists():
+        for p in DOCS_DIR.glob("*.md"):
+            try:
+                d = vs.load_entry(p, content_key="current_content")
+            except Exception:  # noqa: BLE001 - skip unreadable entries
+                continue
+            if d.get("vault_path") == rel:
+                if (d.get("current_content") or "") != body:
+                    _snapshot(d)
+                    d["current_content"] = body
+                    d["version_count"] = d.get("version_count", 1) + 1
+                    d["updated_at"] = vs.now_iso()
+                    d = _write(d)
+                return JSONResponse(d)
+    doc = {
+        "id": vs.new_id(),
+        "title": posixpath.basename(rel)[:-len(".md")],
+        "language": "markdown",
+        "session_id": "", "session_name": "",
+        "vault_path": rel,
+        "current_content": body,
+        "version_count": 1, "is_active": True, "archived": False,
+        "created": vs.now_iso(), "updated_at": vs.now_iso(),
+    }
+    return JSONResponse(_write(doc))
 
 
 # --- PDF import/export not supported by the vault store ---------------------

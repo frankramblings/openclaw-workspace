@@ -9,8 +9,21 @@
 // refreshes from disk). Capture phase so we beat the _blank navigation.
 (function () {
   function vaultPath(rawHref) {
-    if (!rawHref || /^(https?|mailto|tel|blob|data|javascript):/i.test(rawHref)) return null;
-    const bare = rawHref.split('?')[0].split('#')[0];
+    if (!rawHref) return null;
+    let path = rawHref;
+    if (/^https?:/i.test(rawHref)) {
+      // markdown.js's safeLinkUrl absolutizes every href against the page
+      // origin (new URL(url, origin)), so a filesystem path like
+      // /Users/.../workspace/x.md reaches the DOM as https://<host>/Users/...
+      // Same-origin → recover the pathname; foreign origin → a real web link.
+      let u;
+      try { u = new URL(rawHref); } catch (_e) { return null; }
+      if (u.origin !== window.location.origin) return null;
+      try { path = decodeURIComponent(u.pathname); } catch (_e) { path = u.pathname; }
+    } else if (/^(mailto|tel|blob|data|javascript):/i.test(rawHref)) {
+      return null;
+    }
+    const bare = path.split('?')[0].split('#')[0];
     if (!/\.md$/i.test(bare)) return null;
     return bare;
   }

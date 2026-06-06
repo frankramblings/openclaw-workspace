@@ -9446,6 +9446,7 @@ const documentModule = {
   getSelectionContext,
   clearSelection,
   clearAll,
+  setDraftLock,
   openLibrary,
   closeLibrary,
   isLibraryOpen,

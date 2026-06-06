@@ -256,8 +256,19 @@
     if (theme) rail.insertBefore(btn, theme); else rail.appendChild(btn);
   }
 
+  // Expanded-sidebar entry (#inbox-section in index.html) — the rail button
+  // only exists when the sidebar is collapsed, so this is the discoverable way in.
+  function bindSidebarEntry() {
+    const title = document.getElementById('inbox-section-title');
+    if (title && !title._inboxBound) {
+      title._inboxBound = true;
+      title.addEventListener('click', open);
+    }
+  }
+
   function init() {
     injectRailButton();
+    bindSidebarEntry();
     // Re-inject if the SPA re-renders the rail and our button vanishes.
     const rail = document.getElementById('icon-rail');
     if (rail && window.MutationObserver) {

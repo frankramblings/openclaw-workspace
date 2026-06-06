@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from .. import email_himalaya, sessions_store
 from ..research import _agent_turn
 from . import state
-from .sources import asana, gmail, obsidian, slack
+from .sources import asana, documents_stale, gmail, obsidian, slack
 
 router = APIRouter()
 
@@ -25,6 +25,7 @@ SOURCES = {
     "slack": slack.fetch,
     "asana": asana.fetch,
     "obsidian": obsidian.fetch,
+    "documents": documents_stale.fetch,
 }
 
 # Per-source 60s cache: (ts_ms, items). Cleared by actions on that source.

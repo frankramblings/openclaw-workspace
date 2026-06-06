@@ -4,6 +4,7 @@ import shutil
 import pytest
 from fastapi.testclient import TestClient
 
+from backend import documents
 from backend.app import app
 
 client = TestClient(app)
@@ -31,7 +32,7 @@ def test_export_without_pandoc_501(vault_docs, monkeypatch):
     assert "pandoc" in res.json()["error"]
 
 
-@pytest.mark.skipif(shutil.which("pandoc") is None, reason="pandoc not installed")
+@pytest.mark.skipif(documents._find_pandoc() is None, reason="pandoc not installed")
 def test_export_docx_roundtrip(vault_docs):
     doc = vault_docs(body="# Title\n\n- bullet one\n- bullet two\n")
     res = client.get(f"/api/document/{doc['id']}/export?format=docx")

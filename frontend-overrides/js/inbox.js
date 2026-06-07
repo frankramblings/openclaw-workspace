@@ -245,6 +245,7 @@
     overlay.style.display = 'none';
     overlay.innerHTML =
       '<div class="cron-modal-card inbox-card" role="dialog" aria-label="Inbox">' +
+      '  <div class="inbox-grabber" id="inbox-grabber"><span></span></div>' +
       '  <div class="cron-modal-head">' +
       '    <span class="cron-modal-title">Inbox</span>' +
       '    <span class="inbox-chips" id="inbox-chips"></span>' +
@@ -267,8 +268,56 @@
     overlay.addEventListener('pointerdown', (e) => {
       if (_openCard && !_openCard.contains(e.target)) closeOpenCard();
     }, true);
+    // Swipe-down on the grabber/header dismisses the sheet (touch only). The
+    // edge-to-edge mobile sheet has no tappable backdrop anymore, and
+    // pull-to-refresh is layer-guarded — this is the natural iOS close.
+    if ('ontouchstart' in window) wireSheetDismiss(overlay);
     _modal = overlay;
     return overlay;
+  }
+
+  function wireSheetDismiss(overlay) {
+    const card = $('.cron-modal-card', overlay);
+    let startY = null;
+    let dy = 0;
+    const onStart = (e) => {
+      if (e.touches.length !== 1) { startY = null; return; }
+      startY = e.touches[0].clientY;
+      dy = 0;
+    };
+    const onMove = (e) => {
+      if (startY == null) return;
+      dy = e.touches[0].clientY - startY;
+      if (dy > 0) {
+        e.preventDefault();            // we own the gesture — no scroll bleed
+        card.style.transition = 'none';
+        card.style.transform = `translateY(${dy}px)`;
+      }
+    };
+    const onEnd = () => {
+      if (startY == null) return;
+      startY = null;
+      card.style.transition = 'transform 0.18s ease';
+      if (dy > 90) {                   // pulled far enough — dismiss
+        card.style.transform = 'translateY(100%)';
+        setTimeout(() => {
+          close();
+          card.style.transform = '';
+          card.style.transition = '';
+        }, 180);
+      } else {                         // not far enough — snap back
+        card.style.transform = '';
+        setTimeout(() => { card.style.transition = ''; }, 200);
+      }
+      dy = 0;
+    };
+    [$('#inbox-grabber', overlay), $('.cron-modal-head', overlay)].forEach((z) => {
+      if (!z) return;
+      z.addEventListener('touchstart', onStart, { passive: true });
+      z.addEventListener('touchmove', onMove, { passive: false });
+      z.addEventListener('touchend', onEnd, { passive: true });
+      z.addEventListener('touchcancel', onEnd, { passive: true });
+    });
   }
 
   function open() {

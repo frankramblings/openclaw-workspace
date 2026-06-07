@@ -176,6 +176,19 @@
 
 /* --- Inbox tab (added by frontend-overrides/js/inbox.js) ------------------ */
 .inbox-card { width: min(860px, 94vw); }
+/* Sheet grabber pill: visible on mobile only; with the header it forms the
+   swipe-down-to-dismiss drag zone (wired in inbox.js — the edge-to-edge sheet
+   has no tappable backdrop). touch-action:none so our touchmove owns the
+   gesture instead of fighting native scrolling. */
+.inbox-grabber { display: none; }
+@media (max-width: 768px) {
+  .inbox-grabber { display: block; padding: 8px 0 2px; touch-action: none;
+    flex-shrink: 0; cursor: grab; }
+  .inbox-grabber span { display: block; width: 36px; height: 4px;
+    border-radius: 2px; background: var(--fg, #fff); opacity: 0.25;
+    margin: 0 auto; }
+}
+
 /* Mobile: Inbox becomes an edge-to-edge bottom sheet matching the upstream
    tool modals (Brain/Calendar/…): full dynamic-viewport height, rounded top
    corners, slide-up entry (upstream's sheet-enter keyframes — also defined

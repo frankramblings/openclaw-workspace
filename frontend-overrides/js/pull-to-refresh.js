@@ -58,9 +58,18 @@
     return (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
   }
 
+  // Layered surfaces (sheets, modals, editors, lightboxes) own their own
+  // gestures — a pull inside one must never reload the app out from under it
+  // (the reload also nukes the layer's state). PTR is a BASE-surface gesture:
+  // chat history, sidebar, nothing stacked above.
+  var LAYERS = '.modal, .cron-modal-overlay, .notes-pane, .doc-editor-pane, ' +
+               '.vision-editor-overlay, .attach-lightbox';
+
   document.addEventListener('touchstart', function (e) {
     if (refreshing || e.touches.length !== 1) { armed = false; return; }
-    armed = atTop(e.target);
+    var t = e.target;
+    if (t && t.closest && t.closest(LAYERS)) { armed = false; return; }
+    armed = atTop(t);
     startY = e.touches[0].clientY;
     pulling = false;
     dist = 0;

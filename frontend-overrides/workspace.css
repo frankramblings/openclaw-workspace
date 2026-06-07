@@ -373,16 +373,24 @@
   #memory-modal .memory-toolbar { max-height: 480px; }
 }
 
-/* The full-screen mobile modal reserves only the BOTTOM safe area upstream
-   (style.css ~6178); in the installed-PWA standalone mode the status bar
-   then draws over the Brain header. Mirror the app chrome's established
-   safe-area-inset-top pattern (see .icon-rail etc. above). !important to
-   match the upstream rule's own !important padding.
+/* The full-screen mobile modals reserve only the BOTTOM safe area upstream
+   (style.css:6164-6179 drives the whole tool-modal family to 100dvh with
+   padding-bottom only); in the installed-PWA standalone mode the status bar
+   then draws over each modal's header. Mirror the app chrome's established
+   safe-area-inset-top pattern (see .icon-rail etc. above) across the SAME
+   selector family upstream uses. !important to match the upstream rule's
+   own !important padding.
    Note: the 6px base comes from style.css:6150 (padding-top: 6px !important
    on the generic sheet modal-content rule, which applies before the full-screen
    ID-scoped block overrides height but leaves padding-top unset there). */
 @media (max-width: 768px) {
-  #memory-modal .memory-modal-content {
+  #cookbook-modal .modal-content,
+  #tasks-modal .modal-content,
+  #calendar-modal .modal-content,
+  #memory-modal .memory-modal-content,
+  #settings-modal .settings-modal-content,
+  #email-lib-modal .modal-content,
+  #doclib-modal .doclib-modal-content {
     padding-top: calc(6px + env(safe-area-inset-top, 0px)) !important;
   }
 }

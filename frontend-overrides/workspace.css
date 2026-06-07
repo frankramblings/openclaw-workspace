@@ -472,3 +472,21 @@
 .cron-run-time, .cron-run-dur { white-space: nowrap; flex: none; }
 .cron-run-dur { opacity: 0.7; }
 .cron-run-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- iOS focus-zoom guard (PWA "stays zoomed in" fix) -----------------------
+   iOS auto-zooms the page when a focused input's font-size is < 16px, and a
+   standalone PWA has no pinch-out, so the zoom STICKS after typing. The
+   composer is 14px (13px !important on mobile, style.css ~2152), well under
+   the threshold. Forcing 16px on touch devices prevents the zoom at the
+   source — no viewport maximum-scale hack, Safari pinch-zoom stays usable.
+   Specificity/!important needed to beat the mobile 13px !important rule;
+   workspace.css loads after style.css so equal specificity also wins. */
+@media (pointer: coarse) {
+  .chat-input-bar textarea#message,
+  textarea, select,
+  input[type="text"], input[type="search"], input[type="email"],
+  input[type="password"], input[type="url"], input[type="number"],
+  input:not([type]), [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}

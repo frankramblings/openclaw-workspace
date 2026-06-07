@@ -1539,7 +1539,10 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
       if (window._updateSendBtnIcon) window._updateSendBtnIcon();
     }
 
-    // On mobile, keep sidebar open — user dismisses it by tapping chat area or swiping
+    // On mobile, an explicit session pick dismisses the sidebar — same feel as
+    // opening Email/Inbox (upstream kept it open; that read as incongruous).
+    // Background refreshes pass keepSidebar:true and never yank it closed.
+    if (!keepSidebar) _dismissSidebarOnMobile();
 
     // Highlight active session in sidebar
     document.querySelectorAll('.list-item.active-session').forEach(el => el.classList.remove('active-session'));
@@ -1728,6 +1731,16 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
 // Pending session — stored locally until the first message is sent
 let _pendingChat = null; // { url, modelId, endpointId }
 
+/** Mobile only: close the sidebar overlay (and its backdrop) after an explicit
+ *  navigation — session pick or New chat — matching the Email/Inbox feel. */
+function _dismissSidebarOnMobile() {
+  if (window.innerWidth > 768) return;
+  const sb = document.getElementById('sidebar');
+  if (sb) sb.classList.add('hidden');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (backdrop) backdrop.classList.remove('visible');
+}
+
 export function createDirectChat(url, modelId, endpointId) {
   _sessionNavToken++;
   // Detach any active stream so it doesn't interfere with the new chat
@@ -1769,6 +1782,8 @@ export function createDirectChat(url, modelId, endpointId) {
   if (window.chatModule && window.chatModule.showWelcomeScreen) {
     window.chatModule.showWelcomeScreen();
   }
+  // New chat is an explicit navigation too — land in the composer on mobile.
+  _dismissSidebarOnMobile();
 
   // Update model picker to show the pending model
   updateModelPicker();

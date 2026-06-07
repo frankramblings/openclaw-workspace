@@ -5,6 +5,8 @@ vs cumulative text/summary). Run while the gateway is healthy; costs one cheap
 codex turn on a scratch session.
 
     .venv/bin/python scripts/probe_thinking.py
+
+The scratch session is swept by purge_orphan_sessions.py after 24h idle.
 """
 from __future__ import annotations
 

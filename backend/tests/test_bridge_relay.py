@@ -86,3 +86,21 @@ def test_analysis_delta_ignores_empty_and_repeat():
     assert _analysis_delta({"itemId": "a1", "text": "abc"}, seen) == "abc"
     assert _analysis_delta({"itemId": "a1", "text": "abc"}, seen) == ""
     assert _analysis_delta({"itemId": "a1"}, seen) == ""
+
+
+def test_textless_analysis_frames_emit_nothing():
+    # The live v4 shape (probed 2026-06-07): analysis items carry only
+    # {title: "Reasoning", status} — title is a static label, never content.
+    def item(phase, **fields):
+        return {"type": "event", "event": "agent",
+                "payload": {"runId": "r1", "stream": "item",
+                            "data": {"itemId": "a1", "kind": "analysis",
+                                     "phase": phase, **fields}}}
+    out = collect([
+        item("start", title="Reasoning", status="running"),
+        item("end", title="Reasoning", status="completed"),
+        {"type": "event", "event": "agent",
+         "payload": {"runId": "r1", "stream": "lifecycle",
+                     "data": {"phase": "end"}}},
+    ])
+    assert out == []

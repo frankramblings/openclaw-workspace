@@ -22,7 +22,15 @@ import codeRunnerModule from './codeRunner.js';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js';
 import createResearchSynapse from './researchSynapse.js';
   const RESEARCH_TIMEOUT_MS = 360000;
-  const DEFAULT_TIMEOUT_MS = 120000;
+  const DEFAULT_TIMEOUT_MS = 120000; // unused since the one-mode change; kept for reference
+
+  // One-mode environment (2026-06-07): the OpenClaw brain always runs its full
+  // tool loop, so the upstream chat/agent split is vestigial — the backend
+  // reads neither `mode` nor `allow_bash`. Force agent mode at load so the
+  // [data-mode-tool] buttons (web/bash) stay visible and any stored 'chat'
+  // (e.g. from the tool-error auto-switch below) self-heals; the .mode-toggle
+  // itself is hidden in workspace.css.
+  try { Storage.setToggle('mode', 'agent'); } catch (_) { /* storage unavailable */ }
   const RESEARCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
 
   let API_BASE = '';
@@ -776,11 +784,10 @@ import createResearchSynapse from './researchSynapse.js';
       abortCtrl._reason = '';
       currentAbort = abortCtrl;
 
-      const _tState = Storage.loadToggleState();
-      const _isAgent = (_tState.mode || 'chat') === 'agent';
-
-      // Timeout: 6 min for research and agent mode, 3 min otherwise
-      const timeoutMs = el('research-toggle').checked || _isAgent ? RESEARCH_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+      // One brain, one timeout: cold codex starts on this host routinely eat
+      // 2-3 min, so the old 2-min "chat mode" budget aborted legitimate turns.
+      // The stall watchdog + Stop button cover the genuinely-hung case.
+      const timeoutMs = RESEARCH_TIMEOUT_MS;
       const timeoutId = setTimeout(() => {
         if (!abortCtrl.signal.aborted) {
           timedOut = true;

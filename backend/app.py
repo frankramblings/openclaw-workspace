@@ -159,9 +159,18 @@ async def _generate_ai_title(message: str) -> str:
     return _sanitize_title(await _collect_brain_text(prompt, _TITLE_SESSION_KEY))
 
 
+def _wants_web(use_web: str, allow_web_search: str) -> bool:
+    """The globe toggle's FIELD NAME depends on the SPA's vestigial chat/agent
+    mode: `use_web` in chat mode, `allow_web_search` in agent mode (chat.js
+    ~747-753). Accept both — agent mode silently lost web search before."""
+    return any(v.lower() in ("true", "1", "on", "yes")
+               for v in (use_web, allow_web_search))
+
+
 @app.post("/api/chat_stream")
 async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                       use_web: str = Form(default=""),
+                      allow_web_search: str = Form(default=""),
                       active_doc_id: str = Form(default="")):
     """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE.
 
@@ -192,10 +201,10 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     async def gen():
         brain_message = message
         try:
-            # Web search (the composer's globe toggle posts use_web=true).
-            # Search failures degrade to a visible failed tool card — never
-            # break the turn itself.
-            if use_web.lower() in ("true", "1", "on", "yes"):
+            # Web search (the composer's globe toggle — field name varies by
+            # the SPA's vestigial mode, see _wants_web). Search failures
+            # degrade to a visible failed tool card — never break the turn.
+            if _wants_web(use_web, allow_web_search):
                 s = websearch.load_settings()
                 if s.get("search_provider") != "disabled":
                     yield bridge._sse({"type": "tool_start", "tool": "web_search",

@@ -105,6 +105,12 @@
 #rail-compare,  #tool-compare-btn,
 .ai-tts-button { display: none !important; }
 
+/* Chat/Agent mode toggle: vestigial in this environment — the OpenClaw brain
+   always runs its full tool loop and the backend reads neither `mode` nor
+   `allow_bash`. chat.js force-sets mode='agent' at load (keeps the
+   [data-mode-tool] web/bash buttons visible); the switch itself just confused. */
+.mode-toggle { display: none !important; }
+
 /* --- PWA safe-area: keep the top nav below the phone status bar ------------
    Odysseus handled only safe-area-inset-BOTTOM; with the black-translucent
    iOS status bar the TOP chrome (hamburger, icon rail, sidebar header, chat

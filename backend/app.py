@@ -25,6 +25,7 @@ from .calendar_google import router as calendar_router
 from .cron import router as cron_router
 from .documents import router as documents_router
 from .email_himalaya import router as email_router
+from .emoji_proxy import router as emoji_router
 from .inbox import router as inbox_router
 from .memory import router as memory_router
 from .notes import router as notes_router
@@ -55,6 +56,7 @@ app.include_router(notes_router)
 app.include_router(documents_router)
 app.include_router(uploads_router)
 app.include_router(research_router)
+app.include_router(emoji_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
 # server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop

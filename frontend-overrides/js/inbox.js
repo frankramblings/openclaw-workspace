@@ -174,10 +174,34 @@
     });
   }
 
+  // Per-card swipe under-layers (spec §2). Right swipe reveals the LEFT layer
+  // (one zone: ✨ rec action when present, else the static primary); left
+  // swipe reveals the RIGHT layer (Snooze | Dismiss, Dismiss outermost).
+  // Inert on desktop: display:none outside (pointer: coarse).
+  const SWIPE_ACTIONS = ['archive', 'delete', 'mark_read', 'complete',
+                         'reviewed', 'reply', 'gary'];
+  function zoneHtml(it) {
+    const rec = it.rec && SWIPE_ACTIONS.includes(it.rec.action) ? it.rec : null;
+    const [pAct, pLabel] = PRIMARY[it.source] || ['dismiss', 'Done'];
+    const right = rec
+      ? { act: rec.action, label: '✨ ' + (REC_LABELS[rec.action] || rec.action),
+          cls: 'swipe-zone-rec' }
+      : { act: pAct, label: pLabel, cls: 'swipe-zone-primary' };
+    return (
+      `<div class="swipe-under swipe-under-left ${right.cls}" data-act="${esc(right.act)}">` +
+      `<span class="swipe-zone-label">${esc(right.label)}</span></div>` +
+      `<div class="swipe-under swipe-under-right">` +
+      `<button class="swipe-zone swipe-zone-snooze" data-zone="snooze">Snooze</button>` +
+      `<button class="swipe-zone swipe-zone-dismiss" data-zone="dismiss">Dismiss</button>` +
+      `</div>`);
+  }
+
   function cardHtml(it) {
     const [act, label] = PRIMARY[it.source] || ['dismiss', 'Done'];
     return (
       `<div class="inbox-item" data-id="${esc(it.id)}" data-src="${esc(it.source)}">` +
+      zoneHtml(it) +
+      `<div class="inbox-swipe-content">` +
       `  <div class="inbox-item-main">` +
       `    <div class="inbox-item-title">` +
       `      <span class="email-tag email-tag-${esc(it.source)}">${esc(it.source)}</span>` +
@@ -199,6 +223,7 @@
       `    <button data-act="gary" class="inbox-btn" title="Hand to Gary">🤖</button>` +
       `    <button data-act="dismiss" class="inbox-btn" title="Dismiss">✕</button>` +
       `  </div>` +
+      `</div>` +
       `</div>`);
   }
 

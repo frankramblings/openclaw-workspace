@@ -184,8 +184,12 @@
 }
 .inbox-refresh:hover { opacity: 1; }
 .inbox-item {
-  display: flex; align-items: flex-start; gap: 10px; position: relative;
-  padding: 10px 12px; border-bottom: 1px solid var(--border, rgba(255,255,255,0.07));
+  position: relative;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.07));
+}
+.inbox-swipe-content {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; position: relative; z-index: 1;
 }
 .inbox-item-main { flex: 1; min-width: 0; }
 .inbox-item-title { font-size: 13.5px; line-height: 1.4; }
@@ -209,7 +213,7 @@
 }
 .inbox-error { color: #fbbf24; font-size: 12px; padding: 6px 12px; }
 @media (max-width: 768px) {
-  .inbox-item { flex-direction: column; }
+  .inbox-swipe-content { flex-direction: column; }
   .inbox-item-actions { align-self: flex-end; }
 }
 
@@ -290,3 +294,34 @@
 }
 .inbox-rec-chip:hover { background: rgba(187, 154, 247, 0.28); }
 .inbox-rec-low { opacity: 0.55; }
+
+/* --- Inbox swipe triage (mobile; added by inbox.js SWIPE section) --------- */
+.swipe-under { display: none; }
+@media (pointer: coarse) {
+  .inbox-item { touch-action: pan-y; overflow: hidden; }
+  .inbox-swipe-content {
+    background: var(--panel, #14181f);   /* opaque so zones don't bleed through */
+    will-change: transform;
+  }
+  .swipe-under {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    visibility: hidden;
+  }
+  .swipe-under-left  { justify-content: flex-start; padding-left: 18px; }
+  .swipe-under-right { justify-content: flex-end; background: #dc2f4e; }
+  .swipe-zone-rec     { background: rgba(154, 120, 230, 0.95); }
+  .swipe-zone-primary { background: rgba(86, 130, 222, 0.95); }
+  .swipe-zone-label   { font-size: 13px; font-weight: 600; color: #fff;
+                        transition: transform 120ms ease-out; }
+  .swipe-zone {
+    border: none; height: 100%; width: 88px; font-size: 12.5px;
+    font-weight: 600; color: #fff; cursor: pointer;
+  }
+  .swipe-zone-snooze  { background: #c77d10; transition: opacity 120ms; }
+  .swipe-zone-dismiss { background: #dc2f4e; }
+  .swipe-armed .swipe-zone-label  { transform: scale(1.15); }
+  .swipe-armed .swipe-zone-snooze { opacity: 0; }  /* iOS: armed zone takes over */
+}
+@media (prefers-reduced-motion: reduce) {
+  .swipe-zone-label, .swipe-zone-snooze { transition: none; }
+}

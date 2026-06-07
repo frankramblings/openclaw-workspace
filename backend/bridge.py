@@ -9,6 +9,7 @@ v1 opens a fresh gateway WS per chat turn. Simple and correct for a single user.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
@@ -239,19 +240,23 @@ async def _request(ws, method: str, params: dict | None = None) -> dict:
     return await _await_response(ws, req_id)
 
 
-async def gateway_call(method: str, params: dict | None = None) -> dict:
+async def gateway_call(method: str, params: dict | None = None,
+                       timeout: float = 30.0) -> dict:
     """One-shot gateway request on a fresh authed WS: connect, auth, call,
-    return the response payload (raises RuntimeError on failure). The shared
-    helper for every non-streaming adapter — cron, skills, monitor, session
-    hygiene, abort."""
+    return the response payload (raises RuntimeError on failure, TimeoutError
+    after `timeout`). The shared helper for every non-streaming adapter —
+    cron, skills, monitor, session hygiene, abort. The deadline covers the
+    WHOLE dance: a stalled-but-accepting gateway is a known failure mode on
+    this host, and without it a hung recv() pins a worker forever."""
     url = config.gateway_ws_url()
-    async with websockets.connect(url, max_size=None, open_timeout=30,
-                                  ping_interval=None) as ws:
-        await _wait_for_challenge(ws)
-        hello = await _request(ws, "connect", _connect_params())
-        if not hello.get("ok"):
-            raise RuntimeError(f"gateway connect failed: {hello}")
-        res = await _request(ws, method, params or {})
+    async with asyncio.timeout(timeout):
+        async with websockets.connect(url, max_size=None, open_timeout=30,
+                                      ping_interval=None) as ws:
+            await _wait_for_challenge(ws)
+            hello = await _request(ws, "connect", _connect_params())
+            if not hello.get("ok"):
+                raise RuntimeError(f"gateway connect failed: {hello}")
+            res = await _request(ws, method, params or {})
     if not res.get("ok"):
         raise RuntimeError(f"{method} failed: {res}")
     return res.get("payload") or {}

@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from .. import email_himalaya, sessions_store
 from ..research import _agent_turn
-from . import state
+from . import recommend, state
 from .sources import asana, documents_stale, gmail, obsidian, slack
 
 router = APIRouter()
@@ -67,6 +67,12 @@ async def items(sources: str = "", limit: int = 200):
                    if not state.hidden(i["source"], i["id"], now_ms)]
         counts[name] = len(visible)
         merged.extend(visible)
+    stats_snapshot = state.stats()
+    ai_recs = state.recs()
+    for i in merged:
+        rec = recommend.pick(i, stats_snapshot, ai_recs)
+        if rec:
+            i["rec"] = rec
     merged.sort(key=lambda i: (-i["score"], i["ageHours"]))
     limit = max(1, min(500, limit))
     return {"items": merged[:limit], "total": len(merged),

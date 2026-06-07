@@ -31,7 +31,7 @@
     } catch (_) { return ''; }
   }
   const esc = (s) => String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   let _modal = null;
   let _loading = false;
@@ -162,6 +162,7 @@
     try {
       const res = await fetch(`${API}/api/cron/${encodeURIComponent(id)}/runs?limit=20`);
       const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
       const runs = data.runs || [];
       if (!runs.length) {
         panel.innerHTML = '<div class="cron-empty">No recorded runs.</div>';

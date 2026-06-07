@@ -35,7 +35,8 @@
     return [['Later today', later], ['Tomorrow', tomorrow], ['Next week', nextWeek]];
   };
 
-  let _modal = null, _items = [], _errors = {}, _counts = {}, _filter = null;
+  let _modal = null, _items = [], _errors = {}, _counts = {}, _filter = null,
+      _view = 'feed', _toastTimer = null;
 
   function ageLabel(h) {
     if (h < 1) return `${Math.max(1, Math.round(h * 60))}m`;
@@ -54,6 +55,7 @@
       '  <div class="cron-modal-head">' +
       '    <span class="cron-modal-title">Inbox</span>' +
       '    <span class="inbox-chips" id="inbox-chips"></span>' +
+      '    <button class="inbox-refresh" id="inbox-history-btn" title="History">&#x1F552;</button>' +
       '    <button class="inbox-refresh" id="inbox-refresh" title="Refresh">&#x21bb;</button>' +
       '    <button class="cron-modal-close" id="inbox-close" title="Close">&#x2715;</button>' +
       '  </div>' +
@@ -63,6 +65,7 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     $('#inbox-close', overlay).addEventListener('click', close);
     $('#inbox-refresh', overlay).addEventListener('click', () => load(true));
+    $('#inbox-history-btn', overlay).addEventListener('click', toggleHistory);
     _modal = overlay;
     return overlay;
   }
@@ -79,6 +82,7 @@
   function onEsc(e) { if (e.key === 'Escape') close(); }
 
   async function load(force) {
+    _view = 'feed';
     const body = $('#inbox-body');
     if (body && !_items.length) body.innerHTML = '<div class="cron-empty">Loading…</div>';
     try {
@@ -95,6 +99,7 @@
   }
 
   function render() {
+    if (_view === 'history') return renderHistory();
     renderChips();
     const body = $('#inbox-body');
     if (!body) return;
@@ -142,6 +147,8 @@
       `  </div>` +
       `  <div class="inbox-item-actions">` +
       `    <button data-act="${act}" class="inbox-btn inbox-btn-primary">${label}</button>` +
+      ((it.actions || []).includes('delete')
+        ? `    <button data-act="delete" class="inbox-btn" title="Delete">🗑</button>` : '') +
       `    <button data-act="snooze" class="inbox-btn" title="Snooze">⏰</button>` +
       `    <button data-act="open" class="inbox-btn" title="Open">↗</button>` +
       `    <button data-act="gary" class="inbox-btn" title="Hand to Gary">🤖</button>` +
@@ -172,7 +179,7 @@
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: it.source, id: it.id, action: act,
-                               until, meta: it.meta || {} }),
+                               until, title: it.title, meta: it.meta || {} }),
       });
       const data = await r.json();
       if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -181,6 +188,8 @@
       _items = _items.filter((x) => !(x.id === it.id && x.source === it.source));
       _counts[it.source] = Math.max(0, (_counts[it.source] || 1) - 1);
       renderChips();
+      showToast(`${act === 'snooze' ? 'Snoozed' : act.replace('_', ' ')} — "${(it.title || '').slice(0, 40)}"`,
+                data.undoTs);
     } catch (err) {
       btn.disabled = false;
       btn.textContent = '⚠';
@@ -239,6 +248,89 @@
       btn.disabled = false; btn.textContent = orig;
       btn.title = 'Failed: ' + String(err.message || err);
     }
+  }
+
+  // --- undo toast + history drawer ----------------------------------------
+  function showToast(msg, undoTs) {
+    const card = $('.inbox-card', _modal);
+    if (!card) return;
+    const old = $('#inbox-toast', card);
+    if (old) old.remove();
+    clearTimeout(_toastTimer);
+    const t = document.createElement('div');
+    t.id = 'inbox-toast';
+    t.innerHTML = `<span>${esc(msg)}</span>`;
+    if (undoTs) {
+      const b = document.createElement('button');
+      b.className = 'inbox-btn inbox-toast-undo';
+      b.textContent = 'Undo';
+      b.addEventListener('click', async () => { await doUndo(undoTs); t.remove(); });
+      t.appendChild(b);
+    }
+    card.appendChild(t);
+    _toastTimer = setTimeout(() => t.remove(), 8000);
+  }
+
+  async function doUndo(ts) {
+    try {
+      const r = await fetch(`${API}/api/items/undo`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ts }),
+      });
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      showToast('Undone — item restored', null);
+      load(true);
+    } catch (err) {
+      showToast('Undo failed: ' + String(err.message || err), null);
+    }
+  }
+
+  function toggleHistory() {
+    _view = _view === 'history' ? 'feed' : 'history';
+    if (_view === 'feed') { render(); return; }
+    renderHistory();
+  }
+
+  async function renderHistory() {
+    const body = $('#inbox-body');
+    if (!body) return;
+    body.innerHTML = '<div class="cron-empty">Loading…</div>';
+    let entries = [];
+    try {
+      const r = await fetch(`${API}/api/items/history?limit=20`,
+        { credentials: 'same-origin' });
+      entries = (await r.json()).entries || [];
+    } catch (e) {
+      body.innerHTML = `<div class="inbox-error">${esc(String(e))}</div>`;
+      return;
+    }
+    if (!entries.length) {
+      body.innerHTML = '<div class="cron-empty">No recent actions.</div>';
+      return;
+    }
+    body.innerHTML = entries.map((e) =>
+      `<div class="inbox-item inbox-hist-row" data-ts="${e.ts}">` +
+      `  <div class="inbox-item-main">` +
+      `    <div class="inbox-item-title">` +
+      `      <span class="email-tag email-tag-${esc(e.source)}">${esc(e.source)}</span>` +
+      `      ${esc(e.action.replace('_', ' '))} · ${esc(e.title || '(untitled)')}</div>` +
+      `    <div class="inbox-item-sub">${ageLabel((Date.now() - e.ts) / 3600000)} ago` +
+      (e.note ? ` · ${esc(e.note)}` : '') + `</div>` +
+      `  </div>` +
+      `  <div class="inbox-item-actions">` +
+      (e.undoable
+        ? `<button class="inbox-btn inbox-hist-undo" data-ts="${e.ts}">Undo</button>`
+        : `<span class="inbox-item-sub">not undoable</span>`) +
+      `  </div></div>`).join('');
+    body.querySelectorAll('.inbox-hist-undo').forEach((b) => {
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        await doUndo(Number(b.dataset.ts));
+        renderHistory();
+      });
+    });
   }
 
   // --- rail button (same injection style as cron.js) ------------------------

@@ -248,6 +248,18 @@
   html, body { overscroll-behavior-y: none; }
 }
 
+/* --- Inbox v2.1: undo toast + history drawer ------------------------------ */
+.inbox-card { position: relative; }
+#inbox-toast {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 10px; align-items: center; z-index: 20;
+  background: var(--panel, #14181f); border: 1px solid var(--border, rgba(255,255,255,0.15));
+  border-radius: 8px; padding: 8px 14px; font-size: 12.5px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+}
+.inbox-toast-undo { background: rgba(122, 162, 247, 0.25); font-weight: 600; }
+.inbox-hist-row .inbox-item-title { font-size: 12.5px; }
+
 /* Discuss-selection chip (draft mode): shown under the doc toolbar while text
    is selected in the doc pane; quotes the passage into the chat composer. */
 .doc-discuss-chip {

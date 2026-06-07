@@ -12,12 +12,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from contextlib import asynccontextmanager
 
 from fastapi import Body, FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import bridge, config, draft_mode, sessions_store, websearch
+from . import bridge, config, draft_mode, monitor, sessions_store, websearch
 from .memory import maybe_auto_extract
 from .calendar_google import router as calendar_router
 from .cron import router as cron_router
@@ -31,7 +32,15 @@ from .settings_status import router as settings_router
 from .skills import router as skills_router
 from .uploads import router as uploads_router
 
-app = FastAPI(title="OpenClaw Workspace")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # The persistent gateway monitor (status dot / restart awareness).
+    task = asyncio.create_task(monitor.run())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)
 app.include_router(inbox_router)
 app.include_router(memory_router)
 app.include_router(skills_router)
@@ -59,6 +68,13 @@ async def health():
         "session": config.SESSION_KEY,
         "has_password": bool(config.gateway_password()),
     }
+
+
+@app.get("/api/gateway/status")
+async def gateway_status():
+    """Last-known gateway state from the persistent monitor, for the UI's
+    status dot (polled ~30s). state: ok | restarting | down."""
+    return await monitor.status()
 
 
 # --- The one real, load-bearing endpoint: chat ------------------------------

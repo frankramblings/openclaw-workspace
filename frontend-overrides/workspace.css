@@ -350,6 +350,16 @@
   color: inherit; cursor: pointer; font-size: 13px; opacity: 0.7; }
 #gw-banner button:hover { opacity: 1; }
 
+/* --- Skills enable/disable toggle (overlay) --------------------------------- */
+.skill-enable-toggle { position: relative; width: 30px; height: 17px; flex: none;
+  border-radius: 9px; border: 1px solid rgba(128, 128, 128, 0.5);
+  background: rgba(128, 128, 128, 0.25); cursor: pointer; padding: 0; }
+.skill-enable-toggle span { position: absolute; top: 1px; left: 1px;
+  width: 13px; height: 13px; border-radius: 50%; background: #fff;
+  transition: left 0.15s; }
+.skill-enable-toggle.on { background: #34c759; border-color: #34c759; }
+.skill-enable-toggle.on span { left: 14px; }
+
 /* --- Cron run history ------------------------------------------------------- */
 /* :not([hidden]) keeps the UA's [hidden]{display:none} effective — a plain
    author `display:flex` would beat it by cascade origin and un-hide the panel. */

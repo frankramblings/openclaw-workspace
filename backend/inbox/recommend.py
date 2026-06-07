@@ -115,15 +115,28 @@ def build_triage_prompt(items: list[dict], cap: int = TRIAGE_CAP):
     return "\n".join(lines), chosen
 
 
+def _extract_json_array(text: str) -> list | None:
+    """First parseable JSON array in `text`. raw_decode parses exactly one
+    value and ignores trailing junk, so prose after the array — or `]` inside
+    reason strings — can't break extraction (a bare regex chokes on both)."""
+    decoder = _json.JSONDecoder()
+    i = text.find("[")
+    while i != -1:
+        try:
+            val, _ = decoder.raw_decode(text, i)
+            if isinstance(val, list):
+                return val
+        except _json.JSONDecodeError:
+            pass
+        i = text.find("[", i + 1)
+    return None
+
+
 def parse_triage_reply(text: str, valid: dict, now_ms: int) -> dict:
     """valid: {item_id: source}. Returns {\"source:id\": rec} with everything
     invalid dropped (unknown ids, disallowed actions, malformed entries)."""
-    m = re.search(r"\[[\s\S]*\]", text or "")
-    if not m:
-        return {}
-    try:
-        arr = _json.loads(m.group(0))
-    except _json.JSONDecodeError:
+    arr = _extract_json_array(text or "")
+    if arr is None:
         return {}
     out: dict = {}
     for e in arr if isinstance(arr, list) else []:

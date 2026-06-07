@@ -49,6 +49,23 @@ def test_parse_triage_reply_garbage_returns_empty():
                                         now_ms=1) == {}
 
 
+def test_parse_triage_reply_tolerates_trailing_prose_with_brackets():
+    valid = {"1": "gmail"}
+    text = ('[{"id": "1", "action": "archive", "confidence": "med", "reason": "bulk"}]\n'
+            'Note: I skipped item [2] because it looked important.')
+    out = recommend.parse_triage_reply(text, valid, now_ms=7)
+    assert out == {"gmail:1": {"action": "archive", "confidence": "med",
+                               "reason": "bulk", "ts": 7}}
+
+
+def test_parse_triage_reply_tolerates_brackets_inside_strings():
+    valid = {"1": "gmail"}
+    text = ('```json\n[{"id": "1", "action": "archive", "confidence": "high", '
+            '"reason": "[SOCIAL] thread is stale"}]\n```')
+    out = recommend.parse_triage_reply(text, valid, now_ms=7)
+    assert out["gmail:1"]["reason"] == "[SOCIAL] thread is stale"
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(state, "STATE_FILE", tmp_path / "state.json")

@@ -55,3 +55,44 @@ def test_ai_rec_with_disallowed_action_is_ignored():
     ai = {"slack:m1": {"action": "delete", "confidence": "high",
                        "reason": "x", "ts": 1}}
     assert recommend.pick(_slack(), {}, ai) is None
+
+
+# --- regression: recs must not outlive their stats on cached items -----------
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+import backend.inbox as inbox
+from backend.inbox import state
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_stale_rec_cleared_when_stats_drop(tmp_path, monkeypatch):
+    monkeypatch.setattr(state, "STATE_FILE", tmp_path / "state.json")
+    monkeypatch.setattr(state, "_mem", None)
+    inbox._cache.clear()
+
+    async def fake_gmail():
+        return [{**_gmail("news@x.com"), "title": "Mail", "subtitle": "",
+                 "snippet": "", "ts": 2, "score": 5}]
+
+    for name in list(inbox.SOURCES):
+        monkeypatch.setitem(inbox.SOURCES, name, fake_gmail)
+
+    from backend.app import app
+    client = AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
+    for _ in range(3):
+        state.bump_stat("gmail:news@x.com", "archive")
+    async with client as c:
+        r1 = (await c.get("/api/items?sources=gmail")).json()
+        assert r1["items"][0]["rec"]["by"] == "history"
+        # stats drop (e.g. three undos) while the 60s source cache is warm
+        for _ in range(3):
+            state.drop_stat("gmail:news@x.com", "archive")
+        r2 = (await c.get("/api/items?sources=gmail")).json()
+    assert "rec" not in r2["items"][0]

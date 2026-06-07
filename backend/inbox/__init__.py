@@ -73,6 +73,10 @@ async def items(sources: str = "", limit: int = 200):
         rec = recommend.pick(i, stats_snapshot, ai_recs)
         if rec:
             i["rec"] = rec
+        else:
+            # The dicts live in _cache — clear any rec a previous request
+            # attached, or it would outlive the stats/recs that justified it.
+            i.pop("rec", None)
     merged.sort(key=lambda i: (-i["score"], i["ageHours"]))
     limit = max(1, min(500, limit))
     return {"items": merged[:limit], "total": len(merged),

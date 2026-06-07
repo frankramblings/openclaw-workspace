@@ -257,8 +257,8 @@
       '  <div class="cron-modal-body" id="inbox-body"></div>' +
       '</div>';
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-    $('#inbox-close', overlay).addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) fullClose(); });
+    $('#inbox-close', overlay).addEventListener('click', fullClose);
     $('#inbox-refresh', overlay).addEventListener('click', () => load(true));
     $('#inbox-triage-btn', overlay).addEventListener('click', runTriage);
     $('#inbox-history-btn', overlay).addEventListener('click', toggleHistory);
@@ -353,7 +353,7 @@
         card.style.transition = `transform ${duration}ms cubic-bezier(0.2, 0, 0.4, 1)`;
         card.style.transform = 'translateY(100%)';
         setTimeout(() => {
-          close();
+          minimizeToChip();   // swipe-down = minimize to a dock chip
           card.style.transform = '';
           card.style.transition = '';
         }, duration + 10);
@@ -376,7 +376,50 @@
     if (_modal) _modal.style.display = 'none';
     document.removeEventListener('keydown', onEsc);
   }
-  function onEsc(e) { if (e.key === 'Escape') close(); }
+  function onEsc(e) { if (e.key === 'Escape') fullClose(); }
+
+  // --- Dock-chip integration (modalManager) ---------------------------------
+  // Swipe-down MINIMIZES to a draggable dock chip (same behavior as Email/
+  // Calendar/Notes); ✕ and Escape fully close (no chip). We register under a
+  // VIRTUAL id — 'inbox-panel', not the real '#inbox-modal' element id — so
+  // modalManager never touches this overlay's DOM (its .hidden conventions
+  // would fight our inline display toggling; same precedent as notes.js's
+  // 'notes-panel'). modalManager is an ES module and inbox.js a classic
+  // script, so we reach it via dynamic import (same singleton the app uses).
+  const CHIP_ID = 'inbox-panel';
+  let _Modals = null;
+  function loadModals() {
+    return _Modals ? Promise.resolve(_Modals)
+      : import('/static/js/modalManager.js').then((m) => (_Modals = m));
+  }
+
+  function minimizeToChip() {
+    close();   // hide immediately — don't wait on the module import
+    loadModals().then((M) => {
+      if (!M.isRegistered(CHIP_ID)) {
+        M.register(CHIP_ID, {
+          railBtnId: 'rail-inbox',
+          restoreFn: open,
+          closeFn: close,
+          label: 'Inbox',
+          icon: ICON,
+        });
+      }
+      M.minimize(CHIP_ID);
+    }).catch(() => {});   // module missing → the swipe degrades to a close
+  }
+
+  function fullClose() {
+    close();
+    if (_Modals && _Modals.isRegistered(CHIP_ID)) _Modals.unregister(CHIP_ID);
+  }
+
+  // Rail/sidebar clicks restore through the manager when minimized so the
+  // chip and button badge clear; otherwise plain open.
+  function openOrRestore() {
+    if (_Modals && _Modals.isMinimized(CHIP_ID)) _Modals.restore(CHIP_ID);
+    else open();
+  }
 
   async function load(force) {
     _view = 'feed';
@@ -715,7 +758,7 @@
     btn.className = 'icon-rail-btn';   // matches cron.js: 'icon-rail-btn'
     btn.title = 'Inbox';
     btn.innerHTML = ICON;
-    btn.addEventListener('click', open);
+    btn.addEventListener('click', openOrRestore);
     // Place before #rail-theme (same strategy as cron.js uses for its button).
     const theme = $('#rail-theme', rail);
     if (theme) rail.insertBefore(btn, theme); else rail.appendChild(btn);
@@ -727,7 +770,7 @@
     const title = document.getElementById('inbox-section-title');
     if (title && !title._inboxBound) {
       title._inboxBound = true;
-      title.addEventListener('click', open);
+      title.addEventListener('click', openOrRestore);
     }
   }
 

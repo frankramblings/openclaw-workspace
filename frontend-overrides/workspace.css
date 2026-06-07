@@ -334,3 +334,18 @@
     flex-direction: row; top: auto; bottom: 6px; right: 10px; z-index: 11;
   }
 }
+
+/* --- Gateway status dot (rail) + banner ------------------------------------ */
+.gw-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  background: #8e8e93; vertical-align: middle; }
+.gw-dot[data-state="ok"] { background: #34c759; }
+.gw-dot[data-state="restarting"] { background: #ff9f0a; animation: gw-pulse 1.2s infinite; }
+.gw-dot[data-state="down"] { background: #ff3b30; }
+@keyframes gw-pulse { 50% { opacity: 0.35; } }
+#gw-banner { display: none; position: sticky; top: 0; z-index: 300;
+  align-items: center; gap: 10px; padding: 7px 14px; font-size: 13px;
+  background: rgba(255, 159, 10, 0.14); color: inherit;
+  border-bottom: 1px solid rgba(255, 159, 10, 0.45); }
+#gw-banner button { margin-left: auto; background: none; border: none;
+  color: inherit; cursor: pointer; font-size: 13px; opacity: 0.7; }
+#gw-banner button:hover { opacity: 1; }

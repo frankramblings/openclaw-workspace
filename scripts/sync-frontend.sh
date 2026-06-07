@@ -75,6 +75,22 @@ if [[ -d "$OVERRIDES" ]]; then
     ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
     echo "injected inbox.js <script> into index.html"
   fi
+
+  # Inject the gateway-status add-on once, just before </body> (idempotent).
+  SCRIPT_GW='<script src="/static/js/gateway-status.js" defer></script>'
+  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/gateway-status.js" ]] \
+     && ! grep -qF "js/gateway-status.js" "$INDEX"; then
+    awk -v s="  $SCRIPT_GW" '
+      { lines[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (!done && lines[i] ~ /<\/body>/) { print s; done = 1 }
+          print lines[i]
+        }
+      }
+    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    echo "injected gateway-status.js <script> into index.html"
+  fi
 fi
 
 # --- Gary rebrand of app.js + js/ modules -----------------------------------

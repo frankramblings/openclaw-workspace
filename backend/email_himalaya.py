@@ -278,13 +278,21 @@ def search_query(subject: str, from_addr: str) -> str:
 
 async def find_uid(folder: str, subject: str, from_addr: str) -> str | None:
     """Resolve a message's uid IN `folder` (IMAP uids are per-folder, so the
-    pre-move uid is useless after archive/delete). Returns the newest match."""
+    pre-move uid is useless after archive/delete). Returns the newest match.
+
+    Uses run_raw with `-o json` placed BEFORE the query: himalaya's variadic
+    query parser swallows trailing options, silently emitting nothing
+    (verified live, v1.2.0) — run_json's appended `-o json` would vanish."""
     if not subject.replace('"', "").rstrip().rstrip("…").strip():
         return None  # empty subject => IMAP match-all; refuse to guess
-    data = await himalaya_cli.run_json(
-        ["envelope", "list", "-f", folder, "-s", "10",
+    out = await himalaya_cli.run_raw(
+        ["envelope", "list", "-f", folder, "-s", "10", "-o", "json",
          search_query(subject, from_addr)])
-    envs = data if isinstance(data, list) else (data.get("envelopes") or [])
+    try:
+        data = json.loads(out.decode() or "null")
+    except json.JSONDecodeError:
+        return None
+    envs = data if isinstance(data, list) else ((data or {}).get("envelopes") or [])
     return str(envs[0]["id"]) if envs else None
 
 

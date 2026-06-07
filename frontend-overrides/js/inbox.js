@@ -74,8 +74,157 @@
   }
   /* SWIPE-MATH-END */
 
+  // --- swipe engine (mobile only; spec §1/§3/§4) ----------------------------
+  function springShut(el) {
+    const content = el && $('.inbox-swipe-content', el);
+    if (!content) { if (_openCard === el) _openCard = null; return; }
+    content.style.transition = REDUCED_MOTION ? 'none'
+      : `transform ${SWIPE.SNAP_MS}ms ${SWIPE.SNAP_EASE}`;
+    content.style.transform = 'translate3d(0,0,0)';
+    el._swipeX = 0;
+    el.querySelectorAll('.swipe-under').forEach((u) => {
+      u.classList.remove('swipe-armed');
+      u.style.visibility = 'hidden';
+    });
+    if (_openCard === el) _openCard = null;
+  }
+  function closeOpenCard() { if (_openCard) springShut(_openCard); }
+
+  async function commitSwipe(it, el, dir) {
+    if (el.dataset.pending) return;
+    el.dataset.pending = '1';
+    const content = $('.inbox-swipe-content', el);
+    content.style.transition = REDUCED_MOTION ? 'none'
+      : `transform ${SWIPE.SNAP_MS}ms ${SWIPE.SNAP_EASE}`;
+    content.style.transform = `translate3d(${dir * el.offsetWidth}px, 0, 0)`;
+    try {
+      if (dir > 0) {
+        const zone = $('.swipe-under-left', el);
+        const act = zone.dataset.act;
+        if (act === 'reply' || act === 'gary') {
+          // spinoff navigates the page on success; spring back meanwhile
+          setTimeout(() => springShut(el), SWIPE.SNAP_MS);
+          return await handToGary(it, zone, act);
+        }
+        await doAction(it, act, el, zone);
+      } else {
+        await doAction(it, 'dismiss', el, $('.swipe-zone-dismiss', el));
+      }
+      // doAction removes el on success; if it's still attached, it failed —
+      // bring the card back so the user sees the ⚠ state.
+      if (el.isConnected) springShut(el);
+    } finally {
+      delete el.dataset.pending;
+    }
+  }
+
+  function bindSwipe(it, el) {
+    const content = $('.inbox-swipe-content', el);
+    const leftUnder = $('.swipe-under-left', el);    // shown on RIGHT swipe
+    const rightUnder = $('.swipe-under-right', el);  // shown on LEFT swipe
+    if (!content || !leftUnder || !rightUnder) return;
+    let startX = 0, startY = 0, locked = null, baseX = 0, samples = [],
+        armed = false, active = false;
+
+    const maxReveal = (dir) => (dir > 0 ? SWIPE.ZONE_W : SWIPE.ZONE_W * 2);
+    const setArmed = (on, dir) => {
+      if (on === armed) return;
+      armed = on;
+      (dir > 0 ? leftUnder : rightUnder).classList.toggle('swipe-armed', on);
+    };
+
+    // Tapping a revealed zone fires its action.
+    leftUnder.addEventListener('click', () => {
+      if (_openCard !== el || el.dataset.pending) return;
+      commitSwipe(it, el, 1);
+    });
+    $('.swipe-zone-snooze', el).addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (_openCard !== el) return;
+      snoozeMenu(it, e.target, el);
+    });
+    $('.swipe-zone-dismiss', el).addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (_openCard !== el || el.dataset.pending) return;
+      commitSwipe(it, el, -1);
+    });
+
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' || el.dataset.pending) return;
+      if (_openCard && _openCard !== el) closeOpenCard();
+      active = true;
+      startX = e.clientX; startY = e.clientY;
+      baseX = el._swipeX || 0;
+      locked = null;
+      samples = [{ x: e.clientX, t: e.timeStamp }];
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!active || locked === 'v') return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (locked === null) {
+        if (Math.abs(dx) < SWIPE.LOCK_PX && Math.abs(dy) < SWIPE.LOCK_PX) return;
+        locked = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+        if (locked === 'v') return;            // native scroll owns it now
+        try { el.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
+      }
+      samples.push({ x: e.clientX, t: e.timeStamp });
+      if (samples.length > 5) samples.shift();
+      const raw = baseX + dx;
+      const dir = raw >= 0 ? 1 : -1;
+      const x = swipeRubber(raw, maxReveal(dir));
+      content.style.transition = 'none';
+      content.style.transform = `translate3d(${x}px, 0, 0)`;
+      el._swipeX = x;
+      leftUnder.style.visibility = raw > 0 ? 'visible' : 'hidden';
+      rightUnder.style.visibility = raw < 0 ? 'visible' : 'hidden';
+      setArmed(Math.abs(raw) >= el.offsetWidth * SWIPE.COMMIT_RATIO, dir);
+    });
+
+    const finish = () => {
+      if (!active) return;
+      active = false;
+      if (locked !== 'h') { locked = null; return; }
+      locked = null;
+      el._suppressClick = true;   // the click after a drag is not a tap
+      const x = el._swipeX || 0;
+      const v = swipeVelocity(samples);
+      const out = swipeOutcome(x, v, el.offsetWidth);
+      if (out === 'commit') { commitSwipe(it, el, x > 0 ? 1 : -1); return; }
+      if (out === 'reveal') {
+        const dir = x > 0 ? 1 : -1;
+        const content2 = $('.inbox-swipe-content', el);
+        content2.style.transition = REDUCED_MOTION ? 'none'
+          : `transform ${SWIPE.SNAP_MS}ms ${SWIPE.SNAP_EASE}`;
+        content2.style.transform = `translate3d(${dir * maxReveal(dir)}px, 0, 0)`;
+        el._swipeX = dir * maxReveal(dir);
+        setArmed(false, dir);
+        _openCard = el;
+        return;
+      }
+      springShut(el);
+    };
+    el.addEventListener('pointerup', finish);
+    el.addEventListener('pointercancel', () => {
+      active = false; locked = null; springShut(el);
+    });
+
+    // Swallow the synthetic click that follows a horizontal drag so buttons
+    // under the finger don't fire (tap passthrough stays: no drag, no flag).
+    el.addEventListener('click', (e) => {
+      if (el._suppressClick) {
+        el._suppressClick = false;
+        e.stopPropagation(); e.preventDefault();
+      }
+    }, true);
+  }
+
   let _modal = null, _items = [], _errors = {}, _counts = {}, _filter = null,
-      _view = 'feed', _toastTimer = null;
+      _view = 'feed', _toastTimer = null, _openCard = null;
+  const IS_COARSE = !!(window.matchMedia
+    && matchMedia('(pointer: coarse)').matches);
+  const REDUCED_MOTION = !!(window.matchMedia
+    && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   function ageLabel(h) {
     if (h < 1) return `${Math.max(1, Math.round(h * 60))}m`;
@@ -107,6 +256,12 @@
     $('#inbox-refresh', overlay).addEventListener('click', () => load(true));
     $('#inbox-triage-btn', overlay).addEventListener('click', runTriage);
     $('#inbox-history-btn', overlay).addEventListener('click', toggleHistory);
+    // Scroll or a touch outside the revealed card closes it (iOS behavior).
+    $('#inbox-body', overlay).addEventListener('scroll', closeOpenCard,
+                                               { passive: true });
+    overlay.addEventListener('pointerdown', (e) => {
+      if (_openCard && !_openCard.contains(e.target)) closeOpenCard();
+    }, true);
     _modal = overlay;
     return overlay;
   }
@@ -141,6 +296,7 @@
 
   function render() {
     if (_view === 'history') return renderHistory();
+    _openCard = null;   // rebuilt DOM: any revealed card is gone with it
     renderChips();
     const body = $('#inbox-body');
     if (!body) return;
@@ -261,6 +417,7 @@
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(); }
       });
     }
+    if (IS_COARSE) bindSwipe(it, el);
   }
 
   async function doAction(it, act, el, btn, until) {

@@ -108,6 +108,10 @@ survives the Odysseus sync:
   text-emojis-default-OFF change (`UI_VIS_DEFAULT_OFF` + `applyTextEmojis`,
   paired — the /api/emoji proxy made text-only mode a preference, not a
   necessity). The copy here is the post-sed (rebranded) text.
+- **js/sessions.js** — full-file override (2026-06-07): cold-launch lands on a fresh
+  default-model chat instead of restoring the last transcript (reloads and
+  #hash deep links still resume); empty-session reuse fixed for this backend
+  (no message_count — uses updated≈created instead).
 - **most js/ modules** are NOT overridden (large, frequently changed
   upstream). Their visible "Odysseus" strings (assistant role label, "Odysseus
   Chat", the `/tour` text, settings/email/cookbook help, welcome subtitle, …)

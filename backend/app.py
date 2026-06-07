@@ -287,6 +287,11 @@ async def history(session_id: str):
     if not sess:
         return {"history": [], "model": None}
     data = await bridge.fetch_history(sess["sessionKey"])
+    # use_web turns store the augmented brain message (search block + the
+    # user's text) in the transcript; show only what the user typed.
+    for m in data.get("history", []):
+        if m.get("role") == "user":
+            m["content"] = websearch.strip_context_block(m.get("content"))
     # Prefer the record's chosen model label; fall back to whatever the brain used.
     data["model"] = sess.get("model") or data.get("model")
     return data

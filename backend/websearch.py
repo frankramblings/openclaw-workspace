@@ -91,13 +91,26 @@ async def search(query: str, count: int = 5) -> list[dict]:
     return out
 
 
+_CTX_PREFIX = ("Web search results for the user's message (fetched just now via "
+               "SerpAPI; cite sources as [n] with their URLs when you use them):\n")
+_CTX_MARKER = "\n\n---\n\nUser message: "
+
+
 def context_block(query: str, results: list[dict]) -> str:
     """Format results as a context preamble for the brain turn."""
     lines = [f"[{i+1}] {r['title']}\n    {r['url']}\n    {r['snippet']}"
              for i, r in enumerate(results)]
     joined = "\n".join(lines)
-    return (
-        "Web search results for the user's message (fetched just now via "
-        f"SerpAPI; cite sources as [n] with their URLs when you use them):\n"
-        f"{joined}\n\n---\n\nUser message: {query}"
-    )
+    return f"{_CTX_PREFIX}{joined}{_CTX_MARKER}{query}"
+
+
+def strip_context_block(text):
+    """Inverse of context_block, for DISPLAY: the gateway transcript stores the
+    augmented brain message, but the history view should show only what the
+    user actually typed (the search results already streamed as a tool card).
+    Non-matching content (including non-strings) passes through untouched."""
+    if isinstance(text, str) and text.startswith(_CTX_PREFIX):
+        _, sep, rest = text.partition(_CTX_MARKER)
+        if sep:
+            return rest
+    return text

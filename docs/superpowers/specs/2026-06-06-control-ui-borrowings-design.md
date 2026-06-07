@@ -80,6 +80,8 @@ Changes:
 
 **Flagged uncertainty:** the exact field carrying full reasoning *text* for gpt-5.5 over protocol v4 (`summary` on update events vs. a separate delta) is not fully confirmed from source. **First implementation step is a one-turn live probe** logging raw `analysis` events; the card renders whatever text field the probe confirms. Worst case (title + summary only) the card still works as a stall-vs-thinking signal.
 
+**Probe outcome (2026-06-07):** gpt-5.5/v4 analysis events carry only `{title: "Reasoning", status}` — no text in any field. The bridge mapping landed inert-but-forward-compatible; textless frames emit nothing.
+
 ## 5. Cron run history (`cron.runs`)
 
 **Protocol (verified):** `cron.runs {scope: "job", id, limit (1–200), status?}` → entries `{ts, jobId, status: ok|error|skipped, error?, summary?, durationMs?, runAtMs?, delivered?, deliveryStatus?, usage?, jobName?}` (`src/gateway/protocol/schema/cron.ts:326-378`). `jobId` matches `cron.list` entry `id`.

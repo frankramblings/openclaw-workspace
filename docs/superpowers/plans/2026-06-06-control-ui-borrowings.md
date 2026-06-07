@@ -9,6 +9,7 @@
 **Tech Stack:** Python 3.14 / FastAPI / websockets / pytest (in `.venv`); vanilla-JS overlay modules (cron.js pattern).
 
 **Spec:** `docs/superpowers/specs/2026-06-06-control-ui-borrowings-design.md`
+**Status:** Executed 2026-06-07 (13/13 tasks, subagent-driven; live smoke 8/8 passed). Known inert path: gpt-5.5/v4 analysis events carry no reasoning text — thinking plumbing waits on the gateway forwarding content.
 
 **Cross-cutting rules:**
 - All test commands run from `/Users/admin/openclaw-workspace` using `.venv/bin/python -m pytest`.
@@ -26,7 +27,7 @@ The one-shot "connect → auth → request → payload" dance is currently dupli
 - Modify: `backend/cron.py` (delete `_cron_call`, use `gateway_call`)
 - Modify: `backend/skills.py` (use `gateway_call` in `fetch_skills`)
 
-- [ ] **Step 1: Add `gateway_call` to `backend/bridge.py`** (right after the `_request` function):
+- [x] **Step 1: Add `gateway_call` to `backend/bridge.py`** (right after the `_request` function):
 
 ```python
 async def gateway_call(method: str, params: dict | None = None) -> dict:
@@ -47,7 +48,7 @@ async def gateway_call(method: str, params: dict | None = None) -> dict:
     return res.get("payload") or {}
 ```
 
-- [ ] **Step 2: Refactor `backend/cron.py` to use it.** Replace the imports and delete `_cron_call` (lines 10–32):
+- [x] **Step 2: Refactor `backend/cron.py` to use it.** Replace the imports and delete `_cron_call` (lines 10–32):
 
 ```python
 from fastapi import APIRouter
@@ -61,7 +62,7 @@ router = APIRouter()
 
 (The `import websockets` and `from . import config` lines go away too.) Then replace every `_cron_call(` call site with `gateway_call(` — there are three: in `list_cron`, `run_cron`, `enable_cron`/`disable_cron`.
 
-- [ ] **Step 3: Refactor `backend/skills.py` `fetch_skills`.** Replace its body's WS block:
+- [x] **Step 3: Refactor `backend/skills.py` `fetch_skills`.** Replace its body's WS block:
 
 ```python
 async def fetch_skills() -> list[dict]:
@@ -77,12 +78,12 @@ async def fetch_skills() -> list[dict]:
 
 Update the imports: drop `import websockets` and `from . import config`; change the bridge import to `from .bridge import gateway_call`.
 
-- [ ] **Step 4: Run the full suite to confirm nothing broke**
+- [x] **Step 4: Run the full suite to confirm nothing broke**
 
 Run: `.venv/bin/python -m pytest backend/tests/ -q`
 Expected: all pass (same count as before the change; the suite was green at 13de8a6).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/bridge.py backend/cron.py backend/skills.py
@@ -100,7 +101,7 @@ chat.js's Stop button ALREADY does two things (chat.js:2802-2816): aborts its fe
 - Modify: `backend/app.py` (`_ACTIVE_RUNS`, endpoint, wiring in `chat_stream`)
 - Create: `backend/tests/test_bridge_relay.py`
 
-- [ ] **Step 1: Write the failing test** — create `backend/tests/test_bridge_relay.py`:
+- [x] **Step 1: Write the failing test** — create `backend/tests/test_bridge_relay.py`:
 
 ```python
 """Unit tests for _relay_events' gateway-event → SSE mapping, driven by a fake
@@ -150,12 +151,12 @@ def test_aborted_state_maps_to_stopped_card():
     assert "stopped" in out[0]["output"]
 ```
 
-- [ ] **Step 2: Run it to verify the new test fails**
+- [x] **Step 2: Run it to verify the new test fails**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_bridge_relay.py -v`
 Expected: `test_delta_passthrough_and_lifecycle_end` PASSES (existing behavior); `test_aborted_state_maps_to_stopped_card` FAILS with "relay read past the last frame" (aborted isn't handled, the loop keeps reading).
 
-- [ ] **Step 3: Handle `state: "aborted"` in `_relay_events`.** In `backend/bridge.py`, the chat-event branch currently starts:
+- [x] **Step 3: Handle `state: "aborted"` in `_relay_events`.** In `backend/bridge.py`, the chat-event branch currently starts:
 
 ```python
         if event == "chat":
@@ -177,12 +178,12 @@ Change it to:
             if state == "error":
 ```
 
-- [ ] **Step 4: Run the test again**
+- [x] **Step 4: Run the test again**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_bridge_relay.py -v`
 Expected: both PASS.
 
-- [ ] **Step 5: Expose the runId.** In `backend/bridge.py` change `stream_turn`'s signature:
+- [x] **Step 5: Expose the runId.** In `backend/bridge.py` change `stream_turn`'s signature:
 
 ```python
 async def stream_turn(message: str, session_key: str | None = None,
@@ -198,7 +199,7 @@ and right after the existing `run_id = (ack.get("payload") or {}).get("runId")` 
                 run_info["runId"] = run_id
 ```
 
-- [ ] **Step 6: Wire `app.py`.** Below the imports (after the `app.include_router(...)` block) add:
+- [x] **Step 6: Wire `app.py`.** Below the imports (after the `app.include_router(...)` block) add:
 
 ```python
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
@@ -246,12 +247,12 @@ async def stop_chat(session_id: str):
                             content={"ok": False, "error": f"{exc!r}"})
 ```
 
-- [ ] **Step 7: Full suite**
+- [x] **Step 7: Full suite**
 
 Run: `.venv/bin/python -m pytest backend/tests/ -q`
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/bridge.py backend/app.py backend/tests/test_bridge_relay.py
@@ -269,7 +270,7 @@ One long-lived, read-only WS that hears `shutdown` / `update-available` broadcas
 - Modify: `backend/app.py` (lifespan + endpoint)
 - Create: `backend/tests/test_monitor.py`
 
-- [ ] **Step 1: Write the failing tests** — create `backend/tests/test_monitor.py`:
+- [x] **Step 1: Write the failing tests** — create `backend/tests/test_monitor.py`:
 
 ```python
 """Unit tests for the gateway monitor's state machine (the pure handlers)."""
@@ -313,12 +314,12 @@ def test_update_available_is_cached():
     assert monitor._state["updateAvailable"]["version"] == "2026.6.2"
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_monitor.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'backend.monitor'`.
 
-- [ ] **Step 3: Create `backend/monitor.py`:**
+- [x] **Step 3: Create `backend/monitor.py`:**
 
 ```python
 """Persistent gateway monitor: one long-lived, read-only WS that hears the
@@ -446,12 +447,12 @@ async def _health() -> dict:
     return {"agents": agents, "sessionCount": count}
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_monitor.py -v`
 Expected: 5 PASS.
 
-- [ ] **Step 5: Start the monitor from `app.py` and add the endpoint.** Add to the imports block: `from contextlib import asynccontextmanager` (top group) and `monitor` to the package import line:
+- [x] **Step 5: Start the monitor from `app.py` and add the endpoint.** Add to the imports block: `from contextlib import asynccontextmanager` (top group) and `monitor` to the package import line:
 
 ```python
 from . import bridge, config, draft_mode, monitor, sessions_store, websearch
@@ -481,12 +482,12 @@ async def gateway_status():
     return await monitor.status()
 ```
 
-- [ ] **Step 6: Full suite + import sanity**
+- [x] **Step 6: Full suite + import sanity**
 
 Run: `.venv/bin/python -m pytest backend/tests/ -q && .venv/bin/python -c "import backend.app"`
 Expected: all pass; the import prints nothing and exits 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/monitor.py backend/app.py backend/tests/test_monitor.py
@@ -503,7 +504,7 @@ Today a gateway restart mid-turn surfaces as a generic `bridge error: Connection
 - Modify: `backend/bridge.py` (`stream_turn` except clause + helper)
 - Modify: `backend/tests/test_bridge_relay.py` (helper test)
 
-- [ ] **Step 1: Write the failing test** — append to `backend/tests/test_bridge_relay.py`:
+- [x] **Step 1: Write the failing test** — append to `backend/tests/test_bridge_relay.py`:
 
 ```python
 def test_disconnect_message_reflects_monitor_state():
@@ -513,12 +514,12 @@ def test_disconnect_message_reflects_monitor_state():
     assert "may not have completed" in _disconnect_message("down")
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_bridge_relay.py::test_disconnect_message_reflects_monitor_state -v`
 Expected: FAIL with ImportError (`_disconnect_message` doesn't exist).
 
-- [ ] **Step 3: Implement.** In `backend/bridge.py` add near `_error_text`:
+- [x] **Step 3: Implement.** In `backend/bridge.py` add near `_error_text`:
 
 ```python
 def _disconnect_message(monitor_state: str) -> str:
@@ -544,12 +545,12 @@ And in `stream_turn`, insert a specific except BEFORE the generic one:
     except Exception as exc:  # noqa: BLE001 - surface any failure into the UI
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `.venv/bin/python -m pytest backend/tests/ -q`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/bridge.py backend/tests/test_bridge_relay.py
@@ -567,7 +568,7 @@ Self-contained overlay module, exactly the cron.js pattern: IIFE, injects `#rail
 - Modify: `frontend-overrides/workspace.css` (append styles)
 - Modify: `scripts/sync-frontend.sh` (injection block)
 
-- [ ] **Step 1: Create `frontend-overrides/js/gateway-status.js`:**
+- [x] **Step 1: Create `frontend-overrides/js/gateway-status.js`:**
 
 ```javascript
 /* OpenClaw Workspace — gateway status dot + banner (overlay add-on).
@@ -671,7 +672,7 @@ Self-contained overlay module, exactly the cron.js pattern: IIFE, injects `#rail
 })();
 ```
 
-- [ ] **Step 2: Append styles to `frontend-overrides/workspace.css`:**
+- [x] **Step 2: Append styles to `frontend-overrides/workspace.css`:**
 
 ```css
 /* --- Gateway status dot (rail) + banner ------------------------------------ */
@@ -690,7 +691,7 @@ Self-contained overlay module, exactly the cron.js pattern: IIFE, injects `#rail
 #gw-banner button:hover { opacity: 1; }
 ```
 
-- [ ] **Step 3: Add the injection block to `scripts/sync-frontend.sh`** — right after the inbox.js block (after line 77, inside the same `if [[ -d "$OVERRIDES" ]]` body):
+- [x] **Step 3: Add the injection block to `scripts/sync-frontend.sh`** — right after the inbox.js block (after line 77, inside the same `if [[ -d "$OVERRIDES" ]]` body):
 
 ```bash
   # Inject the gateway-status add-on once, just before </body> (idempotent).
@@ -710,12 +711,12 @@ Self-contained overlay module, exactly the cron.js pattern: IIFE, injects `#rail
   fi
 ```
 
-- [ ] **Step 4: Run the sync and verify the injection**
+- [x] **Step 4: Run the sync and verify the injection**
 
 Run: `./scripts/sync-frontend.sh && grep -c "gateway-status.js" frontend/index.html && ls frontend/js/gateway-status.js`
 Expected: sync output includes `injected gateway-status.js <script> into index.html`; grep prints `1`; the file exists. Run the sync a second time and confirm grep still prints `1` (idempotent).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend-overrides/js/gateway-status.js frontend-overrides/workspace.css scripts/sync-frontend.sh
@@ -732,7 +733,7 @@ Verified shapes: `sessions.delete {key, deleteTranscript?}` → `{ok, key, delet
 - Modify: `backend/app.py` (`delete_session`)
 - Modify: `backend/bridge.py` (`stream_turn` model-pin block)
 
-- [ ] **Step 1: Gateway-side delete in `app.py`.** Replace the `delete_session` route with:
+- [x] **Step 1: Gateway-side delete in `app.py`.** Replace the `delete_session` route with:
 
 ```python
 async def _delete_gateway_session(session_key: str) -> None:
@@ -756,7 +757,7 @@ async def delete_session(session_id: str):
     return {"ok": ok}
 ```
 
-- [ ] **Step 2: Swap the model pin to `sessions.patch`.** In `backend/bridge.py` `stream_turn`, replace the model-pin block (the `if model_ref:` block calling `sessions.create`) with:
+- [x] **Step 2: Swap the model pin to `sessions.patch`.** In `backend/bridge.py` `stream_turn`, replace the model-pin block (the `if model_ref:` block calling `sessions.create`) with:
 
 ```python
             # 1b. Pin this session's model (best-effort; never block the turn).
@@ -774,12 +775,12 @@ async def delete_session(session_id: str):
                     pass
 ```
 
-- [ ] **Step 3: Full suite**
+- [x] **Step 3: Full suite**
 
 Run: `.venv/bin/python -m pytest backend/tests/ -q`
 Expected: all pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/app.py backend/bridge.py
@@ -796,7 +797,7 @@ Maintenance script (not UI): list gateway sessions, keep web threads that are re
 - Create: `scripts/purge_orphan_sessions.py`
 - Create: `backend/tests/test_purge_orphans.py`
 
-- [ ] **Step 1: Write the failing test** — create `backend/tests/test_purge_orphans.py`:
+- [x] **Step 1: Write the failing test** — create `backend/tests/test_purge_orphans.py`:
 
 ```python
 """Unit tests for the orphan-session sweep's pure filter (the script isn't a
@@ -846,12 +847,12 @@ def test_bare_web_key_is_not_a_per_chat_thread():
     assert out == []
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_purge_orphans.py -v`
 Expected: FAIL — the script file doesn't exist yet (FileNotFoundError from spec loading).
 
-- [ ] **Step 3: Create `scripts/purge_orphan_sessions.py`:**
+- [x] **Step 3: Create `scripts/purge_orphan_sessions.py`:**
 
 ```python
 #!/usr/bin/env python3
@@ -950,17 +951,17 @@ if __name__ == "__main__":
     asyncio.run(main(ap.parse_args().apply))
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_purge_orphans.py -v`
 Expected: 3 PASS.
 
-- [ ] **Step 5: Live dry-run** (gateway only — no workspace restart needed):
+- [x] **Step 5: Live dry-run** (gateway only — no workspace restart needed):
 
 Run: `.venv/bin/python scripts/purge_orphan_sessions.py`
 Expected: a count line plus `would delete agent:main:web-...` lines (or "0 orphaned"). Sanity-check the list: every key should look like an old per-chat/research thread; `web-titler`, `web-memex`, and the bare `agent:main:web` must NOT appear. **Show the list to the user before anyone runs `--apply`.**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add scripts/purge_orphan_sessions.py backend/tests/test_purge_orphans.py
@@ -978,7 +979,7 @@ The SPA already renders thinking: any `{"delta": text, "thinking": true}` SSE fr
 - Modify: `backend/bridge.py` (`_analysis_delta` helper + relay branch)
 - Modify: `backend/tests/test_bridge_relay.py` (mapping tests)
 
-- [ ] **Step 1: Create the probe** — `scripts/probe_thinking.py`:
+- [x] **Step 1: Create the probe** — `scripts/probe_thinking.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -1043,12 +1044,12 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-- [ ] **Step 2: Run the probe live**
+- [x] **Step 2: Run the probe live**
 
 Run: `.venv/bin/python scripts/probe_thinking.py`
 Expected: JSON frames with `kind: "analysis"` showing where the reasoning text lives. Record the answer (incremental `delta` field vs cumulative `text`/`summary`, and the phase values seen). If NO analysis events appear: thinking may be disabled for ad-hoc sessions or the model didn't reason on this prompt — try a harder prompt once; if still nothing, the bridge mapping below is still safe to land (it simply never fires) — note the finding and continue.
 
-- [ ] **Step 3: Write the failing mapping tests** — append to `backend/tests/test_bridge_relay.py`:
+- [x] **Step 3: Write the failing mapping tests** — append to `backend/tests/test_bridge_relay.py`:
 
 ```python
 def test_analysis_items_map_to_thinking_deltas_with_cumulative_diff():
@@ -1087,12 +1088,12 @@ def test_analysis_delta_ignores_empty_and_repeat():
     assert _analysis_delta({"itemId": "a1"}, seen) == ""
 ```
 
-- [ ] **Step 4: Run to verify failure**
+- [x] **Step 4: Run to verify failure**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_bridge_relay.py -v`
 Expected: the three new tests FAIL (ImportError / frames unconsumed); earlier ones still pass.
 
-- [ ] **Step 5: Implement in `backend/bridge.py`.** Add the helper near `_error_text`:
+- [x] **Step 5: Implement in `backend/bridge.py`.** Add the helper near `_error_text`:
 
 ```python
 def _analysis_delta(data: dict, seen: dict) -> str:
@@ -1131,12 +1132,12 @@ Then in `_relay_events`: initialize `analysis_seen: dict = {}` next to `emitted_
             continue
 ```
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `.venv/bin/python -m pytest backend/tests/ -q`
 Expected: all pass. If the probe showed a DIFFERENT field carrying the text (e.g. only `title`), extend `_analysis_delta`'s fallback chain to include it and update the docstring comment with the observed shape.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/bridge.py backend/tests/test_bridge_relay.py scripts/probe_thinking.py
@@ -1153,7 +1154,7 @@ Verified: `cron.runs {scope:"job", id, limit (1-200)}` → entries `{ts, jobId, 
 - Modify: `backend/cron.py` (mappers + endpoint)
 - Create: `backend/tests/test_cron_runs.py`
 
-- [ ] **Step 1: Write the failing tests** — create `backend/tests/test_cron_runs.py`:
+- [x] **Step 1: Write the failing tests** — create `backend/tests/test_cron_runs.py`:
 
 ```python
 """Unit tests for the cron run-history mappers."""
@@ -1187,12 +1188,12 @@ def test_runs_list_tolerates_container_shapes():
     assert _runs_list({"nope": 4}) == []
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_cron_runs.py -v`
 Expected: FAIL with ImportError (`_map_run` doesn't exist).
 
-- [ ] **Step 3: Implement in `backend/cron.py`** (after `_map_job`):
+- [x] **Step 3: Implement in `backend/cron.py`** (after `_map_job`):
 
 ```python
 def _map_run(r: dict) -> dict:
@@ -1237,12 +1238,12 @@ async def cron_runs(job_id: str, limit: int = 50):
                             content={"runs": [], "error": f"{exc!r}"})
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest backend/tests/ -q`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/cron.py backend/tests/test_cron_runs.py
@@ -1259,7 +1260,7 @@ Add a History button per job row that toggles an inline run list. All in the exi
 - Modify: `frontend-overrides/js/cron.js`
 - Modify: `frontend-overrides/workspace.css` (append styles)
 
-- [ ] **Step 1: Add the button + panel to the row template.** In `render()` (cron.js:78-102), change the actions block from:
+- [x] **Step 1: Add the button + panel to the row template.** In `render()` (cron.js:78-102), change the actions block from:
 
 ```javascript
         `  <div class="cron-job-actions">` +
@@ -1287,7 +1288,7 @@ Then wire it in the `forEach` at cron.js:103-107 by adding:
       row.querySelector('.cron-history').addEventListener('click', () => toggleRuns(id, row));
 ```
 
-- [ ] **Step 2: Add the loader** (after `toggleJob`, before `injectRailButton`):
+- [x] **Step 2: Add the loader** (after `toggleJob`, before `injectRailButton`):
 
 ```javascript
   function fmtDur(ms) {
@@ -1331,7 +1332,7 @@ Then wire it in the `forEach` at cron.js:103-107 by adding:
   }
 ```
 
-- [ ] **Step 3: Append styles to `frontend-overrides/workspace.css`:**
+- [x] **Step 3: Append styles to `frontend-overrides/workspace.css`:**
 
 ```css
 /* --- Cron run history ------------------------------------------------------- */
@@ -1349,12 +1350,12 @@ Then wire it in the `forEach` at cron.js:103-107 by adding:
 .cron-run-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 ```
 
-- [ ] **Step 4: Apply + sanity-check**
+- [x] **Step 4: Apply + sanity-check**
 
 Run: `./scripts/sync-frontend.sh && grep -c "cron-history" frontend/js/cron.js`
 Expected: sync succeeds; grep prints `2` (template + listener).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend-overrides/js/cron.js frontend-overrides/workspace.css
@@ -1371,7 +1372,7 @@ Verified: `skills.update {skillKey, enabled}` → `{ok, skillKey, config}` (`src
 - Modify: `backend/skills.py` (`_map_skill` + endpoint)
 - Create: `backend/tests/test_skills_map.py`
 
-- [ ] **Step 1: Write the failing test** — create `backend/tests/test_skills_map.py`:
+- [x] **Step 1: Write the failing test** — create `backend/tests/test_skills_map.py`:
 
 ```python
 """Unit tests for the skills mapper."""
@@ -1383,12 +1384,12 @@ def test_map_skill_exposes_enabled():
     assert _map_skill({"name": "a", "disabled": True})["enabled"] is False
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `.venv/bin/python -m pytest backend/tests/test_skills_map.py -v`
 Expected: FAIL with KeyError `'enabled'`.
 
-- [ ] **Step 3: Implement.** In `_map_skill`'s returned dict add (after the `"emoji"` line):
+- [x] **Step 3: Implement.** In `_map_skill`'s returned dict add (after the `"emoji"` line):
 
 ```python
         "enabled": not s.get("disabled"),
@@ -1422,12 +1423,12 @@ async def set_skill_enabled(name: str, body: dict = Body(default=None)):
                             content={"ok": False, "error": f"{exc!r}"})
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `.venv/bin/python -m pytest backend/tests/ -q`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/skills.py backend/tests/test_skills_map.py
@@ -1445,7 +1446,7 @@ skills.js is NOT overridden (large, changes upstream) — so don't fork it. A se
 - Modify: `frontend-overrides/workspace.css` (append styles)
 - Modify: `scripts/sync-frontend.sh` (injection block)
 
-- [ ] **Step 1: Create `frontend-overrides/js/skills-toggle.js`:**
+- [x] **Step 1: Create `frontend-overrides/js/skills-toggle.js`:**
 
 ```javascript
 /* OpenClaw Workspace — skill enable/disable toggles (overlay add-on).
@@ -1532,7 +1533,7 @@ skills.js is NOT overridden (large, changes upstream) — so don't fork it. A se
 })();
 ```
 
-- [ ] **Step 2: Append styles to `frontend-overrides/workspace.css`:**
+- [x] **Step 2: Append styles to `frontend-overrides/workspace.css`:**
 
 ```css
 /* --- Skills enable/disable toggle (overlay) --------------------------------- */
@@ -1546,7 +1547,7 @@ skills.js is NOT overridden (large, changes upstream) — so don't fork it. A se
 .skill-enable-toggle.on span { left: 14px; }
 ```
 
-- [ ] **Step 3: Add the injection block to `scripts/sync-frontend.sh`** — right after the gateway-status.js block added in Task 5:
+- [x] **Step 3: Add the injection block to `scripts/sync-frontend.sh`** — right after the gateway-status.js block added in Task 5:
 
 ```bash
   # Inject the skills-toggle add-on once, just before </body> (idempotent).
@@ -1566,12 +1567,12 @@ skills.js is NOT overridden (large, changes upstream) — so don't fork it. A se
   fi
 ```
 
-- [ ] **Step 4: Apply + sanity-check**
+- [x] **Step 4: Apply + sanity-check**
 
 Run: `./scripts/sync-frontend.sh && grep -c "skills-toggle.js" frontend/index.html`
 Expected: `injected skills-toggle.js <script> into index.html`; grep prints `1`. Re-run sync; grep still prints `1`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend-overrides/js/skills-toggle.js frontend-overrides/workspace.css scripts/sync-frontend.sh
@@ -1584,7 +1585,7 @@ git commit -m "feat: skill enable/disable toggles overlay"
 
 All backend changes are committed but the running LaunchAgent still serves old code. Restart ONCE, then walk every feature. Budget 100–190s for the cold start; if the box is disk-thrashing (Spotlight), wait it out — do NOT restart repeatedly.
 
-- [ ] **Step 1: Restart the workspace**
+- [x] **Step 1: Restart the workspace**
 
 ```bash
 launchctl kickstart -k gui/$(id -u)/ai.openclaw.workspace
@@ -1593,7 +1594,7 @@ sleep 30 && until curl -sf http://127.0.0.1:8800/api/health >/dev/null; do sleep
 
 Expected: `UP` within ~3 minutes.
 
-- [ ] **Step 2: Status endpoint + monitor**
+- [x] **Step 2: Status endpoint + monitor**
 
 ```bash
 curl -s http://127.0.0.1:8800/api/gateway/status | python3 -m json.tool
@@ -1601,7 +1602,7 @@ curl -s http://127.0.0.1:8800/api/gateway/status | python3 -m json.tool
 
 Expected: `"state": "ok"`, agents list including `main`, a numeric sessionCount.
 
-- [ ] **Step 3: Browser checks** (over the tailnet, `http://bespin.bicolor-triceratops.ts.net:8800/`):
+- [x] **Step 3: Browser checks** (over the tailnet, `http://bespin.bicolor-triceratops.ts.net:8800/`):
   - status dot visible in the icon rail, green, tooltip shows session count
   - Cron modal → ⟲ on a job (e.g. a refresh job) → run rows render with status/time/duration
   - Skills panel → toggles render; flip a harmless skill off, confirm green→grey, flip back on (round-trip = gateway write works)
@@ -1609,11 +1610,11 @@ Expected: `"state": "ok"`, agents list including `main`, a numeric sessionCount.
   - Mid-stream, hit Stop → stream halts AND the turn dies server-side: `curl -s http://127.0.0.1:8800/api/gateway/status` then confirm via a fresh message that the brain responds (not still busy)
   - Create a throwaway chat, send one line, delete the chat → verify the gateway thread is gone: `.venv/bin/python scripts/purge_orphan_sessions.py` should NOT list it (it's deleted, not orphaned)
 
-- [ ] **Step 4: Restart-awareness check** (combines with a gateway restart you'd do anyway, optional if the box is having a bad day): `launchctl kickstart -k` the GATEWAY agent, watch the workspace dot go amber/red then green, and the banner appear/clear.
+- [x] **Step 4: Restart-awareness check** (combines with a gateway restart you'd do anyway, optional if the box is having a bad day): `launchctl kickstart -k` the GATEWAY agent, watch the workspace dot go amber/red then green, and the banner appear/clear.
 
-- [ ] **Step 5: Record results.** Note any failures honestly; fix-forward with the usual spec/plan update if something diverges (especially the thinking field shape and the cron.runs container key).
+- [x] **Step 5: Record results.** Note any failures honestly; fix-forward with the usual spec/plan update if something diverges (especially the thinking field shape and the cron.runs container key).
 
-- [ ] **Step 6: Final commit if smoke produced fixes**
+- [x] **Step 6: Final commit if smoke produced fixes**
 
 ```bash
 git add -A && git status   # review first — commit only intentional changes

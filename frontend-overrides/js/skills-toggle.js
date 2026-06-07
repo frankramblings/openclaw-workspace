@@ -11,6 +11,7 @@
   const API = window.location.origin;
   let _enabledByName = null;
   let _retrying = false;
+  let _lastRetry = 0;
 
   async function loadStates() {
     try {
@@ -25,10 +26,13 @@
 
   function decorate() {
     if (!_enabledByName) {
-      // First load failed (e.g. gateway cold-booting) — retry once per
-      // observer burst when skill cards actually appear.
-      if (!_retrying && document.querySelector('.skill-card')) {
+      // First load failed (e.g. gateway cold-booting) — retry when skill
+      // cards appear, at most once per 30s (a tight loop here would hammer
+      // a workspace that's itself restarting).
+      const now = Date.now();
+      if (!_retrying && now - _lastRetry > 30000 && document.querySelector('.skill-card')) {
         _retrying = true;
+        _lastRetry = now;
         loadStates().then(() => { _retrying = false; decorate(); });
       }
       return;

@@ -10,6 +10,7 @@
   'use strict';
   const API = window.location.origin;
   let _enabledByName = null;
+  let _retrying = false;
 
   async function loadStates() {
     try {
@@ -23,7 +24,15 @@
   }
 
   function decorate() {
-    if (!_enabledByName) return;
+    if (!_enabledByName) {
+      // First load failed (e.g. gateway cold-booting) — retry once per
+      // observer burst when skill cards actually appear.
+      if (!_retrying && document.querySelector('.skill-card')) {
+        _retrying = true;
+        loadStates().then(() => { _retrying = false; decorate(); });
+      }
+      return;
+    }
     document.querySelectorAll('.skill-card').forEach((card) => {
       if (card.querySelector('.skill-enable-toggle')) return;
       const name = card.dataset.skillName;
@@ -71,9 +80,11 @@
   async function init() {
     await loadStates();
     decorate();
-    // The skills panel renders lazily/repeatedly — decorate whatever appears.
+    // Observe the skills panel's static container (renderSkillsList only
+    // swaps its children); fall back to body if the SPA layout changes.
+    const root = document.getElementById('skills-list') || document.body;
     new MutationObserver(() => decorate())
-      .observe(document.body, { childList: true, subtree: true });
+      .observe(root, { childList: true, subtree: true });
   }
 
   if (document.readyState === 'loading') {

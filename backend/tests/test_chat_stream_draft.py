@@ -26,7 +26,7 @@ def test_doc_bound_turn_wraps_and_emits_doc_update(vault_docs, monkeypatch):
     doc = vault_docs()
     sent = {}
 
-    async def fake_stream_turn(message, session_key=None, model_ref=None):
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None):
         sent["message"] = message
         p = documents._path(doc["id"])
         text = p.read_text(encoding="utf-8")
@@ -64,7 +64,7 @@ def test_doc_bound_turn_wraps_and_emits_doc_update(vault_docs, monkeypatch):
 
 
 def test_turn_without_doc_unchanged(vault_docs, monkeypatch):
-    async def fake_stream_turn(message, session_key=None, model_ref=None):
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None):
         assert "[draft mode]" not in message
         yield bridge._sse({"delta": "hi"})
 
@@ -84,7 +84,7 @@ def test_turn_without_doc_unchanged(vault_docs, monkeypatch):
 def test_doc_deleted_mid_turn_emits_no_update(vault_docs, monkeypatch):
     doc = vault_docs()
 
-    async def fake_stream_turn(message, session_key=None, model_ref=None):
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None):
         documents._path(doc["id"]).unlink()
         yield bridge._sse({"delta": "removed it"})
         yield bridge._sse("[DONE]")

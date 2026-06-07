@@ -69,7 +69,8 @@ async def _recv_json(ws):
 
 
 async def stream_turn(message: str, session_key: str | None = None,
-                      model_ref: str | None = None):
+                      model_ref: str | None = None,
+                      run_info: dict | None = None):
     """Async generator yielding SSE strings for one user turn.
 
     Connects, authenticates (shared-password / allowInsecureAuth — no device
@@ -132,6 +133,9 @@ async def stream_turn(message: str, session_key: str | None = None,
                 yield _sse("[DONE]")
                 return
             run_id = (ack.get("payload") or {}).get("runId")
+            if run_info is not None:
+                run_info["sessionKey"] = session_key
+                run_info["runId"] = run_id
 
             # 3. Relay events for this run until lifecycle end.
             async for chunk in _relay_events(ws, run_id):
@@ -406,7 +410,15 @@ async def _relay_events(ws, run_id):
             continue  # scope strictly to this turn
 
         if event == "chat":
-            if payload.get("state") == "error":
+            state = payload.get("state")
+            if state == "aborted":
+                # chat.abort landed (the Stop button) — end the turn cleanly,
+                # not as an error.
+                yield _sse({"type": "tool_output", "tool": "agent",
+                            "tool_id": "abort", "output": "⏹ stopped by user",
+                            "exit_code": 0})
+                return
+            if state == "error":
                 yield _sse({"type": "tool_output", "tool": "agent",
                             "output": _error_text(payload.get("errorMessage")),
                             "exit_code": 1})

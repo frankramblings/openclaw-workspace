@@ -44,6 +44,12 @@ app.include_router(documents_router)
 app.include_router(uploads_router)
 app.include_router(research_router)
 
+# Active gateway runs by sessionKey, so the Stop button can chat.abort the run
+# server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop
+# (abortCurrentRequest(true)) — until now that hit the GET-only catch-all and
+# only the browser-side fetch died, while the codex run kept burning.
+_ACTIVE_RUNS: dict[str, dict] = {}
+
 
 @app.get("/api/health")
 async def health():
@@ -150,6 +156,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     """
     rec = sessions_store.get(session) if session else None
     session_key = rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+    run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
 
     # Draft mode: chat.js posts active_doc_id whenever the document panel is
     # open (auto-saving the doc first). Snapshot now (the user's undo), wrap
@@ -193,12 +200,15 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                                            "exit_code": 1})
             if draft_doc is not None:
                 brain_message = draft_mode.wrap_message(brain_message, draft_doc)
+            _ACTIVE_RUNS[session_key] = run_info
             async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
-                                                  model_ref=_model_ref(rec)):
+                                                  model_ref=_model_ref(rec),
+                                                  run_info=run_info):
                 if "[DONE]" in chunk:
                     continue  # hold DONE until the title settles, then send our own
                 yield chunk
         finally:
+            _ACTIVE_RUNS.pop(session_key, None)
             if draft_doc is not None:
                 try:
                     update = draft_mode.post_turn_payload(draft_doc)
@@ -298,6 +308,24 @@ async def resume(session_id: str):
 @app.get("/api/chat/stream_status/{session_id}")
 async def stream_status(session_id: str):
     return {"active": False}
+
+
+@app.post("/api/chat/stop/{session_id}")
+async def stop_chat(session_id: str):
+    """The Stop button's server half: chat.abort the active gateway run.
+    Verified shape: chat.abort {sessionKey, runId?} -> {runIds}; omitting
+    runId aborts every run on the key (fine: per-chat keys, single user)."""
+    session_key = sessions_store.session_key_for(session_id)
+    params = {"sessionKey": session_key}
+    run_id = (_ACTIVE_RUNS.get(session_key) or {}).get("runId")
+    if run_id:
+        params["runId"] = run_id
+    try:
+        payload = await bridge.gateway_call("chat.abort", params)
+        return {"ok": True, "runIds": payload.get("runIds") or []}
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": f"{exc!r}"})
 
 
 @app.get("/api/models")

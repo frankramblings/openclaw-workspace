@@ -360,6 +360,33 @@
 .skill-enable-toggle.on { background: #34c759; border-color: #34c759; }
 .skill-enable-toggle.on span { left: 14px; }
 
+/* --- Brain modal: mobile fixes (2026-06-07) --------------------------------- */
+/* style.css caps .memory-toolbar at 120px globally — it's only a transition
+   start point for the expand-a-card collapse animation (max-height can't
+   animate from auto), sized for desktop's single row of category chips. At
+   phone widths the chips wrap to many rows; the toolbar's overflow:visible
+   paints the excess OVER the first memory card (#memory-list is laid out at
+   the clamped bottom). Lift the cap well past any realistic chip wrap on
+   phones; keep it finite so the collapse transition still animates. The id
+   selector outranks upstream's class rule — no !important needed. */
+@media (max-width: 768px) {
+  #memory-modal .memory-toolbar { max-height: 480px; }
+}
+
+/* The full-screen mobile modal reserves only the BOTTOM safe area upstream
+   (style.css ~6178); in the installed-PWA standalone mode the status bar
+   then draws over the Brain header. Mirror the app chrome's established
+   safe-area-inset-top pattern (see .icon-rail etc. above). !important to
+   match the upstream rule's own !important padding.
+   Note: the 6px base comes from style.css:6150 (padding-top: 6px !important
+   on the generic sheet modal-content rule, which applies before the full-screen
+   ID-scoped block overrides height but leaves padding-top unset there). */
+@media (max-width: 768px) {
+  #memory-modal .memory-modal-content {
+    padding-top: calc(6px + env(safe-area-inset-top, 0px)) !important;
+  }
+}
+
 /* --- Cron run history ------------------------------------------------------- */
 /* :not([hidden]) keeps the UA's [hidden]{display:none} effective — a plain
    author `display:flex` would beat it by cascade origin and un-hide the panel. */

@@ -276,48 +276,95 @@
     return overlay;
   }
 
+  // Swipe-down-to-dismiss, ported from ui.js's .modal-content handler (same
+  // constants, same feel as Email/Brain/Calendar): drag from the header/grab
+  // zone, or from ANYWHERE once the list is scrolled to top; follow the
+  // finger; rubber-band upward; dismiss on distance OR a fast flick. We can't
+  // reuse the ui.js handler itself — it dismisses via .modal/.hidden
+  // conventions this overlay deliberately doesn't use.
   function wireSheetDismiss(overlay) {
+    const DISMISS_THRESHOLD = 50;   // px — dismiss if dragged past this
+    const VELOCITY_THRESHOLD = 0.3; // px/ms — fast flick dismisses below it
+    const RUBBER_RESISTANCE = 0.35; // upward drag resistance
     const card = $('.cron-modal-card', overlay);
-    let startY = null;
-    let dy = 0;
-    const onStart = (e) => {
-      if (e.touches.length !== 1) { startY = null; return; }
-      startY = e.touches[0].clientY;
-      dy = 0;
-    };
-    const onMove = (e) => {
-      if (startY == null) return;
-      dy = e.touches[0].clientY - startY;
-      if (dy > 0) {
-        e.preventDefault();            // we own the gesture — no scroll bleed
+    const body = $('#inbox-body', overlay);
+    let startX = 0, startY = 0, lastY = 0, lastT = 0, velocity = 0;
+    let active = false, dragging = false;
+
+    card.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) { active = false; return; }
+      const t = e.target;
+      // Buttons/inputs in the header must stay tappable.
+      if (t.closest('button, input, select, label') && t.closest('.cron-modal-head')) return;
+      const touch = e.touches[0];
+      const inHandle = !!t.closest('.cron-modal-head, .inbox-grabber')
+        || (touch.clientY - card.getBoundingClientRect().top) < 48;
+      const atTop = !body || body.scrollTop <= 0;
+      if (!inHandle && !atTop) return;   // mid-list touches → native scroll
+      active = true;
+      dragging = false;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      lastY = startY;
+      lastT = e.timeStamp;
+      velocity = 0;
+    }, { passive: true });
+
+    card.addEventListener('touchmove', (e) => {
+      if (!active) return;
+      const touch = e.touches[0];
+      const dx = Math.abs(touch.clientX - startX);
+      const dy = touch.clientY - startY;
+      if (!dragging) {
+        // Horizontal intent = the items' swipe-triage gesture — stand down.
+        if (dx > 40 && dx > Math.abs(dy) * 2) { active = false; return; }
+        if (Math.abs(dy) <= 8) return;   // not enough travel to decide yet
+        // Downward while the list isn't at top → native scroll owns it.
+        if (dy > 0 && body && body.scrollTop > 0) { active = false; return; }
+        if (dy < 0) { active = false; return; }  // upward = scrolling intent
+        dragging = true;
         card.style.transition = 'none';
-        card.style.transform = `translateY(${dy}px)`;
+        card.style.willChange = 'transform';
       }
-    };
+      const dt = e.timeStamp - lastT;
+      if (dt > 0) velocity = velocity * 0.6 + ((touch.clientY - lastY) / dt) * 0.4;
+      lastY = touch.clientY;
+      lastT = e.timeStamp;
+      e.preventDefault();                // we own the gesture
+      card.style.transform = dy > 0
+        ? `translateY(${dy}px)`
+        : `translateY(${dy * RUBBER_RESISTANCE}px)`;
+    }, { passive: false });
+
     const onEnd = () => {
-      if (startY == null) return;
-      startY = null;
-      card.style.transition = 'transform 0.18s ease';
-      if (dy > 90) {                   // pulled far enough — dismiss
+      if (!active) return;
+      active = false;
+      if (!dragging) return;
+      dragging = false;
+      card.style.willChange = '';
+      const dy = lastY - startY;
+      const shouldDismiss = dy > DISMISS_THRESHOLD
+        || (dy > 20 && velocity > VELOCITY_THRESHOLD);
+      if (shouldDismiss) {
+        // Exit speed follows the flick, like ui.js.
+        const remaining = card.offsetHeight - dy;
+        const speed = Math.max(Math.abs(velocity), 0.8);
+        const duration = Math.min(Math.max(remaining / speed, 120), 300);
+        card.style.transition = `transform ${duration}ms cubic-bezier(0.2, 0, 0.4, 1)`;
         card.style.transform = 'translateY(100%)';
         setTimeout(() => {
           close();
           card.style.transform = '';
           card.style.transition = '';
-        }, 180);
-      } else {                         // not far enough — snap back
+        }, duration + 10);
+      } else {
+        card.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.05)';
         card.style.transform = '';
-        setTimeout(() => { card.style.transition = ''; }, 200);
+        setTimeout(() => { card.style.transition = ''; }, 260);
       }
-      dy = 0;
     };
-    [$('#inbox-grabber', overlay), $('.cron-modal-head', overlay)].forEach((z) => {
-      if (!z) return;
-      z.addEventListener('touchstart', onStart, { passive: true });
-      z.addEventListener('touchmove', onMove, { passive: false });
-      z.addEventListener('touchend', onEnd, { passive: true });
-      z.addEventListener('touchcancel', onEnd, { passive: true });
-    });
+    card.addEventListener('touchend', onEnd, { passive: true });
+    card.addEventListener('touchcancel', onEnd, { passive: true });
   }
 
   function open() {

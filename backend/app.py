@@ -169,6 +169,49 @@ def _wants_web(use_web: str, allow_web_search: str) -> bool:
                for v in (use_web, allow_web_search))
 
 
+def _sse_frame(chunk: str):
+    """Parse one of the bridge's `data: {...}` SSE strings back to its dict
+    (None for [DONE]/non-JSON). Used to observe what the turn relayed."""
+    body = chunk[5:].strip() if chunk.startswith("data:") else ""
+    if not body or body == "[DONE]":
+        return None
+    try:
+        obj = json.loads(body)
+    except ValueError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def reply_after(history: list, brain_message: str) -> str | None:
+    """Assistant text following the LAST occurrence of this turn's user message
+    in the transcript — i.e. THIS turn's reply, never an earlier one."""
+    idx = next((i for i in range(len(history) - 1, -1, -1)
+                if history[i].get("role") == "user"
+                and history[i].get("content") == brain_message), None)
+    if idx is None:
+        return None
+    text = "\n".join(str(m.get("content") or "") for m in history[idx + 1:]
+                     if m.get("role") == "assistant").strip()
+    return text or None
+
+
+async def _late_reply(session_key: str, brain_message: str,
+                      attempts: int = 5, delay_s: float = 2.0) -> str | None:
+    """Fetch the reply that the gateway commits to the transcript only AFTER
+    the run's lifecycle end (message-tool delivery — see _relay_events docs).
+    Polls briefly; returns None if nothing lands (genuinely textless turn)."""
+    for _ in range(attempts):
+        await asyncio.sleep(delay_s)
+        try:
+            data = await bridge.fetch_history(session_key)
+        except Exception:  # noqa: BLE001 - transient WS trouble: keep polling
+            continue
+        text = reply_after(data.get("history") or [], brain_message)
+        if text:
+            return text
+    return None
+
+
 @app.post("/api/chat_stream")
 async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                       use_web: str = Form(default=""),
@@ -202,6 +245,9 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
 
     async def gen():
         brain_message = message
+        text_seen = False    # any non-thinking {"delta"} relayed this turn?
+        tools_seen = False   # any tool card relayed (fresh bubble needed)?
+        failed = False       # bridge/agent error or user abort — no reply coming
         try:
             # Web search (the composer's globe toggle — field name varies by
             # the SPA's vestigial mode, see _wants_web). Search failures
@@ -236,7 +282,28 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                                                   run_info=run_info):
                 if "[DONE]" in chunk:
                     continue  # hold DONE until the title settles, then send our own
+                frame = _sse_frame(chunk)
+                if isinstance(frame, dict):
+                    if frame.get("delta") and not frame.get("thinking"):
+                        text_seen = True
+                    if frame.get("type") in ("tool_start", "tool_output"):
+                        tools_seen = True
+                    if (frame.get("exit_code") == 1
+                            and frame.get("tool") in ("bridge", "agent")) \
+                            or frame.get("tool_id") == "abort":
+                        failed = True
                 yield chunk
+            # Late delivery: the agent often replies via its `message` tool,
+            # whose text lands in the transcript seconds AFTER the run's
+            # lifecycle end — the live stream then carries no text at all and
+            # the reply only appeared on the next refresh. Same workaround the
+            # research engine needed: poll chat.history briefly and emit it.
+            if not text_seen and not failed:
+                late = await _late_reply(session_key, brain_message)
+                if late:
+                    if tools_seen:
+                        yield bridge._sse({"type": "agent_step"})  # fresh bubble
+                    yield bridge._sse({"delta": late})
         finally:
             _ACTIVE_RUNS.pop(session_key, None)
             if draft_doc is not None:

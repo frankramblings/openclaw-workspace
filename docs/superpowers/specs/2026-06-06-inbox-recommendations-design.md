@@ -217,3 +217,15 @@ script tags live in `frontend-overrides/index.html`.
 - Auto-triage on open; cron pre-warm.
 - Slack reply/post actions (write path beyond mark_read).
 - Confidence-gated confirm steps (undo is the safety net).
+
+## Status
+
+Implemented + live-smoke-tested 2026-06-06 (plan
+`docs/superpowers/plans/2026-06-06-inbox-recommendations.md`). Verified live:
+18 heuristic recs on the real feed; gmail archive→undo round-trip (message
+restored to INBOX under a new uid, history entry consumed); ✨ triage pass
+scored 120 items in one brain turn with sensible high-confidence reasons;
+reply-intent spinoff produced a correctly-named seeded session. Two bugs found
+and fixed during smoke: himalaya silently swallows trailing options after a
+query positional (find_uid now orders `-o json` before the query), and the
+triage JSON extractor now uses raw_decode (prose/brackets-safe).

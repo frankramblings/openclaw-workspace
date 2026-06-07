@@ -342,7 +342,7 @@
 .gw-dot[data-state="restarting"] { background: #ff9f0a; animation: gw-pulse 1.2s infinite; }
 .gw-dot[data-state="down"] { background: #ff3b30; }
 @keyframes gw-pulse { 50% { opacity: 0.35; } }
-#gw-banner { display: none; position: sticky; top: 0; z-index: 300;
+#gw-banner { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 300;
   align-items: center; gap: 10px; padding: 7px 14px; font-size: 13px;
   background: rgba(255, 159, 10, 0.14); color: inherit;
   border-bottom: 1px solid rgba(255, 159, 10, 0.45); }

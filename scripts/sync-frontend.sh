@@ -10,15 +10,20 @@ SRC="${ODYSSEUS_STATIC:-$HOME/odysseus/static}"
 DEST="$ROOT/frontend"
 OVERRIDES="$ROOT/frontend-overrides"
 
-if [[ ! -d "$SRC" ]]; then
-  echo "error: Odysseus static dir not found at $SRC" >&2
-  echo "set ODYSSEUS_STATIC=/path/to/odysseus/static and retry" >&2
+if [[ -d "$SRC" ]]; then
+  mkdir -p "$DEST"
+  rsync -a --delete "$SRC"/ "$DEST"/
+  echo "synced $SRC -> $DEST"
+elif [[ -d "$DEST" ]]; then
+  # Upstream Odysseus checkout is gone (removed 2026-06-07). frontend/ holds
+  # the last full sync; keep layering overrides + injections onto it so
+  # override-only changes still ship. Restore SRC (or set ODYSSEUS_STATIC)
+  # to resume true upstream syncs.
+  echo "warn: $SRC missing — overlay-only mode (no upstream rsync)" >&2
+else
+  echo "error: neither $SRC nor existing $DEST found" >&2
   exit 1
 fi
-
-mkdir -p "$DEST"
-rsync -a --delete "$SRC"/ "$DEST"/
-echo "synced $SRC -> $DEST"
 
 # --- Re-apply durable overrides (mirror frontend-overrides/ into frontend/) ---
 if [[ -d "$OVERRIDES" ]]; then
@@ -109,7 +114,7 @@ fi
 #   - js/presets.js                 the "Odysseus" character persona preset
 #   - js/research/panel.js          a research-query example about the myth
 #   - any line matching /Laertes/   the Homer "I am Odysseus…" quote in /quote
-rebrand() { [[ -f "$1" ]] && grep -q "Odysseus" "$1" && sed -i '' '/Laertes/!s/Odysseus/Gary/g' "$1" && echo "rebranded $1"; }
+rebrand() { [[ -f "$1" ]] && grep -q "Odysseus" "$1" && sed -i '' '/Laertes/!s/Odysseus/Gary/g' "$1" && echo "rebranded $1"; true; }
 rebrand "$DEST/app.js"
 while IFS= read -r -d '' f; do rebrand "$f"; done < <(
   find "$DEST/js" -type f -name '*.js' \

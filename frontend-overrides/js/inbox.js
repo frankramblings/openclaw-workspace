@@ -181,12 +181,23 @@
     });
     const chip = $('.inbox-rec-chip', el);
     if (chip && it.rec) {
-      chip.addEventListener('click', async () => {
+      const fire = async () => {
+        if (chip.dataset.pending) return;   // divs ignore .disabled — guard double-fire
+        chip.dataset.pending = '1';
         chip.style.opacity = '0.5';
-        if (it.rec.action === 'reply' || it.rec.action === 'gary') {
-          return handToGary(it, chip, it.rec.action);
+        try {
+          if (it.rec.action === 'reply' || it.rec.action === 'gary') {
+            return await handToGary(it, chip, it.rec.action);
+          }
+          await doAction(it, it.rec.action, el, chip);
+        } finally {
+          delete chip.dataset.pending;
+          chip.style.opacity = '';
         }
-        await doAction(it, it.rec.action, el, chip);
+      };
+      chip.addEventListener('click', fire);
+      chip.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(); }
       });
     }
   }

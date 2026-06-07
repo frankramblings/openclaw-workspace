@@ -7,29 +7,13 @@ with a self-contained overlay (frontend-overrides/js/cron.js) that adds one.
 """
 from __future__ import annotations
 
-import websockets
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from . import config
-from .bridge import _connect_params, _request, _wait_for_challenge
+from .bridge import gateway_call
 
 
 router = APIRouter()
-
-
-async def _cron_call(method: str, params: dict | None = None) -> dict:
-    url = config.gateway_ws_url()
-    async with websockets.connect(url, max_size=None, open_timeout=30,
-                                  ping_interval=None) as ws:
-        await _wait_for_challenge(ws)
-        hello = await _request(ws, "connect", _connect_params())
-        if not hello.get("ok"):
-            raise RuntimeError(f"gateway connect failed: {hello}")
-        res = await _request(ws, method, params or {})
-    if not res.get("ok"):
-        raise RuntimeError(f"{method} failed: {res}")
-    return res.get("payload") or {}
 
 
 def _map_job(j: dict) -> dict:
@@ -60,7 +44,7 @@ def _map_job(j: dict) -> dict:
 @router.get("/api/cron")
 async def list_cron():
     try:
-        data = await _cron_call("cron.list", {"limit": 200})
+        data = await gateway_call("cron.list", {"limit": 200})
         jobs = [_map_job(j) for j in (data.get("jobs") or [])]
         # Enabled first, then by name — stable, scannable.
         jobs.sort(key=lambda j: (not j["enabled"], (j["name"] or "").lower()))
@@ -74,7 +58,7 @@ async def list_cron():
 @router.post("/api/cron/{job_id}/run")
 async def run_cron(job_id: str):
     try:
-        await _cron_call("cron.run", {"id": job_id})
+        await gateway_call("cron.run", {"id": job_id})
         return {"ok": True, "id": job_id}
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502, content={"ok": False, "error": f"{exc!r}"})
@@ -83,7 +67,7 @@ async def run_cron(job_id: str):
 @router.post("/api/cron/{job_id}/enable")
 async def enable_cron(job_id: str):
     try:
-        await _cron_call("cron.update", {"id": job_id, "enabled": True})
+        await gateway_call("cron.update", {"id": job_id, "enabled": True})
         return {"ok": True, "id": job_id, "enabled": True}
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502, content={"ok": False, "error": f"{exc!r}"})
@@ -92,7 +76,7 @@ async def enable_cron(job_id: str):
 @router.post("/api/cron/{job_id}/disable")
 async def disable_cron(job_id: str):
     try:
-        await _cron_call("cron.update", {"id": job_id, "enabled": False})
+        await gateway_call("cron.update", {"id": job_id, "enabled": False})
         return {"ok": True, "id": job_id, "enabled": False}
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502, content={"ok": False, "error": f"{exc!r}"})

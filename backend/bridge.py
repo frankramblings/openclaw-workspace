@@ -239,6 +239,24 @@ async def _request(ws, method: str, params: dict | None = None) -> dict:
     return await _await_response(ws, req_id)
 
 
+async def gateway_call(method: str, params: dict | None = None) -> dict:
+    """One-shot gateway request on a fresh authed WS: connect, auth, call,
+    return the response payload (raises RuntimeError on failure). The shared
+    helper for every non-streaming adapter — cron, skills, monitor, session
+    hygiene, abort."""
+    url = config.gateway_ws_url()
+    async with websockets.connect(url, max_size=None, open_timeout=30,
+                                  ping_interval=None) as ws:
+        await _wait_for_challenge(ws)
+        hello = await _request(ws, "connect", _connect_params())
+        if not hello.get("ok"):
+            raise RuntimeError(f"gateway connect failed: {hello}")
+        res = await _request(ws, method, params or {})
+    if not res.get("ok"):
+        raise RuntimeError(f"{method} failed: {res}")
+    return res.get("payload") or {}
+
+
 # --- Model catalog: real gateway model list, mapped to the SPA's picker shape -
 
 _PROVIDER_META = {

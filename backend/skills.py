@@ -13,12 +13,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import websockets
 from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
 
-from . import config
-from .bridge import _connect_params, _request, _wait_for_challenge
+from .bridge import gateway_call
 
 router = APIRouter()
 
@@ -52,17 +50,8 @@ def _map_skill(s: dict) -> dict:
 
 async def fetch_skills() -> list[dict]:
     """Pull skills.status from the gateway, refresh the filePath cache, map them."""
-    url = config.gateway_ws_url()
-    async with websockets.connect(url, max_size=None, open_timeout=30,
-                                  ping_interval=None) as ws:
-        await _wait_for_challenge(ws)
-        hello = await _request(ws, "connect", _connect_params())
-        if not hello.get("ok"):
-            raise RuntimeError(f"gateway connect failed: {hello}")
-        res = await _request(ws, "skills.status")
-    if not res.get("ok"):
-        raise RuntimeError(f"skills.status failed: {res}")
-    raw = (res.get("payload") or {}).get("skills") or []
+    payload = await gateway_call("skills.status")
+    raw = payload.get("skills") or []
     _by_name.clear()
     for s in raw:
         if s.get("name"):

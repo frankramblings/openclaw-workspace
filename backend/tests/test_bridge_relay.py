@@ -43,3 +43,10 @@ def test_aborted_state_maps_to_stopped_card():
     assert out[0]["type"] == "tool_output"
     assert out[0]["exit_code"] == 0
     assert "stopped" in out[0]["output"]
+
+
+def test_disconnect_message_reflects_monitor_state():
+    from backend.bridge import _disconnect_message
+    assert "restarting" in _disconnect_message("restarting")
+    assert "restarting" not in _disconnect_message("down")
+    assert "may not have completed" in _disconnect_message("down")

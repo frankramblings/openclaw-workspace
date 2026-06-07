@@ -139,6 +139,11 @@ async def stream_turn(message: str, session_key: str | None = None,
             # 3. Relay events for this run until lifecycle end.
             async for chunk in _relay_events(ws, run_id):
                 yield chunk
+    except websockets.ConnectionClosed:
+        from . import monitor  # local import: monitor imports bridge helpers
+        yield _sse({"type": "tool_output", "tool": "bridge",
+                    "output": _disconnect_message(monitor.current_state()),
+                    "exit_code": 1})
     except Exception as exc:  # noqa: BLE001 - surface any failure into the UI
         yield _sse({"type": "tool_output", "tool": "bridge",
                     "output": f"bridge error: {exc!r}", "exit_code": 1})
@@ -469,6 +474,18 @@ async def _relay_events(ws, run_id):
                 return
             if phase == "end":
                 return
+
+
+def _disconnect_message(monitor_state: str) -> str:
+    """A human explanation for a WS that died mid-turn, using what the
+    persistent monitor knows. On this host the gateway restarts (launchctl
+    kickstart, updates) and cold-boots for minutes — say so instead of a
+    generic error."""
+    if monitor_state == "restarting":
+        return ("🧠 the gateway is restarting — this message may not have "
+                "completed; retry once the status dot is green")
+    return ("🧠 lost the gateway connection mid-turn — this message may not "
+            "have completed")
 
 
 def _error_text(raw) -> str:

@@ -395,6 +395,28 @@
   }
 }
 
+/* Pane-style full-screen takeovers share the same bottom-only gap through a
+   DIFFERENT construction: at ≤768px Notes (style.css:28047) and the Documents
+   editor (style.css:12559) go position:fixed; inset:0; 100dvh with no top
+   inset, so the status bar draws over their headers too. These panes carry no
+   base padding — a bare inset works; their var(--panel) background fills the
+   status-bar strip. */
+@media (max-width: 768px) {
+  body.notes-view .notes-pane,
+  body.doc-view .doc-editor-pane {
+    padding-top: env(safe-area-inset-top, 0px) !important;
+  }
+  /* The pop-out email window's fullscreen mode is inset:0 at every width
+     (style.css:14603); its .modal-content carries the sheet family's 6px base
+     padding. #gallery-modal is hidden chrome today but is upstream's companion
+     to doclib in the same 100dvh family (style.css:4020, 6229) — included so
+     it's already correct if ever re-enabled. */
+  .email-window-modal.email-window-fullscreen .modal-content,
+  #gallery-modal .modal-content {
+    padding-top: calc(6px + env(safe-area-inset-top, 0px)) !important;
+  }
+}
+
 /* --- Cron run history ------------------------------------------------------- */
 /* :not([hidden]) keeps the UA's [hidden]{display:none} effective — a plain
    author `display:flex` would beat it by cascade origin and un-hide the panel. */

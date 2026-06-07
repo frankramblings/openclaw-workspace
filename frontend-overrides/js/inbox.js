@@ -328,7 +328,9 @@
       b.addEventListener('click', async () => {
         b.disabled = true;
         await doUndo(Number(b.dataset.ts));
-        renderHistory();
+        // doUndo's load(true) flipped us to the feed (showing the restored
+        // card); only re-render the drawer if we're somehow still in it.
+        if (_view === 'history') renderHistory();
       });
     });
   }

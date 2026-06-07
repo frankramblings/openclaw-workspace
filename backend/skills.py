@@ -43,6 +43,7 @@ def _map_skill(s: dict) -> dict:
         "category": s.get("source") or "skill",
         "source": s.get("source") or "",
         "emoji": s.get("emoji") or "",
+        "enabled": not s.get("disabled"),
         "tags": tags,
         "uses": 0,
     }
@@ -129,6 +130,31 @@ async def skill_markdown(name: str):
     if md is None:
         return JSONResponse(status_code=404, content={"detail": "no such skill"})
     return {"markdown": md, "text": md}
+
+
+@router.post("/api/skills/{name}/enabled")
+async def set_skill_enabled(name: str, body: dict = Body(default=None)):
+    """Enable/disable one skill via the gateway. Verified: skills.update
+    {skillKey, enabled} -> {ok, skillKey, config}. The overlay toggle posts
+    {"enabled": bool}; `name` is the display name (resolved to skillKey via
+    the cache) or already a skillKey."""
+    enabled = bool((body or {}).get("enabled", True))
+    entry = _by_name.get(name)
+    if entry is None:
+        try:
+            await fetch_skills()  # refresh the name -> entry cache
+        except Exception:  # noqa: BLE001
+            pass
+        entry = _by_name.get(name)
+    skill_key = (entry or {}).get("skillKey") or name
+    try:
+        payload = await gateway_call("skills.update",
+                                     {"skillKey": skill_key, "enabled": enabled})
+        return {"ok": True, "skillKey": skill_key, "enabled": enabled,
+                "config": payload.get("config")}
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": f"{exc!r}"})
 
 
 @router.delete("/api/skills/{name}")

@@ -106,7 +106,9 @@
           setTimeout(() => springShut(el), SWIPE.SNAP_MS);
           return await handToGary(it, zone, act);
         }
-        await doAction(it, act, el, zone);
+        // Pass the label span so doAction's ⚠-on-failure doesn't clobber the
+        // zone div's innerHTML (which carries data-act + the armed animation).
+        await doAction(it, act, el, $('.swipe-zone-label', zone) || zone);
       } else {
         await doAction(it, 'dismiss', el, $('.swipe-zone-dismiss', el));
       }
@@ -151,6 +153,9 @@
 
     el.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' || el.dataset.pending) return;
+      // Clear any stale suppress flag: after a long drag iOS fires NO synthetic
+      // click, so the flag would otherwise swallow the next legitimate tap.
+      el._suppressClick = false;
       if (_openCard && _openCard !== el) closeOpenCard();
       active = true;
       startX = e.clientX; startY = e.clientY;

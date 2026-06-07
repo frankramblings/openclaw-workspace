@@ -60,6 +60,7 @@
       '  <div class="cron-modal-head">' +
       '    <span class="cron-modal-title">Inbox</span>' +
       '    <span class="inbox-chips" id="inbox-chips"></span>' +
+      '    <button class="inbox-refresh" id="inbox-triage-btn" title="✨ AI triage">&#x2728;</button>' +
       '    <button class="inbox-refresh" id="inbox-history-btn" title="History">&#x1F552;</button>' +
       '    <button class="inbox-refresh" id="inbox-refresh" title="Refresh">&#x21bb;</button>' +
       '    <button class="cron-modal-close" id="inbox-close" title="Close">&#x2715;</button>' +
@@ -70,6 +71,7 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
     $('#inbox-close', overlay).addEventListener('click', close);
     $('#inbox-refresh', overlay).addEventListener('click', () => load(true));
+    $('#inbox-triage-btn', overlay).addEventListener('click', runTriage);
     $('#inbox-history-btn', overlay).addEventListener('click', toggleHistory);
     _modal = overlay;
     return overlay;
@@ -315,6 +317,28 @@
     } catch (err) {
       showToast('Undo failed: ' + String(err.message || err), null);
     }
+  }
+
+  async function runTriage() {
+    const btn = $('#inbox-triage-btn', _modal);
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '…';
+    try {
+      const r = await fetch(`${API}/api/items/triage`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      showToast(`✨ scored ${data.scored} item${data.scored === 1 ? '' : 's'}`, null);
+      await load(true);
+    } catch (err) {
+      showToast('Triage failed: ' + String(err.message || err), null);
+    }
+    btn.disabled = false;
+    btn.innerHTML = orig;
   }
 
   function toggleHistory() {

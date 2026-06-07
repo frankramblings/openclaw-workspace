@@ -5,9 +5,8 @@ with name/description/source/filePath/emoji/disabled/eligible/... We map that
 onto the shape the skills.js panel renders, and serve each skill's SKILL.md
 from its on-disk `filePath` for the expand-to-read view.
 
-Read-only for v1: list + view markdown. The panel's audit/add/edit actions ack
-cleanly so the UI doesn't error, but mutating the on-disk skill set (bundled
-under node_modules, or the managed dir) is out of scope here.
+Read-only except enable/disable (gateway skills.update); list + view markdown.
+The panel's audit/add actions still ack cleanly without mutating.
 """
 from __future__ import annotations
 
@@ -146,6 +145,11 @@ async def set_skill_enabled(name: str, body: dict = Body(default=None)):
         except Exception:  # noqa: BLE001
             pass
         entry = _by_name.get(name)
+    if entry is None and _by_name and not any(
+            (s or {}).get("skillKey") == name for s in _by_name.values()):
+        return JSONResponse(status_code=404,
+                            content={"ok": False,
+                                     "error": f"unknown skill: {name!r}"})
     skill_key = (entry or {}).get("skillKey") or name
     try:
         payload = await gateway_call("skills.update",

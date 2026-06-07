@@ -74,3 +74,68 @@ def pick(item: dict, stats: dict, ai_recs: dict) -> dict | None:
                     "confidence": ai.get("confidence") or "med"}
         return None
     return history_rec(item, stats) or heuristic_rec(item)
+
+
+# --- ✨ triage pass (LLM layer) ------------------------------------------------
+
+import json as _json
+
+TRIAGE_CAP = 120
+
+
+def build_triage_prompt(items: list[dict], cap: int = TRIAGE_CAP):
+    """One prompt for the whole feed. Returns (prompt, included_items) —
+    highest-score first when over the cap."""
+    chosen = sorted(items, key=lambda i: -i.get("score", 0))[:cap]
+    lines = [
+        "You triage my unified inbox. For each item decide the single most "
+        "likely action I'd take, or \"none\" if it genuinely needs my judgment.",
+        "Allowed actions per source — anything else is invalid:",
+        "  gmail: archive|delete|reply|gary|none",
+        "  slack: mark_read|gary|none",
+        "  asana: complete|gary|none",
+        "  obsidian: reviewed|gary|none",
+        "  documents: gary|none",
+        "(reply = I should answer this email; gary = hand to my assistant "
+        "with context. Prefer archive for newsletters/notifications, delete "
+        "for obvious junk, none when unsure.)",
+        "",
+        "Reply with STRICT JSON only — a single array, no prose, no markdown "
+        "fences:",
+        '[{"id": "<id>", "action": "<action>", "confidence": "high|med|low", '
+        '"reason": "<max 8 words>"}]',
+        "",
+        "Items:",
+    ]
+    for it in chosen:
+        lines.append(_json.dumps({
+            "id": it["id"], "source": it["source"], "title": it["title"][:120],
+            "from": it.get("subtitle", "")[:60], "snippet": (it.get("snippet") or "")[:120],
+            "ageHours": round(it.get("ageHours", 0), 1)}, ensure_ascii=False))
+    return "\n".join(lines), chosen
+
+
+def parse_triage_reply(text: str, valid: dict, now_ms: int) -> dict:
+    """valid: {item_id: source}. Returns {\"source:id\": rec} with everything
+    invalid dropped (unknown ids, disallowed actions, malformed entries)."""
+    m = re.search(r"\[[\s\S]*\]", text or "")
+    if not m:
+        return {}
+    try:
+        arr = _json.loads(m.group(0))
+    except _json.JSONDecodeError:
+        return {}
+    out: dict = {}
+    for e in arr if isinstance(arr, list) else []:
+        if not isinstance(e, dict):
+            continue
+        iid, action = str(e.get("id") or ""), e.get("action")
+        source = valid.get(iid)
+        if not source or action not in ALLOWED.get(source, set()):
+            continue
+        conf = e.get("confidence")
+        out[f"{source}:{iid}"] = {
+            "action": action,
+            "confidence": conf if conf in ("high", "med", "low") else "med",
+            "reason": str(e.get("reason") or "")[:80], "ts": now_ms}
+    return out

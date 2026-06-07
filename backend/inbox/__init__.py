@@ -13,7 +13,7 @@ import time
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from .. import email_himalaya, sessions_store
+from .. import bridge, config, email_himalaya, sessions_store
 from ..research import _agent_turn
 from . import recommend, state
 from .sources import asana, documents_stale, gmail, obsidian, slack
@@ -193,6 +193,36 @@ async def items_undo(payload: dict):
     return {"ok": True}
 
 
+@router.post("/api/items/triage")
+async def triage(payload: dict | None = None):
+    """One brain turn scores every visible un-scored item (spec §4)."""
+    feed = await items(limit=500)
+    cached = state.recs()
+    pending = [i for i in feed["items"]
+               if f"{i['source']}:{i['id']}" not in cached]
+    if not pending:
+        return {"scored": 0, "skipped": len(feed["items"]), "capHit": False}
+    prompt, chosen = recommend.build_triage_prompt(pending)
+    try:
+        reply = await bridge.run_text(
+            prompt, session_key=config.INBOX_TRIAGE_SESSION_KEY)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": str(exc)})
+    valid = {i["id"]: i["source"] for i in chosen}
+    new = recommend.parse_triage_reply(reply, valid,
+                                       now_ms=int(time.time() * 1000))
+    if not new:
+        return JSONResponse(status_code=503, content={
+            "ok": False,
+            "error": "triage produced no usable JSON (codex stall/throttle?) "
+                     "— nothing cached, try again"})
+    live = {f"{i['source']}:{i['id']}" for i in feed["items"]}
+    state.set_recs(new, live_keys=live)
+    return {"scored": len(new), "skipped": len(feed["items"]) - len(pending),
+            "capHit": len(pending) > len(chosen)}
+
+
 @router.post("/api/items/spinoff")
 async def spinoff(payload: dict):
     """'Hand to Gary': mint a chat session seeded with the item (the client
@@ -202,14 +232,33 @@ async def spinoff(payload: dict):
     title = (item.get("title") or "").strip()
     if not title:
         return _bad("item.title is required")
-    sess = sessions_store.create(name=f"Inbox: {title[:48]}")
-    seed = ("Context for this conversation — an item from my unified inbox "
-            f"({item.get('source', '?')}):\n\nTitle: {title}\n"
-            f"From/where: {item.get('subtitle', '')}\n"
-            f"Details: {item.get('snippet', '')}\n"
-            f"Link: {(item.get('meta') or {}).get('url') or 'n/a'}\n\n"
-            "Reply with one short sentence confirming you have the context; "
-            "the user will say what they need next.")
+    intent = payload.get("intent")
+    meta = item.get("meta") or {}
+    if intent == "reply" and item.get("source") == "gmail" and meta.get("uid"):
+        body_text = ""
+        try:
+            msg = await email_himalaya.email_read(str(meta["uid"]),
+                                                  mark_seen=False)
+            body_text = (msg.get("body") or "")[:4000]
+        except Exception:  # noqa: BLE001 - draft without the body if read fails
+            pass
+        style = email_himalaya._load_style()
+        style_block = f"\n\nWrite in MY style:\n{style}" if style else ""
+        seed = ("Draft a reply to this email. Show me the draft and iterate "
+                "with me; I'll send it from the Email tab when happy."
+                f"{style_block}\n\nFrom: {item.get('subtitle', '')}\n"
+                f"Subject: {title}\n\n{body_text}")
+        sess_name = f"Reply: {title[:44]}"
+    else:
+        seed = ("Context for this conversation — an item from my unified inbox "
+                f"({item.get('source', '?')}):\n\nTitle: {title}\n"
+                f"From/where: {item.get('subtitle', '')}\n"
+                f"Details: {item.get('snippet', '')}\n"
+                f"Link: {meta.get('url') or 'n/a'}\n\n"
+                "Reply with one short sentence confirming you have the context; "
+                "the user will say what they need next.")
+        sess_name = f"Inbox: {title[:48]}"
+    sess = sessions_store.create(name=sess_name)
     try:
         await asyncio.wait_for(_agent_turn(seed, sess["sessionKey"], None),
                                timeout=120)

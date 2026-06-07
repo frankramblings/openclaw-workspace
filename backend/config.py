@@ -72,6 +72,10 @@ SESSION_KEY = os.environ.get("OPENCLAW_SESSION_KEY", "agent:main:main")
 # Verified live: agent:main:web connects + runs turns fine (2026-06-03).
 WEB_SESSION_KEY = os.environ.get("OPENCLAW_WEB_SESSION_KEY", "agent:main:web")
 
+# Dedicated utility session for the Inbox ✨ triage pass (never a visible chat).
+INBOX_TRIAGE_SESSION_KEY = os.environ.get(
+    "OPENCLAW_INBOX_TRIAGE_SESSION_KEY", "agent:main:inbox-triage")
+
 # Each Library "chat" mints its own gateway thread under this prefix:
 # agent:main:web-<id>. Same agent ("main") → same brain/memory, isolated thread.
 WEB_SESSION_PREFIX = os.environ.get("OPENCLAW_WEB_SESSION_PREFIX", "agent:main:web")

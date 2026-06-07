@@ -67,12 +67,26 @@ def _referenced_blob() -> str:
     return "\n".join(parts)
 
 
+def blob_looks_valid(referenced_blob: str) -> bool:
+    """Guard for --apply: an empty/sessionKey-less blob almost certainly means
+    .data was unreadable, and deleting against it would orphan-flag everything.
+    Note: if .data/sessions.json legitimately has zero sessions there is nothing
+    worth sweeping that a dry-run cannot confirm first — the refusal is correct."""
+    return "sessionKey" in referenced_blob
+
+
 async def main(apply: bool) -> None:
     payload = await gateway_call("sessions.list",
                                  {"limit": 1000, "includeGlobal": True,
                                   "includeUnknown": True})
     sessions = payload.get("sessions") or []
-    orphans = find_orphans(sessions, _referenced_blob(),
+    referenced = _referenced_blob()
+    if apply and not blob_looks_valid(referenced):
+        print("refusing --apply: .data/*.json yielded no sessionKey references "
+              "(unreadable or empty store?) — every idle thread would look "
+              "orphaned. Fix .data or run the dry-run to inspect.", file=sys.stderr)
+        return
+    orphans = find_orphans(sessions, referenced,
                            config.WEB_SESSION_PREFIX, PROTECTED,
                            int(time.time() * 1000))
     print(f"{len(sessions)} gateway sessions, {len(orphans)} orphaned web threads")

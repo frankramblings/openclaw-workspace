@@ -43,3 +43,9 @@ def test_bare_web_key_is_not_a_per_chat_thread():
     # when it's not in the protected set.
     out = find_orphans([_sess("agent:main:web")], "", "agent:main:web", set(), NOW)
     assert out == []
+
+
+def test_blob_guard_refuses_empty_blob():
+    assert _mod.blob_looks_valid('{"sessionKey": "agent:main:web-aaa"}')
+    assert not _mod.blob_looks_valid("")
+    assert not _mod.blob_looks_valid("{}")

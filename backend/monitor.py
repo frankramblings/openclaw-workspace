@@ -11,6 +11,10 @@ just degrades the reported state until reconnect.
 Health decoration (agents, session count) is fetched lazily on its own
 short-lived WS — the listen loop owns this socket's recv, and two concurrent
 readers on one websockets connection raise — and cached for 60s.
+
+Unlike the per-turn bridge (which disables pings because codex turns stall
+>20 s without frames on purpose), this socket carries no turns — pings here
+are pure liveness.  A missed pong correctly degrades state to down.
 """
 from __future__ import annotations
 
@@ -75,7 +79,7 @@ async def run() -> None:
         try:
             async with websockets.connect(config.gateway_ws_url(), max_size=None,
                                           open_timeout=30,
-                                          ping_interval=None) as ws:
+                                          ping_interval=20, ping_timeout=20) as ws:
                 await _wait_for_challenge(ws)
                 hello = await _request(ws, "connect", _connect_params())
                 if not hello.get("ok"):
@@ -113,7 +117,7 @@ async def _health() -> dict:
         return {"agents": _health_cache["agents"],
                 "sessionCount": _health_cache["sessionCount"]}
     try:
-        payload = await gateway_call("health")
+        payload = await gateway_call("health", timeout=5.0)
         agents = [{"agentId": a.get("agentId"), "name": a.get("name")}
                   for a in (payload.get("agents") or [])]
         count = (payload.get("sessions") or {}).get("count")

@@ -5,6 +5,7 @@ from backend import monitor
 def setup_function(_fn):
     monitor._state.update(state="down", since=0.0,
                           updateAvailable=None, shutdownReason=None)
+    monitor._health_cache.update(at=0.0, agents=None, sessionCount=None)
 
 
 def test_shutdown_event_marks_restarting():

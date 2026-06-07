@@ -10,6 +10,7 @@ Run:  uvicorn backend.app:app --reload --port 8800   (from the repo root)
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 from contextlib import asynccontextmanager
@@ -38,6 +39,8 @@ async def _lifespan(_app: FastAPI):
     task = asyncio.create_task(monitor.run())
     yield
     task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
 app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)

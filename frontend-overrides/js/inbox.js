@@ -26,6 +26,11 @@
     asana: ['complete', 'Complete'],
     obsidian: ['reviewed', 'Reviewed'],
   };
+  const REC_LABELS = {
+    archive: 'Archive', delete: 'Delete', mark_read: 'Mark read',
+    complete: 'Mark complete', reviewed: 'Reviewed',
+    reply: 'Draft reply', gary: 'Hand to Gary',
+  };
   const SNOOZES = () => {
     const now = new Date();
     const later = new Date(now); later.setHours(now.getHours() + 4);
@@ -144,6 +149,10 @@
       `    <div class="inbox-item-sub">${esc(it.subtitle || '')}` +
       `      <span class="inbox-age">· ${ageLabel(it.ageHours)}</span></div>` +
       (it.snippet ? `<div class="inbox-item-snip">${esc(it.snippet)}</div>` : '') +
+      (it.rec ? `    <div class="inbox-rec-chip${it.rec.confidence === 'low' ? ' inbox-rec-low' : ''}" ` +
+                `role="button" tabindex="0" title="${esc(it.rec.by)} recommendation">` +
+                `✨ ${esc(REC_LABELS[it.rec.action] || it.rec.action)}` +
+                (it.rec.reason ? ` — ${esc(it.rec.reason)}` : '') + `</div>` : '') +
       `  </div>` +
       `  <div class="inbox-item-actions">` +
       `    <button data-act="${act}" class="inbox-btn inbox-btn-primary">${label}</button>` +
@@ -170,6 +179,16 @@
         await doAction(it, act, el, btn);
       });
     });
+    const chip = $('.inbox-rec-chip', el);
+    if (chip && it.rec) {
+      chip.addEventListener('click', async () => {
+        chip.style.opacity = '0.5';
+        if (it.rec.action === 'reply' || it.rec.action === 'gary') {
+          return handToGary(it, chip, it.rec.action);
+        }
+        await doAction(it, it.rec.action, el, chip);
+      });
+    }
   }
 
   async function doAction(it, act, el, btn, until) {
@@ -231,14 +250,14 @@
     if (url) window.open(url, '_blank');
   }
 
-  async function handToGary(it, btn) {
+  async function handToGary(it, btn, intent) {
     const orig = btn.textContent;
     btn.disabled = true; btn.textContent = '…';
     try {
       const r = await fetch(`${API}/api/items/spinoff`, {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item: it }),
+        body: JSON.stringify({ item: it, intent: intent || undefined }),
       });
       const data = await r.json();
       if (!r.ok || !data.session_id) throw new Error(data.detail || 'no session');

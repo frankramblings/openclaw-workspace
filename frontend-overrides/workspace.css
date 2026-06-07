@@ -280,3 +280,13 @@
 .doc-discuss-chip:hover {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
+
+/* --- Inbox v2.1: ✨ recommendation chip ------------------------------------ */
+.inbox-rec-chip {
+  display: inline-block; margin-top: 4px; padding: 2px 9px; cursor: pointer;
+  font-size: 11.5px; border-radius: 999px;
+  background: rgba(187, 154, 247, 0.14); color: var(--accent, #bb9af7);
+  border: 1px solid rgba(187, 154, 247, 0.3);
+}
+.inbox-rec-chip:hover { background: rgba(187, 154, 247, 0.28); }
+.inbox-rec-low { opacity: 0.55; }

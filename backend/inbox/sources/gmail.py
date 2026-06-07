@@ -59,7 +59,7 @@ def map_items(envelopes: list[dict], now_ms: int) -> list[dict]:
             "ts": ts, "ageHours": age_h, "score": score,
             "meta": {"uid": str(env.get("id", "")), "from": addr,
                      "unread": unread, "important": important},
-            "actions": ["archive", "dismiss", "snooze"],
+            "actions": ["archive", "delete", "dismiss", "snooze"],
         })
     items.sort(key=lambda i: (-i["score"], i["ageHours"]))
     return items

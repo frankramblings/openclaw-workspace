@@ -20,7 +20,7 @@ def test_unread_external_recent_scores_high():
     assert it["source"] == "gmail"
     assert it["subtitle"] == "Ada"
     assert it["meta"]["uid"] == "101"
-    assert it["actions"] == ["archive", "dismiss", "snooze"]
+    assert it["actions"] == ["archive", "delete", "dismiss", "snooze"]
 
 
 def test_read_unflagged_mail_is_skipped():

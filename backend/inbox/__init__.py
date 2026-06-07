@@ -77,14 +77,26 @@ def _bad(msg: str):
     return JSONResponse(status_code=400, content={"ok": False, "error": msg})
 
 
+def _stat_key(source: str, meta: dict) -> str | None:
+    """Counter key for the history-recommendation layer. Only gmail senders
+    and slack channels have a stable 'sender' notion (spec §2)."""
+    if source == "gmail" and meta.get("from"):
+        return f"gmail:{meta['from'].lower()}"
+    if source == "slack" and meta.get("channel"):
+        return f"slack:{meta['channel']}"
+    return None
+
+
 @router.post("/api/items/action")
 async def action(payload: dict):
     source = payload.get("source")
     item_id = str(payload.get("id") or "")
     act = payload.get("action")
     meta = payload.get("meta") or {}
+    title = (payload.get("title") or "")[:140]
     if source not in SOURCES or not item_id:
         return _bad("source and id are required")
+    undo: dict | None = {"local": True}   # default: undo just restores the card
     try:
         if act == "dismiss":
             state.dismiss(source, item_id)
@@ -96,20 +108,78 @@ async def action(payload: dict):
         elif act == "reviewed" and source == "obsidian":
             state.dismiss(source, item_id, "reviewed")
         elif act == "archive" and source == "gmail":
-            await email_himalaya.archive(item_id)        # same path as Email tab
+            await email_himalaya.move_message(
+                item_id, "INBOX", email_himalaya.ARCHIVE_FOLDER)
             state.dismiss(source, item_id, "archived")
+            undo = {"folder": email_himalaya.ARCHIVE_FOLDER,
+                    "from": meta.get("from") or ""}
+        elif act == "delete" and source == "gmail":
+            await email_himalaya.move_message(
+                item_id, "INBOX", email_himalaya.TRASH_FOLDER)
+            state.dismiss(source, item_id, "deleted")
+            undo = {"folder": email_himalaya.TRASH_FOLDER,
+                    "from": meta.get("from") or ""}
         elif act == "mark_read" and source == "slack":
             await slack.mark_read(item_id, meta.get("channel") or "")
             state.dismiss(source, item_id, "mark_read")
+            undo = {"local": True, "note": "restores card only"}
         elif act == "complete" and source == "asana":
             await asana.complete(item_id)
             state.dismiss(source, item_id, "completed")
+            undo = {"asana_gid": item_id}
         else:
             return _bad(f"unknown action '{act}' for source '{source}'")
     except Exception as exc:  # noqa: BLE001 - surface to the card toast
         return JSONResponse(status_code=502,
                             content={"ok": False, "error": str(exc)})
+    skey = _stat_key(source, meta)
+    if skey:
+        state.bump_stat(skey, act)
+    undo_ts = state.log_action(source, item_id, title, act, undo, skey)
     _cache.pop(source, None)
+    return {"ok": True, "undoTs": undo_ts}
+
+
+@router.get("/api/items/history")
+async def items_history(limit: int = 20):
+    entries = []
+    for e in state.history(limit=max(1, min(100, limit))):
+        entries.append({**e, "undoable": e["undo"] is not None,
+                        "note": (e["undo"] or {}).get("note")})
+    return {"entries": entries}
+
+
+@router.post("/api/items/undo")
+async def items_undo(payload: dict):
+    ts = payload.get("ts")
+    entry = state.pop_history(ts) if isinstance(ts, int) else None
+    if entry is None:
+        return JSONResponse(status_code=404,
+                            content={"ok": False, "error": "no such history entry"})
+    undo = entry["undo"]
+    if undo is None:
+        return _bad("this action is not undoable")
+    try:
+        if "folder" in undo:                       # gmail archive/delete
+            uid = await email_himalaya.find_uid(
+                undo["folder"], entry["title"], undo.get("from") or "")
+            if not uid:
+                raise RuntimeError(
+                    f"message not found in {undo['folder']} anymore")
+            await email_himalaya.move_message(uid, undo["folder"], "INBOX")
+        elif "asana_gid" in undo:                  # asana complete
+            await asana.uncomplete(undo["asana_gid"])
+        # 'local' undo (dismiss/snooze/reviewed/mark_read): nothing remote.
+    except Exception as exc:  # noqa: BLE001
+        # restore the history entry so the user can retry
+        state.log_action(entry["source"], entry["id"], entry["title"],
+                         entry["action"], undo, entry.get("statKey"))
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": str(exc)})
+    state.undismiss(entry["source"], entry["id"])
+    if entry.get("statKey"):
+        state.drop_stat(entry["statKey"], entry["action"])
+    _cache.pop(entry["source"], None)
     return {"ok": True}
 
 

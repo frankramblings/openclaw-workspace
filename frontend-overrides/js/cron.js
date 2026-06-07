@@ -92,8 +92,10 @@
         `    </div>` +
         (j.message ? `    <div class="cron-job-msg">${esc(j.message)}</div>` : '') +
         (meta ? `    <div class="cron-job-meta">${meta}</div>` : '') +
+        `    <div class="cron-job-runs" hidden></div>` +
         `  </div>` +
         `  <div class="cron-job-actions">` +
+        `    <button class="cron-btn cron-history" title="Recent runs">⟲</button>` +
         `    <button class="cron-btn cron-run" title="Run now">Run</button>` +
         `    <button class="cron-toggle${j.enabled ? ' on' : ''}" title="${j.enabled ? 'Disable' : 'Enable'}" role="switch" aria-checked="${j.enabled}"><span></span></button>` +
         `  </div>` +
@@ -102,6 +104,7 @@
     }).join('');
     body.querySelectorAll('.cron-job').forEach((row) => {
       const id = row.dataset.id;
+      row.querySelector('.cron-history').addEventListener('click', () => toggleRuns(id, row));
       row.querySelector('.cron-run').addEventListener('click', () => runJob(id, row));
       row.querySelector('.cron-toggle').addEventListener('click', () => toggleJob(id, row));
     });
@@ -142,6 +145,46 @@
         row.classList.toggle('cron-job-off', !turningOn);
       }
     } catch (_) {}
+  }
+
+  function fmtDur(ms) {
+    if (ms == null) return '';
+    const s = ms / 1000;
+    return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+  }
+
+  async function toggleRuns(id, row) {
+    const panel = row.querySelector('.cron-job-runs');
+    if (!panel) return;
+    if (!panel.hidden) { panel.hidden = true; return; }
+    panel.hidden = false;
+    panel.innerHTML = '<div class="cron-empty">Loading…</div>';
+    try {
+      const res = await fetch(`${API}/api/cron/${encodeURIComponent(id)}/runs?limit=20`);
+      const data = await res.json();
+      const runs = data.runs || [];
+      if (!runs.length) {
+        panel.innerHTML = '<div class="cron-empty">No recorded runs.</div>';
+        return;
+      }
+      panel.innerHTML = runs.map((r) => {
+        const ok = r.status === 'ok';
+        const skip = r.status === 'skipped';
+        const icon = ok ? '✓' : (skip ? '–' : '✗');
+        const cls = ok ? 'ok' : (skip ? 'skip' : 'err');
+        const line = r.error || r.summary || '';
+        return (
+          `<div class="cron-run-row cron-run-${cls}">` +
+          `<span class="cron-run-icon">${icon}</span>` +
+          `<span class="cron-run-time">${esc(fmtTime(r.ts))}</span>` +
+          `<span class="cron-run-dur">${esc(fmtDur(r.durationMs))}</span>` +
+          (line ? `<span class="cron-run-line" title="${esc(line)}">${esc(line)}</span>` : '') +
+          `</div>`
+        );
+      }).join('');
+    } catch (e) {
+      panel.innerHTML = `<div class="cron-empty">Failed: ${esc(e && e.message)}</div>`;
+    }
   }
 
   function injectRailButton() {

@@ -349,3 +349,19 @@
 #gw-banner button { margin-left: auto; background: none; border: none;
   color: inherit; cursor: pointer; font-size: 13px; opacity: 0.7; }
 #gw-banner button:hover { opacity: 1; }
+
+/* --- Cron run history ------------------------------------------------------- */
+/* :not([hidden]) keeps the UA's [hidden]{display:none} effective — a plain
+   author `display:flex` would beat it by cascade origin and un-hide the panel. */
+.cron-job-runs:not([hidden]) { margin-top: 6px; padding-top: 4px;
+  border-top: 1px solid rgba(128, 128, 128, 0.25);
+  display: flex; flex-direction: column; gap: 2px; }
+.cron-run-row { display: flex; gap: 8px; align-items: baseline;
+  font-size: 11.5px; opacity: 0.85; min-width: 0; }
+.cron-run-icon { width: 12px; text-align: center; flex: none; }
+.cron-run-ok .cron-run-icon { color: #34c759; }
+.cron-run-err .cron-run-icon { color: #ff3b30; }
+.cron-run-skip .cron-run-icon { opacity: 0.5; }
+.cron-run-time, .cron-run-dur { white-space: nowrap; flex: none; }
+.cron-run-dur { opacity: 0.7; }
+.cron-run-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

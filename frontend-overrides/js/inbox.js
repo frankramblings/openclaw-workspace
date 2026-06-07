@@ -40,6 +40,40 @@
     return [['Later today', later], ['Tomorrow', tomorrow], ['Next week', nextWeek]];
   };
 
+  /* SWIPE-MATH-BEGIN (pure — node-tested by scripts/test-swipe-math.mjs) */
+  const SWIPE = {
+    LOCK_PX: 10,          // movement before direction lock
+    ZONE_W: 88,           // px per revealed action zone
+    COMMIT_RATIO: 0.6,    // fraction of card width = full-swipe commit
+    FLICK_VMIN: 0.6,      // px/ms — flick commits regardless of distance
+    RUBBER: 0.5,          // resistance factor past max reveal
+    SNAP_MS: 280,
+    SNAP_EASE: 'cubic-bezier(0.25, 1, 0.5, 1)',
+  };
+
+  function swipeRubber(rawX, maxReveal) {
+    const ax = Math.abs(rawX);
+    if (ax <= maxReveal) return rawX;
+    return Math.sign(rawX) * (maxReveal + (ax - maxReveal) * SWIPE.RUBBER);
+  }
+
+  function swipeVelocity(samples) {   // [{x, t}, ...] oldest first
+    if (samples.length < 2) return 0;
+    const a = samples[0], b = samples[samples.length - 1];
+    const dt = b.t - a.t;
+    return dt > 0 ? (b.x - a.x) / dt : 0;
+  }
+
+  function swipeOutcome(x, v, cardWidth) {
+    const ax = Math.abs(x);
+    if (ax >= cardWidth * SWIPE.COMMIT_RATIO) return 'commit';
+    if (Math.abs(v) >= SWIPE.FLICK_VMIN && Math.sign(v) === Math.sign(x)
+        && ax > SWIPE.LOCK_PX) return 'commit';
+    if (ax >= SWIPE.ZONE_W * 0.5) return 'reveal';
+    return 'rest';
+  }
+  /* SWIPE-MATH-END */
+
   let _modal = null, _items = [], _errors = {}, _counts = {}, _filter = null,
       _view = 'feed', _toastTimer = null;
 

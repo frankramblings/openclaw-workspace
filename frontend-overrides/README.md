@@ -103,7 +103,12 @@ survives the Odysseus sync:
   **Gary** mark instead, tinted to the live accent — it fetches `/static/logo.svg`
   (mono mask shape, ink `#000`) and recolors the ink to the accent, so the tab
   icon tracks the theme exactly as the boat did. Per-route glyphs are unchanged.
-- **app.js + most js/ modules** are NOT overridden (large, frequently changed
+- **app.js** — full-file override since 2026-06-07 (upstream is gone, so the
+  old "don't override, it churns" rationale is dead). Carries the
+  text-emojis-default-OFF change (`UI_VIS_DEFAULT_OFF` + `applyTextEmojis`,
+  paired — the /api/emoji proxy made text-only mode a preference, not a
+  necessity). The copy here is the post-sed (rebranded) text.
+- **most js/ modules** are NOT overridden (large, frequently changed
   upstream). Their visible "Odysseus" strings (assistant role label, "Odysseus
   Chat", the `/tour` text, settings/email/cookbook help, welcome subtitle, …)
   are rebranded by a `sed` step in `scripts/sync-frontend.sh` that runs after the

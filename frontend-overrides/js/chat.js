@@ -788,6 +788,12 @@ import createResearchSynapse from './researchSynapse.js';
       // 2-3 min, so the old 2-min "chat mode" budget aborted legitimate turns.
       // The stall watchdog + Stop button cover the genuinely-hung case.
       const timeoutMs = RESEARCH_TIMEOUT_MS;
+      // One-mode environment: mode is forced to 'agent' at load (see top of
+      // file), so this is now a constant — but it MUST stay declared: the
+      // web-spinner branches and the timeout message below still read it
+      // (removing the declaration made every send with the web toggle on
+      // throw ReferenceError before the fetch — chat went silently dead).
+      const _isAgent = true;
       const timeoutId = setTimeout(() => {
         if (!abortCtrl.signal.aborted) {
           timedOut = true;

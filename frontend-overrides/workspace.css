@@ -325,3 +325,12 @@
 @media (prefers-reduced-motion: reduce) {
   .swipe-zone-label, .swipe-zone-snooze { transition: none; }
 }
+
+/* Coarse pointers: .inbox-item gains overflow:hidden for the swipe mask, which
+   would clip the dropdown snooze menu — render it as a horizontal strip INSIDE
+   the card instead (fits within the clip box; no JS change). */
+@media (pointer: coarse) {
+  .inbox-snooze-menu {
+    flex-direction: row; top: auto; bottom: 6px; right: 10px; z-index: 11;
+  }
+}

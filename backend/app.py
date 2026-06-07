@@ -314,14 +314,17 @@ async def stream_status(session_id: str):
 async def stop_chat(session_id: str):
     """The Stop button's server half: chat.abort the active gateway run.
     Verified shape: chat.abort {sessionKey, runId?} -> {runIds}; omitting
-    runId aborts every run on the key (fine: per-chat keys, single user)."""
+    runId aborts every run on the key. NOTE: on an explicit Stop the browser
+    kills its fetch FIRST, which tears down gen() and pops _ACTIVE_RUNS —
+    so the key-wide abort is the EXPECTED path here; the runId narrowing is
+    opportunistic (e.g. stop called from another tab)."""
     session_key = sessions_store.session_key_for(session_id)
     params = {"sessionKey": session_key}
     run_id = (_ACTIVE_RUNS.get(session_key) or {}).get("runId")
     if run_id:
         params["runId"] = run_id
     try:
-        payload = await bridge.gateway_call("chat.abort", params)
+        payload = await bridge.gateway_call("chat.abort", params, timeout=10)
         return {"ok": True, "runIds": payload.get("runIds") or []}
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502,

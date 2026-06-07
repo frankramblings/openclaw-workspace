@@ -134,7 +134,6 @@ async def stream_turn(message: str, session_key: str | None = None,
                 return
             run_id = (ack.get("payload") or {}).get("runId")
             if run_info is not None:
-                run_info["sessionKey"] = session_key
                 run_info["runId"] = run_id
 
             # 3. Relay events for this run until lifecycle end.

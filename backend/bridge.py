@@ -107,11 +107,16 @@ async def stream_turn(message: str, session_key: str | None = None,
                 return
 
             # 1b. Pin this session's model (best-effort; never block the turn).
-            # sessions.create upserts the entry's modelOverride for this key only.
+            # sessions.patch is the documented mutation for modelOverride; a
+            # fresh chat may have no session entry yet, so fall back to the
+            # sessions.create upsert when patch rejects the key.
             if model_ref:
                 try:
-                    await _request(ws, "sessions.create",
-                                   {"key": session_key, "model": model_ref})
+                    res = await _request(ws, "sessions.patch",
+                                         {"key": session_key, "model": model_ref})
+                    if not res.get("ok"):
+                        await _request(ws, "sessions.create",
+                                       {"key": session_key, "model": model_ref})
                 except Exception:  # noqa: BLE001 - fall back to the default model
                     pass
 

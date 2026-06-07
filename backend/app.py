@@ -294,9 +294,25 @@ async def patch_session(session_id: str, name: str = Form(default=None),
         status_code=404, content={"detail": "no such session"})
 
 
+async def _delete_gateway_session(session_key: str) -> None:
+    """Best-effort gateway-side delete (transcript included) so removing a
+    chat here doesn't leave its thread accumulating in the brain's session
+    store — real weight on this 8GB box. Verified: sessions.delete
+    {key, deleteTranscript} (deleteTranscript defaults true anyway)."""
+    try:
+        await bridge.gateway_call("sessions.delete",
+                                  {"key": session_key, "deleteTranscript": True})
+    except Exception:  # noqa: BLE001 - local delete already succeeded
+        pass
+
+
 @app.delete("/api/session/{session_id}")
 async def delete_session(session_id: str):
-    return {"ok": sessions_store.delete(session_id)}
+    rec = sessions_store.get(session_id)
+    ok = sessions_store.delete(session_id)
+    if ok and rec and rec.get("sessionKey"):
+        asyncio.create_task(_delete_gateway_session(rec["sessionKey"]))
+    return {"ok": ok}
 
 
 @app.post("/api/session/{session_id}/important")

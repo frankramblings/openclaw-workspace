@@ -68,16 +68,15 @@ Backend adapters in `backend/`, frontend changes in `frontend-overrides/` (appli
 
 Changes:
 
-1. **Chat delete** (`app.py` session DELETE) → best-effort gateway `sessions.delete {key, deleteTranscript: true}` for the chat's `sessionKey`, plus any `web-research-<id>` / `web-research-<id>-write` keys recorded in that chat's metadata. Gateway unreachable → local delete still succeeds; log and continue.
-2. **Model override** switches from the `sessions.create` upsert to `sessions.patch {key, model}`. Surface `resolved.model` from the response in the picker as confirmation.
+1. **Chat delete** (`app.py` session DELETE) → best-effort gateway `sessions.delete {key, deleteTranscript: true}` for the chat's `sessionKey`. Research threads aren't recorded in chat metadata, so the orphan sweep (below) covers them. Gateway unreachable → local delete still succeeds; log and continue.
+2. **Model override** switches to `sessions.patch {key, model}`, falling back to the `sessions.create` upsert when the entry doesn't exist yet (fresh chats have no session entry until their first turn — the likely reason `create` was used originally).
 3. **One-time orphan sweep:** `scripts/purge_orphan_sessions.py` — `sessions.list`, keep keys starting `agent:main:web`, subtract keys referenced in `.data/sessions.json` and live utility keys (`agent:main:web-titler`), `--dry-run` by default (prints the would-delete list), `--apply` to delete. A maintenance script, not UI.
 
 ## 4. Thinking card
 
 **Protocol (verified):** reasoning arrives in the `agent` event stream the bridge already parses — `stream: "item"`, `kind: "analysis"`, `phase: start|update|end`, fields `itemId, title, status, summary` (`src/infra/agent-events.ts:21-27`). The bridge currently filters items to `kind ∈ {command, tool}`.
 
-- Bridge: also accept `kind: "analysis"`; emit SSE `thinking_start` / `thinking_delta` / `thinking_end` keyed by `tool_id = itemId` (reuses the concurrent tool-card pairing machinery).
-- Frontend: collapsed "🧠 Thinking…" card, animated while running, click-to-expand, rendered through the existing tool-card path in the `chat.js` override.
+- Bridge: also accept `kind: "analysis"`; emit `{"delta": <reasoning text>, "thinking": true}` SSE frames. **The SPA already has the exact approved UI**: chat.js wraps `thinking: true` deltas in `<think>` tags (chat.js:1370-1376) and markdown.js renders them as a collapsed, expandable "View thinking process" section with an elapsed timer (markdown.js:275). No frontend changes; no new SSE frame types.
 
 **Flagged uncertainty:** the exact field carrying full reasoning *text* for gpt-5.5 over protocol v4 (`summary` on update events vs. a separate delta) is not fully confirmed from source. **First implementation step is a one-turn live probe** logging raw `analysis` events; the card renders whatever text field the probe confirms. Worst case (title + summary only) the card still works as a stall-vs-thinking signal.
 

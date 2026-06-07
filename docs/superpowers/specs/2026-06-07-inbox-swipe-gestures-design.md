@@ -151,3 +151,14 @@ On release with direction = horizontal:
 - Desktop drag-with-mouse gestures.
 - Per-zone customization UI; long-press menus.
 - Library adoption (Hammer.js etc. — rejected in brainstorming).
+
+## Status
+
+Implemented 2026-06-07 (plan
+`docs/superpowers/plans/2026-06-07-inbox-swipe-gestures.md`); pure gesture
+math node-asserted (scripts/test-swipe-math.mjs); verified by the user on
+iPhone via the tailnet PWA ("looks good" — no tuning round needed). Review
+fixes along the way: mobile snooze menu restyled as an in-card strip (the
+swipe overflow mask clipped the dropdown), stale tap-suppress flag cleared on
+pointerdown (iOS fires no synthetic click after long drags), failure ⚠
+targets the zone label instead of clobbering the zone div.

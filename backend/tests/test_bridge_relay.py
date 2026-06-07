@@ -50,3 +50,39 @@ def test_disconnect_message_reflects_monitor_state():
     assert "restarting" in _disconnect_message("restarting")
     assert "restarting" not in _disconnect_message("down")
     assert "may not have completed" in _disconnect_message("down")
+
+
+def test_analysis_items_map_to_thinking_deltas_with_cumulative_diff():
+    def item(phase, **fields):
+        return {"type": "event", "event": "agent",
+                "payload": {"runId": "r1", "stream": "item",
+                            "data": {"itemId": "a1", "kind": "analysis",
+                                     "phase": phase, **fields}}}
+    out = collect([
+        item("start"),
+        item("update", text="Let me think"),
+        item("update", text="Let me think harder"),  # cumulative → diff
+        {"type": "event", "event": "chat",
+         "payload": {"runId": "r1", "deltaText": "391"}},
+        {"type": "event", "event": "agent",
+         "payload": {"runId": "r1", "stream": "lifecycle",
+                     "data": {"phase": "end"}}},
+    ])
+    thinking = [c for c in out if c.get("thinking")]
+    assert [c["delta"] for c in thinking] == ["Let me think", " harder"]
+    assert out[-1] == {"delta": "391"}
+
+
+def test_analysis_delta_field_passes_through_incremental():
+    from backend.bridge import _analysis_delta
+    seen = {}
+    assert _analysis_delta({"itemId": "a1", "delta": "abc"}, seen) == "abc"
+    assert _analysis_delta({"itemId": "a1", "delta": "def"}, seen) == "def"
+
+
+def test_analysis_delta_ignores_empty_and_repeat():
+    from backend.bridge import _analysis_delta
+    seen = {}
+    assert _analysis_delta({"itemId": "a1", "text": "abc"}, seen) == "abc"
+    assert _analysis_delta({"itemId": "a1", "text": "abc"}, seen) == ""
+    assert _analysis_delta({"itemId": "a1"}, seen) == ""

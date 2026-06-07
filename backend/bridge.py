@@ -380,7 +380,8 @@ async def _await_response(ws, req_id: str) -> dict:
 
 
 # Item `kind`s that represent an agent tool action worth a card. `analysis`
-# (reasoning) and `preamble` are skipped — they're not tool calls.
+# (reasoning) is mapped separately into thinking deltas; `preamble` is still
+# skipped — it's not a tool call.
 _TOOL_ITEM_KINDS = {"command", "tool"}
 
 
@@ -407,6 +408,7 @@ async def _relay_events(ws, run_id):
     heartbeat runs carry a different runId and are filtered out.
     """
     emitted_len = 0        # fallback cumulative-text cursor
+    analysis_seen: dict = {}  # itemId -> reasoning chars already emitted
     tool_since_text = False  # a tool card emitted since the last text delta?
     while True:
         frame = await _recv_json(ws)
@@ -450,6 +452,19 @@ async def _relay_events(ws, run_id):
         stream = payload.get("stream")
         data = payload.get("data") or {}
 
+        if stream == "item" and data.get("kind") == "analysis":
+            # Reasoning. The SPA already has a collapsed "View thinking
+            # process" UI driven by {"delta": …, "thinking": true} frames
+            # (chat.js wraps them in <think> tags) — reuse it, no new frame
+            # types needed.
+            text = _analysis_delta(data, analysis_seen)
+            if text:
+                if tool_since_text:
+                    yield _sse({"type": "agent_step"})  # open a fresh bubble
+                    tool_since_text = False
+                yield _sse({"delta": text, "thinking": True})
+            continue
+
         if stream == "item" and data.get("kind") in _TOOL_ITEM_KINDS:
             if data.get("name") == "message":
                 continue  # reply-delivery tool, not a user-facing action
@@ -491,6 +506,30 @@ def _disconnect_message(monitor_state: str) -> str:
                 "completed; retry once the status dot is green")
     return ("🧠 lost the gateway connection mid-turn — this message may not "
             "have completed")
+
+
+def _analysis_delta(data: dict, seen: dict) -> str:
+    """The NEW reasoning text in one `analysis` item event. Handles both an
+    incremental `delta` field and cumulative `text`/`summary` snapshots — the
+    per-item cursor in `seen` (itemId -> chars already emitted) diffs
+    cumulative payloads down to the fresh suffix. Probed live 2026-06-07
+    (scripts/probe_thinking.py, gpt-5.5, protocol v4): analysis items arrive
+    as phase:start/end pairs carrying ONLY {title:"Reasoning", status} — no
+    delta/text/summary field at all, so this currently returns "" and no
+    thinking frames fire. The mapping is forward-compatible for when the
+    gateway starts forwarding reasoning text; `title` is deliberately NOT a
+    fallback (it's a static label, not reasoning content)."""
+    if isinstance(data.get("delta"), str) and data["delta"]:
+        return data["delta"]
+    text = data.get("text") or data.get("summary") or ""
+    if not isinstance(text, str) or not text:
+        return ""
+    item_id = data.get("itemId") or ""
+    cursor = seen.get(item_id, 0)
+    if len(text) <= cursor:
+        return ""
+    seen[item_id] = len(text)
+    return text[cursor:]
 
 
 def _error_text(raw) -> str:

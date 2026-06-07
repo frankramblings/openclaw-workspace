@@ -41,6 +41,32 @@ def _map_job(j: dict) -> dict:
     }
 
 
+def _map_run(r: dict) -> dict:
+    """One cron.runs entry → the UI's history-row shape. Verified entry shape:
+    {ts, jobId, status: ok|error|skipped, error?, summary?, durationMs?,
+    runAtMs?, delivered?, ...} (gateway protocol/schema/cron.ts)."""
+    return {
+        "ts": r.get("runAtMs") or r.get("ts"),
+        "status": r.get("status") or "ok",
+        "durationMs": r.get("durationMs"),
+        "summary": (r.get("summary") or "")[:500],
+        "error": (r.get("error") or "")[:500],
+        "delivered": r.get("delivered"),
+    }
+
+
+def _runs_list(payload) -> list:
+    """cron.runs' container key isn't pinned down across gateway versions —
+    accept the obvious candidates and a bare list."""
+    if isinstance(payload, list):
+        return payload
+    for key in ("entries", "runs", "logs", "items"):
+        val = payload.get(key)
+        if isinstance(val, list):
+            return val
+    return []
+
+
 @router.get("/api/cron")
 async def list_cron():
     try:
@@ -53,6 +79,19 @@ async def list_cron():
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502,
                             content={"jobs": [], "error": f"cron unavailable: {exc!r}"})
+
+
+@router.get("/api/cron/{job_id}/runs")
+async def cron_runs(job_id: str, limit: int = 50):
+    try:
+        data = await gateway_call("cron.runs", {
+            "scope": "job", "id": job_id,
+            "limit": max(1, min(int(limit), 200)),
+        })
+        return {"runs": [_map_run(r) for r in _runs_list(data)]}
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse(status_code=502,
+                            content={"runs": [], "error": f"{exc!r}"})
 
 
 @router.post("/api/cron/{job_id}/run")

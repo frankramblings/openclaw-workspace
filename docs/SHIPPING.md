@@ -56,14 +56,22 @@ picks the top unchecked item, ships it, checks it off, commits.
   0 stray tokens, slugs intact; live `frontend/` (Gary) untouched. (User decision:
   *vendor it.*) DONE 2026-06-08.
 
-## Pre-publish steps (do RIGHT BEFORE flipping the repo public)
+## Pre-publish step (one command, at publish time)
 
-- [ ] **Squash history to one commit** (user decision). Old commits still contain
-  the maintainer's email/company/tailnet. Plan:
-  `git checkout --orphan public && git add -A && git commit -m "OpenClaw Workspace" && git branch -M public main`.
-  Do this last so ongoing iteration keeps normal history until ship time.
-- [ ] Re-run the secret scan on the squashed tree.
-- [ ] Confirm `.data/` + `frontend/` are absent from `git ls-files`.
+`main` keeps full history (with the maintainer's identifiers in old commits, now
+scrubbed from the working tree). To publish cleanly **without** leaking that
+history, run:
+
+```bash
+scripts/prepare-public.sh          # builds a clean single-commit `public` branch
+git push <remote> public:main      # publish that, not main
+```
+
+`prepare-public.sh` (user chose squash-to-one-commit) is **non-destructive**: it
+leaves `main` alone and builds an orphan `public` branch = one commit of the
+current tree. It refuses to run if a private-identifier scan finds anything or if
+`.data/`/`frontend/`/`.env` are tracked. Verified 2026-06-08: produces a 1-commit,
+274-file branch, 0 private files, main untouched.
 
 ## Tier 2 — adoption polish (do if Tier 1 lands)
 

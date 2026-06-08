@@ -127,6 +127,13 @@ docs/               design specs/plans + SHIPPING.md (the productization checkli
 . .venv/bin/activate && python -m pytest backend/tests -q
 ```
 
+## Publishing your own fork
+
+If you're forking this to share your setup: `.data/` (your agent name) and
+`frontend/` (the build) are gitignored, so your personal config stays out of git.
+To publish a clean, single-commit history, run `scripts/prepare-public.sh` and push
+the `public` branch it builds.
+
 ## License
 
 [MIT](LICENSE) © The OpenClaw Workspace authors.

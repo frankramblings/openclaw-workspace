@@ -3,12 +3,13 @@
 // (account-specific tabs without their config). Same injected-<script> pattern
 // as cron.js/inbox.js; survives upstream updates as long as #icon-rail exists.
 (function () {
-  // capability key -> rail button id (core tabs are always available, skipped)
+  // capability key -> rail button id. Only the account-specific tabs that
+  // /api/capabilities actually gates appear here; core tabs (and research,
+  // which is always available) are never touched.
   var RAIL = {
     email: 'rail-email',
     calendar: 'rail-calendar',
     inbox: 'rail-inbox',       // injected by inbox.js
-    research: 'rail-research',
   };
   function apply(caps) {
     Object.keys(RAIL).forEach(function (key) {

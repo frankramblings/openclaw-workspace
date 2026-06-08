@@ -13,7 +13,7 @@ def env(monkeypatch):
 
 def test_core_tabs_always_available(env):
     m = caps.snapshot()
-    for tab in ("chat", "memory", "skills", "cron", "notes", "documents"):
+    for tab in caps.CORE_TABS:  # all 8 — a dropped core tab must fail this
         assert m[tab]["available"] is True
 
 

@@ -5,7 +5,13 @@ from __future__ import annotations
 
 import asyncio
 
+import websockets.exceptions
+
 from . import bridge, config
+
+# Connection-layer failures that mean "couldn't reach/complete the WS" (vs a
+# RuntimeError, which the bridge raises for a rejected handshake or method error).
+_CONNECT_ERRORS = (OSError, asyncio.TimeoutError, websockets.exceptions.WebSocketException)
 
 # The gateway methods the workspace depends on (the compatibility contract).
 REQUIRED_METHODS = [
@@ -38,10 +44,10 @@ async def _check_reachable() -> tuple[dict, dict | None]:
         return _fail("gateway_reachable", str(e),
                      "gateway rejected auth — check the gateway password "
                      "(OPENCLAW_GATEWAY_PASSWORD or openclaw.json)"), None
-    except (OSError, asyncio.TimeoutError) as e:  # connect refused/timeout/DNS
+    except _CONNECT_ERRORS as e:  # connect refused/timeout/DNS/bad-URL
         return _fail("gateway_reachable", f"{type(e).__name__}: {e}",
                      f"gateway unreachable at {config.gateway_ws_url()} — "
-                     "check it's running and OPENCLAW_GATEWAY_WS"), None
+                     "check it's running and OPENCLAW_GATEWAY_WS (must be a ws:// URL)"), None
 
 
 async def _check_methods() -> dict:
@@ -54,7 +60,7 @@ async def _check_methods() -> dict:
                 return _fail("methods", "gateway down during probe",
                              "fix gateway_reachable first")
             missing.append(m)  # "<m> failed: ..." → method missing/incompatible
-        except (OSError, asyncio.TimeoutError):
+        except _CONNECT_ERRORS:
             return _fail("methods", "gateway down during probe",
                          "fix gateway_reachable first")
     if missing:

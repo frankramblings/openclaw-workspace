@@ -58,6 +58,14 @@ def test_missing_method(monkeypatch):
     assert c["ok"] is False and "skills.status" in c["detail"]
 
 
+def test_bad_url_is_structured_fail_not_crash(monkeypatch):
+    # A misconfigured ws URL raises a WebSocketException — the doctor must report
+    # a structured FAIL, never let it crash run_checks (which would be HTTP 500).
+    import websockets.exceptions
+    res = _run(monkeypatch, hello=websockets.exceptions.WebSocketException("bad url"))
+    assert _check(res, "gateway_reachable")["ok"] is False
+
+
 def test_aggregate_ok_is_and_of_fatals(monkeypatch):
     res = _run(monkeypatch, hello=ConnectionRefusedError())
     assert doctor.summarize(res)["ok"] is False

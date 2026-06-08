@@ -19,7 +19,7 @@ from fastapi import Body, FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import bridge, config, draft_mode, monitor, sessions_store, websearch
+from . import bridge, config, doctor, draft_mode, monitor, sessions_store, websearch
 from .memory import maybe_auto_extract
 from .calendar_google import router as calendar_router
 from .cron import router as cron_router
@@ -73,6 +73,12 @@ async def health():
         "session": config.session_key(),
         "has_password": bool(config.gateway_password()),
     }
+
+
+@app.get("/api/doctor")
+async def api_doctor():
+    """Diagnose the OpenClaw connection (read-only)."""
+    return doctor.summarize(await doctor.run_checks())
 
 
 @app.get("/api/config")

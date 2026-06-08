@@ -1,5 +1,7 @@
 """Pure parse/build tests for calendar_invite (no I/O)."""
 import pytest
+from httpx import ASGITransport, AsyncClient
+
 from backend.inbox import calendar_invite as ci
 
 GOOGLE_INVITE = (
@@ -109,3 +111,36 @@ def test_is_invite_candidate():
     assert eh.is_invite_candidate("Updated invitation: Sync", True, "b@x.com")
     assert not eh.is_invite_candidate("Invitation: Sync", False, "b@x.com")  # no attachment
     assert not eh.is_invite_candidate("Lunch?", True, "b@x.com")             # no pattern
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_email_rsvp_endpoint(monkeypatch):
+    from backend import email_himalaya as eh
+    calls = {}
+
+    async def fake_perform(uid, folder, status):
+        calls["args"] = (uid, folder, status)
+        return {"status": status, "moved_to": eh.ARCHIVE_FOLDER}
+
+    monkeypatch.setattr(eh, "perform_rsvp", fake_perform)
+    from backend.app import app
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://t") as c:
+        r = await c.post("/api/email/rsvp/42", json={"rsvp": "accepted"})
+    assert r.json() == {"ok": True, "status": "accepted",
+                        "moved_to": eh.ARCHIVE_FOLDER}
+    assert calls["args"] == ("42", "INBOX", "accepted")
+
+
+@pytest.mark.anyio
+async def test_email_rsvp_rejects_bad_status(monkeypatch):
+    from backend.app import app
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://t") as c:
+        r = await c.post("/api/email/rsvp/42", json={"rsvp": "nope"})
+    assert r.status_code == 400

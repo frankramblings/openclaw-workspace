@@ -101,3 +101,11 @@ def test_build_reply_folds_multibyte_summary_without_loss():
     out = ci.build_reply(inv, "me@example.com", "accepted", "20260609T120000Z")
     unfolded = out.replace("\r\n ", "")           # reverse RFC 5545 folding
     assert "SUMMARY:" + "週次チームミーティング" * 4 in unfolded
+
+
+def test_is_invite_candidate():
+    from backend import email_himalaya as eh
+    assert eh.is_invite_candidate("Invitation: Sync @ Tue", True, "b@x.com")
+    assert eh.is_invite_candidate("Updated invitation: Sync", True, "b@x.com")
+    assert not eh.is_invite_candidate("Invitation: Sync", False, "b@x.com")  # no attachment
+    assert not eh.is_invite_candidate("Lunch?", True, "b@x.com")             # no pattern

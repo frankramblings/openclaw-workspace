@@ -14,6 +14,7 @@ import json
 import os
 import re
 import tomllib
+from datetime import datetime, timezone
 from email.policy import default as _email_policy
 from email.utils import parseaddr
 from pathlib import Path
@@ -87,6 +88,21 @@ def _flag(flags, name) -> bool:
     return any(str(f).lower() == name.lower() for f in (flags or []))
 
 
+_INVITE_SUBJECT_RE = re.compile(
+    r"^\s*(updated invitation|invitation|canceled event|updated event)\s*:",
+    re.I)
+
+
+def is_invite_candidate(subject: str, has_attachment: bool,
+                        from_addr: str = "") -> bool:
+    """Cheap envelope-only guess that an email is a calendar invite, so the
+    expensive .ics body read is bounded to likely candidates. Confirmed only by
+    calendar_invite.extract_invite after a read."""
+    if not has_attachment:
+        return False
+    return bool(_INVITE_SUBJECT_RE.match(subject or ""))
+
+
 def envelope_to_email(env: dict) -> dict:
     """One himalaya envelope -> the list-row shape emailInbox.js renders."""
     frm = env.get("from") or {}
@@ -105,6 +121,9 @@ def envelope_to_email(env: dict) -> dict:
         "is_answered": _flag(flags, "Answered"),
         "is_spam_verdict": False,
         "has_attachments": bool(env.get("has_attachment")),
+        "is_invite_candidate": is_invite_candidate(
+            env.get("subject") or "", bool(env.get("has_attachment")),
+            (frm.get("addr") or frm.get("address") or "")),
         "tags": [],
     }
 

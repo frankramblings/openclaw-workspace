@@ -19,7 +19,7 @@ from fastapi import Body, FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import bridge, config, doctor, draft_mode, monitor, sessions_store, websearch
+from . import bridge, capabilities, config, doctor, draft_mode, monitor, sessions_store, websearch
 from .memory import maybe_auto_extract
 from .calendar_google import router as calendar_router
 from .cron import router as cron_router
@@ -89,6 +89,12 @@ async def workspace_config():
         "agent_name": config.agent_name(),
         "accent": config.accent_color(),
     }
+
+
+@app.get("/api/capabilities")
+async def api_capabilities():
+    """Which tabs are usable on this install (drives UI gating)."""
+    return capabilities.snapshot()
 
 
 @app.get("/api/gateway/status")

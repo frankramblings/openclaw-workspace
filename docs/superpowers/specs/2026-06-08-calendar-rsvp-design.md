@@ -118,10 +118,17 @@ Both endpoints call this; the inbox endpoint additionally does the
   event time + location line and three RSVP chips (reuse existing `✨`/rec chip
   styling + the swipe-primary path: right-swipe = Yes). Click → `POST
   /api/items/action {action:"rsvp", rsvp}` → existing dismiss/undo-toast flow.
-- Email read view (Email tab template/JS): when the `email.calendar` block is
-  present, show the three buttons above the body; click → `POST
-  /api/email/rsvp/{uid}` → on success close/refresh the read view and drop the
-  message from the list.
+- Email tab (`frontend-vendor/js/emailInbox.js`): the Email tab has **no
+  read pane** — clicking a row opens a reply/compose doc, so there's no "body"
+  to sit buttons above. Instead, the per-row actions menu (`_showEmailMenu`,
+  alongside Open/Archive/Delete) gains **RSVP: Yes / Maybe / No** items, shown
+  only when the row is `is_invite_candidate` (the cheap envelope heuristic, set
+  in `envelope_to_email`). Click → `POST /api/email/rsvp/{uid}` → on success
+  drop the row from the list with a toast. The backend confirms the invite
+  (read + `extract_invite`) inside `perform_rsvp`; a candidate that isn't a real
+  invite returns a 400 surfaced as an error toast. `message_to_read` still
+  exposes a `calendar` block (usable by any future read view), but the row menu
+  is the live surface.
 
 ## Testing
 

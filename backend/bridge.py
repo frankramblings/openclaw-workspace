@@ -313,10 +313,13 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
     auth_status = {p.get("provider", ""): p.get("status", "")
                    for p in (auth_payload.get("providers") or [])}
 
-    # Group model ids by provider, preserving gateway order.
-    by_provider: dict[str, list[str]] = {}
+    # Group full model objects by provider, preserving gateway order. (Objects,
+    # not bare ids — ids collide across providers, e.g. both codex and
+    # perplexity-web expose "gpt-5.4", so the display name must be read from the
+    # per-provider object, never a global id->name map.)
+    by_provider: dict[str, list[dict]] = {}
     for m in models_payload.get("models") or []:
-        by_provider.setdefault(m.get("provider", "other"), []).append(m.get("id"))
+        by_provider.setdefault(m.get("provider", "other"), []).append(m)
 
     # Default provider (the configured primary agent's) sorts first.
     default_provider, _default_model = config.default_model()
@@ -324,9 +327,10 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
 
     items = []
     for provider in order:
-        ids = [i for i in by_provider[provider] if i]
-        if not ids:
+        objs = [m for m in by_provider[provider] if m.get("id")]
+        if not objs:
             continue
+        ids = [m["id"] for m in objs]
         meta = _PROVIDER_META.get(
             provider, {"endpoint_id": provider, "endpoint_name": provider.title()})
         items.append({
@@ -337,7 +341,12 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
             "model_type": "llm",
             "offline": not _provider_online(provider, auth_status),
             "models": ids,
-            "models_display": [_pretty_model(i) for i in ids],
+            # Prefer the gateway's configured display name — it carries labels
+            # like "(chat only)" for tool-less providers (perplexity-web). Fall
+            # back to a prettified id. NOT `alias`: for some providers that's a
+            # short routing key (codex → "gpt"), not a human label.
+            "models_display": [(m.get("name") or "").strip() or _pretty_model(m["id"])
+                               for m in objs],
             "models_extra": [],
             "models_extra_display": [],
         })

@@ -1,4 +1,5 @@
 """Pure parse/build tests for calendar_invite (no I/O)."""
+import pytest
 from backend.inbox import calendar_invite as ci
 
 GOOGLE_INVITE = (
@@ -66,3 +67,37 @@ def test_extract_invite_allday_date_only():
     assert inv["start_iso"] == "2026-06-10"
     assert inv["end_iso"] == "2026-06-11"
     assert inv["organizer_email"] == "boss@example.com"   # bare ORGANIZER:mailto:
+
+
+def test_build_reply_accepted():
+    inv = ci.extract_invite(GOOGLE_INVITE)
+    out = ci.build_reply(inv, "me@example.com", "accepted", "20260609T120000Z")
+    assert "METHOD:REPLY" in out
+    assert "UID:abc-123@google.com" in out
+    assert "SEQUENCE:2" in out
+    assert "ORGANIZER;CN=Boss:mailto:boss@example.com" in out
+    assert "ATTENDEE;PARTSTAT=ACCEPTED;CN=me@example.com:mailto:me@example.com" in out
+    assert "DTSTART;TZID=America/New_York:20260610T100000" in out
+    assert "DTSTAMP:20260609T120000Z" in out
+    assert out.startswith("BEGIN:VCALENDAR")
+    assert out.rstrip().endswith("END:VCALENDAR")
+
+
+def test_build_reply_rejects_bad_status():
+    inv = ci.extract_invite(GOOGLE_INVITE)
+    with pytest.raises(ci.CalendarError):
+        ci.build_reply(inv, "me@example.com", "perhaps", "20260609T120000Z")
+
+
+def test_reply_subject():
+    assert ci.reply_subject("accepted", "Sync") == "Accepted: Sync"
+    assert ci.reply_subject("tentative", "Sync") == "Tentative: Sync"
+    assert ci.reply_subject("declined", "Sync") == "Declined: Sync"
+
+
+def test_build_reply_folds_multibyte_summary_without_loss():
+    inv = dict(ci.extract_invite(GOOGLE_INVITE),
+               summary="週次チームミーティング" * 4)  # long non-ASCII SUMMARY
+    out = ci.build_reply(inv, "me@example.com", "accepted", "20260609T120000Z")
+    unfolded = out.replace("\r\n ", "")           # reverse RFC 5545 folding
+    assert "SUMMARY:" + "週次チームミーティング" * 4 in unfolded

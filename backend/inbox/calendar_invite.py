@@ -118,3 +118,59 @@ def _ical_to_iso(val: str) -> str:
     if len(v) == 8 and v.isdigit():
         return f"{v[:4]}-{v[4:6]}-{v[6:8]}"
     return v
+
+
+_PARTSTAT = {"accepted": "ACCEPTED", "tentative": "TENTATIVE",
+             "declined": "DECLINED"}
+_STATUS_WORD = {"accepted": "Accepted", "tentative": "Tentative",
+                "declined": "Declined"}
+
+
+def _fold(line: str) -> str:
+    """RFC 5545: fold lines longer than 75 octets with CRLF + a space, never
+    splitting inside a multi-byte UTF-8 codepoint."""
+    b = line.encode("utf-8")
+    if len(b) <= 75:
+        return line
+    out, start = [], 0
+    while start < len(b):
+        end = min(start + 75, len(b))
+        # back off any UTF-8 continuation bytes (0b10xxxxxx) so we cut on a
+        # codepoint boundary
+        while end < len(b) and (b[end] & 0xC0) == 0x80:
+            end -= 1
+        out.append(b[start:end].decode("utf-8"))
+        start = end
+    return "\r\n ".join(out)
+
+
+def reply_subject(status: str, summary: str) -> str:
+    return f"{_STATUS_WORD.get(status, status.title())}: {summary}".rstrip(": ")
+
+
+def build_reply(invite: dict, attendee_addr: str, status: str,
+                dtstamp: str) -> str:
+    """Build a METHOD:REPLY VCALENDAR. `dtstamp` is 'YYYYMMDDTHHMMSSZ' supplied
+    by the caller (no ambient clock in pure code)."""
+    partstat = _PARTSTAT.get(status)
+    if partstat is None:
+        raise CalendarError(f"invalid RSVP status '{status}'")
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//OpenClaw Workspace//RSVP//EN",
+        "METHOD:REPLY",
+        "BEGIN:VEVENT",
+        f"UID:{invite['uid']}",
+        f"SEQUENCE:{invite.get('sequence', 0)}",
+        invite.get("organizer_line")
+        or f"ORGANIZER:mailto:{invite['organizer_email']}",
+        f"ATTENDEE;PARTSTAT={partstat};CN={attendee_addr}:mailto:{attendee_addr}",
+        f"DTSTAMP:{dtstamp}",
+    ]
+    for key in ("dtstart_line", "dtend_line", "recurrence_id_line"):
+        if invite.get(key):
+            lines.append(invite[key])
+    lines += [f"SUMMARY:{invite.get('summary', '')}", "END:VEVENT",
+              "END:VCALENDAR"]
+    return "\r\n".join(_fold(ln) for ln in lines) + "\r\n"

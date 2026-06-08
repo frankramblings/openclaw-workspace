@@ -516,6 +516,22 @@
     if (it.source === 'gmail') renderEmailDetail(c, _detail.content);
   }
 
+  // Reuse the email tab's sanitizer + body styling instead of duplicating a
+  // renderer. `_sanitizeHtml` (emailLibrary/utils.js) strips scripts/handlers/
+  // dangerous URLs and forces links to target=_blank; `.email-reader-body
+  // .html-body` is the email tab's themed body style (working links, img/table
+  // sizing). We deliberately do NOT pull in the full threaded reader
+  // (_renderEmailBody) — it's coupled to the email tab's thread/signature/"me"
+  // state and is overkill for an inbox quick-read.
+  let _sanitizePromise = null;
+  function getSanitizer() {
+    if (!_sanitizePromise) {
+      _sanitizePromise = import('/static/js/emailLibrary/utils.js')
+        .then((m) => m._sanitizeHtml);
+    }
+    return _sanitizePromise;
+  }
+
   function renderEmailDetail(c, d) {
     c.innerHTML =
       '<div class="inbox-detail-meta">' +
@@ -523,15 +539,22 @@
       `  <div class="inbox-detail-from">${esc(d.from_name || d.from_address || '')}` +
       (d.date ? ` <span class="inbox-age">· ${esc(d.date)}</span>` : '') + '</div>' +
       '</div>' +
-      '<div class="inbox-detail-frame-wrap"></div>';
-    // Render the email's own HTML in a locked-down iframe: sandbox with no
-    // allow-scripts / allow-same-origin means scripts can't run and it can't
-    // touch the app — the safe way to show arbitrary mail HTML.
-    const f = document.createElement('iframe');
-    f.className = 'inbox-detail-frame';
-    f.setAttribute('sandbox', '');
-    f.srcdoc = d.body_html || d.body || '';
-    $('.inbox-detail-frame-wrap', c).appendChild(f);
+      '<div class="email-reader-body html-body" id="inbox-email-body"></div>';
+    const target = $('#inbox-email-body', c);
+    const html = d.body_html || d.body || '';
+    getSanitizer().then((sanitize) => {
+      if (target.isConnected) target.innerHTML = sanitize(html);
+    }).catch(() => {
+      // Sanitizer unavailable: fall back to a locked-down iframe so we never
+      // inject unsanitized mail HTML into the app document.
+      if (!target.isConnected) return;
+      target.classList.remove('email-reader-body', 'html-body');
+      const f = document.createElement('iframe');
+      f.className = 'inbox-detail-frame';
+      f.setAttribute('sandbox', '');
+      f.srcdoc = html;
+      target.appendChild(f);
+    });
   }
 
   function renderChips() {

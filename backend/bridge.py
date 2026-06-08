@@ -275,6 +275,21 @@ async def gateway_call(method: str, params: dict | None = None,
     return res.get("payload") or {}
 
 
+async def gateway_hello(timeout: float = 10.0) -> dict:
+    """Connect + auth and return the gateway's connect-response payload (version,
+    capabilities, …) without making a further call. Raises RuntimeError on a
+    rejected handshake; lets connection errors (OSError/TimeoutError) propagate."""
+    url = config.gateway_ws_url()
+    async with asyncio.timeout(timeout):
+        async with websockets.connect(url, max_size=None, open_timeout=30,
+                                      ping_interval=None) as ws:
+            await _wait_for_challenge(ws)
+            hello = await _request(ws, "connect", _connect_params())
+    if not hello.get("ok"):
+        raise RuntimeError(f"gateway connect failed: {hello}")
+    return hello.get("payload") or {}
+
+
 # --- Model catalog: real gateway model list, mapped to the SPA's picker shape -
 
 _PROVIDER_META = {

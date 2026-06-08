@@ -381,6 +381,11 @@
 .gw-dot[data-state="ok"] { background: #34c759; }
 .gw-dot[data-state="restarting"] { background: #ff9f0a; animation: gw-pulse 1.2s infinite; }
 .gw-dot[data-state="down"] { background: #ff3b30; }
+/* Sidebar twin: next to the "Gary" brand title (visible when expanded).
+   pointer-events:none — the brand row is the New-chat button; the dot is
+   purely indicative. Slightly smaller to sit nicely beside the wordmark. */
+.gw-dot-sidebar { width: 8px; height: 8px; margin-left: 8px;
+  pointer-events: none; position: relative; top: -1px; }
 @keyframes gw-pulse { 50% { opacity: 0.35; } }
 #gw-banner { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 300;
   align-items: center; gap: 10px; padding: 7px 14px; font-size: 13px;

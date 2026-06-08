@@ -27,6 +27,19 @@
     if (theme) rail.insertBefore(btn, theme); else rail.appendChild(btn);
   }
 
+  function injectSidebarDot() {
+    // Second dot next to the "Gary" brand name, for when the sidebar is
+    // expanded (the rail dot is hidden/covered then). pointer-events:none in
+    // CSS keeps the brand's whole-row New-chat click intact.
+    const title = $('.sidebar-brand-title');
+    if (!title || $('#gw-dot-sidebar')) return;
+    const dot = document.createElement('span');
+    dot.className = 'gw-dot gw-dot-sidebar';
+    dot.id = 'gw-dot-sidebar';
+    if (_last) dot.dataset.state = _last.state;  // no colorless flash on re-inject
+    title.insertAdjacentElement('afterend', dot);
+  }
+
   function ensureBanner() {
     let b = $('#gw-banner');
     if (!b) {
@@ -44,8 +57,10 @@
   }
 
   function render(s) {
-    const dot = $('#gw-dot');
-    if (dot) dot.dataset.state = s.state;
+    injectSidebarDot();  // self-healing, like the rail observer
+    document.querySelectorAll('.gw-dot').forEach((dot) => {
+      dot.dataset.state = s.state;
+    });
     const btn = $('#rail-gateway');
     if (btn) {
       const bits = [`gateway: ${s.state}`];
@@ -82,6 +97,7 @@
 
   function init() {
     injectDot();
+    injectSidebarDot();
     const rail = document.getElementById('icon-rail');
     if (rail && window.MutationObserver) {
       new MutationObserver(() => {

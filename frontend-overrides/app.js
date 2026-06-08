@@ -1,5 +1,5 @@
 // ============================================
-// Gary UI — Main Application Orchestrator
+// __AGENT_NAME__ UI — Main Application Orchestrator
 // ES6 module — entry point, no exports (wires all modules together)
 // ============================================
 import Storage from './js/storage.js';
@@ -314,7 +314,7 @@ function initializeEventListeners() {
       e.stopPropagation();
       exportMenu.classList.remove('open');
       const meta = sessionModule.getSessions().find(s => s.id === sessionModule.getCurrentSessionId());
-      const sessionName = meta ? meta.name : 'Gary Chat';
+      const sessionName = meta ? meta.name : '__AGENT_NAME__ Chat';
       const originalTitle = document.title;
       document.title = sessionName;
       const chatHistory = document.getElementById('chat-history');
@@ -2066,7 +2066,7 @@ function initializeEventListeners() {
       pickerWrap.classList.toggle('picker-auto-hidden', w < PICKER_HIDE_WIDTH);
       // Hide placeholder text
       if (textarea) {
-        textarea.setAttribute('placeholder', w < PLACEHOLDER_HIDE_WIDTH ? '' : 'Message Gary...');
+        textarea.setAttribute('placeholder', w < PLACEHOLDER_HIDE_WIDTH ? '' : 'Message __AGENT_NAME__...');
       }
       // Hide entire bottom toolbar (tools, mode toggle) — only send button remains
       if (inputBottom) {
@@ -3373,7 +3373,7 @@ function initializeEventListeners() {
 // ============================================
 // INITIALIZATION ON PAGE LOAD
 // ============================================
-function startGaryApp() {
+function startWorkspaceApp() {
   if (window.__odysseusAppStarted) return;
   window.__odysseusAppStarted = true;
   // Set CSS variables
@@ -4043,7 +4043,7 @@ function startGaryApp() {
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', startGaryApp, { once: true });
+  document.addEventListener('DOMContentLoaded', startWorkspaceApp, { once: true });
 } else {
-  startGaryApp();
+  startWorkspaceApp();
 }

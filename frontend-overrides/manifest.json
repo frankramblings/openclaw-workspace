@@ -1,6 +1,6 @@
 {
-  "name": "Gary",
-  "short_name": "Gary",
+  "name": "__AGENT_NAME__",
+  "short_name": "__AGENT_NAME__",
   "description": "Self-hosted AI chat with memory, documents, and tools",
   "start_url": "/",
   "scope": "/",

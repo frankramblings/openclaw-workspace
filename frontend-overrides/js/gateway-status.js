@@ -28,7 +28,7 @@
   }
 
   function injectSidebarDot() {
-    // Second dot next to the "Gary" brand name, for when the sidebar is
+    // Second dot next to the "__AGENT_NAME__" brand name, for when the sidebar is
     // expanded (the rail dot is hidden/covered then). pointer-events:none in
     // CSS keeps the brand's whole-row New-chat click intact.
     const title = $('.sidebar-brand-title');

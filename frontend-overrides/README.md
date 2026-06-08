@@ -71,10 +71,19 @@ AI-thinking spinner. Pieces (all must stay in sync):
   `overscroll-behavior-y: none` guard so iOS rubber-banding doesn't eat the
   gesture.
 
-## Gary rebrand (UI named "Gary", not "Odysseus")
+## Agent-name branding (configurable — `__AGENT_NAME__`)
 
-The UI is branded **Gary**. The brand lives here as durable overrides so it
-survives the Odysseus sync:
+The agent's name is a **single config value** (`WORKSPACE_AGENT_NAME` env →
+`.data/branding.json` → default `Claw`; see `backend/config.py`). The maintainer's
+is **Gary**. Override files carry the literal token **`__AGENT_NAME__`** wherever the
+name is user-visible; `scripts/sync-frontend.sh` bakes the configured name in after
+copying overrides, and the `Odysseus → <name>` sed for non-overridden modules uses
+the same value. Change the name → re-run the sync → the whole UI rebrands.
+
+Do **not** tokenize JS identifiers/slugs — `handToGary()`, the `gary` inbox
+action key, and `data-act="gary"` are internal and stay stable. Visible text only.
+
+The brand assets/markup live here as durable overrides so they survive the sync:
 
 - **index.html, login.html, landing.html** — full-file overrides carrying the
   visible "Gary" text (titles, sidebar/welcome/login brand, route titles,

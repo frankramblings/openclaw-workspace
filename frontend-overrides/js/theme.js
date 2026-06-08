@@ -182,7 +182,7 @@ const ADV_KEYS = [
   { key: 'aiBubbleBg',         css: '--ai-bubble-bg',      label: 'AI Chat Bubble',   group: 'Chat Bubbles' },
   { key: 'bubbleBorder',       css: '--bubble-border',     label: 'Border Chat Bubble', group: 'Chat Bubbles' },
   { key: 'sidebarBg',          css: '--sidebar-bg',        label: 'Sidebar Bg',       group: 'Sidebar' },
-  { key: 'brandColor',         css: '--brand-color',       label: 'Gary Logo',    group: 'Sidebar' },
+  { key: 'brandColor',         css: '--brand-color',       label: '__AGENT_NAME__ Logo',    group: 'Sidebar' },
   { key: 'hamburgerColor',     css: '--hamburger-color',   label: 'Hamburger Menu',   group: 'Sidebar' },
   { key: 'inputBg',            css: '--input-bg',          label: 'Input Bg',         group: 'Chat Input / Prompt Area' },
   { key: 'inputBorder',        css: '--input-border',      label: 'Input Border',     group: 'Chat Input / Prompt Area' },
@@ -349,18 +349,18 @@ function _updateFavicon(fg) {
     link.href = href;
     apple.href = href;
   } else {
-    // Default (root) path: rebuild the Gary mark tinted to the accent on every
+    // Default (root) path: rebuild the __AGENT_NAME__ mark tinted to the accent on every
     // theme apply — the same dynamic behavior the boat favicon used to have.
     // Shape = /static/logo.svg (mono mask: ink = #000, rest transparent),
     // re-tinted to `fg`. apple-touch stays the static PNG (can't cheaply tint).
-    _setGaryFavicon(fg, link);
+    _setBrandFavicon(fg, link);
     apple.href = '/static/icon-192.png?v=gary1';
   }
 }
 
-// Cached raw text of the mono Gary mark, fetched once then re-tinted per call.
+// Cached raw text of the mono __AGENT_NAME__ mark, fetched once then re-tinted per call.
 let _garyMarkSvg = null;
-function _setGaryFavicon(fg, link) {
+function _setBrandFavicon(fg, link) {
   const apply = (txt) => {
     const tinted = txt.replace(/fill:\s*#000;?/i, `fill: ${fg};`);
     link.href = 'data:image/svg+xml,' + encodeURIComponent(tinted);

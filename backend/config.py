@@ -87,3 +87,53 @@ DATA_DIR = Path(os.environ.get("WORKSPACE_DATA_DIR", REPO_ROOT / ".data"))
 
 # How long to wait on a single chat turn before giving up.
 TURN_TIMEOUT_S = float(os.environ.get("WORKSPACE_TURN_TIMEOUT_S", "180"))
+
+
+# --- Branding (the agent's name + theme accent) ------------------------------
+# The agent name is WORKSPACE branding, not OpenClaw config: OpenClaw's
+# agents.list[0] has no `name`. One source of truth, in priority order:
+#   1. env WORKSPACE_AGENT_NAME
+#   2. .data/branding.json  {"agent_name": "..."}   (written by scripts/setup.sh)
+#   3. the default below
+# .data/ is gitignored, so a user's chosen name never lands in the public repo.
+DEFAULT_AGENT_NAME = "Claw"
+DEFAULT_ACCENT = "#4fe3d1"  # the maskable-icon / theme cyan the UI ships with
+BRANDING_PATH = DATA_DIR / "branding.json"
+
+
+def load_branding() -> dict:
+    """Read .data/branding.json (best-effort). Never raises."""
+    try:
+        return json.loads(BRANDING_PATH.read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_branding(**fields) -> dict:
+    """Merge `fields` into branding.json and write it atomically. Returns the
+    merged dict. Used by the setup wizard; safe to call repeatedly."""
+    current = load_branding()
+    current.update({k: v for k, v in fields.items() if v is not None})
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = BRANDING_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(current, indent=2) + "\n")
+    tmp.replace(BRANDING_PATH)
+    return current
+
+
+def agent_name() -> str:
+    """The agent's display name (e.g. 'Gary'). Env > branding.json > default."""
+    return (
+        os.environ.get("WORKSPACE_AGENT_NAME")
+        or load_branding().get("agent_name")
+        or DEFAULT_AGENT_NAME
+    ).strip() or DEFAULT_AGENT_NAME
+
+
+def accent_color() -> str:
+    """Theme accent hex (e.g. '#4fe3d1'). Env > branding.json > default."""
+    return (
+        os.environ.get("WORKSPACE_ACCENT")
+        or load_branding().get("accent")
+        or DEFAULT_ACCENT
+    )

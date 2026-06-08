@@ -10,6 +10,19 @@ SRC="${ODYSSEUS_STATIC:-$HOME/odysseus/static}"
 DEST="$ROOT/frontend"
 OVERRIDES="$ROOT/frontend-overrides"
 
+# The agent's display name — single source of truth (mirrors backend/config.py):
+#   env WORKSPACE_AGENT_NAME  >  .data/branding.json {"agent_name":...}  >  "Claw"
+# The overrides carry a literal __AGENT_NAME__ token; we bake the real name in
+# below so the whole UI rebrands from one value. Re-run this after changing it.
+AGENT_NAME="${WORKSPACE_AGENT_NAME:-}"
+if [[ -z "$AGENT_NAME" && -f "$ROOT/.data/branding.json" ]]; then
+  AGENT_NAME="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1])).get("agent_name") or "").strip())' "$ROOT/.data/branding.json" 2>/dev/null || true)"
+fi
+AGENT_NAME="${AGENT_NAME:-Claw}"
+echo "agent name: $AGENT_NAME"
+# sed-replacement-safe form (escape \, &, and the / delimiter)
+AGENT_NAME_SED="$(printf '%s' "$AGENT_NAME" | sed -e 's/[\/&\\]/\\&/g')"
+
 if [[ -d "$SRC" ]]; then
   mkdir -p "$DEST"
   rsync -a --delete "$SRC"/ "$DEST"/
@@ -35,6 +48,16 @@ if [[ -d "$OVERRIDES" ]]; then
           cp "$f" "$DEST/$f"
         done )
   echo "applied overrides from $OVERRIDES"
+
+  # Bake the agent name into the copied overrides: replace the literal
+  # __AGENT_NAME__ token everywhere it appears (titles, manifest, placeholders,
+  # brand text). One config value rebrands the whole UI. Idempotent.
+  while IFS= read -r -d '' f; do
+    if grep -q "__AGENT_NAME__" "$f"; then
+      sed -i '' "s/__AGENT_NAME__/$AGENT_NAME_SED/g" "$f"
+    fi
+  done < <(find "$DEST" -type f \( -name '*.js' -o -name '*.html' -o -name '*.json' -o -name '*.webmanifest' \) -print0)
+  echo "baked agent name '$AGENT_NAME' into __AGENT_NAME__ tokens"
 
   # Inject the workspace stylesheet once, just before </head> (idempotent).
   INDEX="$DEST/index.html"
@@ -114,15 +137,16 @@ if [[ -d "$OVERRIDES" ]]; then
   fi
 fi
 
-# --- Gary rebrand of app.js + js/ modules -----------------------------------
+# --- Agent-name rebrand of app.js + js/ modules -----------------------------
 # index.html / login.html / landing.html / manifest.json / the icon files and a
 # few js/ modules (chat.js, theme.js, cron.js) are full-file overrides (copied
-# above), so their "Gary" branding survives the rsync automatically. The rest of
-# app.js and js/*.js are NOT overridden (large, frequently changed upstream), so
-# re-apply their visible-text rebrand here.
+# above); their visible brand text uses the __AGENT_NAME__ token baked in above.
+# The rest of app.js and js/*.js are NOT overridden (large, frequently changed
+# upstream) and still say "Odysseus", so re-apply their visible-text rebrand to
+# the configured agent name here.
 #
-# Safe global swap: only the capitalized brand word "Odysseus" -> "Gary". This
-# covers user-facing strings AND the internally-consistent startOdysseusApp()
+# Safe global swap: only the capitalized brand word "Odysseus" -> "$AGENT_NAME".
+# This covers user-facing strings AND the internally-consistent startOdysseusApp()
 # symbol, while leaving lowercase functional identifiers (odysseus-theme
 # localStorage key, _odysseusLoadTime, etc.) untouched. Idempotent.
 #
@@ -130,7 +154,7 @@ fi
 #   - js/presets.js                 the "Odysseus" character persona preset
 #   - js/research/panel.js          a research-query example about the myth
 #   - any line matching /Laertes/   the Homer "I am Odysseus…" quote in /quote
-rebrand() { [[ -f "$1" ]] && grep -q "Odysseus" "$1" && sed -i '' '/Laertes/!s/Odysseus/Gary/g' "$1" && echo "rebranded $1"; true; }
+rebrand() { [[ -f "$1" ]] && grep -q "Odysseus" "$1" && sed -i '' "/Laertes/!s/Odysseus/$AGENT_NAME_SED/g" "$1" && echo "rebranded $1"; true; }
 rebrand "$DEST/app.js"
 while IFS= read -r -d '' f; do rebrand "$f"; done < <(
   find "$DEST/js" -type f -name '*.js' \

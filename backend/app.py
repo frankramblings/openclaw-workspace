@@ -75,6 +75,16 @@ async def health():
     }
 
 
+@app.get("/api/config")
+async def workspace_config():
+    """Public branding/config the SPA reads at boot so the agent name is right
+    even before a frontend re-sync. Single source of truth lives in config.py."""
+    return {
+        "agent_name": config.agent_name(),
+        "accent": config.accent_color(),
+    }
+
+
 @app.get("/api/gateway/status")
 async def gateway_status():
     """Last-known gateway state from the persistent monitor, for the UI's

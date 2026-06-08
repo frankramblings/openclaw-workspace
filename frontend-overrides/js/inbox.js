@@ -2,9 +2,9 @@
  *
  * Renders /api/items (gmail/slack/asana/obsidian collectors) as a triage
  * queue: per-source primary action, dismiss, snooze presets, open deep-link,
- * and "Hand to Gary" (seeds a chat session via /api/items/spinoff).
+ * and "Hand to __AGENT_NAME__" (seeds a chat session via /api/items/spinoff).
  * Self-contained like cron.js: injects #rail-inbox + its own modal, themed
- * via the SPA's CSS vars, survives Gary updates as long as #icon-rail exists.
+ * via the SPA's CSS vars, survives upstream updates as long as #icon-rail exists.
  */
 (function () {
   'use strict';
@@ -29,7 +29,7 @@
   const REC_LABELS = {
     archive: 'Archive', delete: 'Delete', mark_read: 'Mark read',
     complete: 'Mark complete', reviewed: 'Reviewed',
-    reply: 'Draft reply', gary: 'Hand to Gary',
+    reply: 'Draft reply', gary: 'Hand to __AGENT_NAME__',
   };
   const SNOOZES = () => {
     const now = new Date();
@@ -520,7 +520,7 @@
         ? `    <button data-act="delete" class="inbox-btn" title="Delete">🗑</button>` : '') +
       `    <button data-act="snooze" class="inbox-btn" title="Snooze">⏰</button>` +
       `    <button data-act="open" class="inbox-btn" title="Open">↗</button>` +
-      `    <button data-act="gary" class="inbox-btn" title="Hand to Gary">🤖</button>` +
+      `    <button data-act="gary" class="inbox-btn" title="Hand to __AGENT_NAME__">🤖</button>` +
       `    <button data-act="dismiss" class="inbox-btn" title="Dismiss">✕</button>` +
       `  </div>` +
       `</div>` +

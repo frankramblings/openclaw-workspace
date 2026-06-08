@@ -23,7 +23,7 @@ router = APIRouter()
 
 _HIMALAYA_CONFIG = Path(os.environ.get(
     "HIMALAYA_CONFIG", Path.home() / ".config" / "himalaya" / "config.toml"))
-_MCPORTER_BIN = shutil.which("mcporter") or "/Users/admin/.nvm/versions/node/v22.22.0/bin/mcporter"
+_MCPORTER_BIN = os.environ.get("MCPORTER_BIN") or shutil.which("mcporter") or "mcporter"
 _MCPORTER_CONFIG = Path(os.environ.get(
     "OPENCLAW_MCPORTER_CONFIG",
     Path.home() / ".openclaw" / "workspace" / "config" / "mcporter.json"))

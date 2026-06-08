@@ -1,7 +1,7 @@
 // Vault .md links in chat → open in the document editor.
 //
 // The agent links files it writes by vault path (absolute, ~, or relative —
-// e.g. [radar](/Users/admin/.openclaw/workspace/memory/proactive-drafts/x.md)).
+// e.g. [radar](~/.openclaw/workspace/memory/proactive-drafts/x.md)).
 // markdown.js renders every anchor target="_blank", so those links navigated a
 // new tab to a 404. This add-on (same pattern as cron.js/inbox.js) intercepts
 // them in the chat history and opens the file via GET /api/vault/open, which

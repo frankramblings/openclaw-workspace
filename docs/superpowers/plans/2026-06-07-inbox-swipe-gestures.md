@@ -529,7 +529,7 @@ git commit -m "feat(inbox): swipe gesture engine — direction lock, 1:1 trackin
 ⚠️ Controller/user task — the feel can only be judged on the actual iPhone.
 
 - [ ] **Step 1: Ask the user to test on their phone** (via the tailnet PWA,
-`https://bespin.bicolor-triceratops.ts.net:8443/`, hard refresh / reopen the
+`https://workspace.example.ts.net:8443/`, hard refresh / reopen the
 PWA to bust cached JS). Checklist to give them:
 
 ```

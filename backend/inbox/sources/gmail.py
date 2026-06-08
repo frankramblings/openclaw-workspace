@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from ... import himalaya_cli
 
-INTERNAL_DOMAIN = os.environ.get("INBOX_INTERNAL_DOMAIN", "wistia.com")
+INTERNAL_DOMAIN = os.environ.get("INBOX_INTERNAL_DOMAIN", "example.com")
 LIST_SIZE = int(os.environ.get("INBOX_GMAIL_LIST", "50"))
 
 

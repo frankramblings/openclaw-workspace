@@ -458,7 +458,7 @@ def test_read_but_flagged_mail_is_kept_with_important_bonus():
 
 
 def test_internal_sender_gets_no_external_bonus():
-    items = gmail.map_items([_env(addr="taylor@wistia.com")], now_ms=NOW)
+    items = gmail.map_items([_env(addr="taylor@example.com")], now_ms=NOW)
     assert items[0]["score"] == 3 + 2  # unread + <6h
 ```
 
@@ -485,7 +485,7 @@ from datetime import datetime, timezone
 
 from ... import himalaya_cli
 
-INTERNAL_DOMAIN = os.environ.get("INBOX_INTERNAL_DOMAIN", "wistia.com")
+INTERNAL_DOMAIN = os.environ.get("INBOX_INTERNAL_DOMAIN", "example.com")
 LIST_SIZE = int(os.environ.get("INBOX_GMAIL_LIST", "50"))
 
 
@@ -614,7 +614,7 @@ def test_channel_url_built_from_handle_map():
     mentions[0]["time"] = NOW
     items = slack.map_items([], mentions, handle_map={"#general": "C0GEN"}, now_ms=NOW)
     assert items[0]["meta"]["url"] == \
-        "https://wistia.slack.com/archives/C0GEN/p1780670000123456"
+        "https://example.slack.com/archives/C0GEN/p1780670000123456"
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -653,7 +653,7 @@ SIGNALS_PATH = Path(os.environ.get(
 CHANNELS_CACHE = Path(os.environ.get(
     "INBOX_SLACK_CHANNELS",
     str(config.OPENCLAW_HOME / "workspace/var/slack-channels.cache.json")))
-SLACK_DOMAIN = os.environ.get("SLACK_DOMAIN", "wistia.slack.com")
+SLACK_DOMAIN = os.environ.get("SLACK_DOMAIN", "example.slack.com")
 STALE_MIN = int(os.environ.get("SLACK_STALE_MIN", str(24 * 60)))
 REFRESH_JOB = "ai.openclaw.slack-refresh"
 

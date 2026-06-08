@@ -143,9 +143,9 @@ def access_token() -> str:
 from backend.calendar_google import map_calendar
 
 def test_map_calendar():
-    c = map_calendar({"id": "femanuele@wistia.com", "summary": "Frank",
+    c = map_calendar({"id": "you@example.com", "summary": "Frank",
                       "backgroundColor": "#44a703", "primary": True})
-    assert c["href"] == "femanuele@wistia.com"
+    assert c["href"] == "you@example.com"
     assert c["name"] == "Frank"
     assert c["color"] == "#44a703" and c["hex"] == "#44a703"
     assert c["primary"] is True

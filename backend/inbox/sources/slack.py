@@ -26,7 +26,7 @@ SIGNALS_PATH = Path(os.environ.get(
 CHANNELS_CACHE = Path(os.environ.get(
     "INBOX_SLACK_CHANNELS",
     str(config.OPENCLAW_HOME / "workspace/var/slack-channels.cache.json")))
-SLACK_DOMAIN = os.environ.get("SLACK_DOMAIN", "wistia.slack.com")
+SLACK_DOMAIN = os.environ.get("SLACK_DOMAIN", "example.slack.com")
 STALE_MIN = int(os.environ.get("SLACK_STALE_MIN", str(24 * 60)))
 REFRESH_JOB = "ai.openclaw.slack-refresh"
 

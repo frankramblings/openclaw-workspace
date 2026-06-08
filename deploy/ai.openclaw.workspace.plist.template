@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>ai.openclaw.workspace</string>
+
+    <key>Comment</key>
+    <string>OpenClaw Workspace — web shell over the OpenClaw gateway, bound to 127.0.0.1 (loopback). Expose over a tailnet with `tailscale serve` rather than binding 0.0.0.0. No app auth by design (single-user; the network perimeter is the boundary).</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>__PYTHON__</string>
+      <string>-m</string>
+      <string>uvicorn</string>
+      <string>backend.app:app</string>
+      <string>--host</string>
+      <string>__HOST__</string>
+      <string>--port</string>
+      <string>__PORT__</string>
+      <string>--log-level</string>
+      <string>warning</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>__LOG__</string>
+    <key>StandardErrorPath</key>
+    <string>__ERRLOG__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>HOME</key>
+      <string>__HOME__</string>
+      <key>PATH</key>
+      <string>__PATH__</string>
+    </dict>
+  </dict>
+</plist>

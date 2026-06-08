@@ -4,7 +4,9 @@ from backend.inbox.sources import gmail
 NOW = 10**12
 
 
-def _env(uid="101", subject="Hello", name="Ada", addr="ada@example.com",
+# INTERNAL_DOMAIN defaults to example.com, so external senders use a different
+# domain and the internal test below uses example.com.
+def _env(uid="101", subject="Hello", name="Ada", addr="ada@external.test",
          flags=(), age_h=1.0):
     return {"id": uid, "subject": subject,
             "from": {"name": name, "addr": addr},
@@ -35,5 +37,5 @@ def test_read_but_flagged_mail_is_kept_with_important_bonus():
 
 
 def test_internal_sender_gets_no_external_bonus():
-    items = gmail.map_items([_env(addr="taylor@wistia.com")], now_ms=NOW)
+    items = gmail.map_items([_env(addr="taylor@example.com")], now_ms=NOW)
     assert items[0]["score"] == 3 + 2  # unread + <6h

@@ -25,9 +25,9 @@ def test_token_cache_expiry_logic(monkeypatch):
 
 
 def test_map_calendar():
-    c = map_calendar({"id": "femanuele@wistia.com", "summary": "Frank",
+    c = map_calendar({"id": "you@example.com", "summary": "Frank",
                       "backgroundColor": "#44a703", "primary": True})
-    assert c["href"] == "femanuele@wistia.com" and c["name"] == "Frank"
+    assert c["href"] == "you@example.com" and c["name"] == "Frank"
     assert c["color"] == "#44a703" and c["hex"] == "#44a703" and c["primary"] is True
 
 

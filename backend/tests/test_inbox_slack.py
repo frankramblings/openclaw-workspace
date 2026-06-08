@@ -43,4 +43,4 @@ def test_channel_url_built_from_handle_map():
     mentions[0]["time"] = NOW
     items = slack.map_items([], mentions, handle_map={"#general": "C0GEN"}, now_ms=NOW)
     assert items[0]["meta"]["url"] == \
-        "https://wistia.slack.com/archives/C0GEN/p1780670000123456"
+        "https://example.slack.com/archives/C0GEN/p1780670000123456"

@@ -1602,7 +1602,7 @@ curl -s http://127.0.0.1:8800/api/gateway/status | python3 -m json.tool
 
 Expected: `"state": "ok"`, agents list including `main`, a numeric sessionCount.
 
-- [x] **Step 3: Browser checks** (over the tailnet, `http://bespin.bicolor-triceratops.ts.net:8800/`):
+- [x] **Step 3: Browser checks** (over the tailnet, `http://workspace.example.ts.net:8800/`):
   - status dot visible in the icon rail, green, tooltip shows session count
   - Cron modal → ⟲ on a job (e.g. a refresh job) → run rows render with status/time/duration
   - Skills panel → toggles render; flip a harmless skill off, confirm green→grey, flip back on (round-trip = gateway write works)

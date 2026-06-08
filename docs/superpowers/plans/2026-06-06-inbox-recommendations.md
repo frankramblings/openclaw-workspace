@@ -873,7 +873,7 @@ def test_heuristic_newsletter_sender_archives():
     rec = recommend.heuristic_rec(_gmail("no-reply@asana.com"))
     assert rec == {"action": "archive", "by": "heuristic",
                    "reason": "newsletter/notification sender"}
-    assert recommend.heuristic_rec(_gmail("taylor@wistia.com")) is None
+    assert recommend.heuristic_rec(_gmail("taylor@example.com")) is None
 
 
 def test_heuristic_stale_slack_unread():
@@ -904,7 +904,7 @@ def test_precedence_ai_over_history_over_heuristic():
     assert rec2["by"] == "history"
     rec3 = recommend.pick(item, {}, {})
     assert rec3["by"] == "heuristic"
-    assert recommend.pick(_gmail("taylor@wistia.com"), {}, {}) is None
+    assert recommend.pick(_gmail("taylor@example.com"), {}, {}) is None
 
 
 def test_ai_rec_with_disallowed_action_is_ignored():

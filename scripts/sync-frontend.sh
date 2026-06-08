@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Copy the Odysseus SPA into ./frontend, then re-apply our durable overrides.
-# The frontend is reused (not vendored): re-run this when Odysseus's static/
-# changes. Workspace-specific changes live in ../frontend-overrides and are
-# layered back on top here so the rsync --delete never clobbers them.
+# Build frontend/ : rsync the vendored SPA base (frontend-vendor/) into it, then
+# layer the durable frontend-overrides/ on top and bake in the agent name.
+# frontend/ is generated output (gitignored); edits belong in frontend-vendor/
+# (base) or frontend-overrides/ (customizations), never in frontend/ directly.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,6 +25,11 @@ AGENT_NAME="${AGENT_NAME:-Claw}"
 echo "agent name: $AGENT_NAME"
 # sed-replacement-safe form (escape \, &, and the / delimiter)
 AGENT_NAME_SED="$(printf '%s' "$AGENT_NAME" | sed -e 's/[\/&\\]/\\&/g')"
+
+# Portable in-place sed: GNU sed (Linux) takes `-i`; BSD sed (macOS) needs an
+# explicit empty backup-suffix arg `-i ''`. Detect once.
+if sed --version >/dev/null 2>&1; then sedi() { sed -i "$@"; }
+else sedi() { sed -i '' "$@"; }; fi
 
 if [[ -d "$SRC" ]]; then
   mkdir -p "$DEST"
@@ -55,7 +60,7 @@ if [[ -d "$OVERRIDES" ]]; then
   # brand text). One config value rebrands the whole UI. Idempotent.
   while IFS= read -r -d '' f; do
     if grep -q "__AGENT_NAME__" "$f"; then
-      sed -i '' "s/__AGENT_NAME__/$AGENT_NAME_SED/g" "$f"
+      sedi "s/__AGENT_NAME__/$AGENT_NAME_SED/g" "$f"
     fi
   done < <(find "$DEST" -type f \( -name '*.js' -o -name '*.html' -o -name '*.json' -o -name '*.webmanifest' \) -print0)
   echo "baked agent name '$AGENT_NAME' into __AGENT_NAME__ tokens"
@@ -155,7 +160,7 @@ fi
 #   - js/presets.js                 the "Odysseus" character persona preset
 #   - js/research/panel.js          a research-query example about the myth
 #   - any line matching /Laertes/   the Homer "I am Odysseus…" quote in /quote
-rebrand() { [[ -f "$1" ]] && grep -q "Odysseus" "$1" && sed -i '' "/Laertes/!s/Odysseus/$AGENT_NAME_SED/g" "$1" && echo "rebranded $1"; true; }
+rebrand() { [[ -f "$1" ]] && grep -q "Odysseus" "$1" && sedi "/Laertes/!s/Odysseus/$AGENT_NAME_SED/g" "$1" && echo "rebranded $1"; true; }
 rebrand "$DEST/app.js"
 while IFS= read -r -d '' f; do rebrand "$f"; done < <(
   find "$DEST/js" -type f -name '*.js' \
@@ -164,7 +169,7 @@ while IFS= read -r -d '' f; do rebrand "$f"; done < <(
 # Welcome-screen subtitle (a specific phrase, not an Odysseus->Gary swap).
 MODELS="$DEST/js/models.js"
 if [[ -f "$MODELS" ]] && grep -q "Yours for the voyage\." "$MODELS"; then
-  sed -i '' 's/Yours for the voyage\./Merely an automaton, here to serve./g' "$MODELS"
+  sedi 's/Yours for the voyage\./Merely an automaton, here to serve./g' "$MODELS"
   echo "rebranded welcome subtitle in js/models.js"
 fi
 
@@ -175,7 +180,7 @@ fi
 # runs server-side via backend/websearch.py (key from OpenClaw's serpapi skill).
 SETTINGS="$DEST/js/settings.js"
 if [[ -f "$SETTINGS" ]] && ! grep -q "serpapi: 'SerpAPI'" "$SETTINGS"; then
-  sed -i '' "s|var _searchLabels = {|var _searchLabels = { serpapi: 'SerpAPI',|" "$SETTINGS"
-  sed -i '' "s|var _SEARCH_PROVIDER_LOGOS = {|var _SEARCH_PROVIDER_LOGOS = { serpapi: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/><path d=\"M8.5 11a2.5 2.5 0 0 1 5 0c0 1.5-1.2 2-2.5 2\"/></svg>',|" "$SETTINGS"
+  sedi "s|var _searchLabels = {|var _searchLabels = { serpapi: 'SerpAPI',|" "$SETTINGS"
+  sedi "s|var _SEARCH_PROVIDER_LOGOS = {|var _SEARCH_PROVIDER_LOGOS = { serpapi: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/><path d=\"M8.5 11a2.5 2.5 0 0 1 5 0c0 1.5-1.2 2-2.5 2\"/></svg>',|" "$SETTINGS"
   echo "patched serpapi into settings.js provider maps"
 fi

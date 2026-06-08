@@ -67,11 +67,12 @@ picks the top unchecked item, ships it, checks it off, commits.
 
 ## Tier 2 — adoption polish (do if Tier 1 lands)
 
-- [ ] **8. CONTRIBUTING.md + ARCHITECTURE.md** (bridge explained, override system, how to add a tab).
+- [x] **8. CONTRIBUTING.md + ARCHITECTURE.md** — bridge, vendor/override/bake flow, branding flow, how to add a tab. DONE 2026-06-08.
 - [ ] **9. Icon generation from the agent name** (initials-based mark fallback so a fresh install isn't stuck with the "Gary helmet").
 - [ ] **10. `requirements.txt` pinned + a `make`/`justfile` or `scripts/dev.sh`** for one-command local run.
+- [x] **(portability)** `sync-frontend.sh` was macOS-only (`sed -i ''`). Added a `sedi()` wrapper that detects GNU vs BSD sed, so `setup.sh`/build work on Linux too (CI runs on ubuntu). DONE 2026-06-08.
 - [x] **11. Smoke-test script** `scripts/smoke.sh` — static checks (branding set, frontend built, no stray tokens, backend imports, gateway config) + optional live `/api/config` & `/api/health` probes. DONE 2026-06-08.
-- [ ] **12. GitHub hygiene:** `.github/` (issue template, a CI that runs pytest), top-of-repo badges.
+- [x] **12. GitHub hygiene:** `.github/workflows/ci.yml` (pytest on 3.11–3.13 + a build/smoke job) and a bug-report issue template. DONE 2026-06-08. (Badges: add after the repo URL is known.)
 
 **VALIDATED 2026-06-08:** fresh `git clone` → `scripts/setup.sh --name Aria --yes`
 produces a fully-branded 169-file UI (0 stray tokens) and the backend reads the new

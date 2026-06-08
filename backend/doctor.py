@@ -15,8 +15,10 @@ REQUIRED_METHODS = [
     "cron.list", "cron.run", "cron.runs", "cron.update",
     "skills.status", "skills.update",
 ]
-# Only these read-only ones are safe to actually invoke as a probe.
-PROBE_METHODS = ["models.list", "skills.status", "cron.list", "sessions.json"]
+# Only read-only methods that succeed with NO params are safe to probe — a method
+# that needs args (e.g. sessions.json needs a sessionKey) would error and be
+# misread as "missing". The rest of REQUIRED_METHODS are documented, not probed.
+PROBE_METHODS = ["models.list", "skills.status", "cron.list"]
 
 
 def _ok(cid, detail="", hint=""):

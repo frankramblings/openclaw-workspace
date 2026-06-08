@@ -11,6 +11,7 @@ def iso(monkeypatch):
               "OPENCLAW_WEB_SESSION_PREFIX", "OPENCLAW_INBOX_TRIAGE_SESSION_KEY"):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setattr(config, "_openclaw_json", lambda: {})
+    monkeypatch.setattr(config, "load_connection", lambda: {})
     return monkeypatch
 
 

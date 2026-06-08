@@ -33,7 +33,9 @@ def gateway_port() -> int:
 
 
 def gateway_ws_url() -> str:
-    return os.environ.get("OPENCLAW_GATEWAY_WS") or f"ws://127.0.0.1:{gateway_port()}"
+    return (os.environ.get("OPENCLAW_GATEWAY_WS")
+            or load_connection().get("gateway_ws")
+            or f"ws://127.0.0.1:{gateway_port()}")
 
 
 def gateway_password() -> str | None:
@@ -63,11 +65,15 @@ def default_model() -> tuple[str, str]:
 
 
 def agent_id() -> str:
-    """The OpenClaw agent id the workspace talks to. Env > OpenClaw config
-    (agents.list[0].id) > 'main'. v1 hardcoded 'main'; other installs differ."""
+    """The OpenClaw agent id the workspace talks to. Env > connection.json >
+    OpenClaw config (agents.list[0].id) > 'main'. v1 hardcoded 'main'; other
+    installs differ."""
     env = os.environ.get("OPENCLAW_AGENT_ID")
     if env:
         return env
+    conn = load_connection().get("agent_id")
+    if conn:
+        return conn
     try:
         return _openclaw_json()["agents"]["list"][0]["id"]
     except (KeyError, IndexError, TypeError):
@@ -148,3 +154,31 @@ def accent_color() -> str:
         or load_branding().get("accent")
         or DEFAULT_ACCENT
     )
+
+
+# --- Connection (non-secret gateway address / agent id for remote installs) --
+# Allows a user whose OpenClaw runs on another machine to set gateway_ws and
+# agent_id without modifying ~/.openclaw/openclaw.json. The password MUST NOT
+# be stored here — a copied .data/ must not leak a credential.
+CONNECTION_PATH = DATA_DIR / "connection.json"
+
+
+def load_connection() -> dict:
+    """Read .data/connection.json (non-secret connection info). Never raises."""
+    try:
+        return json.loads(CONNECTION_PATH.read_text())
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_connection(**fields) -> dict:
+    """Merge non-secret connection fields into connection.json, atomically.
+    NEVER persist a password here — secrets stay in env / openclaw.json."""
+    current = load_connection()
+    current.update({k: v for k, v in fields.items()
+                    if v is not None and k != "password"})
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = CONNECTION_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(current, indent=2) + "\n")
+    tmp.replace(CONNECTION_PATH)
+    return current

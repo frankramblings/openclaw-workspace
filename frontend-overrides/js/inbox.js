@@ -225,7 +225,9 @@
   }
 
   let _modal = null, _items = [], _errors = {}, _counts = {}, _filter = null,
-      _view = 'feed', _toastTimer = null, _openCard = null;
+      _view = 'feed', _toastTimer = null, _openCard = null, _detail = null;
+  // Sources that support reading in place (grows per slice: gmail → slack → asana).
+  const DETAIL_SOURCES = new Set(['gmail']);
   const IS_COARSE = !!(window.matchMedia
     && matchMedia('(pointer: coarse)').matches);
   const REDUCED_MOTION = !!(window.matchMedia
@@ -440,6 +442,7 @@
 
   function render() {
     if (_view === 'history') return renderHistory();
+    if (_detail) return renderDetail();
     _openCard = null;   // rebuilt DOM: any revealed card is gone with it
     renderChips();
     const body = $('#inbox-body');
@@ -453,6 +456,82 @@
     }
     body.innerHTML = items.map(cardHtml).join('');
     items.forEach((it) => bindCard(it));
+  }
+
+  // --- read in place (slice B): inline detail reader -----------------------
+  // Tapping a card body opens a full-panel reader inside #inbox-body. Content
+  // is fetched per source; the feed is restored on Back. Read-only — replies
+  // still go through 🤖 Hand-to-__AGENT_NAME__.
+  function openDetail(it) {
+    _detail = { item: it, content: null, loading: true, error: null };
+    render();
+    fetchDetailContent(it).then((content) => {
+      if (_detail && _detail.item === it) {
+        _detail.content = content; _detail.loading = false; renderDetail();
+      }
+    }).catch((err) => {
+      if (_detail && _detail.item === it) {
+        _detail.error = String((err && err.message) || err);
+        _detail.loading = false; renderDetail();
+      }
+    });
+  }
+
+  function closeDetail() { _detail = null; render(); }
+
+  async function fetchDetailContent(it) {
+    if (it.source === 'gmail') {
+      const uid = it.meta && it.meta.uid;
+      if (!uid) throw new Error('no message id');
+      const r = await fetch(
+        `${API}/api/email/read/${encodeURIComponent(uid)}?mark_seen=false`,
+        { credentials: 'same-origin' });
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      return data;
+    }
+    throw new Error('reading in place not supported for ' + it.source);
+  }
+
+  function renderDetail() {
+    const body = $('#inbox-body');
+    if (!body || !_detail) return;
+    _openCard = null;
+    const it = _detail.item;
+    body.innerHTML =
+      '<div class="inbox-detail">' +
+      '  <div class="inbox-detail-head">' +
+      '    <button class="inbox-btn" id="inbox-detail-back">← Back</button>' +
+      `    <span class="email-tag email-tag-${esc(it.source)}">${esc(it.source)}</span>` +
+      '    <button class="inbox-btn" id="inbox-detail-open" title="Open externally">↗</button>' +
+      '  </div>' +
+      '  <div class="inbox-detail-body" id="inbox-detail-content"></div>' +
+      '</div>';
+    $('#inbox-detail-back', body).addEventListener('click', closeDetail);
+    $('#inbox-detail-open', body).addEventListener('click',
+      (e) => openItem(it, e.currentTarget));
+    const c = $('#inbox-detail-content', body);
+    if (_detail.loading) { c.innerHTML = '<div class="cron-empty">Loading…</div>'; return; }
+    if (_detail.error) { c.innerHTML = `<div class="inbox-error">${esc(_detail.error)}</div>`; return; }
+    if (it.source === 'gmail') renderEmailDetail(c, _detail.content);
+  }
+
+  function renderEmailDetail(c, d) {
+    c.innerHTML =
+      '<div class="inbox-detail-meta">' +
+      `  <div class="inbox-detail-subject">${esc(d.subject || '(no subject)')}</div>` +
+      `  <div class="inbox-detail-from">${esc(d.from_name || d.from_address || '')}` +
+      (d.date ? ` <span class="inbox-age">· ${esc(d.date)}</span>` : '') + '</div>' +
+      '</div>' +
+      '<div class="inbox-detail-frame-wrap"></div>';
+    // Render the email's own HTML in a locked-down iframe: sandbox with no
+    // allow-scripts / allow-same-origin means scripts can't run and it can't
+    // touch the app — the safe way to show arbitrary mail HTML.
+    const f = document.createElement('iframe');
+    f.className = 'inbox-detail-frame';
+    f.setAttribute('sandbox', '');
+    f.srcdoc = d.body_html || d.body || '';
+    $('.inbox-detail-frame-wrap', c).appendChild(f);
   }
 
   function renderChips() {
@@ -560,6 +639,18 @@
       chip.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(); }
       });
+    }
+    // Tap the card body to read in place (supported sources only). Excludes the
+    // rec chip (its own action) and the synthetic click after a swipe-drag.
+    if (DETAIL_SOURCES.has(it.source)) {
+      const main = $('.inbox-item-main', el);
+      if (main) {
+        main.classList.add('inbox-item-readable');
+        main.addEventListener('click', (e) => {
+          if (el._suppressClick || e.target.closest('.inbox-rec-chip')) return;
+          openDetail(it);
+        });
+      }
     }
     if (IS_COARSE) bindSwipe(it, el);
   }

@@ -60,3 +60,13 @@ def test_maintainer_parity(iso):
     assert config.web_session_key() == "agent:main:web"
     assert config.web_session_prefix() == "agent:main:web"
     assert config.inbox_triage_session_key() == "agent:main:inbox-triage"
+
+
+def test_memory_extract_session_follows_agent_id(iso):
+    """The memory-extraction utility thread must follow the agent id too
+    (parity for 'main', correct for others) — caught in final review."""
+    from backend import memory
+    iso.setattr(config, "_openclaw_json", lambda: {"agents": {"list": [{"id": "main"}]}})
+    assert memory._extract_session() == "agent:main:web-memex"
+    iso.setattr(config, "_openclaw_json", lambda: {"agents": {"list": [{"id": "scout"}]}})
+    assert memory._extract_session() == "agent:scout:web-memex"

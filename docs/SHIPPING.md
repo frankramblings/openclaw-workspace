@@ -70,8 +70,14 @@ picks the top unchecked item, ships it, checks it off, commits.
 - [ ] **8. CONTRIBUTING.md + ARCHITECTURE.md** (bridge explained, override system, how to add a tab).
 - [ ] **9. Icon generation from the agent name** (initials-based mark fallback so a fresh install isn't stuck with the "Gary helmet").
 - [ ] **10. `requirements.txt` pinned + a `make`/`justfile` or `scripts/dev.sh`** for one-command local run.
-- [ ] **11. Smoke-test script** `scripts/smoke.sh` (curl /api/config, /api/models, etc.) so an installer can self-verify.
+- [x] **11. Smoke-test script** `scripts/smoke.sh` — static checks (branding set, frontend built, no stray tokens, backend imports, gateway config) + optional live `/api/config` & `/api/health` probes. DONE 2026-06-08.
 - [ ] **12. GitHub hygiene:** `.github/` (issue template, a CI that runs pytest), top-of-repo badges.
+
+**VALIDATED 2026-06-08:** fresh `git clone` → `scripts/setup.sh --name Aria --yes`
+produces a fully-branded 169-file UI (0 stray tokens) and the backend reads the new
+name. The end-to-end install story works for a new user. (Live deploy still runs the
+pre-branding backend; restarting it activates `/api/config` + the new code — deferred
+to avoid a cold-start stall, behavior preserved via the pinned plist env.)
 
 ## Progress log (newest first)
 - 2026-06-07: **Tier 1 COMPLETE** (items 1-7). Agent-name feature shipped; setup wizard; README/LICENSE/.env.example; LaunchAgent template + installer; personal-data scrub with live deploy preserved via plist env. Full suite 161 green. Moving to Tier 2.

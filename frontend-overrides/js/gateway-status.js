@@ -87,12 +87,20 @@
     _last = s;
   }
 
+  let _retry = null;
+
   async function refresh() {
+    let got = false;
     try {
       const res = await fetch(`${API}/api/gateway/status`);
-      if (!res.ok) return;        // workspace hiccup — keep last known state
-      render(await res.json());
+      if (res.ok) { render(await res.json()); got = true; }
     } catch (_) { /* network blip — keep last known state */ }
+    // Until the FIRST successful render the dot sits gray — and a mobile cold
+    // launch can race the tailnet coming up, losing that first fetch. Retry
+    // quickly until we've ever painted a state; after that the 30s poll is fine.
+    if (!got && !_last && !_retry) {
+      _retry = setTimeout(() => { _retry = null; refresh(); }, 3000);
+    }
   }
 
   function init() {
@@ -107,6 +115,11 @@
     refresh();
     setInterval(refresh, POLL_MS);
     window.addEventListener('focus', refresh);
+    // iOS PWAs resume without a reliable window 'focus' — visibilitychange is
+    // the event that actually fires when the app comes back to the foreground.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refresh();
+    });
   }
 
   if (document.readyState === 'loading') {

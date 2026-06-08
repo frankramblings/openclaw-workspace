@@ -10,11 +10,14 @@
 #   scripts/setup.sh --name Gary --accent '#4fe3d1' --yes
 #
 # Flags:
-#   --name <NAME>       agent display name (skips the prompt)
-#   --accent <#hex>     theme accent color   (default keeps current/ #4fe3d1)
-#   --yes, -y           accept defaults, no prompts (CI / scripted installs)
-#   --no-sync           skip the frontend sync step
-#   -h, --help          this help
+#   --name <NAME>           agent display name (skips the prompt)
+#   --accent <#hex>         theme accent color   (default keeps current/ #4fe3d1)
+#   --yes, -y               accept defaults, no prompts (CI / scripted installs)
+#   --no-sync               skip the frontend sync step
+#   --gateway-ws <url>      gateway WebSocket URL (e.g. ws://127.0.0.1:18789)
+#   --enable <csv>          comma-separated integrations to enable (e.g. email,inbox)
+#   --skip-connect          skip the gateway connection + doctor step
+#   -h, --help              this help
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,14 +28,20 @@ NAME=""
 ACCENT=""
 ASSUME_YES=0
 DO_SYNC=1
+GATEWAY_WS=""
+ENABLE=""
+SKIP_CONNECT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --name)     NAME="${2:-}"; shift 2 ;;
-    --accent)   ACCENT="${2:-}"; shift 2 ;;
-    --yes|-y)   ASSUME_YES=1; shift ;;
-    --no-sync)  DO_SYNC=0; shift ;;
-    -h|--help)  awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next} {exit}' "$0"; exit 0 ;;
+    --name)         NAME="${2:-}"; shift 2 ;;
+    --accent)       ACCENT="${2:-}"; shift 2 ;;
+    --yes|-y)       ASSUME_YES=1; shift ;;
+    --no-sync)      DO_SYNC=0; shift ;;
+    --gateway-ws)   GATEWAY_WS="${2:-}"; shift 2 ;;
+    --enable)       ENABLE="${2:-}"; shift 2 ;;
+    --skip-connect) SKIP_CONNECT=1; shift ;;
+    -h|--help)      awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next} {exit}' "$0"; exit 0 ;;
     *) echo "unknown flag: $1 (try --help)" >&2; exit 1 ;;
   esac
 done
@@ -91,6 +100,46 @@ open(path, "a").write("\n")
 print("  saved %s: agent_name=%r accent=%r" % (path, data["agent_name"], data["accent"]))' \
   "$BRANDING" "$NAME" "$ACCENT"
 echo
+
+# --- Gateway connection + doctor --------------------------------------------
+if [[ "$SKIP_CONNECT" != 1 ]]; then
+  OPENCLAW_CFG="${OPENCLAW_HOME:-$HOME/.openclaw}/openclaw.json"
+  if [[ -f "$OPENCLAW_CFG" && -z "$GATEWAY_WS" ]]; then
+    echo "  Using same-host OpenClaw config ($OPENCLAW_CFG) — no URL needed."
+  else
+    if [[ -z "$GATEWAY_WS" && "$ASSUME_YES" != 1 ]]; then
+      printf "  Gateway WebSocket URL [ws://127.0.0.1:18789]: "
+      read -r GATEWAY_WS || true
+      # blank → leave empty (keep current/default, don't force-write)
+    fi
+  fi
+
+  # Write connection.json only when we have something to persist.
+  if [[ -n "$GATEWAY_WS" || -n "$ENABLE" ]]; then
+    CONN="$DATA_DIR/connection.json"
+    python3 - "$CONN" "$GATEWAY_WS" "$ENABLE" <<'PY'
+import json, sys
+path, gw, enable = sys.argv[1:4]
+try:
+    data = json.load(open(path))
+except Exception:
+    data = {}
+if gw.strip():
+    data["gateway_ws"] = gw.strip()
+ints = data.get("integrations", {})
+for name in [s for s in enable.split(",") if s.strip()]:
+    ints[name.strip()] = True
+data["integrations"] = ints
+json.dump(data, open(path, "w"), indent=2)
+open(path, "a").write("\n")
+PY
+    echo "  connection settings saved to .data/connection.json"
+  fi
+
+  echo "  verifying connection…"
+  bash "$ROOT/scripts/doctor.sh" || echo "  (doctor reported issues — fix and re-run scripts/doctor.sh)"
+  echo
+fi
 
 # --- Frontend sync (bakes the name into the UI) -----------------------------
 if [[ "$DO_SYNC" == 1 ]]; then

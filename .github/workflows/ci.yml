@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Build frontend from the vendored base
-        run: scripts/setup.sh --name CI --yes
+        run: scripts/setup.sh --name CI --yes --skip-connect
       - name: Static smoke checks
         # The gateway-config check is allowed to fail in CI (no OpenClaw here);
         # the build + token + import checks are what matter.

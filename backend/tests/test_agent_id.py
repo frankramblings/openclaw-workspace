@@ -40,14 +40,22 @@ def test_session_keys_follow_agent_id(iso):
     assert config.inbox_triage_session_key() == "agent:scout:inbox-triage"
 
 
-def test_session_key_env_override_wins(iso):
-    iso.setenv("OPENCLAW_WEB_SESSION_KEY", "agent:custom:thing")
-    assert config.web_session_key() == "agent:custom:thing"
+@pytest.mark.parametrize("env_var,fn,value", [
+    ("OPENCLAW_SESSION_KEY", "session_key", "agent:custom:main"),
+    ("OPENCLAW_WEB_SESSION_KEY", "web_session_key", "agent:custom:thing"),
+    ("OPENCLAW_WEB_SESSION_PREFIX", "web_session_prefix", "agent:custom:web"),
+    ("OPENCLAW_INBOX_TRIAGE_SESSION_KEY", "inbox_triage_session_key", "agent:custom:tri"),
+])
+def test_session_key_env_override_wins(iso, env_var, fn, value):
+    iso.setenv(env_var, value)
+    assert getattr(config, fn)() == value
 
 
 def test_maintainer_parity(iso):
-    """agent id 'main' => keys byte-identical to the v1 constants."""
+    """agent id 'main' => ALL keys byte-identical to the v1 constants."""
     iso.setattr(config, "_openclaw_json",
                 lambda: {"agents": {"list": [{"id": "main"}]}})
     assert config.session_key() == "agent:main:main"
     assert config.web_session_key() == "agent:main:web"
+    assert config.web_session_prefix() == "agent:main:web"
+    assert config.inbox_triage_session_key() == "agent:main:inbox-triage"

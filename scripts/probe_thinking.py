@@ -23,7 +23,7 @@ from backend import config                             # noqa: E402
 from backend.bridge import (_await_response, _connect_params,  # noqa: E402
                             _request, _wait_for_challenge)
 
-SESSION = f"{config.WEB_SESSION_PREFIX}-probe"
+SESSION = f"{config.web_session_prefix()}-probe"
 PROMPT = "What is 17 * 23? Think it through step by step before answering."
 
 

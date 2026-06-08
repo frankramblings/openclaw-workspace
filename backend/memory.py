@@ -341,7 +341,7 @@ async def maybe_auto_extract(session_key: str) -> None:
 async def extract(session: str = Form(default="")):
     from . import sessions_store
     rec = sessions_store.get(session) if session else None
-    key = rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+    key = rec["sessionKey"] if rec else config.web_session_key()
     try:
         suggestions = await extract_suggestions(key)
     except Exception as exc:  # noqa: BLE001

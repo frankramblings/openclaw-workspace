@@ -82,7 +82,7 @@ async def stream_turn(message: str, session_key: str | None = None,
     model for this chat only. Agent `main`'s default (shared with Signal) is
     never touched; the runtime reads sessionEntry.modelOverride || configDefault.
     """
-    session_key = session_key or config.SESSION_KEY
+    session_key = session_key or config.session_key()
     url = config.gateway_ws_url()
 
     try:

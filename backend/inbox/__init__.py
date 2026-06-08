@@ -205,7 +205,7 @@ async def triage(payload: dict | None = None):
     prompt, chosen = recommend.build_triage_prompt(pending)
     try:
         reply = await bridge.run_text(
-            prompt, session_key=config.INBOX_TRIAGE_SESSION_KEY)
+            prompt, session_key=config.inbox_triage_session_key())
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502,
                             content={"ok": False, "error": str(exc)})

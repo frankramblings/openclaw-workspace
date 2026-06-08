@@ -563,7 +563,7 @@ async def summarize(payload: dict = Body(default=None)):
 async def _brain_once(prompt: str) -> str:
     """Run one turn on the shared web session via the bridge; return its text."""
     chunks: list[str] = []
-    async for sse in bridge.stream_turn(prompt, session_key=config.WEB_SESSION_KEY):
+    async for sse in bridge.stream_turn(prompt, session_key=config.web_session_key()):
         if not sse.startswith("data:"):
             continue
         line = sse[5:].strip()

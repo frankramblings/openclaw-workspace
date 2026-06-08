@@ -70,7 +70,7 @@ async def health():
     return {
         "ok": True,
         "gateway": config.gateway_ws_url(),
-        "session": config.SESSION_KEY,
+        "session": config.session_key(),
         "has_password": bool(config.gateway_password()),
     }
 
@@ -119,7 +119,7 @@ def _model_ref(rec: dict | None) -> str | None:
 # already reloads after a turn, so the new title just appears.
 
 _DONE_SSE = "data: [DONE]\n\n"
-_TITLE_SESSION_KEY = f"{config.WEB_SESSION_PREFIX}-titler"
+_TITLE_SESSION_KEY = f"{config.web_session_prefix()}-titler"
 # "{base} 1:56:53 PM" / "{base} 14:05:09" — the SPA's placeholder name.
 _PLACEHOLDER_RE = re.compile(r".+\s\d{1,2}:\d{2}:\d{2}(\s?[AP]M)?$", re.I)
 
@@ -238,7 +238,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     On a fresh thread's first message we also auto-title it (see above).
     """
     rec = sessions_store.get(session) if session else None
-    session_key = rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+    session_key = rec["sessionKey"] if rec else config.web_session_key()
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
 
     # Draft mode: chat.js posts active_doc_id whenever the document panel is

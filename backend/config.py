@@ -91,24 +91,6 @@ def inbox_triage_session_key() -> str:
             or f"agent:{agent_id()}:inbox-triage")
 
 
-# Canonical agent session. agent:main:main is ALSO Signal's session — a session
-# runs one turn at a time, so sharing it makes the web UI and Signal contend (a
-# long turn in one surfaces as "Something went wrong… use /new" in the other).
-SESSION_KEY = os.environ.get("OPENCLAW_SESSION_KEY", "agent:main:main")
-
-# The web UI gets its OWN session key so it never contends with Signal. Same
-# agent → same brain/memory/tools, just an isolated conversation thread.
-# Verified live: agent:main:web connects + runs turns fine (2026-06-03).
-WEB_SESSION_KEY = os.environ.get("OPENCLAW_WEB_SESSION_KEY", "agent:main:web")
-
-# Dedicated utility session for the Inbox ✨ triage pass (never a visible chat).
-INBOX_TRIAGE_SESSION_KEY = os.environ.get(
-    "OPENCLAW_INBOX_TRIAGE_SESSION_KEY", "agent:main:inbox-triage")
-
-# Each Library "chat" mints its own gateway thread under this prefix:
-# agent:main:web-<id>. Same agent ("main") → same brain/memory, isolated thread.
-WEB_SESSION_PREFIX = os.environ.get("OPENCLAW_WEB_SESSION_PREFIX", "agent:main:web")
-
 # Where the workspace persists its own lightweight session METADATA (id↔gateway
 # sessionKey, name, model, flags). Message CONTENT is never stored here — it
 # lives in the brain and is read back via chat.history. Gitignored.

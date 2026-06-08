@@ -108,9 +108,12 @@ if [[ "$SKIP_CONNECT" != 1 ]]; then
     echo "  Using same-host OpenClaw config ($OPENCLAW_CFG) — no URL needed."
   else
     if [[ -z "$GATEWAY_WS" && "$ASSUME_YES" != 1 ]]; then
-      printf "  Gateway WebSocket URL [ws://127.0.0.1:18789]: "
+      echo "  No same-host OpenClaw config found. Enter the gateway URL for a"
+      echo "  REMOTE OpenClaw, or leave blank to use the default (ws://127.0.0.1:18789)."
+      printf "  Gateway WebSocket URL [blank = default]: "
       read -r GATEWAY_WS || true
-      # blank → leave empty (keep current/default, don't force-write)
+      # blank → leave empty: config.py falls back to ws://127.0.0.1:<port>; we
+      # don't force-write it so a later same-host install keeps working.
     fi
   fi
 

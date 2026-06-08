@@ -43,6 +43,28 @@ picks the top unchecked item, ships it, checks it off, commits.
 - [x] **7. Secrets/personal-data audit.** No committed secrets (verified). Genericized runtime defaults: inbox internal/slack domains → example.com/example.slack.com, obsidian VAULT → ~/.openclaw/workspace/Meetings, mcporter bin → PATH/`mcporter`. Scrubbed the maintainer's email + company + tailnet names from all tracked docs/tests. **Maintainer's live values pinned in the LaunchAgent env** (WORKSPACE_AGENT_NAME/INBOX_INTERNAL_DOMAIN/SLACK_DOMAIN/INBOX_MEETINGS_DIR) so the running deploy is preserved across the next restart. DONE 2026-06-07.
   - ⚠ Before publishing: re-run the secret scan, and decide whether to squash git history (the scrub cleans the working tree but old commits still contain the identifiers). See Tier-2 note.
 
+## Tier 1.5 — ship blockers found during the build
+
+- [x] **Vendor the frontend (a fresh clone had NO UI).** `frontend/` is gitignored
+  build output and upstream Odysseus was deleted, so a clone couldn't render
+  anything. Fix: committed a **neutral vendor base** `frontend-vendor/` (the role
+  `$ODYSSEUS_STATIC` played) — names reverted to "Odysseus"/`__AGENT_NAME__` tokens,
+  override-derived files removed (re-added at sync). `sync-frontend.sh` now syncs
+  from it (override via `ODYSSEUS_STATIC`), and `WORKSPACE_BUILD_DEST` lets you
+  build to a custom dir. Added `frontend-vendor/THIRD-PARTY.md` attributions.
+  Verified: clean build from vendor → name=Jarvis fully rebrands all 169 files,
+  0 stray tokens, slugs intact; live `frontend/` (Gary) untouched. (User decision:
+  *vendor it.*) DONE 2026-06-08.
+
+## Pre-publish steps (do RIGHT BEFORE flipping the repo public)
+
+- [ ] **Squash history to one commit** (user decision). Old commits still contain
+  the maintainer's email/company/tailnet. Plan:
+  `git checkout --orphan public && git add -A && git commit -m "OpenClaw Workspace" && git branch -M public main`.
+  Do this last so ongoing iteration keeps normal history until ship time.
+- [ ] Re-run the secret scan on the squashed tree.
+- [ ] Confirm `.data/` + `frontend/` are absent from `git ls-files`.
+
 ## Tier 2 — adoption polish (do if Tier 1 lands)
 
 - [ ] **8. CONTRIBUTING.md + ARCHITECTURE.md** (bridge explained, override system, how to add a tab).

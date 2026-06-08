@@ -106,7 +106,8 @@ backend/            FastAPI app + the gateway bridge (the load-bearing new code)
   config.py         runtime config (reads ~/.openclaw/openclaw.json; branding)
   inbox/            native unified-feed collectors (gmail/slack/asana/obsidian)
   *.py              per-tab adapters (email, calendar, notes, documents, cron, …)
-frontend/           the SPA, synced + name-baked (gitignored, not vendored)
+frontend-vendor/    the neutral SPA base, committed (sync's source of truth)
+frontend/           build output: vendor + overrides, name-baked (gitignored)
 frontend-overrides/ durable workspace customizations layered onto the SPA
 scripts/            setup.sh · sync-frontend.sh · install-launchagent.sh
 deploy/             LaunchAgent plist template

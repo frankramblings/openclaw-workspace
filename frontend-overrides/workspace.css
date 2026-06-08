@@ -81,8 +81,8 @@
 }
 .cron-toggle.on span { left: 17px; }
 
-/* --- Gary brand mark -------------------------------------------------------
-   The Gary helmet logo is a single-color CSS mask so it inherits the live
+/* --- Agent brand mark ------------------------------------------------------
+   The brand logo is a single-color CSS mask so it inherits the live
    theme accent (--brand-color), exactly how the old boat <svg> tracked the
    accent via fill="currentColor". Mask shape = /static/logo.svg (mono).
    Sizing/color come from the existing per-spot classes (.welcome-boat, etc.). */
@@ -381,7 +381,7 @@
 .gw-dot[data-state="ok"] { background: #34c759; }
 .gw-dot[data-state="restarting"] { background: #ff9f0a; animation: gw-pulse 1.2s infinite; }
 .gw-dot[data-state="down"] { background: #ff3b30; }
-/* Sidebar twin: next to the "Gary" brand title (visible when expanded).
+/* Sidebar twin: next to the agent brand title (visible when expanded).
    pointer-events:none — the brand row is the New-chat button; the dot is
    purely indicative. Slightly smaller to sit nicely beside the wordmark. */
 .gw-dot-sidebar { width: 8px; height: 8px; margin-left: 8px;

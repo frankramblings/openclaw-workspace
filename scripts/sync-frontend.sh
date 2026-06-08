@@ -6,8 +6,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="${ODYSSEUS_STATIC:-$HOME/odysseus/static}"
-DEST="$ROOT/frontend"
+# The neutral SPA base ships vendored in the repo at frontend-vendor/ (it plays
+# the role the external Odysseus checkout used to). Point ODYSSEUS_STATIC at an
+# upstream static/ dir to sync from there instead.
+SRC="${ODYSSEUS_STATIC:-$ROOT/frontend-vendor}"
+DEST="${WORKSPACE_BUILD_DEST:-$ROOT/frontend}"
 OVERRIDES="$ROOT/frontend-overrides"
 
 # The agent's display name — single source of truth (mirrors backend/config.py):
@@ -28,11 +31,9 @@ if [[ -d "$SRC" ]]; then
   rsync -a --delete "$SRC"/ "$DEST"/
   echo "synced $SRC -> $DEST"
 elif [[ -d "$DEST" ]]; then
-  # Upstream Odysseus checkout is gone (removed 2026-06-07). frontend/ holds
-  # the last full sync; keep layering overrides + injections onto it so
-  # override-only changes still ship. Restore SRC (or set ODYSSEUS_STATIC)
-  # to resume true upstream syncs.
-  echo "warn: $SRC missing — overlay-only mode (no upstream rsync)" >&2
+  # Vendored base missing but a prior frontend/ exists: layer overrides +
+  # injections onto it (overlay-only mode) so override changes still apply.
+  echo "warn: $SRC missing — overlay-only mode (no base rsync)" >&2
 else
   echo "error: neither $SRC nor existing $DEST found" >&2
   exit 1

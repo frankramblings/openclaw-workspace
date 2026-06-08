@@ -9,8 +9,9 @@ venv/
 .env
 *.local
 
-# The Odysseus frontend is SYNCED into ./frontend, not vendored here.
-# Remove this line if you decide to commit a pinned copy.
+# frontend/ is the BUILD OUTPUT: scripts/sync-frontend.sh assembles it from the
+# vendored neutral base (frontend-vendor/, committed) + frontend-overrides/, and
+# bakes in the agent name. It's a generated artifact, so it's gitignored.
 /frontend/
 
 # Node (icon generator deps)

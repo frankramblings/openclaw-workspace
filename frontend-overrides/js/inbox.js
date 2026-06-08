@@ -623,12 +623,26 @@
     if (url) openExternal(url);
   }
 
-  // Open a deep-link OUTSIDE the PWA's own browser context. A real anchor click
-  // (vs window.open) lets Chromium PWAs route out-of-scope links to the user's
-  // normal/default browser window instead of trapping them in the installed-app
-  // window. If this still opens inside the PWA on the user's setup, the fallback
-  // is a backend `open <url>` endpoint (desktop-only) — see the slice-A spec.
+  // Open a deep-link OUTSIDE the PWA's own browser context.
+  // On desktop (fine pointer = the user is on the workspace host), ask the
+  // backend to run macOS `open <url>`, which lands in the system default browser
+  // window instead of the trapped PWA window. On mobile/coarse pointers we keep
+  // the anchor — a backend `open` there would launch the link on the Mac, not
+  // the phone. Anchor is also the fallback if the backend call fails.
   function openExternal(url) {
+    if (!IS_COARSE) {
+      fetch(`${API}/api/items/open`, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      }).then((r) => { if (!r.ok) anchorOpen(url); })
+        .catch(() => anchorOpen(url));
+      return;
+    }
+    anchorOpen(url);
+  }
+
+  function anchorOpen(url) {
     const a = document.createElement('a');
     a.href = url;
     a.target = '_blank';

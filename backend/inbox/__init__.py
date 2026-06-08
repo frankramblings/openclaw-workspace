@@ -8,7 +8,9 @@ dismiss/snooze state filters the merge. Response keeps the dashboard's shape:
 from __future__ import annotations
 
 import asyncio
+import subprocess
 import time
+from urllib.parse import urlparse
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -41,6 +43,38 @@ async def _fetch_source(name: str) -> list[dict]:
     items = await SOURCES[name]()
     _cache[name] = (now, items)
     return items
+
+
+def validate_open_url(url: object) -> str:
+    """Security boundary for the `open <url>` fallback: only plain http(s) URLs.
+
+    Rejects non-web schemes (file://, javascript:, app paths) and any value
+    starting with '-' (which `open` would treat as an option, not a URL)."""
+    if not isinstance(url, str):
+        raise ValueError("url must be a string")
+    url = url.strip()
+    if not url or url.startswith("-"):
+        raise ValueError("empty or option-like url")
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("only http(s) urls are allowed")
+    return url
+
+
+@router.post("/api/items/open")
+async def open_external(payload: dict):
+    """Open a deep-link in the host's default browser (desktop fallback for the
+    PWA, which can't escape its own browser window). The frontend only calls
+    this when running on the workspace host itself — see inbox.js."""
+    try:
+        url = validate_open_url((payload or {}).get("url"))
+    except ValueError as exc:
+        return JSONResponse({"success": False, "error": str(exc)}, status_code=400)
+    try:
+        subprocess.run(["open", url], timeout=10)
+    except Exception as exc:  # noqa: BLE001 — surface any spawn failure to the UI
+        return JSONResponse({"success": False, "error": str(exc)}, status_code=500)
+    return {"success": True}
 
 
 @router.get("/api/items")

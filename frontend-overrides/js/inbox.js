@@ -623,26 +623,14 @@
     if (url) openExternal(url);
   }
 
-  // Open a deep-link OUTSIDE the PWA's own browser context.
-  // On desktop (fine pointer = the user is on the workspace host), ask the
-  // backend to run macOS `open <url>`, which lands in the system default browser
-  // window instead of the trapped PWA window. On mobile/coarse pointers we keep
-  // the anchor — a backend `open` there would launch the link on the Mac, not
-  // the phone. Anchor is also the fallback if the backend call fails.
+  // Open a deep-link in a new tab. NOTE: a web app cannot choose which browser
+  // / profile / window a link lands in — that's the user's browser's decision.
+  // The backend-`open` approach was reverted: the backend runs on the server
+  // (bespin), so it could only ever open tabs on the server, never on a remote
+  // client. Reaching a specific client browser window is a browser-level setting
+  // (or running the workspace un-installed as a normal tab), not something the
+  // page can force. See the slice-A spec's "open behavior" section.
   function openExternal(url) {
-    if (!IS_COARSE) {
-      fetch(`${API}/api/items/open`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      }).then((r) => { if (!r.ok) anchorOpen(url); })
-        .catch(() => anchorOpen(url));
-      return;
-    }
-    anchorOpen(url);
-  }
-
-  function anchorOpen(url) {
     const a = document.createElement('a');
     a.href = url;
     a.target = '_blank';

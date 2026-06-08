@@ -62,6 +62,35 @@ def default_model() -> tuple[str, str]:
     return provider, model
 
 
+def agent_id() -> str:
+    """The OpenClaw agent id the workspace talks to. Env > OpenClaw config
+    (agents.list[0].id) > 'main'. v1 hardcoded 'main'; other installs differ."""
+    env = os.environ.get("OPENCLAW_AGENT_ID")
+    if env:
+        return env
+    try:
+        return _openclaw_json()["agents"]["list"][0]["id"]
+    except (KeyError, IndexError, TypeError):
+        return "main"
+
+
+def session_key() -> str:
+    return os.environ.get("OPENCLAW_SESSION_KEY") or f"agent:{agent_id()}:main"
+
+
+def web_session_key() -> str:
+    return os.environ.get("OPENCLAW_WEB_SESSION_KEY") or f"agent:{agent_id()}:web"
+
+
+def web_session_prefix() -> str:
+    return os.environ.get("OPENCLAW_WEB_SESSION_PREFIX") or f"agent:{agent_id()}:web"
+
+
+def inbox_triage_session_key() -> str:
+    return (os.environ.get("OPENCLAW_INBOX_TRIAGE_SESSION_KEY")
+            or f"agent:{agent_id()}:inbox-triage")
+
+
 # Canonical agent session. agent:main:main is ALSO Signal's session — a session
 # runs one turn at a time, so sharing it makes the web UI and Signal contend (a
 # long turn in one surfaces as "Something went wrong… use /new" in the other).

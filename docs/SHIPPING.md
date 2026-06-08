@@ -68,7 +68,7 @@ picks the top unchecked item, ships it, checks it off, commits.
 ## Tier 2 — adoption polish (do if Tier 1 lands)
 
 - [x] **8. CONTRIBUTING.md + ARCHITECTURE.md** — bridge, vendor/override/bake flow, branding flow, how to add a tab. DONE 2026-06-08.
-- [ ] **9. Icon generation from the agent name** (initials-based mark fallback so a fresh install isn't stuck with the "Gary helmet").
+- [~] **9. Icons.** De-Garyed the icon tooling (`gary.src.svg`→`brand.src.svg`, `gary-icon-gen`→`brand-icon-gen`, comments). Default mark is a neutral line-art helmet; documented how to swap `brand.src.svg` + regenerate. **Deferred:** auto initials-from-name generation (genuine v2 — needs SVG synthesis + PNG resizing per install).
 - [ ] **10. `requirements.txt` pinned + a `make`/`justfile` or `scripts/dev.sh`** for one-command local run.
 - [x] **(portability)** `sync-frontend.sh` was macOS-only (`sed -i ''`). Added a `sedi()` wrapper that detects GNU vs BSD sed, so `setup.sh`/build work on Linux too (CI runs on ubuntu). DONE 2026-06-08.
 - [x] **11. Smoke-test script** `scripts/smoke.sh` — static checks (branding set, frontend built, no stray tokens, backend imports, gateway config) + optional live `/api/config` & `/api/health` probes. DONE 2026-06-08.

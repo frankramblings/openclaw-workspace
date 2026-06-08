@@ -1,11 +1,11 @@
-// Generate all Gary brand assets from the pinned source gary.src.svg.
+// Generate all brand assets from the pinned source brand.src.svg.
 //
 //   cd scripts/icons && npm install && npm run gen
 //
-// gary.src.svg is a two-tone illustration: the helmet *ink* is the white
+// brand.src.svg is a two-tone illustration: the mark .ink. is the white
 // (.cls-1, #fff) paths; the black card + interior + detail dots are the default
 // black fill. The old Odysseus boat icon was a single color via currentColor,
-// so we reduce Gary to one color the same way: white ink -> the color we want,
+// so we reduce the mark to one color the same way: white ink -> the color we want,
 // every black path -> transparent (fill:none). The result is accent-colored
 // helmet line-art on a transparent background.
 //
@@ -30,7 +30,7 @@ const OUT_DIRS = [join(ROOT, 'frontend'), join(ROOT, 'frontend-overrides')];
 const BG = '#282c34';
 const ACCENT = '#4fe3d1';
 
-const src = readFileSync(join(HERE, 'gary.src.svg'), 'utf8');
+const src = readFileSync(join(HERE, 'brand.src.svg'), 'utf8');
 
 // Reduce the two-tone illustration to a single-color mask shape.
 //   placeholder __INK__ marks the helmet ink so we can recolor per output.

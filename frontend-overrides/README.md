@@ -95,8 +95,10 @@ The brand assets/markup live here as durable overrides so they survive the sync:
 - **manifest.json** — full-file override (`name`/`short_name` = Gary, icon set).
 - **logo.svg / favicon.svg / favicon-16x16.png / favicon-32x32.png /
   apple-touch-icon.png / icon-192.png / icon-512.png / maskable-icon.png** —
-  the Gary helmet assets, generated from `scripts/icons/gary.src.svg`. Rebuild
-  with `cd scripts/icons && npm run gen` (writes into both `frontend/` and here).
+  the brand mark assets, generated from `scripts/icons/brand.src.svg`. Replace
+  that source SVG with your own to rebrand the icon, then rebuild with
+  `cd scripts/icons && npm install && npm run gen` (writes into both `frontend/`
+  and here). The default mark is a neutral line-art helmet.
   - `logo.svg` is a single-color **mask** shape (opaque ink, transparent
     elsewhere). In-UI logos are `<span class="… brand-mark">` masked by it, so
     they inherit the live theme accent (`--brand-color`) — the same way the old

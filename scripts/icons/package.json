@@ -1,8 +1,8 @@
 {
-  "name": "gary-icon-gen",
+  "name": "brand-icon-gen",
   "private": true,
   "version": "1.0.0",
-  "description": "Render Gary PNG/PWA icons from gary.svg using sharp.",
+  "description": "Render brand PNG/PWA icons from brand.src.svg using sharp.",
   "type": "module",
   "scripts": {
     "gen": "node gen-icons.mjs"

@@ -29,9 +29,9 @@ from backend.bridge import gateway_call  # noqa: E402
 # Never delete these even when unreferenced: the shared web key and the
 # utility threads the backend uses on demand.
 PROTECTED = {
-    config.WEB_SESSION_KEY,
-    f"{config.WEB_SESSION_PREFIX}-titler",
-    f"{config.WEB_SESSION_PREFIX}-memex",
+    config.web_session_key(),
+    f"{config.web_session_prefix()}-titler",
+    f"{config.web_session_prefix()}-memex",
 }
 
 _MIN_AGE_MS = 24 * 3600 * 1000  # don't touch threads active in the last day
@@ -87,7 +87,7 @@ async def main(apply: bool) -> None:
               "orphaned. Fix .data or run the dry-run to inspect.", file=sys.stderr)
         return
     orphans = find_orphans(sessions, referenced,
-                           config.WEB_SESSION_PREFIX, PROTECTED,
+                           config.web_session_prefix(), PROTECTED,
                            int(time.time() * 1000))
     print(f"{len(sessions)} gateway sessions, {len(orphans)} orphaned web threads")
     for key in orphans:

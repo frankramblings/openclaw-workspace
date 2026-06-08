@@ -46,6 +46,7 @@ fi
 # Gateway config present (the brain)
 GW="${OPENCLAW_HOME:-$HOME/.openclaw}/openclaw.json"
 [[ -f "$GW" ]] && ok "OpenClaw config found ($GW)" || bad "no OpenClaw config at $GW — the gateway is the brain"
+echo "  (run scripts/doctor.sh to verify the live gateway connection)"
 
 # Live probes (optional)
 if [[ -n "$URL" ]]; then

@@ -265,10 +265,15 @@ async def audit():
 # dedupe against the existing curated set. Approved facts land in the brain's
 # own MEMORY.md via add_memory(), so the agent itself benefits too.
 
-_EXTRACT_SESSION = "agent:main:web-memex"  # utility thread; never a visible chat
 _AUTO_COOLDOWN_S = 600.0
 _AUTO_CATEGORY = "Auto-extracted"
 _last_auto: dict[str, float] = {}
+
+
+def _extract_session() -> str:
+    """Utility thread for memory extraction (never a visible chat). Follows the
+    derived agent id — for agent 'main' this is the v1 'agent:main:web-memex'."""
+    return f"{config.web_session_prefix()}-memex"
 
 
 def _norm(t: str) -> str:
@@ -309,7 +314,7 @@ async def extract_suggestions(session_key: str, limit_msgs: int = 30) -> list[st
         for m in msgs[-limit_msgs:])
     existing = {_norm(m["text"]) for m in list_memories()}
     raw = await bridge.run_text(
-        _extract_prompt(transcript, sorted(existing)), _EXTRACT_SESSION)
+        _extract_prompt(transcript, sorted(existing)), _extract_session())
     out: list[str] = []
     for line in raw.splitlines():
         m = _BULLET.match(line.strip())
@@ -341,7 +346,7 @@ async def maybe_auto_extract(session_key: str) -> None:
 async def extract(session: str = Form(default="")):
     from . import sessions_store
     rec = sessions_store.get(session) if session else None
-    key = rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+    key = rec["sessionKey"] if rec else config.web_session_key()
     try:
         suggestions = await extract_suggestions(key)
     except Exception as exc:  # noqa: BLE001

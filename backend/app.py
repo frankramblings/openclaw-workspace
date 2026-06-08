@@ -19,7 +19,7 @@ from fastapi import Body, FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import bridge, config, draft_mode, monitor, sessions_store, websearch
+from . import bridge, capabilities, config, doctor, draft_mode, monitor, sessions_store, websearch
 from .memory import maybe_auto_extract
 from .calendar_google import router as calendar_router
 from .cron import router as cron_router
@@ -70,9 +70,15 @@ async def health():
     return {
         "ok": True,
         "gateway": config.gateway_ws_url(),
-        "session": config.SESSION_KEY,
+        "session": config.session_key(),
         "has_password": bool(config.gateway_password()),
     }
+
+
+@app.get("/api/doctor")
+async def api_doctor():
+    """Diagnose the OpenClaw connection (read-only)."""
+    return doctor.summarize(await doctor.run_checks())
 
 
 @app.get("/api/config")
@@ -83,6 +89,12 @@ async def workspace_config():
         "agent_name": config.agent_name(),
         "accent": config.accent_color(),
     }
+
+
+@app.get("/api/capabilities")
+async def api_capabilities():
+    """Which tabs are usable on this install (drives UI gating)."""
+    return capabilities.snapshot()
 
 
 @app.get("/api/gateway/status")
@@ -119,7 +131,7 @@ def _model_ref(rec: dict | None) -> str | None:
 # already reloads after a turn, so the new title just appears.
 
 _DONE_SSE = "data: [DONE]\n\n"
-_TITLE_SESSION_KEY = f"{config.WEB_SESSION_PREFIX}-titler"
+_TITLE_SESSION_KEY = f"{config.web_session_prefix()}-titler"
 # "{base} 1:56:53 PM" / "{base} 14:05:09" — the SPA's placeholder name.
 _PLACEHOLDER_RE = re.compile(r".+\s\d{1,2}:\d{2}:\d{2}(\s?[AP]M)?$", re.I)
 
@@ -238,7 +250,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     On a fresh thread's first message we also auto-title it (see above).
     """
     rec = sessions_store.get(session) if session else None
-    session_key = rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+    session_key = rec["sessionKey"] if rec else config.web_session_key()
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
 
     # Draft mode: chat.js posts active_doc_id whenever the document panel is

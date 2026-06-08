@@ -42,6 +42,19 @@ It reuses three things that already work and adds only the glue:
 The Email, Calendar, and Inbox-collector tabs each need their own account wiring
 and are optional — chat works with just OpenClaw.
 
+## Connecting to your OpenClaw
+
+- **Same host** (the workspace runs on the OpenClaw machine): nothing to
+  configure — it reads `~/.openclaw/openclaw.json` for the gateway URL, password,
+  and agent id.
+- **Remote** OpenClaw: set `OPENCLAW_GATEWAY_WS=ws://host:18789` and
+  `OPENCLAW_GATEWAY_PASSWORD=…` (the password is never written to disk by setup).
+- If your agent isn't named `main`, it's read from `agents.list[0].id`; override
+  with `OPENCLAW_AGENT_ID`.
+
+Run `scripts/doctor.sh` any time to verify the connection (reachability, auth,
+agent id, the gateway method contract).
+
 ## Quickstart
 
 ```bash

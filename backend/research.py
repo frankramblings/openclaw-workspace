@@ -295,7 +295,7 @@ async def _turn(prompt: str, session_key: str, model_ref: str | None,
 
 
 async def _run(job: Job) -> None:
-    session_key = f"{config.WEB_SESSION_PREFIX}-research-{job.id}"
+    session_key = f"{config.web_session_prefix()}-research-{job.id}"
     model_ref = _model_ref(job.settings)
     rounds = int(job.settings.get("max_rounds") or 1)
     rounds = max(1, min(rounds, MAX_ROUNDS))

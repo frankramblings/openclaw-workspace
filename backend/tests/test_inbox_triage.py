@@ -85,7 +85,7 @@ def client(tmp_path, monkeypatch):
 @pytest.mark.anyio
 async def test_triage_endpoint_caches_and_items_show_rec(client, monkeypatch):
     async def fake_run_text(prompt, session_key):
-        assert session_key == inbox.config.INBOX_TRIAGE_SESSION_KEY
+        assert session_key == inbox.config.inbox_triage_session_key()
         return '[{"id": "1", "action": "archive", "confidence": "high", "reason": "bulk"}]'
     monkeypatch.setattr(inbox.bridge, "run_text", fake_run_text)
     async with client as c:

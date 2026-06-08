@@ -60,7 +60,7 @@ def session_key_for(session_id: str) -> str:
     shared web key for ids we don't have a record for (e.g. the bootstrap chat
     before its first message materializes a record)."""
     rec = get(session_id)
-    return rec["sessionKey"] if rec else config.WEB_SESSION_KEY
+    return rec["sessionKey"] if rec else config.web_session_key()
 
 
 def create(name: str | None = None, model: str | None = None,
@@ -70,7 +70,7 @@ def create(name: str | None = None, model: str | None = None,
         "id": sid,
         "name": name or "New chat",
         "model": model or "openclaw",
-        "sessionKey": f"{config.WEB_SESSION_PREFIX}-{sid}",
+        "sessionKey": f"{config.web_session_prefix()}-{sid}",
         "endpoint_url": endpoint_url or config.gateway_ws_url(),
         "endpoint_id": endpoint_id or "openclaw",
         "folder": None,

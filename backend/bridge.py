@@ -82,7 +82,7 @@ async def stream_turn(message: str, session_key: str | None = None,
     model for this chat only. Agent `main`'s default (shared with Signal) is
     never touched; the runtime reads sessionEntry.modelOverride || configDefault.
     """
-    session_key = session_key or config.SESSION_KEY
+    session_key = session_key or config.session_key()
     url = config.gateway_ws_url()
 
     try:
@@ -273,6 +273,21 @@ async def gateway_call(method: str, params: dict | None = None,
     if not res.get("ok"):
         raise RuntimeError(f"{method} failed: {res}")
     return res.get("payload") or {}
+
+
+async def gateway_hello(timeout: float = 10.0) -> dict:
+    """Connect + auth and return the gateway's connect-response payload (version,
+    capabilities, …) without making a further call. Raises RuntimeError on a
+    rejected handshake; lets connection errors (OSError/TimeoutError) propagate."""
+    url = config.gateway_ws_url()
+    async with asyncio.timeout(timeout):
+        async with websockets.connect(url, max_size=None, open_timeout=30,
+                                      ping_interval=None) as ws:
+            await _wait_for_challenge(ws)
+            hello = await _request(ws, "connect", _connect_params())
+    if not hello.get("ok"):
+        raise RuntimeError(f"gateway connect failed: {hello}")
+    return hello.get("payload") or {}
 
 
 # --- Model catalog: real gateway model list, mapped to the SPA's picker shape -

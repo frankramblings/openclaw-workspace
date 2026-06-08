@@ -27,6 +27,18 @@ and tool events. The bridge:
 Because inference runs through the gateway's existing OAuth/subscription token,
 there is **no per-token API billing** and no API key in this repo.
 
+### Gateway method contract
+
+The workspace requires the gateway to speak these methods (the read-only ones are
+verified live by `scripts/doctor.sh`):
+
+`chat.send`, `chat.abort`, `chat.history`; `sessions.create/delete/patch/json`;
+`models.list`, `models.authStatus`; `cron.list/run/runs/update`;
+`skills.status/update`.
+
+If your OpenClaw is older and missing one, the doctor reports it (probing the
+param-less read-only methods `models.list`, `skills.status`, `cron.list`).
+
 ## The app (`backend/app.py`)
 
 A FastAPI application that:

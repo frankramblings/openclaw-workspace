@@ -25,7 +25,7 @@ dashboard.
   keychain access — the same trick the dashboard used.
 - **Asana**: PAT in `~/.openclaw/workspace/secrets/asana.env`; the old collector
   (`api/asana.js`, 151 lines) is plain REST against workspace/section GIDs.
-- **Obsidian/granola**: meeting notes in `/Users/admin/obsidian/Meetings`
+- **Obsidian/granola**: meeting notes in `~/obsidian/Meetings`
   (markdown; the old `api/obsidian.js` scan logic ports to Python directly).
 - **Item schema + scoring**: the triage shape is good — keep it:
   `{id, source, title, subtitle, snippet, ts, ageHours, score, meta:{url,…},

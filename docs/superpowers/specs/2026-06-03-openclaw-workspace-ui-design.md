@@ -26,7 +26,7 @@ We reuse three things that already exist and work:
 | Piece | Source | Role |
 |---|---|---|
 | **Brain** | OpenClaw gateway (`ws://127.0.0.1:18789`) | inference + tools + memory, at subscription rate |
-| **Chassis** | Odysseus (`/Users/admin/odysseus`) — `static/` SPA + FastAPI `/api` | chat UI, tool panels, doc workspace, tabs |
+| **Chassis** | Odysseus (`~/odysseus`) — `static/` SPA + FastAPI `/api` | chat UI, tool panels, doc workspace, tabs |
 | **Inbox data** | OpenClaw triage-dashboard (`workspace/triage-dashboard/api`) | `merged.js` already aggregates gmail+slack+asana+granola into one scored feed |
 
 Net-new code is two pieces of glue:

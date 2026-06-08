@@ -29,7 +29,7 @@
 | `backend/tests/test_inbox_documents_stale.py` | create | collector tests |
 | `README.md` | modify | pandoc dependency note |
 
-All pytest commands run from `/Users/admin/openclaw-workspace` with `.venv/bin/pytest`.
+All pytest commands run from `~/openclaw-workspace` with `.venv/bin/pytest`.
 
 ---
 

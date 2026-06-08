@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-06
 **Status:** Approved
-**Scope:** Six features borrowed from OpenClaw's stock Control UI (`/Users/admin/openclaw/ui/src/`), adapted to the workspace's backend-adapter + frontend-overrides architecture.
+**Scope:** Six features borrowed from OpenClaw's stock Control UI (`~/openclaw/ui/src/`), adapted to the workspace's backend-adapter + frontend-overrides architecture.
 
 ## Goal
 
@@ -15,7 +15,7 @@ Close the most painful gaps between the workspace UI and the stock gateway Contr
 5. **Cron run history** — per-job execution log (`cron.runs`)
 6. **Skills toggles** — enable/disable skills (`skills.update`, no keys/ClawHub)
 
-All protocol shapes below were verified against the OpenClaw source clone (citations are `file:line` in `/Users/admin/openclaw`).
+All protocol shapes below were verified against the OpenClaw source clone (citations are `file:line` in `~/openclaw`).
 
 ## Decisions made (with user)
 

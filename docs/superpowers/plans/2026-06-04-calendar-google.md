@@ -30,11 +30,11 @@ Config paths are read-only; nothing secret enters the repo.
 - [ ] **Step 1: Confirm refresh + calendarList (already verified once; re-confirm)**
 
 ```bash
-cd /Users/admin/openclaw-workspace
+cd ~/openclaw-workspace
 .venv/bin/python - <<'PY'
 import json, httpx
-keys=json.load(open('/Users/admin/.gmail-mcp/gcp-oauth.keys.json'))['installed']
-tok=json.load(open('/Users/admin/.config/google-calendar-mcp/tokens.json'))
+keys=json.load(open('~/.gmail-mcp/gcp-oauth.keys.json'))['installed']
+tok=json.load(open('~/.config/google-calendar-mcp/tokens.json'))
 acct=tok.get('normal') or next(iter(tok.values()))
 c=httpx.Client(timeout=25)
 at=c.post('https://oauth2.googleapis.com/token',data={'client_id':keys['client_id'],'client_secret':keys['client_secret'],'refresh_token':acct['refresh_token'],'grant_type':'refresh_token'}).json()['access_token']

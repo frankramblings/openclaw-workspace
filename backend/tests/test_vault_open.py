@@ -1,5 +1,7 @@
 """Vault-file links: GET /api/vault/open wraps any vault .md as a library doc
 (two-way: edits to the doc mirror back to the file; reopen refreshes from disk)."""
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -24,7 +26,8 @@ def vault(tmp_path, monkeypatch, vault_docs):
 
 
 def test_vault_rel_confines_and_normalizes(vault):
-    assert documents._vault_rel("/Users/admin/.openclaw/workspace/memory/a.md") == "memory/a.md"
+    home_abs = os.path.expanduser("~/.openclaw/workspace/memory/a.md")
+    assert documents._vault_rel(home_abs) == "memory/a.md"
     assert documents._vault_rel("~/.openclaw/workspace/memory/a.md") == "memory/a.md"
     assert documents._vault_rel("memory/a.md") == "memory/a.md"
     assert documents._vault_rel("../outside.md") is None

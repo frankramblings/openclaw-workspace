@@ -274,7 +274,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-VAULT = Path(os.environ.get("INBOX_MEETINGS_DIR", "/Users/admin/obsidian/Meetings"))
+VAULT = Path(os.environ.get("INBOX_MEETINGS_DIR", "~/obsidian/Meetings"))
 WINDOW_DAYS = int(os.environ.get("OBSIDIAN_WINDOW_DAYS", "120"))
 
 _FILENAME_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")

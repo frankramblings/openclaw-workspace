@@ -12,9 +12,9 @@
 **Status:** Executed 2026-06-07 (13/13 tasks, subagent-driven; live smoke 8/8 passed). Known inert path: gpt-5.5/v4 analysis events carry no reasoning text — thinking plumbing waits on the gateway forwarding content.
 
 **Cross-cutting rules:**
-- All test commands run from `/Users/admin/openclaw-workspace` using `.venv/bin/python -m pytest`.
+- All test commands run from `~/openclaw-workspace` using `.venv/bin/python -m pytest`.
 - **Do NOT restart the workspace LaunchAgent until the final smoke task** (each cold start is 100–190s on this host and stalls the codex brain). Unit tests and the standalone scripts (probe, sweep dry-run) don't need the workspace server.
-- Gateway protocol facts cited in code comments were verified against `/Users/admin/openclaw` source (see spec).
+- Gateway protocol facts cited in code comments were verified against `~/openclaw` source (see spec).
 
 ---
 

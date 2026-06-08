@@ -60,6 +60,13 @@ uvicorn backend.app:app --port 8800
 #   → open http://127.0.0.1:8800
 ```
 
+Or skip steps 2–3 with the one-command dev runner (creates the venv, installs
+deps, builds the frontend if needed, then runs with `--reload`):
+
+```bash
+scripts/dev.sh
+```
+
 Rename your agent any time with `scripts/setup.sh --name <NewName>` (re-bakes the UI).
 
 ### Run on boot (macOS)

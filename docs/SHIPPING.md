@@ -69,7 +69,7 @@ picks the top unchecked item, ships it, checks it off, commits.
 
 - [x] **8. CONTRIBUTING.md + ARCHITECTURE.md** — bridge, vendor/override/bake flow, branding flow, how to add a tab. DONE 2026-06-08.
 - [~] **9. Icons.** De-Garyed the icon tooling (`gary.src.svg`→`brand.src.svg`, `gary-icon-gen`→`brand-icon-gen`, comments). Default mark is a neutral line-art helmet; documented how to swap `brand.src.svg` + regenerate. **Deferred:** auto initials-from-name generation (genuine v2 — needs SVG synthesis + PNG resizing per install).
-- [ ] **10. `requirements.txt` pinned + a `make`/`justfile` or `scripts/dev.sh`** for one-command local run.
+- [x] **10. Deps + one-command run.** `requirements.txt` now carries version floors (with tested-against notes); `scripts/dev.sh` does venv→deps→frontend→`uvicorn --reload` in one shot. DONE 2026-06-08.
 - [x] **(portability)** `sync-frontend.sh` was macOS-only (`sed -i ''`). Added a `sedi()` wrapper that detects GNU vs BSD sed, so `setup.sh`/build work on Linux too (CI runs on ubuntu). DONE 2026-06-08.
 - [x] **11. Smoke-test script** `scripts/smoke.sh` — static checks (branding set, frontend built, no stray tokens, backend imports, gateway config) + optional live `/api/config` & `/api/health` probes. DONE 2026-06-08.
 - [x] **12. GitHub hygiene:** `.github/workflows/ci.yml` (pytest on 3.11–3.13 + a build/smoke job) and a bug-report issue template. DONE 2026-06-08. (Badges: add after the repo URL is known.)

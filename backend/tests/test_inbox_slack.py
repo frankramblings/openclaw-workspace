@@ -44,3 +44,49 @@ def test_channel_url_built_from_handle_map():
     items = slack.map_items([], mentions, handle_map={"#general": "C0GEN"}, now_ms=NOW)
     assert items[0]["meta"]["url"] == \
         "https://example.slack.com/archives/C0GEN/p1780670000123456"
+
+
+# --- name resolution (#5) ------------------------------------------------
+
+USERS = [
+    {"id": "U3B6KNK8B", "name": "chrisb", "real_name": "Chris Baxter",
+     "profile": {"display_name": "Chris B"}},
+    {"id": "U0123ABCD", "name": "taylor", "real_name": "Taylor Corrado",
+     "profile": {"display_name": ""}},  # no display name -> fall back to real_name
+]
+
+
+def test_build_user_map_prefers_display_then_real_then_name():
+    m = slack.build_user_map(USERS)
+    assert m["U3B6KNK8B"] == "Chris B"
+    assert m["U0123ABCD"] == "Taylor Corrado"
+
+
+def test_resolve_refs_replaces_bare_id():
+    m = {"U3B6KNK8B": "Chris B"}
+    assert slack.resolve_slack_refs("Hey U3B6KNK8B question", m) == \
+        "Hey @Chris B question"
+
+
+def test_resolve_refs_replaces_angle_token_and_label_form():
+    m = {"U3B6KNK8B": "Chris B"}
+    assert slack.resolve_slack_refs("Hey <@U3B6KNK8B> question", m) == \
+        "Hey @Chris B question"
+    # <@ID|label> keeps the explicit label Slack already rendered
+    assert slack.resolve_slack_refs("ping <@U3B6KNK8B|chris> now", m) == \
+        "ping @chris now"
+
+
+def test_resolve_refs_leaves_unknown_ids_untouched():
+    # an unknown id (not in the map) must not be mangled into a fake @
+    assert slack.resolve_slack_refs("ref UNKNOWN99 here", {}) == "ref UNKNOWN99 here"
+
+
+def test_map_items_resolves_names_in_title():
+    mentions = slack.parse_csv_lines(
+        '1780670000.111111,U0123ABCD,taylor,Taylor Corrado,#general,,'
+        '"hi U3B6KNK8B can you check?",' + ISO + ',0,')
+    mentions[0]["time"] = NOW
+    items = slack.map_items([], mentions, handle_map={}, now_ms=NOW,
+                            user_map={"U3B6KNK8B": "Chris B"})
+    assert items[0]["title"] == "hi @Chris B can you check?"

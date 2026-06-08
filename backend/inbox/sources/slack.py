@@ -26,6 +26,9 @@ SIGNALS_PATH = Path(os.environ.get(
 CHANNELS_CACHE = Path(os.environ.get(
     "INBOX_SLACK_CHANNELS",
     str(config.OPENCLAW_HOME / "workspace/var/slack-channels.cache.json")))
+USERS_CACHE = Path(os.environ.get(
+    "INBOX_SLACK_USERS",
+    str(config.OPENCLAW_HOME / "workspace/var/slack-users.cache.json")))
 SLACK_DOMAIN = os.environ.get("SLACK_DOMAIN", "example.slack.com")
 STALE_MIN = int(os.environ.get("SLACK_STALE_MIN", str(24 * 60)))
 REFRESH_JOB = "ai.openclaw.slack-refresh"
@@ -53,6 +56,63 @@ def parse_csv_lines(blob: str | None) -> list[dict]:
     return out
 
 
+# --- name resolution (#5): turn bare `U…` ids into @display names ---------
+# Slack's de-tokenized CSV text carries raw user ids (`U3B6KNK8B`) instead of
+# the rendered `@Chris B`; the search tool also returns canonical `<@U…>` /
+# `<@U…|label>` tokens. Resolve both against the on-disk users cache.
+
+_ANGLE_USER_RE = re.compile(r"<@(U[A-Z0-9]+)(?:\|([^>]+))?>")
+_BARE_USER_RE = re.compile(r"\bU[A-Z0-9]{6,}\b")
+_USER_MAP_CACHE: dict | None = None
+
+
+def build_user_map(users: list[dict]) -> dict:
+    """id -> best display name (display_name > real_name > name)."""
+    out: dict[str, str] = {}
+    for u in users:
+        uid = u.get("id")
+        if not uid:
+            continue
+        prof = u.get("profile") or {}
+        out[uid] = (prof.get("display_name") or u.get("real_name")
+                    or prof.get("real_name") or u.get("name") or uid)
+    return out
+
+
+def resolve_slack_refs(text: str | None, user_map: dict) -> str | None:
+    """Replace `<@U…>` / `<@U…|label>` / bare `U…` user refs with `@name`.
+
+    Unknown ids (not in the map, no explicit label) are left untouched so we
+    never invent a fake handle for an id we can't resolve."""
+    if not text:
+        return text
+
+    def _angle(m: "re.Match") -> str:
+        uid, label = m.group(1), m.group(2)
+        if label:
+            return "@" + label
+        name = user_map.get(uid)
+        return "@" + name if name else m.group(0)
+
+    def _bare(m: "re.Match") -> str:
+        name = user_map.get(m.group(0))
+        return "@" + name if name else m.group(0)
+
+    return _BARE_USER_RE.sub(_bare, _ANGLE_USER_RE.sub(_angle, text))
+
+
+def _user_map() -> dict:
+    """Lazily load + cache the on-disk Slack users cache as an id->name map."""
+    global _USER_MAP_CACHE
+    if _USER_MAP_CACHE is None:
+        try:
+            users = json.loads(USERS_CACHE.read_text())
+        except (OSError, json.JSONDecodeError):
+            users = []
+        _USER_MAP_CACHE = build_user_map(users if isinstance(users, list) else [])
+    return _USER_MAP_CACHE
+
+
 def is_low_signal(msg: dict) -> bool:
     text = msg.get("text") or ""
     if msg.get("userName") == "asana":
@@ -65,7 +125,9 @@ def is_low_signal(msg: dict) -> bool:
 
 
 def map_items(unreads: list[dict], mentions: list[dict],
-              handle_map: dict, now_ms: int) -> list[dict]:
+              handle_map: dict, now_ms: int,
+              user_map: dict | None = None) -> list[dict]:
+    user_map = user_map or {}
     seen: dict[str, dict] = {}
     for m in unreads:
         seen[m["msgId"]] = {**m, "kind": "unread"}
@@ -90,7 +152,7 @@ def map_items(unreads: list[dict], mentions: list[dict],
                ) if cid else None
         items.append({
             "id": m["msgId"], "source": "slack",
-            "title": m["text"][:200],
+            "title": (resolve_slack_refs(m["text"], user_map) or "")[:200],
             "subtitle": f"{m['realName'] or m['userName']} · {m['channel']}"
                         + (" · @mention" if m["kind"] == "mention" else ""),
             "snippet": m["kind"], "ts": m["time"], "ageHours": age_h,
@@ -144,7 +206,7 @@ async def fetch() -> list[dict]:
             "slack signals empty (refresh produced no rows — check keychain "
             f"access; try: launchctl kickstart -k gui/$UID/{REFRESH_JOB})")
     return map_items(unreads, mentions, _handle_map(),
-                     now_ms=int(time.time() * 1000))
+                     now_ms=int(time.time() * 1000), user_map=_user_map())
 
 
 def _keychain(service: str) -> str | None:

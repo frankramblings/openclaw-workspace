@@ -620,7 +620,22 @@
       btn.disabled = false;
       if (!url) url = 'https://mail.google.com/mail/u/0/#inbox';
     }
-    if (url) window.open(url, '_blank');
+    if (url) openExternal(url);
+  }
+
+  // Open a deep-link OUTSIDE the PWA's own browser context. A real anchor click
+  // (vs window.open) lets Chromium PWAs route out-of-scope links to the user's
+  // normal/default browser window instead of trapping them in the installed-app
+  // window. If this still opens inside the PWA on the user's setup, the fallback
+  // is a backend `open <url>` endpoint (desktop-only) — see the slice-A spec.
+  function openExternal(url) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   async function handToGary(it, btn, intent) {

@@ -278,7 +278,7 @@ async def gateway_call(method: str, params: dict | None = None,
 # --- Model catalog: real gateway model list, mapped to the SPA's picker shape -
 
 _PROVIDER_META = {
-    "openai": {"endpoint_id": "openai", "endpoint_name": "Codex"},
+    "openai": {"endpoint_id": "openai", "endpoint_name": "ChatGPT"},
     "anthropic": {"endpoint_id": "anthropic", "endpoint_name": "Claude"},
 }
 # An auth provider counts as usable in these states (expiring still works).

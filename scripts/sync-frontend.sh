@@ -141,6 +141,22 @@ if [[ -d "$OVERRIDES" ]]; then
     ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
     echo "injected skills-toggle.js <script> into index.html"
   fi
+
+  # Inject the capabilities gating add-on once, before </body> (idempotent).
+  SCRIPT_CAP='<script src="/static/js/capabilities.js" defer></script>'
+  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/capabilities.js" ]] \
+     && ! grep -qF "js/capabilities.js" "$INDEX"; then
+    awk -v s="  $SCRIPT_CAP" '
+      { lines[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (!done && lines[i] ~ /<\/body>/) { print s; done = 1 }
+          print lines[i]
+        }
+      }
+    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    echo "injected capabilities.js <script> into index.html"
+  fi
 fi
 
 # --- Agent-name rebrand of app.js + js/ modules -----------------------------

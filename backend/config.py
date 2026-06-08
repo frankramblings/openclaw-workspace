@@ -162,6 +162,11 @@ def accent_color() -> str:
 # be stored here — a copied .data/ must not leak a credential.
 CONNECTION_PATH = DATA_DIR / "connection.json"
 
+# Only these NON-SECRET fields may be persisted to connection.json. An allowlist
+# (not a password denylist) so a future caller can't accidentally write a token/
+# secret to disk. Passwords stay in env / openclaw.json, never here.
+CONNECTION_FIELDS = frozenset({"gateway_ws", "agent_id", "integrations"})
+
 
 def load_connection() -> dict:
     """Read .data/connection.json (non-secret connection info). Never raises."""
@@ -173,10 +178,10 @@ def load_connection() -> dict:
 
 def save_connection(**fields) -> dict:
     """Merge non-secret connection fields into connection.json, atomically.
-    NEVER persist a password here — secrets stay in env / openclaw.json."""
+    Only CONNECTION_FIELDS are persisted — secrets never land here."""
     current = load_connection()
     current.update({k: v for k, v in fields.items()
-                    if v is not None and k != "password"})
+                    if v is not None and k in CONNECTION_FIELDS})
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     tmp = CONNECTION_PATH.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(current, indent=2) + "\n")

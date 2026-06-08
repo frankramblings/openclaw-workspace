@@ -47,3 +47,12 @@ def test_save_connection_merges(iso, tmp_path):
     config.save_connection(agent_id="scout")  # must not wipe gateway_ws
     saved = json.loads((tmp_path / "connection.json").read_text())
     assert saved == {"gateway_ws": "ws://a", "agent_id": "scout"}
+
+
+def test_save_connection_allowlist_drops_secrets(iso, tmp_path):
+    # Only CONNECTION_FIELDS persist; a stray token/secret is dropped.
+    config.save_connection(gateway_ws="ws://a", token="sk-leak", password="pw",
+                           integrations={"email": True})
+    saved = json.loads((tmp_path / "connection.json").read_text())
+    assert saved == {"gateway_ws": "ws://a", "integrations": {"email": True}}
+    assert "token" not in saved and "password" not in saved

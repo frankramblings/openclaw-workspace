@@ -82,6 +82,53 @@ def test_resolve_refs_leaves_unknown_ids_untouched():
     assert slack.resolve_slack_refs("ref UNKNOWN99 here", {}) == "ref UNKNOWN99 here"
 
 
+def test_resolve_refs_glued_id_then_name():
+    # The Slack MCP renders mentions as <id><DisplayName> glued together with no
+    # delimiter (e.g. "U01GEK1BJ8KFrank"). Strip the id, keep the name -> "@Frank".
+    m = {"U01GEK1BJ8K": "Frank"}
+    assert slack.resolve_slack_refs("FYI U01GEK1BJ8KFrank ok", m) == "FYI @Frank ok"
+
+
+def test_resolve_refs_glued_multiword_name():
+    m = {"U01PNU8428N": "Taylor Corrado"}
+    assert slack.resolve_slack_refs("cc U01PNU8428NTaylor Corrado now", m) == \
+        "cc @Taylor Corrado now"
+
+
+def test_resolve_refs_glued_unknown_id_left_alone():
+    # unknown glued id: nothing in the map is a prefix -> leave it untouched
+    assert slack.resolve_slack_refs("x U9ZZZZZZZZNope y", {}) == "x U9ZZZZZZZZNope y"
+
+
+# --- thread reader (B2) --------------------------------------------------
+
+def test_map_thread_messages_resolves_and_sorts():
+    # conversations.replies (Slack web API) returns message dicts with raw
+    # <@U…> mention tokens and an author `user` id.
+    raw = [
+        {"type": "message", "user": "U0123ABCD",
+         "text": "reply to <@U3B6KNK8B>", "ts": "1780670002.000200"},
+        {"type": "message", "user": "U0456EFGH",
+         "text": "the original question", "ts": "1780670000.000100"},
+    ]
+    um = {"U3B6KNK8B": "Chris B", "U0123ABCD": "Taylor Corrado", "U0456EFGH": "Jed L"}
+    out = slack.map_thread_messages(raw, um)
+    assert [m["text"] for m in out] == [
+        "the original question", "reply to @Chris B"]          # sorted oldest-first
+    assert out[0]["user"] == "Jed L"
+    assert out[1]["user"] == "Taylor Corrado"
+    assert out[1]["ts"] == "1780670002.000200"
+
+
+def test_map_thread_messages_skips_non_messages():
+    raw = [{"type": "message", "user": "U1", "text": "hi", "ts": "2.0"},
+           {"subtype": "channel_join", "type": "message", "user": "U1",
+            "text": "joined", "ts": "1.0", "subtype_join": True}]
+    out = slack.map_thread_messages(raw, {"U1": "Ann"})
+    # join/system noise filtered; only the real message remains
+    assert [m["text"] for m in out] == ["hi"]
+
+
 def test_map_items_resolves_names_in_title():
     mentions = slack.parse_csv_lines(
         '1780670000.111111,U0123ABCD,taylor,Taylor Corrado,#general,,'

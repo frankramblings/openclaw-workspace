@@ -227,7 +227,7 @@
   let _modal = null, _items = [], _errors = {}, _counts = {}, _filter = null,
       _view = 'feed', _toastTimer = null, _openCard = null, _detail = null;
   // Sources that support reading in place (grows per slice: gmail → slack → asana).
-  const DETAIL_SOURCES = new Set(['gmail']);
+  const DETAIL_SOURCES = new Set(['gmail', 'slack']);
   const IS_COARSE = !!(window.matchMedia
     && matchMedia('(pointer: coarse)').matches);
   const REDUCED_MOTION = !!(window.matchMedia
@@ -490,6 +490,17 @@
       if (data.error) throw new Error(data.error);
       return data;
     }
+    if (it.source === 'slack') {
+      const m = it.meta || {};
+      if (!m.channelId) throw new Error('no channel id for this message');
+      const ts = m.threadTs || it.id;   // own ts for a non-threaded message
+      const r = await fetch(`${API}/api/inbox/slack/thread?channel_id=` +
+        `${encodeURIComponent(m.channelId)}&thread_ts=${encodeURIComponent(ts)}`,
+        { credentials: 'same-origin' });
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      return data;
+    }
     throw new Error('reading in place not supported for ' + it.source);
   }
 
@@ -514,6 +525,27 @@
     if (_detail.loading) { c.innerHTML = '<div class="cron-empty">Loading…</div>'; return; }
     if (_detail.error) { c.innerHTML = `<div class="inbox-error">${esc(_detail.error)}</div>`; return; }
     if (it.source === 'gmail') renderEmailDetail(c, _detail.content);
+    else if (it.source === 'slack') renderSlackThread(c, _detail.content, it);
+  }
+
+  function renderSlackThread(c, d, it) {
+    const msgs = (d && d.messages) || [];
+    const title = (it.meta && it.meta.channel) || 'Slack thread';
+    const head = '<div class="inbox-detail-meta">' +
+      `<div class="inbox-detail-subject">${esc(title)}</div></div>`;
+    if (!msgs.length) {
+      c.innerHTML = head + '<div class="cron-empty">No messages.</div>';
+      return;
+    }
+    c.innerHTML = head + '<div class="inbox-thread">' + msgs.map((m) => {
+      const when = m.time ? new Date(m.time).toLocaleString([],
+        { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+      return '<div class="inbox-msg">' +
+        `<div class="inbox-msg-head"><span class="inbox-msg-user">${esc(m.user || '?')}</span>` +
+        `<span class="inbox-age">${esc(when)}</span></div>` +
+        `<div class="inbox-msg-text">${esc(m.text || '').replace(/\n/g, '<br>')}</div>` +
+        '</div>';
+    }).join('') + '</div>';
   }
 
   // Reuse the email tab's sanitizer + body styling instead of duplicating a

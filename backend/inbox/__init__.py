@@ -43,6 +43,16 @@ async def _fetch_source(name: str) -> list[dict]:
     return items
 
 
+@router.get("/api/inbox/slack/thread")
+async def slack_thread(channel_id: str, thread_ts: str):
+    """Read a slack thread in place (B2). Read-only via conversations_replies."""
+    try:
+        messages = await slack.fetch_thread(channel_id, thread_ts)
+    except Exception as exc:  # noqa: BLE001 — surface offline/timeout to the UI
+        return JSONResponse({"error": str(exc)}, status_code=502)
+    return {"messages": messages}
+
+
 @router.get("/api/items")
 async def items(sources: str = "", limit: int = 200):
     wanted = [s for s in (sources.split(",") if sources else list(SOURCES))

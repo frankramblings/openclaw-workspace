@@ -533,3 +533,12 @@
   font-size: 0.88rem; padding: 1px 0; }
 .inbox-cal-ico { width: 1.2em; flex: none; text-align: center; opacity: 0.8; }
 .inbox-cal-note { font-size: 0.74rem; opacity: 0.6; margin-top: 8px; }
+
+/* Inbox: slack thread reader (slice B2) */
+.inbox-thread { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 2px; }
+.inbox-msg { padding: 8px 0; border-top: 1px solid var(--border-color, rgba(128,128,128,0.18)); }
+.inbox-msg:first-child { border-top: 0; }
+.inbox-msg-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.inbox-msg-user { font-weight: 600; font-size: 0.9rem; }
+.inbox-msg-text { font-size: 0.92rem; line-height: 1.4; white-space: pre-wrap;
+  overflow-wrap: anywhere; }

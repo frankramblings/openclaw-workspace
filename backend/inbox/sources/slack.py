@@ -62,7 +62,10 @@ def parse_csv_lines(blob: str | None) -> list[dict]:
 # `<@U…|label>` tokens. Resolve both against the on-disk users cache.
 
 _ANGLE_USER_RE = re.compile(r"<@(U[A-Z0-9]+)(?:\|([^>]+))?>")
-_BARE_USER_RE = re.compile(r"\bU[A-Z0-9]{6,}\b")
+# Leading boundary only (no trailing \b): the Slack MCP renders mentions as the
+# id glued straight onto the display name ("U01GEK1BJ8KFrank"), so we can't rely
+# on a word boundary after the id.
+_BARE_USER_RE = re.compile(r"\bU[A-Z0-9]{6,}")
 _USER_MAP_CACHE: dict | None = None
 
 
@@ -95,8 +98,17 @@ def resolve_slack_refs(text: str | None, user_map: dict) -> str | None:
         return "@" + name if name else m.group(0)
 
     def _bare(m: "re.Match") -> str:
-        name = user_map.get(m.group(0))
-        return "@" + name if name else m.group(0)
+        cand = m.group(0)
+        # Standalone id (greedy match stopped at a non-id char): swap in the name.
+        if cand in user_map:
+            return "@" + user_map[cand]
+        # Glued "<id><DisplayName>": the greedy match ate the id plus the name's
+        # first (capital) letter. Strip the longest known-id prefix and keep the
+        # name the server already appended -> "U01GEK1BJ8KFrank" => "@" + "Frank".
+        for length in range(len(cand) - 1, 6, -1):
+            if cand[:length] in user_map:
+                return "@" + cand[length:]
+        return cand
 
     return _BARE_USER_RE.sub(_bare, _ANGLE_USER_RE.sub(_angle, text))
 
@@ -207,6 +219,53 @@ async def fetch() -> list[dict]:
             f"access; try: launchctl kickstart -k gui/$UID/{REFRESH_JOB})")
     return map_items(unreads, mentions, _handle_map(),
                      now_ms=int(time.time() * 1000), user_map=_user_map())
+
+
+# --- thread reader (B2): read a full slack thread in place -------------------
+# Use the Slack web API directly (xoxc token + xoxd cookie from the Keychain),
+# the same fast path mark_read already uses — NOT mcporter, whose per-call
+# slackmcp cold start (~45s+) is far too slow for an interactive tap-to-read.
+
+def map_thread_messages(messages: list[dict], user_map: dict) -> list[dict]:
+    """Map conversations.replies message dicts into oldest-first reader rows
+    with @names resolved. Skips system/join/bot-subtype noise."""
+    out = []
+    for m in messages:
+        if m.get("subtype"):                 # joins, channel topics, etc.
+            continue
+        uid = m.get("user") or ""
+        out.append({
+            "ts": m.get("ts", ""),
+            "user": user_map.get(uid) or m.get("username") or uid or "?",
+            "text": resolve_slack_refs(m.get("text") or "", user_map),
+            "time": int(float(m["ts"]) * 1000) if m.get("ts") else 0,
+        })
+    out.sort(key=lambda x: x["time"])
+    return out
+
+
+async def fetch_thread(channel_id: str, thread_ts: str, limit: int = 50) -> list[dict]:
+    """Read a thread via Slack's conversations.replies. Needs the Keychain
+    tokens (readable from the workspace LaunchAgent's GUI session)."""
+    if not channel_id or not thread_ts:
+        raise RuntimeError("channel_id and thread_ts are required")
+    xoxc, xoxd = await asyncio.gather(
+        asyncio.to_thread(_keychain, "openclaw.slack.xoxc"),
+        asyncio.to_thread(_keychain, "openclaw.slack.xoxd"))
+    if not xoxc or not xoxd:
+        raise RuntimeError("slack tokens unavailable (keychain locked?)")
+    async with httpx.AsyncClient(timeout=20) as client:
+        r = await client.post(
+            f"https://{SLACK_DOMAIN}/api/conversations.replies",
+            headers={"Cookie": f"d={xoxd}",
+                     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) "
+                                   "AppleWebKit/605.1.15"},
+            data={"token": xoxc, "channel": channel_id, "ts": thread_ts,
+                  "limit": limit})
+    data = r.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"slack: {data.get('error') or 'unknown'}")
+    return map_thread_messages(data.get("messages") or [], _user_map())
 
 
 def _keychain(service: str) -> str | None:

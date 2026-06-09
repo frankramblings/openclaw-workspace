@@ -38,6 +38,26 @@ def test_map_items_scores_mentions_and_dms():
     assert by_id["1780670000.123456"]["actions"] == ["mark_read", "dismiss", "snooze"]
 
 
+def test_map_items_drops_non_mention_channel_unreads():
+    # firehose noise: an unread in a channel where I'm not mentioned -> dropped
+    noise = slack.parse_csv_lines(
+        '1780670003.000300,U0999XYZ,bob,Bob R,#random,,'
+        '"just chatting about lunch",' + ISO + ',0,')
+    noise[0]["time"] = NOW
+    assert slack.map_items(noise, [], handle_map={}, now_ms=NOW) == []
+
+
+def test_map_items_keeps_dms_and_mentions():
+    dm = slack.parse_csv_lines(DM_ROW)        # D024MDM -> direct message
+    mention = slack.parse_csv_lines(ROW)      # #general but arrives via mentions
+    for m in dm + mention:
+        m["time"] = NOW
+    items = slack.map_items(dm, mention, handle_map={}, now_ms=NOW)
+    ids = {i["id"] for i in items}
+    assert "1780670001.654321" in ids         # DM kept
+    assert "1780670000.123456" in ids         # @mention kept
+
+
 def test_channel_url_built_from_handle_map():
     mentions = slack.parse_csv_lines(ROW)
     mentions[0]["time"] = NOW

@@ -136,6 +136,20 @@ def is_low_signal(msg: dict) -> bool:
     return bool(re.fullmatch(r"https?:\S+\s*-\s*https?:\S+", text.strip()))
 
 
+def is_dm(channel: str) -> bool:
+    """Direct/group DM (Slack ids start with D; group DMs render as @handle)."""
+    return (channel or "").startswith(("D", "@"))
+
+
+def is_signal(msg: dict) -> bool:
+    """Slice C: keep only signal — direct @mentions (incl. the mentions feed) and
+    DMs. Drops the unread firehose (channel messages where I'm not addressed).
+    NOTE: @here/@channel and usergroup mentions are NOT distinguishable here
+    (the text is de-tokenized); usergroups + replied-in threads arrive as their
+    own feeds in later C slices."""
+    return msg.get("kind") == "mention" or is_dm(msg.get("channel", ""))
+
+
 def map_items(unreads: list[dict], mentions: list[dict],
               handle_map: dict, now_ms: int,
               user_map: dict | None = None) -> list[dict]:
@@ -147,7 +161,7 @@ def map_items(unreads: list[dict], mentions: list[dict],
         seen[m["msgId"]] = {**seen.get(m["msgId"], m), "kind": "mention"}
     items = []
     for m in seen.values():
-        if is_low_signal(m):
+        if is_low_signal(m) or not is_signal(m):
             continue
         age_h = max(0.0, (now_ms - m["time"]) / 3600_000)
         score = 5 if m["kind"] == "mention" else 2

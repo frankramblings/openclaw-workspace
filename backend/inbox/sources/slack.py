@@ -141,18 +141,28 @@ def is_dm(channel: str) -> bool:
     return (channel or "").startswith(("D", "@"))
 
 
-def is_signal(msg: dict) -> bool:
-    """Slice C: keep only signal — direct @mentions (incl. the mentions feed) and
-    DMs. Drops the unread firehose (channel messages where I'm not addressed).
-    NOTE: @here/@channel and usergroup mentions are NOT distinguishable here
-    (the text is de-tokenized); usergroups + replied-in threads arrive as their
-    own feeds in later C slices."""
-    return msg.get("kind") == "mention" or is_dm(msg.get("channel", ""))
+def _mentions_my_group(text: str | None, my_groups: set[str] | None) -> bool:
+    """True if the (de-tokenized) text @-mentions a usergroup I belong to.
+    Usergroup mentions render as '@Group Name' / '@handle'; we match either."""
+    if not my_groups:
+        return False
+    low = (text or "").lower()
+    return any(("@" + g) in low for g in my_groups)
+
+
+def is_signal(msg: dict, my_groups: set[str] | None = None) -> bool:
+    """Slice C: keep only signal — direct @mentions (the mentions feed), DMs, and
+    @-mentions of a usergroup I'm in (C2). Drops the rest of the unread firehose.
+    NOTE: @here/@channel are NOT distinguishable (text is de-tokenized)."""
+    return (msg.get("kind") == "mention"
+            or is_dm(msg.get("channel", ""))
+            or _mentions_my_group(msg.get("text"), my_groups))
 
 
 def map_items(unreads: list[dict], mentions: list[dict],
               handle_map: dict, now_ms: int,
-              user_map: dict | None = None) -> list[dict]:
+              user_map: dict | None = None,
+              my_groups: set[str] | None = None) -> list[dict]:
     user_map = user_map or {}
     seen: dict[str, dict] = {}
     for m in unreads:
@@ -161,10 +171,14 @@ def map_items(unreads: list[dict], mentions: list[dict],
         seen[m["msgId"]] = {**seen.get(m["msgId"], m), "kind": "mention"}
     items = []
     for m in seen.values():
-        if is_low_signal(m) or not is_signal(m):
+        if is_low_signal(m) or not is_signal(m, my_groups):
             continue
+        kind = m["kind"]
+        if (kind == "unread" and not is_dm(m["channel"])
+                and _mentions_my_group(m["text"], my_groups)):
+            kind = "usergroup"          # @-mention of a group I'm in
         age_h = max(0.0, (now_ms - m["time"]) / 3600_000)
-        score = 5 if m["kind"] == "mention" else 2
+        score = 5 if kind in ("mention", "usergroup") else 2
         if age_h < 2:
             score += 2
         elif age_h < 12:
@@ -176,15 +190,15 @@ def map_items(unreads: list[dict], mentions: list[dict],
         url = (f"https://{SLACK_DOMAIN}/archives/{cid}/p{ts_compact}"
                + (f"?thread_ts={m['threadTs']}&cid={cid}" if m["threadTs"] else "")
                ) if cid else None
+        label = {"mention": " · @mention", "usergroup": " · @group"}.get(kind, "")
         items.append({
             "id": m["msgId"], "source": "slack",
             "title": (resolve_slack_refs(m["text"], user_map) or "")[:200],
-            "subtitle": f"{m['realName'] or m['userName']} · {m['channel']}"
-                        + (" · @mention" if m["kind"] == "mention" else ""),
-            "snippet": m["kind"], "ts": m["time"], "ageHours": age_h,
+            "subtitle": f"{m['realName'] or m['userName']} · {m['channel']}" + label,
+            "snippet": kind, "ts": m["time"], "ageHours": age_h,
             "score": score,
             "meta": {"channel": m["channel"], "channelId": cid,
-                     "threadTs": m["threadTs"], "kind": m["kind"], "url": url},
+                     "threadTs": m["threadTs"], "kind": kind, "url": url},
             "actions": ["mark_read", "dismiss", "snooze"],
         })
     items.sort(key=lambda i: (-i["score"], i["ageHours"]))
@@ -206,6 +220,44 @@ def _handle_map() -> dict:
             elif n.startswith("#"):
                 out["@" + n[1:]] = cid
     return out
+
+
+# --- usergroups (C2): which @-groups am I a member of ------------------------
+MY_SLACK_UID = os.environ.get("SLACK_USER_ID", "U01GEK1BJ8K")
+USERGROUPS_TTL = 3600           # membership changes rarely
+_USERGROUPS_CACHE: tuple[float, set[str]] | None = None
+
+
+async def fetch_my_usergroups() -> set[str]:
+    """Names+handles (lowercased) of the usergroups I belong to, for matching
+    '@Group' mentions in channel messages. One cached usergroups.list call."""
+    global _USERGROUPS_CACHE
+    now = time.time()
+    if _USERGROUPS_CACHE and now - _USERGROUPS_CACHE[0] < USERGROUPS_TTL:
+        return _USERGROUPS_CACHE[1]
+    groups: set[str] = set()
+    xoxc, xoxd = await asyncio.gather(
+        asyncio.to_thread(_keychain, "openclaw.slack.xoxc"),
+        asyncio.to_thread(_keychain, "openclaw.slack.xoxd"))
+    if xoxc and xoxd:
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                r = await client.post(
+                    f"https://{SLACK_DOMAIN}/api/usergroups.list",
+                    headers={"Cookie": f"d={xoxd}",
+                             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac "
+                                           "OS X 14_0) AppleWebKit/605.1.15"},
+                    data={"token": xoxc, "include_users": "true"})
+            data = r.json()
+            for g in (data.get("usergroups") or []):
+                if MY_SLACK_UID in (g.get("users") or []):
+                    for key in (g.get("handle"), g.get("name")):
+                        if key:
+                            groups.add(key.lower())
+        except Exception:  # noqa: BLE001 — degrade to mentions+DMs only
+            groups = _USERGROUPS_CACHE[1] if _USERGROUPS_CACHE else set()
+    _USERGROUPS_CACHE = (now, groups)
+    return groups
 
 
 def signals_stale() -> bool:
@@ -232,7 +284,8 @@ async def fetch() -> list[dict]:
             "slack signals empty (refresh produced no rows — check keychain "
             f"access; try: launchctl kickstart -k gui/$UID/{REFRESH_JOB})")
     return map_items(unreads, mentions, _handle_map(),
-                     now_ms=int(time.time() * 1000), user_map=_user_map())
+                     now_ms=int(time.time() * 1000), user_map=_user_map(),
+                     my_groups=await fetch_my_usergroups())
 
 
 # --- thread reader (B2): read a full slack thread in place -------------------

@@ -58,6 +58,34 @@ def test_map_items_keeps_dms_and_mentions():
     assert "1780670000.123456" in ids         # @mention kept
 
 
+def test_is_signal_keeps_usergroup_mention_for_my_groups():
+    # a channel unread that @-mentions a usergroup I'm in is signal (C2)
+    msg = {"kind": "unread", "channel": "#tech-weeks",
+           "text": "@Demand Gen want to connect today"}
+    assert slack.is_signal(msg, {"demand gen"})
+    assert not slack.is_signal(msg, {"design team"})   # not my group -> dropped
+
+
+def test_is_signal_without_groups_is_mentions_and_dms_only():
+    msg = {"kind": "unread", "channel": "#x", "text": "@Demand Gen hi"}
+    assert not slack.is_signal(msg)                     # no groups passed
+    assert slack.is_signal({"kind": "mention", "channel": "#x", "text": "hi"})
+    assert slack.is_signal({"kind": "unread", "channel": "D9", "text": "dm"})
+
+
+def test_map_items_keeps_usergroup_mention_via_my_groups():
+    noise = slack.parse_csv_lines(
+        '1780670004.000400,U0999XYZ,bob,Bob R,#tech-weeks,,'
+        '"@Demand Gen quick sync?",' + ISO + ',0,')
+    noise[0]["time"] = NOW
+    # without my groups -> dropped; with -> kept
+    assert slack.map_items(noise, [], handle_map={}, now_ms=NOW) == []
+    items = slack.map_items(noise, [], handle_map={}, now_ms=NOW,
+                            my_groups={"demand gen"})
+    assert len(items) == 1
+    assert items[0]["meta"]["kind"] == "usergroup"
+
+
 def test_channel_url_built_from_handle_map():
     mentions = slack.parse_csv_lines(ROW)
     mentions[0]["time"] = NOW

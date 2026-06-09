@@ -22,6 +22,7 @@ from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
 from . import bridge, config, himalaya_cli
+from .calendar_invite import parse_ics_calendar
 
 router = APIRouter()
 
@@ -153,10 +154,24 @@ async def email_folders():
 def message_to_read(raw: bytes, uid: str = "") -> dict:
     """Parse a raw RFC-822 message into the read-view shape the UI expects."""
     msg = email.message_from_bytes(raw, policy=_email_policy)
-    plain, body_html = "", ""
+    plain, body_html, calendar_raw = "", "", ""
     attachments = []
     for part in msg.walk():
         if part.get_content_maintype() == "multipart":
+            continue
+        ctype = part.get_content_type()
+        # Capture a calendar invite (text/calendar) for parsing whether it's
+        # inline (method=REQUEST) or an invite.ics attachment — don't surface it
+        # as a downloadable attachment.
+        if ctype == "text/calendar":
+            try:
+                cal = part.get_content()
+            except Exception:  # noqa: BLE001
+                cal = part.get_payload(decode=True) or b""
+            if isinstance(cal, bytes):
+                cal = cal.decode("utf-8", "replace")
+            if cal and not calendar_raw:
+                calendar_raw = cal
             continue
         if part.get_content_disposition() == "attachment":
             payload = part.get_payload(decode=True) or b""
@@ -166,7 +181,6 @@ def message_to_read(raw: bytes, uid: str = "") -> dict:
                 "size": len(payload),
             })
             continue
-        ctype = part.get_content_type()
         try:
             content = part.get_content()
         except Exception:  # noqa: BLE001
@@ -192,6 +206,7 @@ def message_to_read(raw: bytes, uid: str = "") -> dict:
         "message_id": msg.get("Message-ID") or "",
         "references": msg.get("References") or "",
         "attachments": attachments,
+        "calendar": parse_ics_calendar(calendar_raw) if calendar_raw else None,
     }
 
 

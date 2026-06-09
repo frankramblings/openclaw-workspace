@@ -532,6 +532,44 @@
     return _sanitizePromise;
   }
 
+  // Format an invite's start/end (resolved offset ISO) in the viewer's locale.
+  function fmtWhen(cal) {
+    const s = cal.start, e = cal.end;
+    if (!s || !s.iso) return '';
+    if (s.all_day) {
+      return new Date(s.iso + 'T00:00:00').toLocaleDateString([],
+        { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+        + ' · all day';
+    }
+    let out = new Date(s.iso).toLocaleString([],
+      { weekday: 'short', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit' });
+    if (e && e.iso && !e.all_day) {
+      out += ' – ' + new Date(e.iso).toLocaleTimeString([],
+        { hour: 'numeric', minute: '2-digit' });
+    }
+    return out;
+  }
+
+  function renderCalendarCard(cal) {
+    const rows = [];
+    const when = fmtWhen(cal);
+    if (when) rows.push(['🕒', esc(when)]);
+    if (cal.location) rows.push(['📍', esc(cal.location)]);
+    if (cal.organizer) rows.push(['👤', esc(cal.organizer.name || cal.organizer.email)]);
+    const n = (cal.attendees || []).length;
+    if (n) rows.push(['👥', n + ' guest' + (n > 1 ? 's' : '')]);
+    const tag = cal.method === 'CANCEL' ? 'Canceled'
+      : cal.method === 'REQUEST' ? 'Invitation'
+      : cal.method ? esc(cal.method) : 'Event';
+    return '<div class="inbox-cal-card">' +
+      `<div class="inbox-cal-head"><span class="inbox-cal-badge">📅 ${tag}</span>` +
+      `<span class="inbox-cal-title">${esc(cal.summary || '(no title)')}</span></div>` +
+      rows.map(([i, v]) => `<div class="inbox-cal-row"><span class="inbox-cal-ico">${i}</span><span>${v}</span></div>`).join('') +
+      '<div class="inbox-cal-note">Read-only — RSVP in your calendar.</div>' +
+      '</div>';
+  }
+
   function renderEmailDetail(c, d) {
     c.innerHTML =
       '<div class="inbox-detail-meta">' +
@@ -539,6 +577,7 @@
       `  <div class="inbox-detail-from">${esc(d.from_name || d.from_address || '')}` +
       (d.date ? ` <span class="inbox-age">· ${esc(d.date)}</span>` : '') + '</div>' +
       '</div>' +
+      (d.calendar ? renderCalendarCard(d.calendar) : '') +
       '<div class="email-reader-body html-body" id="inbox-email-body"></div>';
     const target = $('#inbox-email-body', c);
     const html = d.body_html || d.body || '';

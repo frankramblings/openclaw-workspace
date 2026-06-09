@@ -517,3 +517,19 @@
   flex: 1 1 auto; width: 100%; min-height: 50vh; border: 0;
   background: #fff; border-radius: 8px;
 }
+
+/* Inbox: calendar-invite card (slice B1b) */
+.inbox-cal-card {
+  border: 1px solid var(--border-color, rgba(128,128,128,0.3));
+  border-radius: 10px; padding: 10px 12px; margin: 0 2px 12px;
+  background: var(--surface-2, rgba(128,128,128,0.06));
+}
+.inbox-cal-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 8px; }
+.inbox-cal-badge { font-size: 0.72rem; font-weight: 600; opacity: 0.8;
+  white-space: nowrap; }
+.inbox-cal-title { font-weight: 600; }
+.inbox-cal-row { display: flex; gap: 8px; align-items: flex-start;
+  font-size: 0.88rem; padding: 1px 0; }
+.inbox-cal-ico { width: 1.2em; flex: none; text-align: center; opacity: 0.8; }
+.inbox-cal-note { font-size: 0.74rem; opacity: 0.6; margin-top: 8px; }

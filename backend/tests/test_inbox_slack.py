@@ -148,6 +148,57 @@ def test_resolve_refs_glued_unknown_id_left_alone():
     assert slack.resolve_slack_refs("x U9ZZZZZZZZNope y", {}) == "x U9ZZZZZZZZNope y"
 
 
+# --- replied-in threads with new activity (C3) ---------------------------
+
+ME = "U_ME"
+
+
+def _reply(user, ts):
+    return {"type": "message", "user": user, "ts": ts, "text": "hi"}
+
+
+def test_pick_new_reply_returns_recent_foreign_reply():
+    replies = [_reply(ME, "100.0"), _reply("U_OTHER", "200.0")]
+    r = slack.pick_new_reply(replies, ME, recent_cutoff_ms=150_000)
+    assert r and r["ts"] == "200.0"
+
+
+def test_pick_new_reply_none_when_latest_is_mine():
+    replies = [_reply("U_OTHER", "100.0"), _reply(ME, "200.0")]
+    assert slack.pick_new_reply(replies, ME, recent_cutoff_ms=0) is None
+
+
+def test_pick_new_reply_none_when_reply_too_old():
+    replies = [_reply(ME, "100.0"), _reply("U_OTHER", "200.0")]
+    # cutoff after the foreign reply -> stale, dropped
+    assert slack.pick_new_reply(replies, ME, recent_cutoff_ms=300_000) is None
+
+
+def test_pick_new_reply_none_when_i_never_replied():
+    replies = [_reply("U_A", "100.0"), _reply("U_B", "200.0")]
+    assert slack.pick_new_reply(replies, ME, recent_cutoff_ms=0) is None
+
+
+def test_thread_ts_from_match_uses_permalink_then_ts():
+    # a reply: thread_ts lives in the permalink query, not the match body
+    reply = {"ts": "200.0", "permalink":
+             "https://x.slack.com/archives/C1/p200?thread_ts=100.000100&cid=C1"}
+    assert slack._thread_ts_from_match(reply) == "100.000100"
+    # a top-level message (no thread_ts in permalink): falls back to its own ts
+    top = {"ts": "300.0", "permalink": "https://x.slack.com/archives/C1/p300"}
+    assert slack._thread_ts_from_match(top) == "300.0"
+
+
+def test_map_thread_item_shape():
+    it = slack.map_thread_item("C123", "100.0",
+                               _reply("U_OTHER", "200.0"),
+                               {"U_OTHER": "Dana"}, now_ms=200_000)
+    assert it["source"] == "slack" and it["meta"]["kind"] == "thread"
+    assert it["meta"]["channelId"] == "C123" and it["meta"]["threadTs"] == "100.0"
+    assert it["id"] == "200.0"
+    assert "Dana" in it["subtitle"]
+
+
 # --- thread reader (B2) --------------------------------------------------
 
 def test_map_thread_messages_resolves_and_sorts():

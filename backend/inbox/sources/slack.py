@@ -260,6 +260,124 @@ async def fetch_my_usergroups() -> set[str]:
     return groups
 
 
+# --- replied-in threads with new activity (C3) -------------------------------
+# Bounded: only threads whose newest reply is recent + not mine, capped. No
+# mute/unsubscribe filter exists in the read-only Slack tools, so the recency
+# cap is what keeps busy threads from re-flooding the inbox.
+THREAD_RECENT_HOURS = int(os.environ.get("SLACK_THREAD_RECENT_HOURS", "4"))
+THREAD_SEARCH_LIMIT = 20      # my recent messages to scan for threads
+THREAD_CHECK_CAP = 12         # threads to actually fetch replies for
+THREAD_RESULT_CAP = 8         # max thread items surfaced
+MY_HANDLE = os.environ.get("SLACK_HANDLE", "femanuele")
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15")
+
+
+def _ts_ms(ts: str | None) -> int:
+    try:
+        return int(float(ts) * 1000)
+    except (TypeError, ValueError):
+        return 0
+
+
+_PERMALINK_TTS_RE = re.compile(r"thread_ts=(\d+\.\d+)")
+
+
+def _thread_ts_from_match(m: dict) -> str:
+    """search.messages omits thread_ts from the match body but includes it in the
+    permalink for replies. Use it; fall back to the message's own ts (a top-level
+    message that may itself be a thread root)."""
+    hit = _PERMALINK_TTS_RE.search(m.get("permalink") or "")
+    return hit.group(1) if hit else m.get("ts")
+
+
+def pick_new_reply(replies: list[dict], my_uid: str,
+                   recent_cutoff_ms: int) -> dict | None:
+    """Return the newest reply iff it's NOT mine, newer than my latest reply in
+    the thread, and within the recency window — i.e. genuine new activity on a
+    thread I participated in. None otherwise."""
+    mine = [r for r in replies if r.get("user") == my_uid]
+    if not mine:
+        return None
+    my_last = max(_ts_ms(r.get("ts")) for r in mine)
+    latest = max(replies, key=lambda r: _ts_ms(r.get("ts")))
+    lts = _ts_ms(latest.get("ts"))
+    if latest.get("user") != my_uid and lts > my_last and lts >= recent_cutoff_ms:
+        return latest
+    return None
+
+
+def map_thread_item(channel_id: str, thread_ts: str, reply: dict,
+                    user_map: dict, now_ms: int) -> dict:
+    ts = reply.get("ts", "")
+    t = _ts_ms(ts) or now_ms
+    author = user_map.get(reply.get("user") or "") or reply.get("user") or "?"
+    ts_compact = ts.replace(".", "")
+    url = (f"https://{SLACK_DOMAIN}/archives/{channel_id}/p{ts_compact}"
+           f"?thread_ts={thread_ts}&cid={channel_id}")
+    return {
+        "id": ts, "source": "slack",
+        "title": (resolve_slack_refs(reply.get("text") or "", user_map) or "")[:200],
+        "subtitle": f"{author} · thread reply",
+        "snippet": "thread", "ts": t,
+        "ageHours": max(0.0, (now_ms - t) / 3600_000), "score": 4,
+        "meta": {"channel": "", "channelId": channel_id, "threadTs": thread_ts,
+                 "kind": "thread", "url": url},
+        "actions": ["mark_read", "dismiss", "snooze"],
+    }
+
+
+async def fetch_my_threads(user_map: dict, now_ms: int,
+                           recent_hours: int | None = None) -> list[dict]:
+    """Threads I replied in that have recent new activity from someone else."""
+    xoxc, xoxd = await asyncio.gather(
+        asyncio.to_thread(_keychain, "openclaw.slack.xoxc"),
+        asyncio.to_thread(_keychain, "openclaw.slack.xoxd"))
+    if not xoxc or not xoxd:
+        return []
+    headers = {"Cookie": f"d={xoxd}", "User-Agent": _UA}
+    cutoff = now_ms - (recent_hours or THREAD_RECENT_HOURS) * 3600_000
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            sr = await client.post(
+                f"https://{SLACK_DOMAIN}/api/search.messages", headers=headers,
+                data={"token": xoxc, "query": f"from:@{MY_HANDLE}",
+                      "count": THREAD_SEARCH_LIMIT, "sort": "timestamp"})
+            sdata = sr.json()
+            if not sdata.get("ok"):
+                return []
+            matches = (sdata.get("messages") or {}).get("matches") or []
+            threads: dict[tuple[str, str], bool] = {}
+            for m in matches:
+                cid = (m.get("channel") or {}).get("id")
+                tts = _thread_ts_from_match(m)
+                if cid and tts:
+                    threads.setdefault((cid, tts), True)
+
+            async def _check(cid: str, tts: str):
+                try:
+                    rr = await client.post(
+                        f"https://{SLACK_DOMAIN}/api/conversations.replies",
+                        headers=headers,
+                        data={"token": xoxc, "channel": cid, "ts": tts, "limit": 50})
+                    rd = rr.json()
+                    if not rd.get("ok"):
+                        return None
+                    reply = pick_new_reply(rd.get("messages") or [],
+                                           MY_SLACK_UID, cutoff)
+                    return map_thread_item(cid, tts, reply, user_map, now_ms) \
+                        if reply else None
+                except Exception:  # noqa: BLE001
+                    return None
+
+            results = await asyncio.gather(
+                *[_check(c, t) for c, t in list(threads)[:THREAD_CHECK_CAP]])
+    except Exception:  # noqa: BLE001 — degrade silently; the mentions feed stands
+        return []
+    items = [r for r in results if r]
+    items.sort(key=lambda i: -i["ts"])
+    return items[:THREAD_RESULT_CAP]
+
+
 def signals_stale() -> bool:
     try:
         age_min = (time.time() - SIGNALS_PATH.stat().st_mtime) / 60
@@ -283,9 +401,16 @@ async def fetch() -> list[dict]:
         raise RuntimeError(
             "slack signals empty (refresh produced no rows — check keychain "
             f"access; try: launchctl kickstart -k gui/$UID/{REFRESH_JOB})")
-    return map_items(unreads, mentions, _handle_map(),
-                     now_ms=int(time.time() * 1000), user_map=_user_map(),
-                     my_groups=await fetch_my_usergroups())
+    now_ms = int(time.time() * 1000)
+    user_map = _user_map()
+    base = map_items(unreads, mentions, _handle_map(), now_ms=now_ms,
+                     user_map=user_map, my_groups=await fetch_my_usergroups())
+    # C3: add replied-in threads with recent new activity, de-duped by id.
+    seen_ids = {i["id"] for i in base}
+    base.extend(t for t in await fetch_my_threads(user_map, now_ms)
+                if t["id"] not in seen_ids)
+    base.sort(key=lambda i: (-i["score"], i["ageHours"]))
+    return base
 
 
 # --- thread reader (B2): read a full slack thread in place -------------------

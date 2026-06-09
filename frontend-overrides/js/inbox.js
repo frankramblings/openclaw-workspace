@@ -227,7 +227,7 @@
   let _modal = null, _items = [], _errors = {}, _counts = {}, _filter = null,
       _view = 'feed', _toastTimer = null, _openCard = null, _detail = null;
   // Sources that support reading in place (grows per slice: gmail → slack → asana).
-  const DETAIL_SOURCES = new Set(['gmail', 'slack']);
+  const DETAIL_SOURCES = new Set(['gmail', 'slack', 'asana']);
   const IS_COARSE = !!(window.matchMedia
     && matchMedia('(pointer: coarse)').matches);
   const REDUCED_MOTION = !!(window.matchMedia
@@ -501,6 +501,14 @@
       if (data.error) throw new Error(data.error);
       return data;
     }
+    if (it.source === 'asana') {
+      const r = await fetch(
+        `${API}/api/inbox/asana/task?gid=${encodeURIComponent(it.id)}`,
+        { credentials: 'same-origin' });
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+      return data;
+    }
     throw new Error('reading in place not supported for ' + it.source);
   }
 
@@ -526,6 +534,38 @@
     if (_detail.error) { c.innerHTML = `<div class="inbox-error">${esc(_detail.error)}</div>`; return; }
     if (it.source === 'gmail') renderEmailDetail(c, _detail.content);
     else if (it.source === 'slack') renderSlackThread(c, _detail.content, it);
+    else if (it.source === 'asana') renderAsanaDetail(c, _detail.content);
+  }
+
+  // Reuse the .inbox-thread / .inbox-msg layout for the comment list.
+  function msgRowHtml(author, time, text) {
+    const when = time ? new Date(time).toLocaleString([],
+      { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    return '<div class="inbox-msg">' +
+      `<div class="inbox-msg-head"><span class="inbox-msg-user">${esc(author || '?')}</span>` +
+      `<span class="inbox-age">${esc(when)}</span></div>` +
+      `<div class="inbox-msg-text">${esc(text || '').replace(/\n/g, '<br>')}</div></div>`;
+  }
+
+  function renderAsanaDetail(c, d) {
+    const meta = [];
+    if (d.assignee) meta.push('👤 ' + esc(d.assignee));
+    if (d.due) meta.push('🕒 ' + esc(new Date(d.due).toLocaleDateString([],
+      { month: 'short', day: 'numeric', year: 'numeric' })));
+    if (d.completed) meta.push('✓ completed');
+    const comments = (d.comments || []).length
+      ? '<div class="inbox-thread">' +
+        d.comments.map((cm) => msgRowHtml(cm.author, cm.time, cm.text)).join('') +
+        '</div>'
+      : '<div class="cron-empty">No comments.</div>';
+    c.innerHTML =
+      '<div class="inbox-detail-meta">' +
+      `<div class="inbox-detail-subject">${esc(d.name || '(no name)')}</div>` +
+      (meta.length ? `<div class="inbox-detail-from">${meta.join(' · ')}</div>` : '') +
+      '</div>' +
+      (d.notes ? `<div class="inbox-asana-notes">${esc(d.notes).replace(/\n/g, '<br>')}</div>` : '') +
+      '<div class="inbox-asana-comments-h">Comments</div>' +
+      comments;
   }
 
   function renderSlackThread(c, d, it) {
@@ -537,15 +577,8 @@
       c.innerHTML = head + '<div class="cron-empty">No messages.</div>';
       return;
     }
-    c.innerHTML = head + '<div class="inbox-thread">' + msgs.map((m) => {
-      const when = m.time ? new Date(m.time).toLocaleString([],
-        { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
-      return '<div class="inbox-msg">' +
-        `<div class="inbox-msg-head"><span class="inbox-msg-user">${esc(m.user || '?')}</span>` +
-        `<span class="inbox-age">${esc(when)}</span></div>` +
-        `<div class="inbox-msg-text">${esc(m.text || '').replace(/\n/g, '<br>')}</div>` +
-        '</div>';
-    }).join('') + '</div>';
+    c.innerHTML = head + '<div class="inbox-thread">' +
+      msgs.map((m) => msgRowHtml(m.user, m.time, m.text)).join('') + '</div>';
   }
 
   // Reuse the email tab's sanitizer + body styling instead of duplicating a

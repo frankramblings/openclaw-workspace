@@ -41,3 +41,40 @@ def test_due_soon_tiers():
     week = asana.map_items([_task(due_ms=NOW + 5 * DAY)], now_ms=NOW)
     assert soon[0]["score"] == 4 + 3       # <1 day
     assert week[0]["score"] == 4 + 1       # <7 days
+
+
+# --- task detail reader (B3) ---------------------------------------------
+
+def test_map_task_detail_extracts_fields_and_comments():
+    task = {
+        "name": "Edit the spotlight video", "notes": "Trim the intro.",
+        "due_on": "2026-06-12", "due_at": None, "completed": False,
+        "assignee": {"name": "Frank Emanuele"},
+        "permalink_url": "https://app.asana.com/0/x/99",
+    }
+    stories = [
+        {"type": "comment", "text": "first pass done",
+         "created_at": asana._iso_from_ms(NOW - 2 * 3600_000),
+         "created_by": {"name": "Taylor"}},
+        {"type": "system", "text": "changed the due date",
+         "created_at": asana._iso_from_ms(NOW - 3600_000),
+         "created_by": {"name": "Asana"}},
+        {"type": "comment", "text": "looks good",
+         "created_at": asana._iso_from_ms(NOW - 1800_000),
+         "created_by": {"name": "Frank"}},
+    ]
+    d = asana.map_task_detail(task, stories)
+    assert d["name"] == "Edit the spotlight video"
+    assert d["notes"] == "Trim the intro."
+    assert d["assignee"] == "Frank Emanuele"
+    assert d["url"] == "https://app.asana.com/0/x/99"
+    # system stories dropped; only comments, oldest-first
+    assert [c["text"] for c in d["comments"]] == ["first pass done", "looks good"]
+    assert d["comments"][0]["author"] == "Taylor"
+
+
+def test_map_task_detail_handles_missing_bits():
+    d = asana.map_task_detail({}, [])
+    assert d["name"] == "(no name)"
+    assert d["comments"] == []
+    assert d["assignee"] is None

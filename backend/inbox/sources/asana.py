@@ -110,6 +110,43 @@ async def fetch() -> list[dict]:
     return map_items(data.get("data") or [], now_ms=int(time.time() * 1000))
 
 
+# --- task detail reader (B3): read a task + comments in place ----------------
+_TASK_FIELDS = "name,notes,due_on,due_at,completed,assignee.name,permalink_url"
+_STORY_FIELDS = "type,text,created_at,created_by.name"
+
+
+def map_task_detail(task: dict, stories: list[dict]) -> dict:
+    """Flatten a task + its stories into the reader shape. Keeps only comment
+    stories (drops Asana's 'system' activity), oldest-first."""
+    comments = [{
+        "author": (s.get("created_by") or {}).get("name") or "?",
+        "text": s.get("text") or "",
+        "time": _ms(s.get("created_at")),
+    } for s in stories if s.get("type") == "comment"]
+    comments.sort(key=lambda c: c["time"] or 0)
+    due = _ms(task.get("due_at")) or (
+        _ms(task["due_on"] + "T17:00:00Z") if task.get("due_on") else None)
+    return {
+        "name": task.get("name") or "(no name)",
+        "notes": task.get("notes") or "",
+        "assignee": (task.get("assignee") or {}).get("name"),
+        "due": due,
+        "completed": task.get("completed", False),
+        "url": task.get("permalink_url"),
+        "comments": comments,
+    }
+
+
+async def fetch_task(gid: str) -> dict:
+    if not gid:
+        raise RuntimeError("task gid required")
+    task = (await _api("GET", f"/tasks/{gid}?opt_fields={_TASK_FIELDS}")
+            ).get("data") or {}
+    stories = (await _api("GET", f"/tasks/{gid}/stories?opt_fields={_STORY_FIELDS}")
+               ).get("data") or []
+    return map_task_detail(task, stories)
+
+
 async def complete(gid: str) -> None:
     await _api("PUT", f"/tasks/{gid}", {"data": {"completed": True}})
 

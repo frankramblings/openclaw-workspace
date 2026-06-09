@@ -53,6 +53,15 @@ async def slack_thread(channel_id: str, thread_ts: str):
     return {"messages": messages}
 
 
+@router.get("/api/inbox/asana/task")
+async def asana_task(gid: str):
+    """Read an asana task + comments in place (B3). Read-only."""
+    try:
+        return await asana.fetch_task(gid)
+    except Exception as exc:  # noqa: BLE001
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+
 @router.get("/api/items")
 async def items(sources: str = "", limit: int = 200):
     wanted = [s for s in (sources.split(",") if sources else list(SOURCES))

@@ -1975,7 +1975,7 @@ import createResearchSynapse from './researchSynapse.js';
                   node._waveInterval = setInterval(() => {
                     waveIdx = (waveIdx + 1) % waveFrames.length;
                     waveEl.textContent = waveFrames[waveIdx];
-                  }, 100);
+                  }, 250);
                 }
                 // Smooth per-second "cooking" timer — ticks every second (not
                 // just on the 2s backend heartbeat) so a long-running tool
@@ -1994,9 +1994,9 @@ import createResearchSynapse from './researchSynapse.js';
                     else hdr2.appendChild(el2);
                   }
                   const s = (Date.now() - node._startTime) / 1000;
-                  // Hundredths so it visibly counts sub-second (1.00, 1.05, …).
+                  // Hundredths so it visibly counts sub-second (1.00, 1.25, …).
                   el2.textContent = s < 60 ? `${s.toFixed(2)}s` : `${Math.floor(s / 60)}m ${(s % 60).toFixed(2).padStart(5, '0')}s`;
-                }, 50);
+                }, 250);
                 uiModule.scrollHistory();
 
               } else if (json.type === 'tool_progress') {
@@ -3940,6 +3940,8 @@ import createResearchSynapse from './researchSynapse.js';
 
       // Poll for completion
       const pollInterval = setInterval(async () => {
+        // Skip work while the tab is hidden; next visible tick catches up.
+        if (document.hidden) return;
         // Stop polling if user switched to a different session
         if (sessionModule.getCurrentSessionId() !== sessionId) {
           clearInterval(pollInterval);

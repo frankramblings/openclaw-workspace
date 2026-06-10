@@ -873,9 +873,13 @@ function initializeEventListeners() {
     });
   }
   // Refresh notes due-reminder badge on load and every 5 minutes
+  // (skipped while the tab is hidden; refreshed on return).
   if (notesModule && notesModule.refreshDueBadge) {
     notesModule.refreshDueBadge();
-    setInterval(() => notesModule.refreshDueBadge(), 5 * 60 * 1000);
+    setInterval(() => { if (!document.hidden) notesModule.refreshDueBadge(); }, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) notesModule.refreshDueBadge();
+    });
   }
 
   // URL-based panel routing — bookmark /calendar, /notes, /cookbook etc
@@ -3530,7 +3534,10 @@ function startWorkspaceApp() {
   }
   window._syncRailDynamic = _syncRailDynamic;
   // Sync periodically and on key events
-  setInterval(_syncRailDynamic, 1000);
+  setInterval(() => { if (!document.hidden) _syncRailDynamic(); }, 1000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) _syncRailDynamic();
+  });
   document.addEventListener('overflow-state-change', _syncRailDynamic);
 
   const sidebarSearchBtn = el('sidebar-search-btn');

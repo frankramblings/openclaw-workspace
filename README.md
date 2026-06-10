@@ -30,6 +30,27 @@ It reuses three things that already work and adds only the glue:
 - **Data** — your existing accounts (Gmail/Slack/Asana via the inbox collectors,
   himalaya for email, Google Calendar) surfaced through thin backend adapters.
 
+## What the tabs do
+
+Each surface is wired to *your* live OpenClaw — its real accounts, its own vault,
+its memory, its skills, its cron jobs. Account tabs hide themselves unless their
+tooling is present and enabled, so a fresh install only shows what you can use.
+
+| Surface | Wired to |
+|---|---|
+| **Chat** | The OpenClaw agent, with live tool-call cards and a model picker reading the real gateway catalog |
+| **Inbox** | A scored, sorted triage feed (Gmail + Slack + Asana + meeting notes) with dismiss/review |
+| **Email** | A real Gmail mailbox via `himalaya` — read, search, send, threaded reply, AI summarize/draft/reply in your learned writing style |
+| **Calendar** | Real Google Calendar (read/create/update/delete), including natural-language quick-add ("lunch with Sam Tue 1pm") |
+| **Notes & Documents** | Markdown-with-frontmatter files in the agent's own workspace vault — UI edits are agent-visible and vice-versa, with versioning + restore |
+| **Memories** | The agent's curated long-term memory (`MEMORY.md`), editable, with auto-extraction of facts from web-search turns |
+| **Skills** | The live skill catalog, each `SKILL.md` viewable, with enable/disable toggles |
+| **Cron** | Real scheduled jobs — run-now, enable/disable, run history |
+| **Web search** | SerpAPI-backed search that cites sources `[n]` inline in chat |
+
+A gateway-monitor banner shows when the brain is restarting or down, and a stop
+button aborts a running turn mid-stream.
+
 ## Requirements
 
 - A running **OpenClaw** install with its gateway up (default `ws://127.0.0.1:18789`).

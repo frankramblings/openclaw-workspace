@@ -226,3 +226,27 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
   background: color-mix(in srgb, var(--red) 12%, transparent);
   border-left: 2px solid var(--red);
 }
+
+/* ── Sidebar footer console ── */
+#hermes-footer {
+  margin-top: auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 5px;
+}
+.hermes-footer-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--hermes-faint);
+}
+#hermes-footer-model {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  background: var(--input-bg, var(--panel));
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--fg); font-size: 12px; padding: 6px 9px; cursor: pointer;
+  text-align: left;
+}
+#hermes-footer-model:hover { border-color: var(--red); }
+#hermes-footer-path {
+  font-size: 10px; color: var(--hermes-faint);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

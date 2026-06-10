@@ -138,3 +138,42 @@ pre, code, .hljs,
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--green, #50fa7b);
 }
+
+/* ── HERMES icon strip: the rail, horizontal, inside the sidebar ── */
+body:not(.hermes-rail-fallback) #sidebar .icon-rail {
+  position: static;
+  width: 100% !important;       /* beats sidebar-layout.js inline width */
+  display: flex !important;     /* beats sidebar-layout.js _syncRailSideCore(), which
+                                   inline-hides the rail whenever the sidebar is
+                                   visible (pre-relocation mini-mode logic) */
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 8px 8px 6px;
+  gap: 2px;
+  border-right: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--sidebar-bg, var(--panel));
+}
+body:not(.hermes-rail-fallback) #sidebar .icon-rail .rail-resize-handle { display: none; }
+body:not(.hermes-rail-fallback) #sidebar .icon-rail .icon-rail-divider {
+  width: 1px; height: 18px; margin: 0 4px;
+}
+/* index.html's actual divider is .rail-separator (style.css makes it a 20x1
+   horizontal tick for the vertical rail) — flip it vertical in strip mode */
+body:not(.hermes-rail-fallback) #sidebar .icon-rail .rail-separator {
+  width: 1px; height: 18px; margin: 0 4px;
+}
+/* Strip must show inside the mobile drawer too (style.css hides .icon-rail <768px) */
+@media (max-width: 768px) {
+  body:not(.hermes-rail-fallback) #sidebar .icon-rail { display: flex !important; }
+}
+
+/* ── Fallback: restore a vertical left rail without moving DOM back ── */
+body.hermes-rail-fallback #sidebar .icon-rail {
+  position: fixed; left: 0; top: 0; bottom: 0;
+  width: 48px; flex-direction: column;
+  border-right: 1px solid var(--border); border-bottom: none;
+}
+body.hermes-rail-fallback #sidebar { margin-left: 48px; }

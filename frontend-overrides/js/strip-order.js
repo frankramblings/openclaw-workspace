@@ -10,6 +10,19 @@
   const KEY = 'hermes-strip-order';
   const SERVER_KEY = 'hermes_strip_order';
 
+  // Shipped default (maintainer-curated 2026-06-10). Hidden buttons
+  // (search/new/delete/settings/gateway) ride along inertly — hermes.css
+  // decides visibility, this list only decides sequence. A user drag
+  // (localStorage and/or server order) always overrides this.
+  const DEFAULT_ORDER = [
+    'rail-chats', 'rail-email', 'rail-inbox', 'rail-calendar',
+    'rail-documents', 'rail-compare', 'rail-cookbook', 'rail-research',
+    'rail-gallery', 'rail-archive', 'rail-notes', 'rail-memory',
+    'rail-tasks', 'rail-cron', 'rail-gateway', 'rail-theme',
+    'rail-search-btn', 'rail-new-session', 'rail-delete-session',
+    'rail-settings',
+  ];
+
   function readOrder() {
     try {
       const v = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -17,12 +30,18 @@
     } catch (e) { return []; }
   }
 
+  // What applyOrder uses: an explicit user order wins; otherwise the default.
+  function effectiveOrder() {
+    const saved = readOrder();
+    return saved.length ? saved : DEFAULT_ORDER;
+  }
+
   function buttons(strip) {
     return Array.from(strip.querySelectorAll(':scope > .icon-rail-btn')).filter(b => b.id);
   }
 
   function applyOrder(strip) {
-    const order = readOrder();
+    const order = effectiveOrder();
     if (!order.length) return;
     const present = buttons(strip);
     const byId = new Map(present.map(b => [b.id, b]));

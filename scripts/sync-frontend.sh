@@ -200,6 +200,22 @@ if [[ -d "$OVERRIDES" ]]; then
     ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
     echo "injected workspace-explorer.js <script> into index.html"
   fi
+
+  # Inject the strip-order add-on once, just before </body> (idempotent).
+  SCRIPT_SO='<script src="/static/js/strip-order.js" defer></script>'
+  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/strip-order.js" ]] \
+     && ! grep -qF "js/strip-order.js" "$INDEX"; then
+    awk -v s="  $SCRIPT_SO" '
+      { lines[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (!done && lines[i] ~ /<\/body>/) { print s; done = 1 }
+          print lines[i]
+        }
+      }
+    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    echo "injected strip-order.js <script> into index.html"
+  fi
 fi
 
 # --- Agent-name rebrand of app.js + js/ modules -----------------------------

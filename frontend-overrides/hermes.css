@@ -412,3 +412,6 @@ body:not(.hermes-rail-fallback) #rail-delete-session, /* delete lives in each ch
 body:not(.hermes-rail-fallback) #rail-settings,       /* its handler just scrolls the sidebar; the user-bar gear is the real Settings */
 body:not(.hermes-rail-fallback) #rail-gateway         /* duplicate of the gw dot beside the brand; the fixed banner covers attention states (incl. mobile, where the rail dot never showed pre-Hermes either) */
 { display: none; }
+
+/* Drag-to-reorder feedback for strip icons (strip-order.js) */
+.icon-rail-btn.hermes-dragging { opacity: 0.35; }

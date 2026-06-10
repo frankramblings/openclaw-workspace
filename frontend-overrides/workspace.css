@@ -405,18 +405,18 @@
 .skill-enable-toggle.on { background: #34c759; border-color: #34c759; }
 .skill-enable-toggle.on span { left: 14px; }
 
-/* --- Brain modal: mobile fixes (2026-06-07) --------------------------------- */
+/* --- Brain modal: toolbar overlap fix (2026-06-07, widened 2026-06-10) ------ */
 /* style.css caps .memory-toolbar at 120px globally — it's only a transition
    start point for the expand-a-card collapse animation (max-height can't
-   animate from auto), sized for desktop's single row of category chips. At
-   phone widths the chips wrap to many rows; the toolbar's overflow:visible
-   paints the excess OVER the first memory card (#memory-list is laid out at
-   the clamped bottom). Lift the cap well past any realistic chip wrap on
-   phones; keep it finite so the collapse transition still animates. The id
-   selector outranks upstream's class rule — no !important needed. */
-@media (max-width: 768px) {
-  #memory-modal .memory-toolbar { max-height: 480px; }
-}
+   animate from auto), sized for ONE row of category chips. Whenever the chips
+   wrap to more rows, the toolbar's overflow:visible paints the excess OVER
+   the first memory card (#memory-list is laid out at the clamped bottom).
+   Originally phone-only (chips wrapped at <768px); the Hermes WORKSPACE
+   explorer now narrows the desktop layout enough that chips wrap there too,
+   so the lift applies at ALL widths. Keep it finite so the collapse
+   transition still animates. The id selector outranks upstream's class
+   rule — no !important needed. */
+#memory-modal .memory-toolbar { max-height: 480px; }
 
 /* The full-screen mobile modals reserve only the BOTTOM safe area upstream
    (style.css:6164-6179 drives the whole tool-modal family to 100dvh with

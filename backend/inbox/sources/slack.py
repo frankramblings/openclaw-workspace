@@ -386,11 +386,13 @@ def signals_stale() -> bool:
         return True
 
 
-def kick_refresh() -> None:
+async def kick_refresh() -> None:
     """Fire-and-forget kick of the slack-refresh launchd job."""
-    subprocess.Popen(
-        ["launchctl", "kickstart", f"gui/{os.getuid()}/{REFRESH_JOB}"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def _kick() -> None:
+        subprocess.Popen(
+            ["launchctl", "kickstart", f"gui/{os.getuid()}/{REFRESH_JOB}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    await asyncio.to_thread(_kick)
 
 
 async def fetch() -> list[dict]:

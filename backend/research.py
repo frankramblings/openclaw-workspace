@@ -66,6 +66,16 @@ class Job:
 
 
 _JOBS: dict[str, Job] = {}
+_JOB_TTL_S = 24 * 3600
+
+
+def _prune_jobs() -> None:
+    """Drop finished jobs past the TTL so _JOBS can't grow for the life of
+    the process (reports persist on disk; only in-memory state is dropped)."""
+    cutoff = time.time() - _JOB_TTL_S
+    for rid, job in list(_JOBS.items()):
+        if job.status != "running" and job.started_at < cutoff and not job.subscribers:
+            del _JOBS[rid]
 
 
 def _publish(job: Job, **fields) -> None:
@@ -410,6 +420,7 @@ async def start(payload: dict):
     query = (payload.get("query") or "").strip()
     if not query:
         return JSONResponse(status_code=400, content={"detail": "query is required"})
+    _prune_jobs()
     job = Job(id=new_id(), query=query, settings=payload,
               category=payload.get("category") or "")
     job.model = (payload.get("_modelName") or payload.get("model")

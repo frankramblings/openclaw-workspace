@@ -68,7 +68,7 @@ async def items(sources: str = "", limit: int = 200):
               if s in SOURCES]
     # Slack staleness guard: kick the refresh job, then serve what we have.
     if "slack" in wanted and slack.signals_stale():
-        slack.kick_refresh()
+        await slack.kick_refresh()
 
     async def safe(name: str):
         try:

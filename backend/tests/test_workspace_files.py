@@ -94,3 +94,15 @@ def test_resolve_safe_rejects_symlink_out(ws, tmp_path_factory):
 
 def test_git_branch_none_outside_repo(tmp_path):
     assert wf.git_branch(tmp_path) is None
+
+
+def test_dot_dirs_listed_but_not_walked(ws):
+    """Hidden dirs (.attachments etc.) show as childless entries so they don't
+    eat the entry budget — the real workspace root is dominated by them."""
+    (ws / ".attachments").mkdir()
+    for i in range(5):
+        (ws / ".attachments" / f"img{i}.png").write_bytes(b"x")
+    tree, _ = wf.build_tree(ws)
+    dot = _find(tree, ".attachments")
+    assert dot["type"] == "dir"
+    assert dot["children"] == []

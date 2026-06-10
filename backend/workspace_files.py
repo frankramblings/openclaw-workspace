@@ -75,7 +75,10 @@ def build_tree(root: Path, max_depth: int = MAX_DEPTH,
             is_link = p.is_symlink()
             if p.is_dir():
                 node = {"name": p.name, "path": rel, "type": "dir", "children": []}
-                if not is_link and p.name not in SKIP_CONTENTS:
+                # Hidden dirs are listed but never walked: the real workspace
+                # root is dominated by .attachments/.clawhub/... whose contents
+                # would eat the MAX_ENTRIES budget before any real dir renders.
+                if not is_link and p.name not in SKIP_CONTENTS and not p.name.startswith("."):
                     if depth >= max_depth:
                         state["truncated"] = True
                     else:

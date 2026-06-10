@@ -35,6 +35,24 @@
         if (d && d.root) { path.textContent = d.root; path.title = d.root; path.hidden = false; }
       }).catch(() => {});
     }
+
+    // Mirror the unread dots of the now-hidden Inbox/Email sidebar rows onto
+    // their strip icons (hermes.css draws .hermes-rail-unread::after).
+    // #rail-inbox is injected late by inbox.js, hence the strip observer.
+    function mirrorDot(dotId, railId) {
+      const dot = document.getElementById(dotId);
+      if (!dot) return;
+      const sync = () => {
+        const rail = document.getElementById(railId);
+        if (rail) rail.classList.toggle('hermes-rail-unread', dot.style.display !== 'none');
+      };
+      new MutationObserver(sync).observe(dot, { attributes: true, attributeFilter: ['style'] });
+      const strip = document.getElementById('icon-rail');
+      if (strip) new MutationObserver(sync).observe(strip, { childList: true });
+      sync();
+    }
+    mirrorDot('inbox-unread-dot', 'rail-inbox');
+    mirrorDot('email-unread-dot', 'rail-email');
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();

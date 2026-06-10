@@ -385,3 +385,24 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
 #tools-section { display: none !important; }   /* Brain/Calendar/Research/Library/Notes/Cron/Theme rows */
 #sidebar-search-btn { display: none; }         /* strip 🔍 + the filter row cover search; Ctrl+K still binds */
 #rail-new-session { display: none; }           /* the + New conversation pill covers it */
+
+/* ── Hermes-pure sidebar body (user picked option B, 2026-06-10) ──
+   Inbox/Email rows fold into their strip icons; their unread dots are
+   mirrored onto the strip by hermes-footer.js toggling .hermes-rail-unread.
+   (Email row also carried a compose shortcut — compose lives in the Email
+   tab itself.) */
+#inbox-section, #email-section { display: none !important; }
+/* Slim CHATS header: muted uppercase label, sort menu KEPT (Date Grouped /
+   Newest / Last Active / Folders / Manual stay one click away) */
+#sessions-section .section-title .section-icon { display: none; }
+#sessions-section .section-title-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--hermes-faint);
+}
+#sessions-section .section-header-btn { opacity: 0.55; }
+/* Unread badge on strip icons (.icon-rail-btn is position:relative) */
+.icon-rail-btn.hermes-rail-unread::after {
+  content: ''; position: absolute; top: 2px; right: 2px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green, #50fa7b);
+}

@@ -184,6 +184,22 @@ if [[ -d "$OVERRIDES" ]]; then
     ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
     echo "injected hermes-footer.js <script> into index.html"
   fi
+
+  # Inject the workspace-explorer add-on once, just before </body> (idempotent).
+  SCRIPT_WE='<script src="/static/js/workspace-explorer.js" defer></script>'
+  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/workspace-explorer.js" ]] \
+     && ! grep -qF "js/workspace-explorer.js" "$INDEX"; then
+    awk -v s="  $SCRIPT_WE" '
+      { lines[NR] = $0 }
+      END {
+        for (i = 1; i <= NR; i++) {
+          if (!done && lines[i] ~ /<\/body>/) { print s; done = 1 }
+          print lines[i]
+        }
+      }
+    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    echo "injected workspace-explorer.js <script> into index.html"
+  fi
 fi
 
 # --- Agent-name rebrand of app.js + js/ modules -----------------------------

@@ -1237,6 +1237,17 @@
 
 
   </main>
+  <!-- HERMES: right-hand WORKSPACE explorer (read-only; Phase 3) -->
+  <aside id="workspace-explorer" hidden aria-label="Workspace files">
+    <div class="we-header">
+      <span class="we-title">WORKSPACE</span>
+      <span id="we-branch" class="we-branch" hidden></span>
+      <button type="button" id="we-refresh" title="Refresh">&#x27F3;</button>
+      <button type="button" id="we-collapse" title="Hide panel">&#x2715;</button>
+    </div>
+    <div id="we-tree" class="we-tree"></div>
+  </aside>
+  <button type="button" id="we-reopen" title="Workspace files" hidden>Files</button>
   <button id="scroll-bottom-btn" class="scroll-nav-btn" title="Scroll to bottom">▼</button>
   <script nonce="{{CSP_NONCE}}">
   (function(){
@@ -2312,5 +2323,6 @@
   <script src="/static/js/vaultLinks.js" defer></script>
   <script src="/static/js/pull-to-refresh.js" defer></script>
   <script src="/static/js/hermes-footer.js" defer></script>
+  <script src="/static/js/workspace-explorer.js" defer></script>
 </body>
 </html>

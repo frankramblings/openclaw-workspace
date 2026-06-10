@@ -28,9 +28,31 @@ export const THEMES = {
                             inputBg: '#2f2f2f' } },
   claude:     { bg:'#262624', fg:'#f5f4f0', panel:'#30302e', border:'#4a4a47', red:'#c6613f' },
   cute:       { bg:'#fff0f5', fg:'#d4608a', panel:'#fff8fa', border:'#f0c0d0', red:'#ff6b9d' },
+  // HERMES: Hermes WebUI colorways (spec 2026-06-10-hermes-ui-adoption-design.md)
+  hermesCharcoal: { bg:'#1e1f22', fg:'#d7dae0', panel:'#17181b', border:'#33353a', red:'#e8c268',
+                advanced: { sidebarBg:'#17181b', inputBg:'#26282c', inputBorder:'#3a3d42',
+                            userBubbleBg:'#26282c', aiBubbleBg:'#1a1b1e', bubbleBorder:'#2e3035',
+                            codeBg:'#141518', codeFg:'#d7dae0',
+                            sendBtnBg:'#e8c268', sendBtnHover:'#d4af50',
+                            toggleActive:'#e8c268' } },
+  hermesLight: { bg:'#fefcf7', fg:'#1a1610', panel:'#faf7f0', border:'#e0d8c8', red:'#b8860b',
+                advanced: { sidebarBg:'#faf7f0', inputBg:'#ffffff', inputBorder:'#e0d8c8',
+                            userBubbleBg:'#f3eee3', aiBubbleBg:'#fefcf7', bubbleBorder:'#e0d8c8',
+                            codeBg:'#f5f0e5', codeFg:'#1a1610',
+                            sendBtnBg:'#b8860b', sendBtnHover:'#996f08' } },
+  hermesSolarizedDark: { bg:'#0a252e', fg:'#9cc7c2', panel:'#08303a', border:'#1b4651', red:'#6fd3a6',
+                advanced: { sidebarBg:'#08303a', inputBg:'#0e323d', inputBorder:'#1b4651',
+                            userBubbleBg:'#0e323d', aiBubbleBg:'#0a2a34', bubbleBorder:'#16404c',
+                            codeBg:'#07212a', codeFg:'#9cc7c2',
+                            sendBtnBg:'#6fd3a6', sendBtnHover:'#57bd90' } },
+  hermesNavy: { bg:'#10141f', fg:'#e8eaf2', panel:'#141a2a', border:'#27304a', red:'#ffd700',
+                advanced: { sidebarBg:'#141a2a', inputBg:'#1a2133', inputBorder:'#27304a',
+                            userBubbleBg:'#1a2133', aiBubbleBg:'#121726', bubbleBorder:'#222b42',
+                            codeBg:'#0c101a', codeFg:'#e8eaf2',
+                            sendBtnBg:'#ffd700', sendBtnHover:'#e6c200' } },
 };
 
-const DEFAULT_THEME = 'dark';
+const DEFAULT_THEME = 'hermesCharcoal';   // HERMES: was 'dark'
 const LS_KEY = 'odysseus-theme';
 const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
 
@@ -39,7 +61,7 @@ const FONT_MAP = {
   sans: "system-ui, -apple-system, 'Segoe UI', sans-serif",
   serif: "Georgia, 'Times New Roman', serif",
 };
-const DEFAULT_FONT = 'mono';
+const DEFAULT_FONT = 'sans';              // HERMES: was 'mono'
 const DEFAULT_DENSITY = 'comfortable';
 const MAX_CUSTOM_THEMES = 8;
 

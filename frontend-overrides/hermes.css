@@ -157,12 +157,10 @@ body:not(.hermes-rail-fallback) #sidebar .icon-rail {
   background: var(--sidebar-bg, var(--panel));
 }
 body:not(.hermes-rail-fallback) #sidebar .icon-rail .rail-resize-handle { display: none; }
-/* The rail's divider is .rail-separator (style.css makes it a 20x1 horizontal
-   tick for the vertical rail; the plan's .icon-rail-divider has no DOM
-   counterpart here) — flip it vertical in strip mode */
-body:not(.hermes-rail-fallback) #sidebar .icon-rail .rail-separator {
-  width: 1px; height: 18px; margin: 0 4px;
-}
+/* The rail's one .rail-separator divided the search/new/delete action
+   cluster from the nav icons — that whole cluster is hidden in strip mode,
+   so the divider goes too (the fallback vertical rail keeps it). */
+body:not(.hermes-rail-fallback) #sidebar .icon-rail .rail-separator { display: none; }
 /* Strip must show inside the mobile drawer too — style.css hides .icon-rail
    <768px with display:none !important, hence the counter-!important here */
 @media (max-width: 768px) {

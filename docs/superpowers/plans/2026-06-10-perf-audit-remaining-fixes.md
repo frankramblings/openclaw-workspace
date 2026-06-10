@@ -19,6 +19,19 @@
 - Workspace backend .py changes need a `ai.openclaw.workspace` restart. ⚠ Restart also activates the 2026-06-08 productization backend (branding env is pinned in the plist, so behavior should be preserved — but verify chat works after).
 - Gateway `NODE_OPTIONS` takes effect at the next gateway restart. The nightly 4:00AM codex-log rotation (`ai.openclaw.codex-log-rotate`) restarts the gateway, so it self-activates overnight. Verify with: `ps eww $(pgrep -f 'dist/index.js gateway') | tr ' ' '\n' | grep NODE_OPTIONS`.
 
+**EXECUTION STATUS (2026-06-10, autonomous pass):**
+- ✅ Task 1 done (Signal-Desktop 2.1GB deleted — user's manual delete left 2.0GB behind, finished by rm; tmp caches + junk backups cleared, err.log truncated; 11 named config backups kept, total was only 208K so low-value anyway).
+- ⚠ Task 2 BLOCKED on sudo: the :8000 server is a deliberate system LaunchDaemon `/Library/LaunchDaemons/local.openclaw.httpserver.plist` (KeepAlive, serves ~/.openclaw/workspace on 0.0.0.0). Needs user decision + sudo; commands in the session summary.
+- ✅ Task 3 done (guard plist now `--if-over 150`, guard job reloaded).
+- ✅ Task 4 done (CLIProxyAPI stopped via brew services; port 8317 free).
+- ✅ Task 5 done (signal-cli wrapper DEFAULT_JVM_OPTS += -Xms32m -Xmx256m; backup kept; activates at next gateway restart).
+- ✅ Task 6 done with user sign-off (cortex hourly :00, granola hourly :15, both tz=America/New_York; daily-social-ideas disabled).
+- ✅ Task 7 done (Sunday VACUUM of memory/main.sqlite + state_5 size logging inside rotate-codex-logs.sh, while gateway is down; backup kept).
+- ✅ Task 8 done (skills.load.watch=false; config parses, hot-reload).
+- ✅ Tasks 9–10 done and deployed (commit b4930a5; CACHE_NAME now `gary-<asset-hash>`, deterministic).
+- ❌ Tasks 11–13 CANCELLED — not needed: the installed 2026.6.1 (commit 2e08f0f) already migrated `transcriptHasIdempotencyKey`/`findLatestEquivalentAssistantMessageId` to `streamSessionTranscriptLinesReverse` (bounded reverse scan, upstream #54296) and added an mtime-keyed message-count cache in session-utils.fs. The whole-file reads only existed in the stale 2026-04-25 clone the audit read. No build, no gateway restart required.
+- Cron diagnosis (added scope): historic errors = stale gpt-5.3-codex slug (already fixed) + timeouts. Live fixes applied: eod-1645 timeoutSeconds 180→600; token-guardrail jq glob `runs/*.jsonl`→`runs/*.jsonl*` (files renamed by cron migration). Reported, not fixed: entity-verify prompt shells out to signal-cli directly (daemon holds the account — rewrite to message tool); AM-brief nested `openclaw` tool failure; midday/control-tower "codex app-server client closed" (environmental).
+
 **Findings checked and REJECTED during planning (do not implement):**
 - "Enable SQLite WAL in task registry" — already enabled (`src/tasks/task-registry.store.sqlite.ts:450-452` sets WAL, `synchronous=NORMAL`, `busy_timeout`).
 - "Session store cache disabled on chat hot path" — false; `skipCache: true` appears only in tests.

@@ -46,9 +46,22 @@
 
   function pullServerOrder(strip) {
     fetch('/api/auth/settings').then(r => r.ok ? r.json() : null).then(s => {
-      const remote = s && s[SERVER_KEY];
-      if (!Array.isArray(remote) || !remote.length) return;
-      if (JSON.stringify(remote) === JSON.stringify(readOrder())) return;
+      if (!s) return;
+      const remote = s[SERVER_KEY];
+      const local = readOrder();
+      if (!Array.isArray(remote) || !remote.length) {
+        // Server has no order but this device does (e.g. arranged before the
+        // sync feature existed) — push local up so other devices follow.
+        if (local.length) {
+          fetch('/api/auth/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [SERVER_KEY]: local }),
+          }).catch(() => {});
+        }
+        return;
+      }
+      if (JSON.stringify(remote) === JSON.stringify(local)) return;
       try { localStorage.setItem(KEY, JSON.stringify(remote)); } catch (e) {}
       applyOrder(strip);
     }).catch(() => {});

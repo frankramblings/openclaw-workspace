@@ -63,6 +63,29 @@
     if (reopen) reopen.hidden = !collapsed;
   }
 
+  // Editor-compatible files open in the document editor (edits mirror back
+  // to the vault file); everything else falls to the read-only overlay.
+  // The backend's /api/vault/open is the single source of truth for what's
+  // compatible — a 400 here just means "not editable, use the overlay".
+  async function openInEditor(path) {
+    let data = null;
+    try {
+      const r = await fetch('/api/vault/open?path=' + encodeURIComponent(path),
+        { credentials: 'same-origin' });
+      if (!r.ok) return false;
+      data = await r.json();
+    } catch (_e) { return false; }
+    const dm = window.documentModule;
+    if (!dm || !dm.injectFreshDoc || !data || !data.id) return false;
+    dm.injectFreshDoc(data);
+    return true;
+  }
+
+  function openFile(path) {
+    if (/\.(png|jpe?g|gif|webp|svg)$/.test(path.toLowerCase())) { preview(path); return; }
+    openInEditor(path).then((ok) => { if (!ok) preview(path); });
+  }
+
   function preview(path) {
     const url = '/api/workspace/file?path=' + encodeURIComponent(path);
     const lower = path.toLowerCase();
@@ -98,7 +121,7 @@
     });
     pane.addEventListener('click', (e) => {
       const f = e.target.closest('.we-file');
-      if (f) preview(f.dataset.path);
+      if (f) openFile(f.dataset.path);
     });
     load(false);
   }

@@ -45,10 +45,19 @@ def test_open_creates_wrapper_doc(vault):
     assert "Week ahead." in doc["current_content"]
 
 
-def test_open_missing_or_non_md(vault):
+def test_open_missing_or_incompatible(vault):
     assert client.get("/api/vault/open?path=memory/nope.md").status_code == 404
-    vault("memory/data.txt", "x")
-    assert client.get("/api/vault/open?path=memory/data.txt").status_code == 400
+    # 2026-06-10: editor-compatible text types beyond .md open too (the
+    # workspace explorer routes them to the document editor).
+    vault("memory/data.txt", "plain text body")
+    res = client.get("/api/vault/open?path=memory/data.txt")
+    assert res.status_code == 200
+    doc = res.json()
+    assert doc["language"] == "text"
+    assert doc["title"] == "data.txt"          # non-md keeps its extension
+    # Unknown/binary extensions still refuse (explorer falls back to preview).
+    vault("memory/blob.bin", "x")
+    assert client.get("/api/vault/open?path=memory/blob.bin").status_code == 400
     assert client.get("/api/vault/open?path=../escape.md").status_code == 400
 
 

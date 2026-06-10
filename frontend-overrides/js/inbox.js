@@ -421,6 +421,47 @@
   function openOrRestore() {
     if (_Modals && _Modals.isMinimized(CHIP_ID)) _Modals.restore(CHIP_ID);
     else open();
+    // Opening the inbox acknowledges everything currently in it — same
+    // semantics as Email's markInboxAsSeen(): clears the dot now, and only
+    // genuinely new items make it reappear.
+    markInboxSeen();
+  }
+
+  // ── Sidebar unread dot (mirrors emailInbox.js _refreshUnreadCount) ─────────
+  // Items carry stable string ids (cardHtml uses it.id). We remember the set of
+  // ids the user has already opened the inbox on; the dot shows whenever the
+  // current feed contains any id that isn't in that seen-set, and clears when
+  // the inbox is opened. Poll cadence matches Email's (60s).
+  const _SEEN_KEY = 'workspace-inbox-seen-ids';
+  function _seenSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(_SEEN_KEY) || '[]')); }
+    catch (_) { return new Set(); }
+  }
+  async function _fetchItemIds() {
+    const r = await fetch(`${API}/api/items?limit=200`, { credentials: 'same-origin' });
+    const data = await r.json();
+    return (data.items || []).map((it) => String(it.id)).filter(Boolean);
+  }
+  async function refreshInboxDot() {
+    const dot = document.getElementById('inbox-unread-dot');
+    if (!dot) return;
+    try {
+      const ids = await _fetchItemIds();
+      const seen = _seenSet();
+      const hasNew = ids.some((id) => !seen.has(id));
+      dot.style.display = hasNew ? '' : 'none';
+    } catch (_) {
+      // Network/parse error — keep the dot hidden (default).
+      dot.style.display = 'none';
+    }
+  }
+  function markInboxSeen() {
+    // Store the current feed's ids as seen and clear the dot immediately.
+    const dot = document.getElementById('inbox-unread-dot');
+    if (dot) dot.style.display = 'none';
+    _fetchItemIds()
+      .then((ids) => { try { localStorage.setItem(_SEEN_KEY, JSON.stringify(ids)); } catch (_) {} })
+      .catch(() => {});
   }
 
   async function load(force) {
@@ -1019,6 +1060,13 @@
         if (!document.getElementById('rail-inbox')) injectRailButton();
       }).observe(rail, { childList: true });
     }
+    // Initial unread-dot check, then refresh every 60s (matches Email's dot).
+    // Skipped while the tab is hidden; refreshed on return.
+    refreshInboxDot();
+    setInterval(() => { if (!document.hidden) refreshInboxDot(); }, 60000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshInboxDot();
+    });
   }
 
   if (document.readyState === 'loading') {

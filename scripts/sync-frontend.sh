@@ -211,3 +211,17 @@ if [[ -f "$SETTINGS" ]] && ! grep -q "serpapi: 'SerpAPI'" "$SETTINGS"; then
   sedi "s|var _SEARCH_PROVIDER_LOGOS = {|var _SEARCH_PROVIDER_LOGOS = { serpapi: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/><path d=\"M8.5 11a2.5 2.5 0 0 1 5 0c0 1.5-1.2 2-2.5 2\"/></svg>',|" "$SETTINGS"
   echo "patched serpapi into settings.js provider maps"
 fi
+
+# --- Auto-version the service worker cache -----------------------------------
+# KEEP THIS BLOCK LAST: the hash must reflect frontend/ AFTER every override
+# copy, injection, rebrand, and sed patch above (Hermes tasks add more blocks —
+# they belong above this one). CACHE_NAME must change whenever any served asset
+# changes, or clients keep precached stale files (see feedback: never ?v= a
+# module script; bump CACHE_NAME instead — now automated).
+SW="$DEST/sw.js"
+if [[ -f "$SW" ]]; then
+  ASSET_HASH=$(find "$DEST" -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.webmanifest' \) ! -name 'sw.js' -print0 \
+    | sort -z | xargs -0 cat | md5 -q | cut -c1-10)
+  sedi "s/^const CACHE_NAME = .*/const CACHE_NAME = 'gary-${ASSET_HASH}';/" "$SW"
+  echo "stamped sw.js CACHE_NAME = gary-${ASSET_HASH}"
+fi

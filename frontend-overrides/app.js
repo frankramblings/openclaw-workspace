@@ -141,16 +141,19 @@ function initializeEventListeners() {
     _updateMsgCount();
   }
 
-  // Scrolling
-  el('chat-history').addEventListener('scroll', uiModule.debounce(() => {
+  // Scrolling — one listener: popups dismiss immediately (cheap single-query
+  // early-exit; open popups are rare), auto-scroll tracking stays debounced.
+  const _autoScrollCheck = uiModule.debounce(() => {
     const box = el('chat-history');
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
     uiModule.setAutoScroll(atBottom);
-  }, 100));
-  // Close all footer popups immediately on any scroll
+  }, 100);
   el('chat-history').addEventListener('scroll', () => {
-    document.querySelectorAll('.ctx-popup, .memory-used-detail, .msg-overflow-menu').forEach(p => p.remove());
-    document.querySelectorAll('.memory-used-pill').forEach(p => { p._openDetail = null; });
+    if (document.querySelector('.ctx-popup, .memory-used-detail, .msg-overflow-menu')) {
+      document.querySelectorAll('.ctx-popup, .memory-used-detail, .msg-overflow-menu').forEach(p => p.remove());
+      document.querySelectorAll('.memory-used-pill').forEach(p => { p._openDetail = null; });
+    }
+    _autoScrollCheck();
   }, { passive: true });
 
   el('chat-history').addEventListener('wheel', (e) => {

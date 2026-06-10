@@ -21,6 +21,7 @@ router = APIRouter()
 
 MAX_DEPTH = 6
 MAX_ENTRIES = 2000
+MAX_PER_DIR = 200  # one 9k-file dir must not starve its siblings (depth-first walk)
 PREVIEW_CAP = 512 * 1024  # bytes of text served inline
 CACHE_TTL = 10.0          # seconds; the 2014-mini disk hates re-walks
 SKIP_CONTENTS = {".git", "node_modules", "__pycache__", ".venv", ".versions"}
@@ -51,7 +52,8 @@ def git_branch(root: Path) -> str | None:
 
 
 def build_tree(root: Path, max_depth: int = MAX_DEPTH,
-               max_entries: int = MAX_ENTRIES) -> tuple[list[dict], bool]:
+               max_entries: int = MAX_ENTRIES,
+               max_per_dir: int = MAX_PER_DIR) -> tuple[list[dict], bool]:
     """Nested {name,path,type,size,children} nodes + truncated flag.
 
     Dirs sort before files (case-insensitive). Entries in SKIP_CONTENTS are
@@ -66,8 +68,8 @@ def build_tree(root: Path, max_depth: int = MAX_DEPTH,
             entries = sorted(d.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
         except OSError:
             return nodes
-        for p in entries:
-            if state["count"] >= max_entries:
+        for i, p in enumerate(entries):
+            if i >= max_per_dir or state["count"] >= max_entries:
                 state["truncated"] = True
                 break
             state["count"] += 1

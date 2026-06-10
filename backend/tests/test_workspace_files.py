@@ -106,3 +106,21 @@ def test_dot_dirs_listed_but_not_walked(ws):
     dot = _find(tree, ".attachments")
     assert dot["type"] == "dir"
     assert dot["children"] == []
+
+
+def test_per_dir_cap_preserves_siblings(ws):
+    """One huge dir must not starve its siblings: each dir lists at most
+    max_per_dir children, so breadth always survives a depth-first walk."""
+    big = ws / "aaa_big"
+    big.mkdir()
+    for i in range(30):
+        (big / f"f{i:03}.txt").write_text("x")
+    (ws / "zzz_after").mkdir()
+    (ws / "zzz_after" / "kept.md").write_text("y")
+    tree, truncated = wf.build_tree(ws, max_per_dir=10)
+    assert truncated is True
+    big_node = _find(tree, "aaa_big")
+    assert len(big_node["children"]) == 10
+    after = _find(tree, "zzz_after")
+    assert after is not None
+    assert _find(after["children"], "kept.md") is not None

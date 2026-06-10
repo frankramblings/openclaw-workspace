@@ -22,6 +22,7 @@ const FOLDER_MAX_VISIBLE = 5;
 let _showAllSessions = false;
 let _expandedFolders = {};  // folderName -> true if "show more" clicked
 let _sortMode = Storage.get('odysseus-session-sort') || 'active'; // default to last active
+let _hermesFilter = ''; // HERMES: inline sidebar filter (lowercased substring)
 let _autoCreateInProgress = false; // guard against recursive auto-create
 const _INCOGNITO_SESSIONS_KEY = 'ody-incognito-sessions'; // sessionStorage key for incognito session IDs
 const _isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -718,6 +719,12 @@ function _renderSessionListImpl() {
   // Get saved order from localStorage
   const savedOrder = Storage.get('session-order');
   let orderedSessions = sessions.filter(s => !s.archived && s.folder !== 'Assistant' && !_isIncognitoSession(s.id) && (s.name || '').trim() !== 'Nobody' && (s.name || '').trim() !== 'Incognito');
+
+  // HERMES: inline filter narrows the list in place
+  if (_hermesFilter) {
+    orderedSessions = orderedSessions.filter(s =>
+      (s.name || '').toLowerCase().includes(_hermesFilter));
+  }
 
   if (savedOrder) {
     try {
@@ -2203,6 +2210,15 @@ function _initAllDropdowns() {
   });
   _initDropdownDismiss();
   _initBulkSelect();
+
+  // HERMES: inline sidebar filter input
+  const _hermesFilterEl = document.getElementById('hermes-session-filter');
+  if (_hermesFilterEl) {
+    _hermesFilterEl.addEventListener('input', () => {
+      _hermesFilter = _hermesFilterEl.value.trim().toLowerCase();
+      renderSessionList();
+    });
+  }
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _initAllDropdowns);

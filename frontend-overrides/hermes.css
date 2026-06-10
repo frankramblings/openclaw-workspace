@@ -183,3 +183,32 @@ body.hermes-rail-fallback #sidebar .icon-rail {
   border-right: 1px solid var(--border); border-bottom: none;
 }
 body.hermes-rail-fallback #sidebar { margin-left: 48px; }
+
+/* ── New-conversation pill + filter row ── */
+.hermes-new-pill {
+  border: 1px solid var(--border);
+  border-radius: var(--hermes-pill);
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+  color: var(--red);
+  justify-content: center;
+  font-weight: 600;
+  margin: 8px 8px 4px;
+  padding: 7px 12px;
+}
+.hermes-new-pill:hover { background: color-mix(in srgb, var(--red) 18%, transparent); }
+.hermes-filter-row {
+  display: flex; align-items: center; gap: 6px; margin: 2px 8px 6px;
+}
+.hermes-filter-row input {
+  flex: 1; min-width: 0;
+  background: var(--input-bg, var(--panel));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 12px; padding: 6px 9px;
+}
+.hermes-hotkey {
+  font-size: 10px; color: var(--hermes-faint);
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+  font-family: var(--hermes-mono);
+}

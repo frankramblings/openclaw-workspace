@@ -139,17 +139,15 @@ pre, code, .hljs,
   background: var(--green, #50fa7b);
 }
 
-/* ── HERMES brand-on-hamburger-row: the .sidebar-header now sits ABOVE the
-   strip (first sidebar child) so the brand + status dot fill the dead space
-   right of the floating #hamburger-btn. Vendor right-aligns the brand
-   (justify-content:flex-end) and offsets the title -10px; sit it left
-   instead, just past the header's 40px hamburger clearance. ── */
-body:not(.hermes-rail-fallback) #sidebar .sidebar-header {
-  justify-content: flex-start;
-  border-bottom: none;
-}
-body:not(.hermes-rail-fallback) #sidebar .sidebar-header .sidebar-brand-title {
-  left: 0;
+/* ── HERMES brand-on-hamburger-row: the .sidebar-header sits ABOVE the strip
+   (first sidebar child) so the brand + status dot share the floating-hamburger
+   row (vendor right-alignment kept). The strip below no longer needs its own
+   hamburger clearance — the header row provides it — so undo workspace.css's
+   48px !important .icon-rail top padding (that rule still serves the
+   hermes-rail-fallback vertical column, which IS overlapped by the button).
+   No safe-area inset here: the header above already carries it. ── */
+body:not(.hermes-rail-fallback) #sidebar .icon-rail {
+  padding-top: 4px !important;
 }
 
 /* ── HERMES icon strip: the rail, horizontal, inside the sidebar ── */

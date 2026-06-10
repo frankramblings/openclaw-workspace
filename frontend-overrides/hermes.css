@@ -212,3 +212,17 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
   border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
   font-family: var(--hermes-mono);
 }
+
+/* ── Date-group headers + Hermes row states ── */
+.hermes-group-header {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--hermes-faint);
+  padding: 12px 12px 4px;
+  user-select: none;
+}
+/* Real current-row class is .active-session (see _postRenderSessionList) */
+#session-list .list-item.active-session {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  border-left: 2px solid var(--red);
+}

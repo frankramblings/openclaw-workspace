@@ -21,7 +21,7 @@ const SIDEBAR_MAX_VISIBLE = 10;
 const FOLDER_MAX_VISIBLE = 5;
 let _showAllSessions = false;
 let _expandedFolders = {};  // folderName -> true if "show more" clicked
-let _sortMode = Storage.get('odysseus-session-sort') || 'active'; // default to last active
+let _sortMode = Storage.get('odysseus-session-sort') || 'date'; // HERMES: date-grouped default (was 'active')
 let _hermesFilter = ''; // HERMES: inline sidebar filter (lowercased substring)
 let _autoCreateInProgress = false; // guard against recursive auto-create
 const _INCOGNITO_SESSIONS_KEY = 'ody-incognito-sessions'; // sessionStorage key for incognito session IDs
@@ -231,6 +231,42 @@ function buildFolderSubmenu(sessionId, currentFolder, dropdown) {
 }
 
 /** Create a single session list-item element. */
+// HERMES: bucket sessions for the date-grouped sidebar. Pinned (is_important)
+// first, then by recency using the same timestamp the 'active' sort uses.
+function _hermesDateBuckets(list) {
+  const buckets = [
+    ['★ PINNED', []], ['TODAY', []], ['YESTERDAY', []],
+    ['THIS WEEK', []], ['LAST WEEK', []], ['EARLIER', []],
+  ];
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const yestStart = todayStart - dayMs;
+  // Week starts Monday, local time.
+  const dow = (now.getDay() + 6) % 7;
+  const weekStart = todayStart - dow * dayMs;
+  const lastWeekStart = weekStart - 7 * dayMs;
+  // Mirrors the 'active' sort's field order (last_message_at → updated_at →
+  // created_at, ISO strings), but also tolerates the numeric s.updated /
+  // s.created epoch fields some code paths carry (see ~line 1411).
+  const ts = (s) => {
+    const v = s.last_message_at || s.updated_at || s.created_at || s.updated || s.created || 0;
+    const t = typeof v === 'number' ? v : new Date(v).getTime();
+    return Number.isFinite(t) ? t : 0;
+  };
+  const sorted = [...list].sort((a, b) => ts(b) - ts(a));
+  for (const s of sorted) {
+    if (s.is_important) { buckets[0][1].push(s); continue; }
+    const t = ts(s);
+    if (t >= todayStart) buckets[1][1].push(s);
+    else if (t >= yestStart) buckets[2][1].push(s);
+    else if (t >= weekStart) buckets[3][1].push(s);
+    else if (t >= lastWeekStart) buckets[4][1].push(s);
+    else buckets[5][1].push(s);
+  }
+  return buckets;
+}
+
 function createSessionItem(s) {
   const div = document.createElement('div');
   div.className = 'list-item session-item';
@@ -749,6 +785,23 @@ function _renderSessionListImpl() {
   document.querySelectorAll('.session-dropdown, .folder-submenu').forEach(d => d.remove());
 
   const _frag = document.createDocumentFragment();
+
+  // HERMES: date-grouped mode — PINNED/TODAY/.../EARLIER headers, no
+  // SIDEBAR_MAX_VISIBLE cap (the groups keep the list scannable).
+  if (_sortMode === 'date') {
+    for (const [label, arr] of _hermesDateBuckets(orderedSessions)) {
+      if (!arr.length) continue;
+      const h = document.createElement('div');
+      h.className = 'hermes-group-header';
+      h.textContent = label;
+      _frag.appendChild(h);
+      arr.forEach(s => _frag.appendChild(createSessionItem(s)));
+    }
+    list.innerHTML = '';
+    list.appendChild(_frag);
+    _postRenderSessionList(list);
+    return;
+  }
 
   // ── Flat sort modes: ignore folders, show one ordered list. ──
   // Folders are only shown when _sortMode === 'group' (or null/empty

@@ -359,12 +359,11 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
 }
 .agent-thread-node .agent-thread-header { font-size: 12px; }
 .agent-thread-node .agent-thread-tool { font-family: var(--hermes-mono); }
-/* Truncate command preview line inside the collapsed pill */
-.agent-thread-cmd {
-  color: var(--hermes-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 100%;
-}
+/* No nowrap/ellipsis here: in this app .agent-thread-cmd lives inside
+   .agent-thread-content, which is display:none until the card is .open —
+   the command is ONLY visible expanded, where truncation would lose it.
+   style.css's pre-wrap stays in effect. */
+.agent-thread-cmd { color: var(--hermes-muted); }
 .agent-tool-output summary { font-size: 11px; color: var(--hermes-muted); cursor: pointer; }
 
 /* ── Attachment cards note ───────────────────────────────────────────────── */

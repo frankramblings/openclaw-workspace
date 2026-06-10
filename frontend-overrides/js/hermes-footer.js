@@ -53,6 +53,20 @@
     }
     mirrorDot('inbox-unread-dot', 'rail-inbox');
     mirrorDot('email-unread-dot', 'rail-email');
+
+    // CHATS always starts open: drop any persisted collapsed flag and
+    // un-collapse (section-management runs before us and may have applied
+    // it). In-session collapse still works; it just never persists.
+    try {
+      const KEY = 'section-collapsed';
+      const st = JSON.parse(localStorage.getItem(KEY) || '{}');
+      if (st['sessions-section']) {
+        delete st['sessions-section'];
+        localStorage.setItem(KEY, JSON.stringify(st));
+      }
+    } catch (e) { /* corrupt state — section default is open anyway */ }
+    const sess = document.getElementById('sessions-section');
+    if (sess) sess.classList.remove('collapsed');
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();

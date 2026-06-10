@@ -406,3 +406,11 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
   width: 6px; height: 6px; border-radius: 50%;
   background: var(--green, #50fa7b);
 }
+
+/* ── Strip leftovers from the Odysseus rail (user feedback 2026-06-10) ──
+   Scoped to strip mode; the vertical-rail fallback keeps them all. */
+body:not(.hermes-rail-fallback) #rail-search-btn,     /* filter row + Ctrl+K cover it */
+body:not(.hermes-rail-fallback) #rail-delete-session, /* delete lives in each chat row's menu */
+body:not(.hermes-rail-fallback) #rail-settings,       /* its handler just scrolls the sidebar; the user-bar gear is the real Settings */
+body:not(.hermes-rail-fallback) #rail-gateway         /* duplicate of the gw dot beside the brand; the fixed banner covers attention states (incl. mobile, where the rail dot never showed pre-Hermes either) */
+{ display: none; }

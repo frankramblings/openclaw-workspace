@@ -51,6 +51,10 @@ tooling is present and enabled, so a fresh install only shows what you can use.
 A gateway-monitor banner shows when the brain is restarting or down, and a stop
 button aborts a running turn mid-stream.
 
+The UI wears a Hermes-style skin: 4 theme colorways (Charcoal default), a
+date-grouped conversation sidebar, and a read-only workspace file explorer
+pane (adapted from [nesquena/hermes-webui](https://github.com/nesquena/hermes-webui), MIT).
+
 ## Requirements
 
 - A running **OpenClaw** install with its gateway up (default `ws://127.0.0.1:18789`).

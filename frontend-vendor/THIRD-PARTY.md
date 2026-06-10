@@ -26,3 +26,12 @@ respective owners.
 
 If you redistribute this project, keep this file alongside the assets. To refresh
 a library, replace the file with the upstream minified build of the same name.
+
+## hermes-webui (design reference)
+
+The "Hermes" visual style (theme palettes, component shapes, workspace
+explorer layout) is adapted from
+[nesquena/hermes-webui](https://github.com/nesquena/hermes-webui)
+(MIT License), commit `e8d71a2`. No source files are copied or imported at
+runtime — palette values and layout conventions were adapted into
+`frontend-overrides/hermes.css` and `frontend-overrides/js/theme.js`.

@@ -10,8 +10,11 @@
 
 /* ── Fresh-install first paint = Hermes Charcoal ──
    Saved themes win automatically: the index.html boot script and
-   theme.js applyColors() set these vars as INLINE styles on <html>,
-   which beat any stylesheet. This block only paints first-run. */
+   theme.js applyColors() set the COLOR vars as INLINE styles on
+   <html>, which beat any stylesheet — so the colors below only
+   paint first-run. --font-family is different: it applies to every
+   user who never picked a font (the new sans default), since only
+   an explicit font choice sets it inline. */
 :root {
   --bg: #1e1f22;
   --fg: #d7dae0;
@@ -34,5 +37,8 @@
 pre, code, .hljs,
 .agent-thread-cmd, .agent-tool-output pre,
 .hermes-mono {
-  font-family: var(--hermes-mono) !important;
+  /* No !important: this file loads after style.css, so equal-specificity
+     rules here already win; keeping it overridable lets later component
+     rules opt out without escalation. */
+  font-family: var(--hermes-mono);
 }

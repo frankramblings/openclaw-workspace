@@ -293,7 +293,13 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
   cursor: pointer; font-family: var(--hermes-mono);
 }
 .we-file:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
-.we-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.we-name {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  /* min-width:0 lets a flex child actually shrink below content size —
+     without it long names push the leader+size clean off the pane edge */
+  min-width: 0;
+}
+.we-size { flex-shrink: 0; }
 .we-file::after { content: ''; flex: 1; border-bottom: 1px dotted var(--hermes-faint); }
 .we-size { color: var(--hermes-faint); font-size: 10px; }
 .we-empty { color: var(--hermes-faint); padding: 12px; font-size: 11px; }
@@ -373,3 +379,9 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
 .msg .attach-cards {
   font-size: 11px; color: var(--hermes-faint); font-family: var(--hermes-mono);
 }
+
+/* ── De-duplication pass (post-adoption cleanup) ──
+   The icon strip already carries every one of these destinations: */
+#tools-section { display: none !important; }   /* Brain/Calendar/Research/Library/Notes/Cron/Theme rows */
+#sidebar-search-btn { display: none; }         /* strip 🔍 + the filter row cover search; Ctrl+K still binds */
+#rail-new-session { display: none; }           /* the + New conversation pill covers it */

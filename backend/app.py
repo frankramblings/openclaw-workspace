@@ -10,8 +10,10 @@ Run:  uvicorn backend.app:app --reload --port 8800   (from the repo root)
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import json
+import mimetypes
 import re
 from contextlib import asynccontextmanager
 
@@ -32,6 +34,7 @@ from .notes import router as notes_router
 from .research import router as research_router
 from .settings_status import router as settings_router
 from .skills import router as skills_router
+from .uploads import ATTACH_DIR
 from .uploads import router as uploads_router
 
 @asynccontextmanager
@@ -234,10 +237,49 @@ async def _late_reply(session_key: str, brain_message: str,
     return None
 
 
+def _resolve_attachments(raw: str) -> list[dict]:
+    """Turn the composer's posted `attachments` (a JSON array of upload ids, each
+    a filename under ATTACH_DIR) into the chat.send attachment shape the gateway
+    accepts: {type, mimeType, fileName, content(base64)}. Only image/* files are
+    forwarded — the gateway sniffs the bytes and drops non-images, and gpt-5.5
+    takes them as inline vision blocks (large ones it offloads to media refs the
+    agent resolves). Silently skips anything missing/unreadable so a bad id never
+    breaks the turn."""
+    if not raw:
+        return []
+    try:
+        ids = json.loads(raw)
+    except Exception:  # noqa: BLE001 - malformed field → no attachments
+        return []
+    out: list[dict] = []
+    for fid in ids if isinstance(ids, list) else []:
+        if not isinstance(fid, str):
+            continue
+        safe = "".join(c for c in fid if c.isalnum() or c in "-_.")  # path-traversal guard
+        path = ATTACH_DIR / safe
+        if not path.exists() or not path.is_file():
+            continue
+        mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        if not mime.startswith("image/"):
+            continue  # gateway accepts only image/* attachments
+        try:
+            data = path.read_bytes()
+        except Exception:  # noqa: BLE001 - unreadable file → skip it
+            continue
+        out.append({
+            "type": "image",
+            "mimeType": mime,
+            "fileName": path.name,
+            "content": base64.b64encode(data).decode("ascii"),
+        })
+    return out
+
+
 @app.post("/api/chat_stream")
 async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                       use_web: str = Form(default=""),
                       allow_web_search: str = Form(default=""),
+                      attachments: str = Form(default=""),
                       active_doc_id: str = Form(default="")):
     """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE.
 
@@ -252,6 +294,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     rec = sessions_store.get(session) if session else None
     session_key = rec["sessionKey"] if rec else config.web_session_key()
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
+    chat_attachments = _resolve_attachments(attachments)  # image uploads → vision
 
     # Draft mode: chat.js posts active_doc_id whenever the document panel is
     # open (auto-saving the doc first). Snapshot now (the user's undo), wrap
@@ -301,6 +344,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             _ACTIVE_RUNS[session_key] = run_info
             async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
                                                   model_ref=_model_ref(rec),
+                                                  attachments=chat_attachments,
                                                   run_info=run_info):
                 if "[DONE]" in chunk:
                     continue  # hold DONE until the title settles, then send our own

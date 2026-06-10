@@ -549,3 +549,53 @@
 .inbox-asana-comments-h { font-size: 0.78rem; font-weight: 600; opacity: 0.6;
   text-transform: uppercase; letter-spacing: 0.03em; padding: 4px 2px;
   border-top: 1px solid var(--border-color, rgba(128,128,128,0.18)); }
+
+/* --- Copy/paste-able emoji ------------------------------------------------
+   Chat emoji render as a monochrome CSS-mask box (.emoji, see style.css) which
+   has NO text content, so selecting a message and copying dropped every emoji.
+   markdown.js now nests the real Unicode char as `.emoji-char` inside the box;
+   we keep it in the DOM and in the selection (so copy/paste yields the real
+   emoji) while making it take zero visual space and stay invisible behind the
+   mask. opacity:0 reliably hides even color-font glyphs; width:0 + overflow
+   keeps it from disturbing the icon's layout. */
+.emoji { position: relative; }
+.emoji > .emoji-char {
+  display: inline-block;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  vertical-align: top;
+  /* stay selectable/copyable even though it's visually collapsed */
+  -webkit-user-select: text;
+          user-select: text;
+}
+
+/* ── Inbox sidebar unread dot ──────────────────────────────────────────────
+   Mirror the Email unread dot exactly: the base .sidebar-notif-dot rule (in
+   style.css) already gives size/colour/right-alignment; here we add the same
+   soft breathing glow + corner nudge that #email-unread-dot gets, reusing the
+   email-notif-breathe keyframes defined in style.css so the two dots are
+   visually identical. */
+#inbox-unread-dot.sidebar-notif-dot {
+  animation: email-notif-breathe 2.2s ease-in-out infinite;
+  margin-right: 4px;
+  position: relative;
+  top: 0.1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  #inbox-unread-dot.sidebar-notif-dot { animation: none; }
+}
+
+/* --- Agent-shared images (MEDIA: lines / pasted data-URLs) -----------------
+   markdown.js lifts the agent's image-share attempts out of the reply text and
+   emits these. Keep them tidy: bounded, rounded, click-to-open via the cursor. */
+.shared-image { margin: 8px 0; }
+.shared-image img {
+  max-width: min(420px, 100%);
+  max-height: 420px;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, rgba(128, 128, 128, 0.18));
+  display: block;
+  cursor: zoom-in;
+}

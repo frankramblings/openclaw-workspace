@@ -10,6 +10,7 @@ v1 opens a fresh gateway WS per chat turn. Simple and correct for a single user.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 
@@ -68,82 +69,201 @@ async def _recv_json(ws):
     return json.loads(raw)
 
 
+# --- Warm gateway connection (Option A) -------------------------------------
+# v1 opened a fresh authed WS per chat turn — simple, but every turn paid the
+# TCP+WS upgrade, connect.challenge wait, connect/auth round trip, AND a model
+# re-pin BEFORE the first token. We now keep ONE long-lived authed socket and
+# reuse it across turns. To dodge the hard part (multiplexing many turns over
+# one socket) we keep it dead simple: a single warm socket guarded by a lock —
+# at most one turn uses it at a time; a turn that finds it busy or dead just
+# opens a throwaway fresh socket exactly like before. So the worst case is
+# identical to v1, and the common case (one user, one turn at a time) skips the
+# whole handshake. See the design discussion in the session notes.
+class _Warm:
+    ws = None
+    lock = asyncio.Lock()
+
+
+_warm = _Warm()
+# session_key -> model_ref we last applied. The gateway stores modelOverride
+# server-side (persists across connections), so we only re-pin on change. Cleared
+# whenever we (re)establish the warm socket, since a drop may follow a gateway
+# restart that reset session state.
+_pinned: dict[str, str] = {}
+
+
+class _ChatSendRejected(Exception):
+    """chat.send returned ok:false — a logical rejection, not a transport fault
+    (so it must NOT trigger the fresh-socket retry)."""
+
+    def __init__(self, ack):
+        super().__init__(str(ack))
+        self.ack = ack
+
+
+def _ws_alive(ws) -> bool:
+    if ws is None:
+        return False
+    try:
+        return ws.state.name == "OPEN"
+    except Exception:  # noqa: BLE001 - unknown/legacy state shape → treat as dead
+        return False
+
+
+def _invalidate_warm(ws) -> None:
+    """Forget the warm socket if `ws` is it (after an error / detected death), so
+    the next turn reconnects and re-pins."""
+    if _warm.ws is ws:
+        _warm.ws = None
+        _pinned.clear()
+
+
+async def _connect_and_auth():
+    """Open a socket and complete the connect/auth handshake; return the live ws.
+    Raises on a rejected handshake (caller maps it to an SSE error)."""
+    ws = await websockets.connect(config.gateway_ws_url(), max_size=None,
+                                  open_timeout=30,
+                                  # A slow/cold codex turn can take >20s with no
+                                  # frames; default client pings would trip a
+                                  # keepalive timeout and kill the WS mid-turn.
+                                  ping_interval=None)
+    await _wait_for_challenge(ws)
+    connect_id = uuid.uuid4().hex
+    await ws.send(json.dumps({"type": "req", "id": connect_id,
+                              "method": "connect", "params": _connect_params()}))
+    hello = await _await_response(ws, connect_id)
+    if not hello.get("ok"):
+        with contextlib.suppress(Exception):
+            await ws.close()
+        raise RuntimeError(f"gateway connect failed: {hello}")
+    return ws
+
+
+async def _open_turn(message, session_key, model_ref, attachments, run_info,
+                     allow_warm: bool):
+    """Acquire a connection (warm if free+alive, else fresh), pin the model only
+    if it changed, send chat.send. Returns (ws, run_id, use_warm) on success — and
+    when use_warm is True the CALLER owns _warm.lock and must release it. On ANY
+    failure this cleans up after itself (drops a bad warm socket, releases the
+    lock, closes the socket) and re-raises, so the caller's retry/handlers start
+    from a clean slate."""
+    ws = None
+    use_warm = False
+    holds_lock = False
+    try:
+        if allow_warm and _ws_alive(_warm.ws) and not _warm.lock.locked():
+            await _warm.lock.acquire()          # immediate: lock was free
+            holds_lock = True
+            if _ws_alive(_warm.ws):
+                ws, use_warm = _warm.ws, True
+            else:                               # died between check and acquire
+                _warm.lock.release()
+                holds_lock = False
+        if ws is None:
+            ws = await _connect_and_auth()
+            # Promote this fresh socket to the warm slot if nobody else holds it.
+            if not _warm.lock.locked():
+                await _warm.lock.acquire()
+                holds_lock = use_warm = True
+                _warm.ws = ws
+                _pinned.clear()                 # new connection → re-pin as needed
+
+        # Pin this session's model, but only when it actually changed (the pin is
+        # server-persistent). sessions.patch is the documented mutation; a brand-
+        # new chat has no entry yet, so fall back to the sessions.create upsert.
+        if model_ref and _pinned.get(session_key) != model_ref:
+            try:
+                res = await _request(ws, "sessions.patch",
+                                     {"key": session_key, "model": model_ref})
+                if not res.get("ok"):
+                    await _request(ws, "sessions.create",
+                                   {"key": session_key, "model": model_ref})
+                _pinned[session_key] = model_ref
+            except Exception:  # noqa: BLE001 - fall back to the default model
+                pass
+
+        send_params = {
+            "sessionKey": session_key,
+            "message": message,
+            "deliver": False,            # don't also push to Signal/etc.
+            "idempotencyKey": uuid.uuid4().hex,
+        }
+        # Image uploads: the gateway accepts {type,mimeType,fileName,content}
+        # base64 attachments, sniffs them, and feeds vision-capable models
+        # (gpt-5.5) inline image blocks (offloading large ones to media refs).
+        if attachments:
+            send_params["attachments"] = attachments
+        send_id = uuid.uuid4().hex
+        await ws.send(json.dumps({"type": "req", "id": send_id,
+                                  "method": "chat.send", "params": send_params}))
+        ack = await _await_response(ws, send_id)
+        if not ack.get("ok"):
+            raise _ChatSendRejected(ack)
+        run_id = (ack.get("payload") or {}).get("runId")
+        if run_info is not None:
+            run_info["runId"] = run_id
+        return ws, run_id, use_warm
+    except BaseException:
+        # Failed before handing the ws back: drop a bad warm socket, release our
+        # lock, and close the socket so nothing leaks.
+        if use_warm or _warm.ws is ws:
+            _invalidate_warm(ws)
+        if holds_lock:
+            _warm.lock.release()
+        if ws is not None:
+            with contextlib.suppress(Exception):
+                await ws.close()
+        raise
+
+
 async def stream_turn(message: str, session_key: str | None = None,
                       model_ref: str | None = None,
+                      attachments: list | None = None,
                       run_info: dict | None = None):
     """Async generator yielding SSE strings for one user turn.
 
-    Connects, authenticates (shared-password / allowInsecureAuth — no device
-    signature needed), optionally pins this session's model, sends chat.send,
-    then translates gateway events to SSE until the turn's lifecycle ends.
+    Reuses a warm authed socket when possible (see `_Warm`), otherwise opens a
+    fresh one. A warm socket idle since the last turn may be half-open, so if the
+    prelude (pin/send/ack) fails on it with a transport error we retry ONCE on a
+    fresh connection before giving up.
 
-    `model_ref` (e.g. "openai/gpt-5.5") sets THIS session's modelOverride via
-    sessions.create before the turn — so the web picker actually switches the
-    model for this chat only. Agent `main`'s default (shared with Signal) is
-    never touched; the runtime reads sessionEntry.modelOverride || configDefault.
+    `model_ref` (e.g. "openai/gpt-5.5") sets THIS session's modelOverride — so the
+    web picker actually switches the model for this chat only. Agent `main`'s
+    default (shared with Signal) is never touched.
     """
     session_key = session_key or config.session_key()
-    url = config.gateway_ws_url()
-
+    ws = None
+    use_warm = False
     try:
-        async with websockets.connect(url, max_size=None,
-                                       open_timeout=30,
-                                       # A slow/cold codex turn can take >20s with no
-                                       # frames; default client pings would trip a
-                                       # keepalive timeout and kill the WS mid-turn.
-                                       ping_interval=None) as ws:
-            # 1. Handshake: wait for the challenge, then send connect.
-            await _wait_for_challenge(ws)
-            connect_id = uuid.uuid4().hex
-            await ws.send(json.dumps({
-                "type": "req", "id": connect_id,
-                "method": "connect", "params": _connect_params(),
-            }))
-            hello = await _await_response(ws, connect_id)
-            if not hello.get("ok"):
-                yield _sse({"type": "tool_output", "tool": "bridge",
-                            "output": f"gateway connect failed: {hello}", "exit_code": 1})
-                yield _sse("[DONE]")
-                return
+        try:
+            ws, run_id, use_warm = await _open_turn(
+                message, session_key, model_ref, attachments, run_info,
+                allow_warm=True)
+        except (websockets.ConnectionClosed, OSError, asyncio.TimeoutError):
+            # Warm socket was stale/dead (or a fresh connect raced a gateway
+            # blip): retry once on a guaranteed-fresh connection.
+            ws, run_id, use_warm = await _open_turn(
+                message, session_key, model_ref, attachments, run_info,
+                allow_warm=False)
 
-            # 1b. Pin this session's model (best-effort; never block the turn).
-            # sessions.patch is the documented mutation for modelOverride; a
-            # fresh chat may have no session entry yet, so fall back to the
-            # sessions.create upsert when patch rejects the key.
-            if model_ref:
-                try:
-                    res = await _request(ws, "sessions.patch",
-                                         {"key": session_key, "model": model_ref})
-                    if not res.get("ok"):
-                        await _request(ws, "sessions.create",
-                                       {"key": session_key, "model": model_ref})
-                except Exception:  # noqa: BLE001 - fall back to the default model
-                    pass
-
-            # 2. Send the user message.
-            send_id = uuid.uuid4().hex
-            await ws.send(json.dumps({
-                "type": "req", "id": send_id, "method": "chat.send",
-                "params": {
-                    "sessionKey": session_key,
-                    "message": message,
-                    "deliver": False,            # don't also push to Signal/etc.
-                    "idempotencyKey": uuid.uuid4().hex,
-                },
-            }))
-            ack = await _await_response(ws, send_id)
-            if not ack.get("ok"):
-                yield _sse({"type": "tool_output", "tool": "bridge",
-                            "output": f"chat.send rejected: {ack}", "exit_code": 1})
-                yield _sse("[DONE]")
-                return
-            run_id = (ack.get("payload") or {}).get("runId")
-            if run_info is not None:
-                run_info["runId"] = run_id
-
-            # 3. Relay events for this run until lifecycle end.
+        # Relay events for this run until lifecycle end.
+        try:
             async for chunk in _relay_events(ws, run_id):
                 yield chunk
+        finally:
+            # A mid-stream death makes the warm socket unusable; drop it so the
+            # next turn reconnects. Then keep the socket open ONLY if it's still
+            # the live warm one; release the lock; close throwaways.
+            if not _ws_alive(ws):
+                _invalidate_warm(ws)
+            if use_warm:
+                _warm.lock.release()
+            if ws is not None and _warm.ws is not ws:
+                with contextlib.suppress(Exception):
+                    await ws.close()
+    except _ChatSendRejected as rej:
+        yield _sse({"type": "tool_output", "tool": "bridge",
+                    "output": f"chat.send rejected: {rej.ack}", "exit_code": 1})
     except websockets.ConnectionClosed:
         from . import monitor  # local import: monitor imports bridge helpers
         yield _sse({"type": "tool_output", "tool": "bridge",
@@ -153,6 +273,37 @@ async def stream_turn(message: str, session_key: str | None = None,
         yield _sse({"type": "tool_output", "tool": "bridge",
                     "output": f"bridge error: {exc!r}", "exit_code": 1})
     yield _sse("[DONE]")
+
+
+async def _warm_request(method: str, params: dict | None = None,
+                        timeout: float = 30.0) -> dict:
+    """One gateway request/response, preferring the warm socket (skips the
+    connect+auth handshake) and falling back to a fresh authed socket when the
+    warm one is busy or dead. Returns the response frame.
+
+    This is what makes the post-turn late-reply poll cheap: it fires the same
+    chat.history request up to 5× and used to open a brand-new authed socket
+    each time — brutal on a swap-bound host. Now those polls ride the socket the
+    turn just finished on."""
+    if _ws_alive(_warm.ws) and not _warm.lock.locked():
+        await _warm.lock.acquire()
+        try:
+            if _ws_alive(_warm.ws):
+                return await asyncio.wait_for(
+                    _request(_warm.ws, method, params or {}), timeout)
+        except (websockets.ConnectionClosed, OSError, asyncio.TimeoutError):
+            _invalidate_warm(_warm.ws)  # bad warm socket → fall through to fresh
+        finally:
+            _warm.lock.release()
+    # Fresh fallback (also the path when the warm socket was busy with a turn).
+    async with asyncio.timeout(timeout):
+        async with websockets.connect(config.gateway_ws_url(), max_size=None,
+                                      open_timeout=30, ping_interval=None) as ws:
+            await _wait_for_challenge(ws)
+            hello = await _request(ws, "connect", _connect_params())
+            if not hello.get("ok"):
+                raise RuntimeError(f"gateway connect failed: {hello}")
+            return await _request(ws, method, params or {})
 
 
 async def run_text(prompt: str, session_key: str) -> str:
@@ -187,25 +338,18 @@ async def fetch_history(session_key: str, limit: int = 200) -> dict:
     history view renders conversation TEXT only, so we keep user strings and
     assistant text blocks and drop toolCall/toolResult messages (live tool cards
     are a streaming concern, not part of the saved transcript view).
+
+    Routed through the warm socket when it's free (so the late-reply poll and
+    chat-open history loads stop opening a fresh socket each time).
     """
-    url = config.gateway_ws_url()
-    async with websockets.connect(url, max_size=None, open_timeout=30,
-                                  ping_interval=None) as ws:
-        await _wait_for_challenge(ws)
-        connect_id = uuid.uuid4().hex
-        await ws.send(json.dumps({"type": "req", "id": connect_id,
-                                  "method": "connect", "params": _connect_params()}))
-        hello = await _await_response(ws, connect_id)
-        if not hello.get("ok"):
-            return {"history": [], "model": None}
-        hist_id = uuid.uuid4().hex
-        await ws.send(json.dumps({"type": "req", "id": hist_id, "method": "chat.history",
-                                  "params": {"sessionKey": session_key, "limit": limit}}))
-        res = await _await_response(ws, hist_id)
+    try:
+        res = await _warm_request("chat.history",
+                                  {"sessionKey": session_key, "limit": limit})
+    except Exception:  # noqa: BLE001 - transient WS trouble → empty history
+        return {"history": [], "model": None}
     if not res.get("ok"):
         return {"history": [], "model": None}
-    payload = res.get("payload") or {}
-    return _map_history(payload.get("messages") or [])
+    return _map_history((res.get("payload") or {}).get("messages") or [])
 
 
 def _map_history(messages: list) -> dict:
@@ -434,6 +578,7 @@ async def _relay_events(ws, run_id):
     emitted_len = 0        # fallback cumulative-text cursor
     analysis_seen: dict = {}  # itemId -> reasoning chars already emitted
     tool_since_text = False  # a tool card emitted since the last text delta?
+    images_seen: set = set()  # image block urls already emitted (dedupe finals)
     while True:
         frame = await _recv_json(ws)
         if frame.get("type") != "event":
@@ -458,6 +603,14 @@ async def _relay_events(ws, run_id):
                             "output": _error_text(payload.get("errorMessage")),
                             "exit_code": 1})
                 continue
+            # Images the AGENT shares back arrive as content blocks on the final
+            # chat event (type:"image", url:/api/chat/media/outgoing/.../full —
+            # served by our uploads.outgoing_image route). Emit the SSE shape the
+            # SPA already renders (chat.js `if (json.image_url)` → image bubble).
+            for url, alt in _image_blocks(payload):
+                if url not in images_seen:
+                    images_seen.add(url)
+                    yield _sse({"image_url": url, "image_prompt": alt})
             delta = payload.get("deltaText")
             if not delta:
                 text = _extract_text(payload)
@@ -566,6 +719,24 @@ def _error_text(raw) -> str:
         except Exception:  # noqa: BLE001
             return raw
     return _as_text(raw)
+
+
+def _image_blocks(payload: dict):
+    """Yield (url, alt) for each image content block on a chat event's assistant
+    message. The gateway emits these as {type:"image", url, alt, mimeType, ...}
+    inside payload.message.content (text blocks contribute the reply text and are
+    ignored here). `url` is a same-origin /api/chat/media/outgoing/... path the
+    workspace backend serves from the gateway's on-disk managed-image record."""
+    msg = payload.get("message") or {}
+    content = msg.get("content")
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "image":
+            continue
+        url = block.get("url") or block.get("openUrl")
+        if isinstance(url, str) and url:
+            yield url, (block.get("alt") or "")
 
 
 def _extract_text(payload: dict):

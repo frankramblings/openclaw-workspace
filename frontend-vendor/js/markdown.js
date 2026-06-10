@@ -223,7 +223,10 @@ function _emojiImg(emoji) {
   // with the surrounding text color (currentColor), so emoji render as a single
   // theme-tinted line glyph — never colorful (project rule). If the proxy can't
   // supply the glyph it returns a transparent SVG, so the mask shows nothing.
-  return `<span class="emoji" role="img" aria-label="${emoji}" style="--em:url('/api/emoji/${code}.svg')"></span>`;
+  // The real Unicode emoji is kept as a zero-width, invisible child so the user
+  // can still select & copy/paste it as text (the masked box itself has no text
+  // content). See `.emoji > .emoji-char` in workspace.css.
+  return `<span class="emoji" role="img" aria-label="${emoji}" style="--em:url('/api/emoji/${code}.svg')"><span class="emoji-char">${emoji}</span></span>`;
 }
 function _svgifyText(text) {
   if (!_emojiSeg) return text;
@@ -272,6 +275,38 @@ export function createCollapsible(contentMarkdown, label = 'details') {
     </div>`;
 }
 
+// Inline image sharing. The agent shares an existing file with `MEDIA:<path>` on
+// its own line (OpenClaw convention — see its system prompt: "the web UI strips
+// supported MEDIA lines and renders them inline"). gpt-5.5 also sometimes falls
+// back to pasting a raw `<img src="data:image/…;base64,…">` or a markdown
+// data-image. mdToHtml would render all three as escaped TEXT, so we lift them
+// out of the markdown here and emit real <img>s instead: local paths are served
+// (allow-listed) by the backend /api/workspace-media route; data: URLs render
+// inline as-is.
+function _extractSharedImages(text) {
+  let imagesHtml = '';
+  const add = (src) => {
+    imagesHtml += '<div class="shared-image"><img src="' + escapeHtml(src)
+      + '" alt="shared image" loading="lazy"></div>';
+  };
+  // 1. raw <img src="data:image/...">  (the base64 fallback)
+  text = text.replace(/<img\b[^>]*?\bsrc\s*=\s*["'](data:image\/[^"']+)["'][^>]*>/gi,
+    (_m, src) => { add(src); return ''; });
+  // 2. markdown image pointing at a data: URL  — ![alt](data:image/...)
+  text = text.replace(/!\[[^\]]*\]\((data:image\/[^)\s]+)\)/gi,
+    (_m, src) => { add(src); return ''; });
+  // 3. MEDIA:<path-or-url> on its own line (the intended convention)
+  text = text.replace(/^[ \t>*-]*MEDIA:\s*`?\s*([^\n`]+?)\s*`?[ \t]*$/gim, (_m, raw) => {
+    const p = raw.trim();
+    if (!p) return '';
+    const src = /^(https?:|data:image\/)/i.test(p)
+      ? p : '/api/workspace-media?path=' + encodeURIComponent(p);
+    add(src);
+    return '';
+  });
+  return { text: text.replace(/\n{3,}/g, '\n\n').trim(), imagesHtml };
+}
+
 export function processWithThinking(text) {
   const { thinkingBlocks, content, thinkingTime } = extractThinkingBlocks(text);
 
@@ -282,9 +317,11 @@ export function processWithThinking(text) {
     html += createThinkingSection(block, index, thinkingTime);
   });
 
-  // Add the actual content
+  // Add the actual content, lifting any shared images out of the markdown.
   if (content) {
-    html += mdToHtml(content);
+    const { text: cleaned, imagesHtml } = _extractSharedImages(content);
+    if (cleaned) html += mdToHtml(cleaned);
+    html += imagesHtml;
   }
 
   return _useSvgEmoji() ? svgifyEmoji(html) : html;

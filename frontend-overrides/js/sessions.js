@@ -2216,7 +2216,18 @@ function _initAllDropdowns() {
   if (_hermesFilterEl) {
     _hermesFilterEl.addEventListener('input', () => {
       _hermesFilter = _hermesFilterEl.value.trim().toLowerCase();
+      // A fresh filter restores the visible-cap so clearing it later doesn't
+      // leave the list stuck fully expanded from an earlier "Show more".
+      _showAllSessions = false;
       renderSessionList();
+    });
+    _hermesFilterEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && _hermesFilterEl.value) {
+        e.stopPropagation();
+        _hermesFilterEl.value = '';
+        _hermesFilter = '';
+        renderSessionList();
+      }
     });
   }
 }

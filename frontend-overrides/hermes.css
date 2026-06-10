@@ -170,6 +170,13 @@ body:not(.hermes-rail-fallback) #sidebar .icon-rail .rail-separator {
   body:not(.hermes-rail-fallback) #sidebar .icon-rail { display: flex !important; }
 }
 
+/* init.js measures the rail and publishes --icon-rail-w on <html>; with the
+   rail now spanning the sidebar, that measurement would double-offset every
+   fullscreen panel that does left:calc(--icon-rail-w + --sidebar-w). The rail
+   no longer occupies its own column, so re-declare 0 at body level — body
+   descendants inherit this over the <html> inline value. */
+body:not(.hermes-rail-fallback) { --icon-rail-w: 0px; }
+
 /* ── Fallback: restore a vertical left rail without moving DOM back ── */
 body.hermes-rail-fallback #sidebar .icon-rail {
   position: fixed; left: 0; top: 0; bottom: 0;

@@ -14,7 +14,12 @@
     sync();
     if (src) new MutationObserver(sync).observe(src, { childList: true, characterData: true, subtree: true });
 
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      // Without this, our click bubbles on to modelPicker's document-level
+      // outside-click dismiss AFTER the synthetic real.click() opened the
+      // menu — flash-open-then-close (e.target is the footer, not the
+      // picker btn, so the dismiss fires).
+      e.stopPropagation();
       const real = document.getElementById('model-picker-btn');
       if (real) { real.click(); real.scrollIntoView({ block: 'nearest' }); }
     });

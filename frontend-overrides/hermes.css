@@ -284,6 +284,7 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
   cursor: pointer; padding: 2px 6px 2px calc(10px + var(--we-depth, 0) * 14px);
   color: var(--fg); list-style: none;
 }
+.we-tree summary::-webkit-details-marker { display: none; } /* older Safari ignores list-style:none */
 .we-tree summary::before { content: '▸ '; color: var(--hermes-faint); }
 .we-tree details[open] > summary::before { content: '▾ '; }
 .we-file {
@@ -297,7 +298,9 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
 .we-size { color: var(--hermes-faint); font-size: 10px; }
 .we-empty { color: var(--hermes-faint); padding: 12px; font-size: 11px; }
 #we-reopen {
-  position: fixed; right: 10px; top: 10px; z-index: 50;
+  /* top:40px keeps it clear of the fixed gateway-status banner (~29px,
+     z-index 300, workspace.css) which would otherwise cover it */
+  position: fixed; right: 10px; top: 40px; z-index: 50;
   border: 1px solid var(--border); border-radius: var(--hermes-pill);
   background: var(--panel); color: var(--fg);
   font-size: 11px; padding: 4px 10px; cursor: pointer;

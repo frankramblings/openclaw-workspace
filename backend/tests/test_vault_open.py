@@ -55,6 +55,15 @@ def test_open_missing_or_incompatible(vault):
     doc = res.json()
     assert doc["language"] == "text"
     assert doc["title"] == "data.txt"          # non-md keeps its extension
+    # .bak wrappers resolve by their inner extension: text backups open...
+    vault("memory/old-notes.md.bak", "backup body")
+    res = client.get("/api/vault/open?path=memory/old-notes.md.bak")
+    assert res.status_code == 200
+    assert res.json()["language"] == "markdown"
+    assert res.json()["title"] == "old-notes.md.bak"
+    # ...binary-ish backups (unknown inner ext) don't.
+    vault("memory/state.sqlite.bak", "x")
+    assert client.get("/api/vault/open?path=memory/state.sqlite.bak").status_code == 400
     # Unknown/binary extensions still refuse (explorer falls back to preview).
     vault("memory/blob.bin", "x")
     assert client.get("/api/vault/open?path=memory/blob.bin").status_code == 400

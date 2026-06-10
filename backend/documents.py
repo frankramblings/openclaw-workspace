@@ -350,17 +350,29 @@ EDITOR_EXTS = {
 }
 
 
+def _editor_ext(rel: str) -> str | None:
+    """Editor-compatible extension for a vault path, or None. A .bak wrapper
+    resolves by its inner extension (note.md.bak → .md) so text backups open
+    too; bare/unknown-inner .bak stays incompatible (sqlite & co. ship as
+    binary .bak backups on this box)."""
+    base = posixpath.basename(rel)
+    ext = posixpath.splitext(base)[1].lower()
+    if ext == ".bak":
+        ext = posixpath.splitext(base[: -len(".bak")])[1].lower()
+    return ext if ext in EDITOR_EXTS else None
+
+
 @router.get("/api/vault/open")
 async def open_vault_file(path: str):
     rel = _vault_rel(path)
-    ext = posixpath.splitext(rel)[1].lower() if rel else ""
-    if rel is None or ext not in EDITOR_EXTS:
+    ext = _editor_ext(rel) if rel else None
+    if rel is None or ext is None:
         return JSONResponse({"error": "not an editor-compatible vault file"}, status_code=400)
     f = vs.WORKSPACE / rel
     if not f.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
     # A library doc referenced by its own storage path → return it directly.
-    if rel.startswith("Documents/") and ext == ".md":
+    if rel.startswith("Documents/") and rel.endswith(".md"):
         doc = _load(rel[len("Documents/"):-len(".md")])
         if doc:
             return doc
@@ -385,9 +397,9 @@ async def open_vault_file(path: str):
                 return JSONResponse(d)
     doc = {
         "id": vs.new_id(),
-        # .md keeps the bare-name convention; other types keep their extension
-        # so "config.yaml" and "config.toml" stay distinguishable as tabs.
-        "title": posixpath.basename(rel)[:-len(".md")] if ext == ".md"
+        # Plain .md keeps the bare-name convention; everything else (including
+        # x.md.bak) keeps its extension so tabs stay distinguishable.
+        "title": posixpath.basename(rel)[:-len(".md")] if rel.endswith(".md")
                  else posixpath.basename(rel),
         "language": EDITOR_EXTS[ext],
         "session_id": "", "session_name": "",

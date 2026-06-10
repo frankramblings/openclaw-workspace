@@ -1,11 +1,14 @@
 // HERMES: drag-to-reorder for the sidebar icon strip.
-// Native HTML5 DnD on .icon-rail-btn inside #icon-rail; the order persists in
-// localStorage (same pattern as upstream hermes-webui's tab-order) and is
-// re-applied on load and whenever an overlay injects a button late (cron.js,
-// inbox.js, gateway-status.js). Desktop-only — touch browsers don't fire
-// native DnD, and the mobile drawer is too cramped to drag in anyway.
+// Native HTML5 DnD on .icon-rail-btn inside #icon-rail. The order lives in
+// TWO places: localStorage (instant, flash-free on this device) and the
+// server settings store at /api/auth/settings under `hermes_strip_order`
+// (single-user app → one shared order; this is how a desktop drag reaches
+// the phone, where native DnD doesn't exist). Server wins when they differ.
+// Re-applied on load and whenever an overlay injects a button late
+// (cron.js, inbox.js, gateway-status.js).
 (function () {
   const KEY = 'hermes-strip-order';
+  const SERVER_KEY = 'hermes_strip_order';
 
   function readOrder() {
     try {
@@ -31,7 +34,24 @@
   }
 
   function saveOrder(strip) {
-    try { localStorage.setItem(KEY, JSON.stringify(buttons(strip).map(b => b.id))); } catch (e) {}
+    const order = buttons(strip).map(b => b.id);
+    try { localStorage.setItem(KEY, JSON.stringify(order)); } catch (e) {}
+    // Fire-and-forget to the shared settings store so other devices follow.
+    fetch('/api/auth/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [SERVER_KEY]: order }),
+    }).catch(() => {});
+  }
+
+  function pullServerOrder(strip) {
+    fetch('/api/auth/settings').then(r => r.ok ? r.json() : null).then(s => {
+      const remote = s && s[SERVER_KEY];
+      if (!Array.isArray(remote) || !remote.length) return;
+      if (JSON.stringify(remote) === JSON.stringify(readOrder())) return;
+      try { localStorage.setItem(KEY, JSON.stringify(remote)); } catch (e) {}
+      applyOrder(strip);
+    }).catch(() => {});
   }
 
   function init() {
@@ -67,7 +87,8 @@
 
     const arm = () => buttons(strip).forEach(b => { b.draggable = true; });
     arm();
-    applyOrder(strip);
+    applyOrder(strip);        // local cache first — no flash
+    pullServerOrder(strip);   // then the shared order, if it differs
 
     // Re-arm/re-order ONLY when a previously unseen button id appears —
     // applyOrder's own appendChild moves would otherwise re-trigger us in a

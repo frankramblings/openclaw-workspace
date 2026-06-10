@@ -1,0 +1,38 @@
+/* ============================================================
+   HERMES: Hermes WebUI structural skin for openclaw-workspace.
+   Loaded AFTER style.css and workspace.css. Written 100% against
+   theme variables so every theme (legacy included) gets the
+   Hermes component structure. Spec:
+   docs/superpowers/specs/2026-06-10-hermes-ui-adoption-design.md
+   Palette values adapted from github.com/nesquena/hermes-webui
+   @ e8d71a2 (MIT) — see frontend-vendor/THIRD-PARTY.md.
+   ============================================================ */
+
+/* ── Fresh-install first paint = Hermes Charcoal ──
+   Saved themes win automatically: the index.html boot script and
+   theme.js applyColors() set these vars as INLINE styles on <html>,
+   which beat any stylesheet. This block only paints first-run. */
+:root {
+  --bg: #1e1f22;
+  --fg: #d7dae0;
+  --panel: #17181b;
+  --border: #33353a;
+  --red: #e8c268;
+  --font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* ── Shared knobs ── */
+:root {
+  --hermes-radius: 10px;
+  --hermes-pill: 999px;
+  --hermes-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --hermes-muted: color-mix(in srgb, var(--fg) 55%, transparent);
+  --hermes-faint: color-mix(in srgb, var(--fg) 35%, transparent);
+}
+
+/* ── Typography split: UI sans, code/paths mono ── */
+pre, code, .hljs,
+.agent-thread-cmd, .agent-tool-output pre,
+.hermes-mono {
+  font-family: var(--hermes-mono) !important;
+}

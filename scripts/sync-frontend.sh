@@ -78,6 +78,17 @@ if [[ -d "$OVERRIDES" ]]; then
     echo "injected workspace.css <link> into index.html"
   fi
 
+  # Inject the Hermes skin stylesheet once, just before </head> (idempotent).
+  LINK_HERMES='<link rel="stylesheet" href="/static/hermes.css">'
+  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/hermes.css" ]] \
+     && ! grep -qF "hermes.css" "$INDEX"; then
+    awk -v link="  $LINK_HERMES" '
+      !done && /<\/head>/ { print link; done=1 }
+      { print }
+    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    echo "injected hermes.css <link> into index.html"
+  fi
+
   # Inject the Cron tab add-on once, just before </body> (idempotent).
   SCRIPT='<script src="/static/js/cron.js" defer></script>'
   if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/cron.js" ]] \

@@ -202,8 +202,52 @@
     if (theme) rail.insertBefore(btn, theme); else rail.appendChild(btn);
   }
 
+  // The SPA's Tasks feature is dead chrome here (its /api/tasks hits the
+  // catch-all → forever empty), but it's still reachable: /open tasks and the
+  // keyboard window-toggle click #rail-tasks/#tool-tasks-btn (which nothing
+  // binds — silent no-ops), and Settings→Email "Open Tasks" lazy-imports
+  // tasks.js directly. Funnel all of them to the Scheduled-jobs modal instead.
+  function redirectTasksDoors() {
+    ['rail-tasks', 'tool-tasks-btn'].forEach((id) => {
+      const btn = document.getElementById(id);
+      if (btn && btn.dataset.cronRedirect !== '1') {
+        btn.dataset.cronRedirect = '1';
+        btn.addEventListener('click', open);
+      }
+    });
+    // settings.js only binds this button when `dataset.bound !== '1'` — claim
+    // it first so its tasks.js import never happens.
+    const emailDoor = document.getElementById('set-email-open-tasks');
+    if (emailDoor && emailDoor.dataset.bound !== '1') {
+      emailDoor.dataset.bound = '1';
+      emailDoor.addEventListener('click', open);
+    }
+  }
+
+  // Desktop view shows the expanded sidebar and hides the icon rail, so the
+  // rail button alone is unreachable there — add a Tools-list entry too, in
+  // the slot of the CSS-hidden Tasks item.
+  function injectSidebarItem() {
+    if (document.getElementById('tool-cron-btn')) return;
+    const tasksItem = document.getElementById('tool-tasks-btn');
+    if (!tasksItem || !tasksItem.parentNode) return;
+    const item = document.createElement('div');
+    item.className = 'list-item';
+    item.id = 'tool-cron-btn';
+    item.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
+      'style="flex-shrink:0;opacity:0.5;">' +
+      '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+      '<span class="grow">Scheduled</span>';
+    item.addEventListener('click', open);
+    tasksItem.parentNode.insertBefore(item, tasksItem);
+  }
+
   function init() {
     injectRailButton();
+    injectSidebarItem();
+    redirectTasksDoors();
     // The rail can be re-rendered by the SPA; re-inject if our button vanishes.
     const rail = document.getElementById('icon-rail');
     if (rail && window.MutationObserver) {

@@ -1212,6 +1212,8 @@ async function _cmdOpen(args, ctx) {
       gallery: ['tool-gallery-btn', 'rail-gallery'],
       notes: ['tool-notes-btn', 'rail-notes'],
       tasks: ['tool-tasks-btn', 'rail-tasks'],
+      cron: ['tool-cron-btn', 'rail-cron'],
+      jobs: ['tool-cron-btn', 'rail-cron'],
       library: ['tool-library-btn', 'rail-archive'],
       archive: ['tool-library-btn', 'rail-archive'],
       research: ['tool-research-btn', 'rail-research'],
@@ -5551,6 +5553,13 @@ const COMMANDS = {
     help: 'Open a tool panel',
     handler: _cmdOpen,
     usage: '/open Cookbook'
+  },
+  cron: {
+    alias: ['jobs', 'scheduled'],
+    category: 'Utility',
+    help: 'Open the Scheduled jobs panel',
+    handler: (args, ctx) => _cmdOpen(['cron'], ctx),
+    usage: '/cron'
   },
   models: {
     alias: ['model'],

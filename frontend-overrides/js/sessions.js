@@ -246,9 +246,10 @@ function _hermesDateBuckets(list) {
   const dow = (now.getDay() + 6) % 7;
   const weekStart = todayStart - dow * dayMs;
   const lastWeekStart = weekStart - 7 * dayMs;
-  // Mirrors the 'active' sort's field order (last_message_at → updated_at →
-  // created_at, ISO strings), but also tolerates the numeric s.updated /
-  // s.created epoch fields some code paths carry (see ~line 1411).
+  // Field order kept parallel to the 'active' sort, but on THIS backend the
+  // *_at ISO fields don't exist on session records — the numeric s.updated /
+  // s.created epoch-ms fields (sessions_store.py) are what actually carry
+  // the data here. The string branch is kept for prefetched/legacy shapes.
   const ts = (s) => {
     const v = s.last_message_at || s.updated_at || s.created_at || s.updated || s.created || 0;
     const t = typeof v === 'number' ? v : new Date(v).getTime();
@@ -786,16 +787,39 @@ function _renderSessionListImpl() {
 
   const _frag = document.createDocumentFragment();
 
-  // HERMES: date-grouped mode — PINNED/TODAY/.../EARLIER headers, no
-  // SIDEBAR_MAX_VISIBLE cap (the groups keep the list scannable).
+  // HERMES: date-grouped mode — PINNED/TODAY/.../EARLIER headers. Recent
+  // groups render uncapped (they're naturally small); EARLIER is capped
+  // because every row builds a body-level dropdown — an uncapped history
+  // re-rendering per filter keystroke is the one scaling regression vs the
+  // flat branch's SIDEBAR_MAX_VISIBLE. Reuses the existing _showAllSessions
+  // state (the filter input already resets it).
   if (_sortMode === 'date') {
+    const EARLIER_CAP = 20;
     for (const [label, arr] of _hermesDateBuckets(orderedSessions)) {
       if (!arr.length) continue;
       const h = document.createElement('div');
       h.className = 'hermes-group-header';
       h.textContent = label;
       _frag.appendChild(h);
-      arr.forEach(s => _frag.appendChild(createSessionItem(s)));
+      const capped = label === 'EARLIER' && !_showAllSessions && arr.length > EARLIER_CAP;
+      const visible = capped ? arr.slice(0, EARLIER_CAP) : arr;
+      if (capped) {
+        // Same courtesy as the flat branch: never hide the session that's open.
+        const active = arr.slice(EARLIER_CAP).find(s => s.id === currentSessionId);
+        if (active) visible.push(active);
+      }
+      visible.forEach(s => _frag.appendChild(createSessionItem(s)));
+      if (label === 'EARLIER' && arr.length > EARLIER_CAP) {
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'session-show-more-btn';
+        toggleBtn.textContent = capped ? `Show ${arr.length - EARLIER_CAP} more` : 'Show less';
+        toggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          _showAllSessions = !_showAllSessions;
+          renderSessionList();
+        });
+        _frag.appendChild(toggleBtn);
+      }
     }
     list.innerHTML = '';
     list.appendChild(_frag);
@@ -1377,6 +1401,12 @@ export async function loadSessions() {
       const res = await fetch(`${API_BASE}/api/sessions`);
       fetched = await res.json();
     }
+    // HERMES: the backend persists the favorite flag as `important`, but this
+    // module reads `is_important` everywhere (the toggle only sets it
+    // in-memory). Normalize once at fetch so favorites survive reloads —
+    // without this the ★ PINNED group (and the starred float) is always
+    // empty after a refresh.
+    fetched.forEach(s => { if (s.important && !s.is_important) s.is_important = true; });
     sessions = fetched;
     renderSessionList();
 

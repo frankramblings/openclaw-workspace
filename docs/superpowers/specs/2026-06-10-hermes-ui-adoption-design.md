@@ -284,3 +284,9 @@ button, image send/receive, emoji proxy all still work (these live in
 Explorer upload + delete; profile-tag pills if a profile concept ever lands;
 Hermes theme×skin (mode/accent split) engine; per-message usage if the gateway
 grows usage events later.
+
+**Usage-line probe result (2026-06-10, Phase 4 Task 12):** `backend/bridge.py`
+and `backend/app.py` contain no usage/token fields — the gateway events the
+bridge forwards carry no token counts. Per the conditional rule above, the
+per-message usage line was NOT built. Revisit if the OpenClaw gateway adds
+usage reporting to chat events.

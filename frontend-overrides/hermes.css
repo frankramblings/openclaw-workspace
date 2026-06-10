@@ -139,6 +139,19 @@ pre, code, .hljs,
   background: var(--green, #50fa7b);
 }
 
+/* ── HERMES brand-on-hamburger-row: the .sidebar-header now sits ABOVE the
+   strip (first sidebar child) so the brand + status dot fill the dead space
+   right of the floating #hamburger-btn. Vendor right-aligns the brand
+   (justify-content:flex-end) and offsets the title -10px; sit it left
+   instead, just past the header's 40px hamburger clearance. ── */
+body:not(.hermes-rail-fallback) #sidebar .sidebar-header {
+  justify-content: flex-start;
+  border-bottom: none;
+}
+body:not(.hermes-rail-fallback) #sidebar .sidebar-header .sidebar-brand-title {
+  left: 0;
+}
+
 /* ── HERMES icon strip: the rail, horizontal, inside the sidebar ── */
 body:not(.hermes-rail-fallback) #sidebar .icon-rail {
   position: static;

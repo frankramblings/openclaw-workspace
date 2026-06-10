@@ -325,3 +325,52 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
 .we-preview-body { overflow: auto; padding: 12px; }
 .we-preview-body pre { white-space: pre-wrap; word-break: break-word; margin: 0; }
 .we-preview-body img { max-width: 100%; }
+
+/* ── Chat avatars: colored initial discs ─────────────────────────────────── */
+/* NOTE: .msg has overflow:hidden and .chat-history has overflow-x:hidden,
+   so a negative-left pseudo would be clipped. Disc is placed inside via
+   padding-left instead, with left:4px (not left:-34px). */
+.msg.msg-ai, .msg.msg-user { padding-left: 36px; position: relative; }
+.msg.msg-ai::before, .msg.msg-user::before {
+  content: "";
+  position: absolute; left: 4px; top: 6px;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; line-height: 22px; text-align: center;
+}
+.msg.msg-ai::before {
+  content: var(--hermes-agent-initial, "A");
+  background: var(--red); color: var(--bg);
+}
+.msg.msg-user::before {
+  content: "Y";
+  background: var(--accent-primary, #4dd0e1); color: var(--bg);
+}
+
+/* ── Tool accordion pills ────────────────────────────────────────────────── */
+/* style.css sets no border/background on .agent-thread-node, so these add
+   the pill chrome without specificity fights. */
+.agent-thread-node {
+  border: 1px solid var(--border);
+  border-radius: var(--hermes-radius);
+  background: var(--panel);
+  padding: 4px 10px;
+  margin: 4px 0;
+}
+.agent-thread-node .agent-thread-header { font-size: 12px; }
+.agent-thread-node .agent-thread-tool { font-family: var(--hermes-mono); }
+/* Truncate command preview line inside the collapsed pill */
+.agent-thread-cmd {
+  color: var(--hermes-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+}
+.agent-tool-output summary { font-size: 11px; color: var(--hermes-muted); cursor: pointer; }
+
+/* ── Attachment cards note ───────────────────────────────────────────────── */
+/* Attachments render as .attach-cards image/doc cards — no plain-text
+   attach-note or attached-files class exists in this codebase.
+   Styling the card wrapper lightly for consistency. */
+.msg .attach-cards {
+  font-size: 11px; color: var(--hermes-faint); font-family: var(--hermes-mono);
+}

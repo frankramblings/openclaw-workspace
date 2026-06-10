@@ -82,6 +82,9 @@ pre, code, .hljs,
 }
 .send-btn:hover { background: var(--send-btn-hover, var(--red)); }
 .send-btn .send-btn-label { display: none; } /* icon-only, Hermes style */
+/* With the label hidden, the newchat hover-expand (style.css widens to 68px)
+   would animate to an empty pill — keep the button circular instead. */
+.send-btn.newchat-expanded { width: 34px !important; padding: 0; }
 /* Model picker as a dropdown chip */
 .model-picker-btn {
   border: 1px solid var(--border);
@@ -121,6 +124,14 @@ pre, code, .hljs,
   border: solid var(--bg); border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
+/* admin-switch sliders hide their real checkbox via opacity/width/height:0
+   (style.css ~12953) — restore that so the square skin above doesn't paint
+   a ghost 16px box next to every slider toggle in Settings/Memory modals. */
+.modal .admin-switch input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  width: 0; height: 0; border: none; background: none;
+}
+.modal .admin-switch input[type="checkbox"]:checked::after { content: none; }
 
 /* ── Status dots (sidebar notif + streaming) ── */
 .sidebar-notif-dot {

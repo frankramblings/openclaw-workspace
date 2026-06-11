@@ -50,6 +50,10 @@
       b.title = 'Chat';
       b.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
       b.addEventListener('click', () => {
+        // Panel mode owns the close-everything sweep (same nets + the
+        // unclassified-modal sweep, shared with panel exclusivity).
+        if (window.hermesPanels) { window.hermesPanels.closeAll(); return; }
+        // Fallback (overlay absent = floating mode): previous inline sweep.
         import('/static/js/modalManager.js').then((MM) => {
           // Net 1: every visibly-rendered .modal (computed style, not just the
           // .hidden class — dynamic modals like calendar's toggle differently).

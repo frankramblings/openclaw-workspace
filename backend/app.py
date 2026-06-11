@@ -165,9 +165,11 @@ def _sanitize_title(raw: str) -> str:
     return line.rstrip(" .!,;:")[:60].strip()
 
 
-async def _collect_brain_text(prompt: str, session_key: str) -> str:
+async def _collect_brain_text(prompt: str, session_key: str,
+                              model_ref: str | None = None) -> str:
     chunks: list[str] = []
-    async for sse in bridge.stream_turn(prompt, session_key=session_key):
+    async for sse in bridge.stream_turn(prompt, session_key=session_key,
+                                        model_ref=model_ref):
         if not sse.startswith("data:"):
             continue
         body = sse[5:].strip()
@@ -186,7 +188,8 @@ async def _generate_ai_title(message: str) -> str:
     prompt = ("Generate a short, specific chat title (3-6 words, no quotes, no "
               "trailing punctuation) for the topic of a conversation that opens "
               f"with this message:\n\n{message[:600]}\n\nOutput ONLY the title.")
-    return _sanitize_title(await _collect_brain_text(prompt, _TITLE_SESSION_KEY))
+    return _sanitize_title(await _collect_brain_text(
+        prompt, _TITLE_SESSION_KEY, model_ref=config.TITLE_MODEL))
 
 
 def _wants_web(use_web: str, allow_web_search: str) -> bool:

@@ -31,3 +31,23 @@ def test_sanitize_title():
     assert _sanitize_title("Dinner plans.\nblah") == "Dinner plans"
     assert _sanitize_title("") == ""
     assert len(_sanitize_title("x" * 200)) <= 60
+
+
+def test_titler_runs_on_the_configured_cheap_model(monkeypatch):
+    # A throwaway 6-word title must never run as a full gpt-5.5 thinking turn
+    # racing the user's real first message (the audit's biggest turn tax).
+    import asyncio
+
+    from backend import app as app_module
+    from backend import config
+
+    captured = {}
+
+    async def fake_stream_turn(prompt, session_key=None, model_ref=None, **kw):
+        captured["model_ref"] = model_ref
+        yield 'data: {"delta": "Tiny Title"}\n\n'
+
+    monkeypatch.setattr(app_module.bridge, "stream_turn", fake_stream_turn)
+    title = asyncio.run(app_module._generate_ai_title("hello there"))
+    assert captured["model_ref"] == config.TITLE_MODEL
+    assert title == "Tiny Title"

@@ -54,6 +54,32 @@
     mirrorDot('inbox-unread-dot', 'rail-inbox');
     mirrorDot('email-unread-dot', 'rail-email');
 
+    // Hermes-style Chat tab. This app never had one: chat is the permanent
+    // base layer and tools open as modals OVER it (#rail-chats is a
+    // background-chat-done notification, not a tab). So "Chat" here means
+    // "close every open tool modal" — registered ones via modalManager
+    // (runs their closeFn cleanup), strays via their own close button.
+    (function addChatHome() {
+      const strip = document.getElementById('icon-rail');
+      if (!strip || document.getElementById('rail-chat-home')) return;
+      const b = document.createElement('button');
+      b.className = 'icon-rail-btn';
+      b.id = 'rail-chat-home';
+      b.title = 'Chat';
+      b.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+      b.addEventListener('click', () => {
+        import('/static/js/modalManager.js').then((MM) => {
+          document.querySelectorAll('.modal:not(.hidden)').forEach((m) => {
+            if (!m.id) return;
+            if (MM.isRegistered(m.id)) { MM.close(m.id); return; }
+            const x = m.querySelector('.close-btn, .modal-close, button[title="Close"]');
+            if (x) x.click(); else m.classList.add('hidden');
+          });
+        }).catch(() => {});
+      });
+      strip.insertBefore(b, strip.firstChild);
+    })();
+
     // CHATS always starts open: drop any persisted collapsed flag and
     // un-collapse (section-management runs before us and may have applied
     // it). In-session collapse still works; it just never persists.

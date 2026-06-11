@@ -15,6 +15,7 @@
   // decides visibility, this list only decides sequence. A user drag
   // (localStorage and/or server order) always overrides this.
   const DEFAULT_ORDER = [
+    'rail-chat-home',
     'rail-chats', 'rail-email', 'rail-inbox', 'rail-calendar',
     'rail-documents', 'rail-compare', 'rail-cookbook', 'rail-research',
     'rail-gallery', 'rail-archive', 'rail-notes', 'rail-memory',
@@ -31,9 +32,12 @@
   }
 
   // What applyOrder uses: an explicit user order wins; otherwise the default.
+  // The Chat tab postdates some saved orders — pin it to the front of any
+  // order that doesn't place it (a later drag persists wherever it lands).
   function effectiveOrder() {
     const saved = readOrder();
-    return saved.length ? saved : DEFAULT_ORDER;
+    const order = saved.length ? saved : DEFAULT_ORDER;
+    return order.includes('rail-chat-home') ? order : ['rail-chat-home', ...order];
   }
 
   function buttons(strip) {

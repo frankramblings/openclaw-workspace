@@ -63,7 +63,9 @@
       // Also sweep any visible unclassified .modal that ISN'T whitelisted-
       // floating chrome — same net the Chat button used (dialogs like theme/
       // settings are left alone by checking a small floating allowlist).
-      const FLOAT_OK = /^(theme-|confirm|settings|model-|preset|group)/;
+      // Token may appear mid-id (custom-preset-modal, assistant-settings-modal,
+      // rename-session-modal) — anchor to a word/segment boundary, not ^.
+      const FLOAT_OK = /(^|-)(theme|confirm|settings|model|preset|group|rename)/;
       document.querySelectorAll('.modal').forEach((m) => {
         if (!m.id || PANEL_SPECS[m.id] || FLOAT_OK.test(m.id)) return;
         if (!isVisible(m)) return;
@@ -88,16 +90,42 @@
   }
 
   let _lastVisible = null;
+  let _prevVisible = new Set();
   function sync() {
     if (floating()) return;
-    let visibleId = null;
-    for (const id of Object.keys(PANEL_SPECS)) {
+
+    // The email reply flow deliberately un-fullscreens email (email-snap-left)
+    // and opens doc-panel BESIDE it — a compound layout the app owns. Don't
+    // re-fullscreen email or sweep the pair apart while it's active.
+    const emailEl = document.getElementById('email-lib-modal');
+    const emailSplit = !!(emailEl && emailEl.classList.contains('email-snap-left'));
+
+    const visibleNow = Object.keys(PANEL_SPECS).filter((id) => {
       const el = document.getElementById(id);
-      if (el && isVisible(el)) { visibleId = id; applyGeometry(id, el); }
+      return el && isVisible(el);
+    });
+    visibleNow.forEach((id) => {
+      if (emailSplit && (id === 'email-lib-modal' || id === 'doc-panel')) return;
+      applyGeometry(id, document.getElementById(id));
+    });
+
+    // Winner = the panel the user just opened (newcomer beats key order —
+    // otherwise opening a panel that sorts EARLIER than the incumbent never
+    // triggered the sweep and both stayed stacked). Falls back to the
+    // incumbent, then to anything visible.
+    const newcomers = visibleNow.filter((id) => !_prevVisible.has(id));
+    const winner = newcomers.length ? newcomers[newcomers.length - 1]
+      : (visibleNow.includes(_lastVisible) ? _lastVisible
+        : (visibleNow[visibleNow.length - 1] || null));
+
+    const splitPair = emailSplit
+      && visibleNow.every((id) => id === 'email-lib-modal' || id === 'doc-panel');
+    if (winner && !splitPair && (winner !== _lastVisible || visibleNow.length > 1)) {
+      closeAll(winner);
     }
-    if (visibleId && visibleId !== _lastVisible) closeAll(visibleId);
-    _lastVisible = visibleId;
-    setActive(visibleId);
+    _prevVisible = new Set(visibleNow);
+    _lastVisible = winner;
+    setActive(winner);
   }
 
   function init() {

@@ -57,7 +57,12 @@
   // Close every classified window except `exceptId`. Registered ones via
   // modalManager (runs closeFn cleanup); cron's custom overlay via its own
   // close control; stragglers via generic close button / .hidden.
-  function closeAll(exceptId) {
+  // panelsOnly=true closes just the classified panels — used by companion
+  // strip buttons, whose own window opens BEFORE this async import resolves;
+  // the stray-modal net would otherwise close the freshly-opened companion
+  // (the "library flashes then vanishes" bug). The Chat button and panel
+  // exclusivity keep the full sweep.
+  function closeAll(exceptId, panelsOnly) {
     return import('/static/js/modalManager.js').then((MM) => {
       Object.keys(PANEL_SPECS).forEach((id) => {
         if (id === exceptId) return;
@@ -70,6 +75,7 @@
         const x = el.querySelector('.close-btn, .modal-close, [data-act="close"], button[title="Close"]');
         if (x) x.click(); else el.classList.add('hidden');
       });
+      if (panelsOnly) return;
       // Also sweep any visible unclassified .modal that ISN'T whitelisted-
       // floating chrome — same net the Chat button used (dialogs like theme/
       // settings are left alone by checking a small floating allowlist).
@@ -171,7 +177,7 @@
     // they never land underneath one (capture phase: runs before the tool's
     // own open handler).
     COMPANION_RAILS.forEach((id) => {
-      document.getElementById(id)?.addEventListener('click', () => closeAll(), true);
+      document.getElementById(id)?.addEventListener('click', () => closeAll(null, true), true);
     });
     sync();
     window.hermesPanels = { closeAll, sync };

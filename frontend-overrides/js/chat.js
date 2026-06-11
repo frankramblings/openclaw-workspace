@@ -840,7 +840,28 @@ import createResearchSynapse from './researchSynapse.js';
       const bodyDiv = holder.querySelector('.body');
       bodyDiv.appendChild(spinner.createElement());
       spinner.start();
-      
+
+      // Turn clock: elapsed mm:ss beside the spinner, and the base for the
+      // stall captions below. Self-guarding ticker — clears itself the moment
+      // the spinner leaves the DOM (first token, error, abort), so no teardown
+      // wiring is needed.
+      const _turnStart = Date.now();
+      const _fmtElapsed = (ms) => {
+        const s = Math.floor(ms / 1000);
+        return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+      };
+      const _elapsedSpan = document.createElement('span');
+      _elapsedSpan.className = 'turn-elapsed';
+      _elapsedSpan.style.cssText = 'opacity:.55;margin-left:6px;font-size:.85em';
+      if (spinner.element) spinner.element.appendChild(_elapsedSpan);
+      const _turnTicker = setInterval(() => {
+        if (!spinner || !spinner.element || !spinner.element.isConnected) {
+          clearInterval(_turnTicker);
+          return;
+        }
+        _elapsedSpan.textContent = _fmtElapsed(Date.now() - _turnStart);
+      }, 1000);
+
       // Update spinner message based on mode
       if (el('web-toggle').checked && !_isAgent) {
         spinner.updateMessage('Searching web with ' + (searchModule ? searchModule.getProviderLabel() : 'SearXNG'));
@@ -1883,6 +1904,20 @@ import createResearchSynapse from './researchSynapse.js';
                 if (_isBg) continue;
                 if (currentHolder && json.id) currentHolder.dataset.dbId = json.id;
 
+              } else if (json.type === 'stall') {
+                // Backend watchdog: no gateway activity for silent_for seconds.
+                // Surface it on whichever wait indicator is live right now.
+                const _stallLabel = 'Still waiting — no activity for ' +
+                  (json.silent_for || 0) + 's (' +
+                  _fmtElapsed(Date.now() - _turnStart) + ' total)';
+                const _dots = document.querySelector('.agent-thinking-dots');
+                if (_dots && _dots._spinner) _dots._spinner.updateMessage(_stallLabel);
+                else if (spinner && spinner.element && !accumulated) spinner.updateMessage(_stallLabel);
+              } else if (json.type === 'stall_retry') {
+                const _retryLabel = 'Stalled — retrying on a fresh connection…';
+                const _dots = document.querySelector('.agent-thinking-dots');
+                if (_dots && _dots._spinner) _dots._spinner.updateMessage(_retryLabel);
+                else if (spinner && spinner.element && !accumulated) spinner.updateMessage(_retryLabel);
               } else if (json.type === 'tool_start') {
                 if (_isBg) continue;
                 _cancelThinkingTimer();

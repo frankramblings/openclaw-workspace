@@ -444,6 +444,19 @@ body:not(.hermes-rail-fallback) #rail-gateway         /* duplicate of the gw dot
     left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px)) !important;
     right: 0 !important;
   }
+  /* Full-bleed variant: .modal windows are overlay+content pairs — the
+     overlay already spans the viewport, so pinning it changed nothing
+     visible (calendar stayed a floating card). The CONTENT must fill. */
+  body:not(.hermes-floating) .hermes-panel .hermes-panel-fill {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
   /* Column variant: muted backdrop (replaces the dim/blur overlay) */
   body:not(.hermes-floating) .hermes-panel-column {
     background: var(--bg) !important;

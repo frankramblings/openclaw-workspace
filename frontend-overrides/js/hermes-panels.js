@@ -13,20 +13,22 @@
   // nativeFs = class the tool itself uses for fullscreen (preferred over
   // generic geometry when present).
   // Keys are DOM ids; `reg` is the modalManager registration id when it
-  // differs (inbox/notes register under virtual ids). Documents
-  // (#doc-editor-pane) is deliberately ABSENT: it's the drafting-mode
-  // companion designed to sit BESIDE the chat (and beside email for
-  // replies) — fullscreening it would break co-editing. It keeps the
-  // app's split-pane behavior.
+  // differs (inbox registers under a virtual id). COMPANIONS are deliberately
+  // absent: #doc-editor-pane (drafting mode) and #notes-pane are body-level
+  // flex SIBLINGS designed to sit beside the chat — fullscreening them breaks
+  // their native split layout. They keep split-pane behavior; their strip
+  // buttons close any open panel first (see COMPANION_RAILS).
   const PANEL_SPECS = {
     'email-lib-modal': { mode: 'full', rail: ['rail-email'], nativeFs: 'email-lib-fullscreen' },
     'calendar-modal':  { mode: 'full', rail: ['rail-calendar'] },
     'inbox-modal':     { mode: 'column', width: 720, content: '.cron-modal-card', rail: ['rail-inbox'], reg: 'inbox-panel' },
-    'notes-pane':      { mode: 'column', width: 960, content: null, rail: ['rail-notes'], reg: 'notes-panel' },
     'memory-modal':    { mode: 'column', width: 960, content: '.modal-content', rail: ['rail-memory'] },
     'cron-modal':      { mode: 'column', width: 800, content: '.cron-modal-card', rail: ['rail-cron', 'rail-tasks'] },
   };
-  // content:null = the window element itself is the column.
+  // Strip buttons whose tools open BESIDE the chat (companions): opening one
+  // while a panel is up left it stacked UNDER the panel (Library-behind-Brain
+  // bug) — close panels first so the companion lands on the chat base layer.
+  const COMPANION_RAILS = ['rail-documents', 'rail-archive', 'rail-notes'];
 
   const floating = () => {
     try { return localStorage.getItem(FLOATING_KEY) === '1'; } catch (e) { return false; }
@@ -88,6 +90,13 @@
     const spec = PANEL_SPECS[id];
     if (spec.nativeFs) { el.classList.add(spec.nativeFs); return; }
     el.classList.add('hermes-panel');
+    if (spec.mode === 'full') {
+      // .modal windows are overlay+content pairs: the overlay already spans
+      // the viewport, so pinning IT changes nothing visible (calendar kept
+      // floating). The CONTENT is what must fill the pane.
+      const fill = el.querySelector('.modal-content');
+      if (fill) fill.classList.add('hermes-panel-fill');
+    }
     if (spec.mode === 'column') {
       el.classList.add('hermes-panel-column');
       el.style.setProperty('--hermes-panel-w', spec.width + 'px');
@@ -133,6 +142,15 @@
     if (winner && !splitPair && (winner !== _lastVisible || visibleNow.length > 1)) {
       closeAll(winner);
     }
+
+    // openCalendar() collapses the sidebar to maximize a FLOATING window —
+    // in panel mode the panel area already excludes the sidebar, so undo it
+    // (once, on open; the user can still hide the sidebar manually after).
+    if (newcomers.includes('calendar-modal')) {
+      document.getElementById('sidebar')?.classList.remove('hidden');
+      if (window.syncRailSide) window.syncRailSide();
+    }
+
     _prevVisible = new Set(visibleNow);
     _lastVisible = winner;
     setActive(winner);
@@ -148,6 +166,12 @@
     new MutationObserver(kick).observe(document.body, {
       childList: true, subtree: true, attributes: true,
       attributeFilter: ['class', 'style'],
+    });
+    // Companion tools open beside the chat — clear any open panel first so
+    // they never land underneath one (capture phase: runs before the tool's
+    // own open handler).
+    COMPANION_RAILS.forEach((id) => {
+      document.getElementById(id)?.addEventListener('click', () => closeAll(), true);
     });
     sync();
     window.hermesPanels = { closeAll, sync };

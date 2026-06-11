@@ -1265,28 +1265,9 @@ function initializeEventListeners() {
     }
   }
 
-  // Model sort dropdown
-  const modelSortBtn = el('model-sort-btn');
-  const modelSortDropdown = el('model-sort-dropdown');
-  if (modelSortBtn && modelSortDropdown) {
-    modelSortBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      modelSortDropdown.style.display = modelSortDropdown.style.display === 'block' ? 'none' : 'block';
-    });
-    document.addEventListener('click', () => { modelSortDropdown.style.display = 'none'; });
-    modelSortDropdown.addEventListener('click', (e) => e.stopPropagation());
-    modelSortDropdown.querySelectorAll('.sort-option').forEach(opt => {
-      opt.addEventListener('click', () => {
-        const mode = opt.dataset.sort;
-        Storage.set('odysseus-model-sort', mode);
-        if (modelsModule) modelsModule.refreshModels();
-        modelSortDropdown.style.display = 'none';
-        uiModule.showToast('Models sorted: ' + opt.textContent.trim().toLowerCase());
-      });
-    });
-  }
-
-
+  // (Model sort dropdown removed with the legacy Models sidebar section —
+  // the composer picker sorts alphabetically via modelSort.js and never
+  // read the 'odysseus-model-sort' pref.)
 
   // Feature visibility — hide admin-disabled features
   // Use prefetched data from login page if available
@@ -2343,7 +2324,6 @@ function initializeEventListeners() {
     'sidebar-search':      '#sidebar-search-btn',
     'sessions-section':    '#sessions-section',
     'email-section':       '#email-section',
-    'models-section':      '#models-section',
     'tools-section':       '#tools-section',
     // Per-tool visibility — fine-grained control over which entries show
     // inside the Tools section in the sidebar.
@@ -2378,7 +2358,7 @@ function initializeEventListeners() {
   // text-emojis: default OFF since 2026-06-07 — /api/emoji now serves real
   // OpenMoji-black glyphs (theme-tinted masks), so the text-only fallback is a
   // preference, not a necessity. Must match the applyTextEmojis() default below.
-  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn', 'text-emojis']);
+  const UI_VIS_DEFAULT_OFF = new Set(['rag-toggle-btn', 'text-emojis']);
 
   // Keys that need admin to toggle off (reserved for future use)
   const UI_VIS_ADMIN_ONLY = new Set([]);
@@ -2455,9 +2435,7 @@ function initializeEventListeners() {
   }, true);
   // Sync checkmarks when dropdowns open
   const _sessionSortBtn = el('session-sort-btn');
-  const _modelSortBtn = el('model-sort-btn');
   if (_sessionSortBtn) _sessionSortBtn.addEventListener('click', syncRearrangeChecks);
-  if (_modelSortBtn) _modelSortBtn.addEventListener('click', syncRearrangeChecks);
   syncRearrangeChecks();
 
   // ── Text-only emoji conversion ──

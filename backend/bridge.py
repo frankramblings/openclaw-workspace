@@ -277,21 +277,59 @@ async def stream_turn(message: str, session_key: str | None = None,
                 message, session_key, model_ref, attachments, run_info,
                 allow_warm=False)
 
-        # Relay events for this run until lifecycle end.
-        try:
-            async for chunk in _relay_events(ws, run_id):
-                yield chunk
-        finally:
-            # A mid-stream death makes the warm socket unusable; drop it so the
-            # next turn reconnects. Then keep the socket open ONLY if it's still
-            # the live warm one; release the lock; close throwaways.
-            if not _ws_alive(ws):
-                _invalidate_warm(ws)
-            if use_warm:
-                _warm.lock.release()
-            if ws is not None and _warm.ws is not ws:
-                with contextlib.suppress(Exception):
-                    await ws.close()
+        # Relay events for this run until lifecycle end. On a stall (no
+        # run-activity for STALL_CAP_S) abort the zombie run and retry ONCE on
+        # a guaranteed-fresh connection — with a fresh idempotencyKey
+        # (_open_turn mints one per call; reusing the old key would trip the
+        # gateway's transcript dedup and silently no-op the retry).
+        stalled_attempts = 0
+        while True:
+            stalled = False
+            try:
+                async for chunk in _relay_events(ws, run_id, run_info=run_info):
+                    yield chunk
+            except _RunStalled:
+                stalled = True
+            finally:
+                # A mid-stream death (or a stall — that socket's run is now a
+                # zombie) makes the warm socket unusable; drop it so the next
+                # turn reconnects. Then keep the socket open ONLY if it's still
+                # the live warm one; release the lock; close throwaways.
+                if stalled or not _ws_alive(ws):
+                    _invalidate_warm(ws)
+                if use_warm:
+                    _warm.lock.release()
+                    use_warm = False
+                if ws is not None and _warm.ws is not ws:
+                    with contextlib.suppress(Exception):
+                        await ws.close()
+            if not stalled:
+                if run_info is not None:
+                    run_info.setdefault("timing", {})["t_end"] = time.monotonic()
+                break
+            if run_info is not None:
+                run_info["stalled"] = True
+            # Best-effort kill of the zombie run (the gateway itself may be
+            # wedged — never let cleanup failure mask the user-facing path).
+            with contextlib.suppress(Exception):
+                await gateway_call("chat.abort",
+                                   {"sessionKey": session_key, "runId": run_id},
+                                   timeout=10)
+            stalled_attempts += 1
+            if stalled_attempts > 1:
+                yield _sse({"type": "tool_output", "tool": "agent",
+                            "output": ("🧠 no gateway activity for "
+                                       f"{int(config.STALL_CAP_S) // 60}m, retried "
+                                       "once — codex looks stalled; try again or "
+                                       "check the status dot"),
+                            "exit_code": 1})
+                break
+            if run_info is not None:
+                run_info["retried"] = True
+            yield _sse({"type": "stall_retry"})
+            ws, run_id, use_warm = await _open_turn(
+                message, session_key, model_ref, attachments, run_info,
+                allow_warm=False)
     except _ChatSendRejected as rej:
         yield _sse({"type": "tool_output", "tool": "bridge",
                     "output": f"chat.send rejected: {rej.ack}", "exit_code": 1})

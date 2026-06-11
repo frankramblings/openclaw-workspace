@@ -121,3 +121,104 @@ def test_unrelated_traffic_cannot_starve_stall_detection(monkeypatch):
                 pass
 
     asyncio.run(go())
+
+
+# --- stream_turn stall orchestration ----------------------------------------------
+
+class _OpenState:
+    name = "OPEN"
+
+
+class FakeAliveWS:
+    state = _OpenState()
+
+    async def close(self):
+        pass
+
+
+def _collect_stream(gen):
+    async def go():
+        out = []
+        async for c in gen:
+            try:
+                out.append(json.loads(c[5:]))
+            except json.JSONDecodeError:
+                pass  # skip sentinel frames like [DONE]
+        return out
+    return asyncio.run(go())
+
+
+def _wire_stall(monkeypatch, relay_factory):
+    opens = []
+    aborts = []
+
+    async def fake_open_turn(message, session_key, model_ref, attachments,
+                             run_info, allow_warm):
+        opens.append(allow_warm)
+        run_id = f"r{len(opens)}"
+        if run_info is not None:
+            run_info["runId"] = run_id
+        return FakeAliveWS(), run_id, False
+
+    async def fake_gateway_call(method, params=None, timeout=30.0):
+        aborts.append((method, params))
+        return {"ok": True, "payload": {}}
+
+    monkeypatch.setattr(bridge, "_open_turn", fake_open_turn)
+    monkeypatch.setattr(bridge, "gateway_call", fake_gateway_call)
+    monkeypatch.setattr(bridge, "_relay_events", relay_factory)
+    return opens, aborts
+
+
+def test_double_stall_aborts_twice_then_errors(monkeypatch):
+    async def always_stall(ws, run_id, run_info=None):
+        raise bridge._RunStalled(240)
+        yield  # pragma: no cover — makes this an async generator
+
+    run_info: dict = {}
+    opens, aborts = _wire_stall(monkeypatch, always_stall)
+    out = _collect_stream(bridge.stream_turn("hi", session_key="k",
+                                             run_info=run_info))
+
+    assert opens == [True, False]          # retry forced a fresh connection
+    assert [m for m, _ in aborts] == ["chat.abort", "chat.abort"]
+    assert aborts[0][1] == {"sessionKey": "k", "runId": "r1"}
+    assert aborts[1][1] == {"sessionKey": "k", "runId": "r2"}
+    assert any(f.get("type") == "stall_retry" for f in out)
+    terminal = out[-1]
+    assert terminal["type"] == "tool_output" and terminal["exit_code"] == 1
+    assert "stalled" in terminal["output"]
+    assert run_info["stalled"] is True and run_info["retried"] is True
+
+
+def test_stall_then_success_recovers(monkeypatch):
+    calls = {"n": 0}
+
+    async def stall_once(ws, run_id, run_info=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise bridge._RunStalled(240)
+        yield bridge._sse({"delta": "recovered"})
+
+    run_info: dict = {}
+    opens, aborts = _wire_stall(monkeypatch, stall_once)
+    out = _collect_stream(bridge.stream_turn("hi", session_key="k",
+                                             run_info=run_info))
+
+    assert [m for m, _ in aborts] == ["chat.abort"]   # only the zombie killed
+    assert {"delta": "recovered"} in out
+    assert any(f.get("type") == "stall_retry" for f in out)
+    assert not any(f.get("exit_code") == 1 for f in out)
+    assert run_info.get("retried") is True
+
+
+def test_no_stall_no_abort(monkeypatch):
+    async def clean(ws, run_id, run_info=None):
+        yield bridge._sse({"delta": "hi"})
+
+    opens, aborts = _wire_stall(monkeypatch, clean)
+    out = _collect_stream(bridge.stream_turn("hi", session_key="k"))
+
+    assert aborts == []
+    assert opens == [True]
+    assert {"delta": "hi"} in out

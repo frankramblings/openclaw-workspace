@@ -34,10 +34,17 @@
   }
 
   function setActive(visibleId) {
-    document.querySelectorAll('.icon-rail-btn.hermes-active')
-      .forEach((b) => b.classList.remove('hermes-active'));
-    const rails = visibleId ? PANEL_SPECS[visibleId].rail : ['rail-chat-home'];
-    rails.forEach((id) => document.getElementById(id)?.classList.add('hermes-active'));
+    // Mutate ONLY on actual state change: classList.add/remove of an
+    // unchanged class fires no mutation records, so the body observer goes
+    // quiet in steady state. The naive remove-all-then-re-add version kept a
+    // permanent one-sync-per-frame rAF heartbeat alive.
+    const want = new Set(visibleId ? PANEL_SPECS[visibleId].rail : ['rail-chat-home']);
+    document.querySelectorAll('.icon-rail-btn').forEach((b) => {
+      const has = b.classList.contains('hermes-active');
+      const should = want.has(b.id);
+      if (should && !has) b.classList.add('hermes-active');
+      else if (!should && has) b.classList.remove('hermes-active');
+    });
   }
 
   // Close every classified window except `exceptId`. Registered ones via

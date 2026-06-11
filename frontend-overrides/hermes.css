@@ -518,3 +518,10 @@ body:not(.hermes-rail-fallback) #rail-gateway         /* duplicate of the gw dot
   background: color-mix(in srgb, var(--red) 16%, transparent);
   color: var(--red);
 }
+
+/* ── CHATS is the only section header left — collapsing it is pointless ──
+   (chevron hidden + title click inert; sort/manage buttons are siblings of
+   .section-title so they keep working; hermes-footer.js already force-opens
+   any stale persisted collapsed state) */
+#sessions-section .section-collapse-btn { display: none !important; }
+#sessions-section .section-title { pointer-events: none; }

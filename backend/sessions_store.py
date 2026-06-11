@@ -64,7 +64,8 @@ def session_key_for(session_id: str) -> str:
 
 
 def create(name: str | None = None, model: str | None = None,
-           endpoint_url: str | None = None, endpoint_id: str | None = None) -> dict:
+           endpoint_url: str | None = None, endpoint_id: str | None = None,
+           origin: str | None = None) -> dict:
     sid = uuid.uuid4().hex[:12]
     rec = {
         "id": sid,
@@ -78,6 +79,9 @@ def create(name: str | None = None, model: str | None = None,
         "important": False,
         "created": _now_ms(),
         "updated": _now_ms(),
+        # Who spawned this session: None = the user, "inbox" = a triage
+        # handoff. The sidebar hides non-user origins unless engaged.
+        "origin": origin,
     }
     with _LOCK:
         data = _load()

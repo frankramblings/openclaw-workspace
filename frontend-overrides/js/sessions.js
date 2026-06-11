@@ -757,6 +757,14 @@ function _renderSessionListImpl() {
   const savedOrder = Storage.get('session-order');
   let orderedSessions = sessions.filter(s => !s.archived && s.folder !== 'Assistant' && !_isIncognitoSession(s.id) && (s.name || '').trim() !== 'Nobody' && (s.name || '').trim() !== 'Incognito');
 
+  // HERMES: hide triage-spawned threads — the inbox handoff seeds sessions
+  // the user never started (backend marks them origin:"inbox"; older ones
+  // are matched by their generated name prefixes). Kept visible when
+  // starred, or while actually open (the handoff navigates into them).
+  orderedSessions = orderedSessions.filter(s =>
+    s.id === currentSessionId || s.is_important ||
+    !(s.origin === 'inbox' || /^(Reply|Inbox): /.test(s.name || '')));
+
   // HERMES: inline filter narrows the list in place
   if (_hermesFilter) {
     orderedSessions = orderedSessions.filter(s =>

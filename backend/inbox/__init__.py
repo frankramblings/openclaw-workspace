@@ -277,7 +277,7 @@ async def spinoff(payload: dict):
                 "Reply with one short sentence confirming you have the context; "
                 "the user will say what they need next.")
         sess_name = f"Inbox: {title[:48]}"
-    sess = sessions_store.create(name=sess_name)
+    sess = sessions_store.create(name=sess_name, origin="inbox")
     try:
         await asyncio.wait_for(_agent_turn(seed, sess["sessionKey"], None),
                                timeout=120)

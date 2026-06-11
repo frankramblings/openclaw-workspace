@@ -121,7 +121,7 @@ def _stall_action(silent_s: float) -> str | None:
     return None
 
 
-def _is_run_activity(payload: dict, run_id) -> bool:
+def _is_run_activity(payload: dict, run_id: str | None) -> bool:
     """Does this gateway event prove OUR run is alive? Own-run frames count;
     so do codex_app_server.* runtime streams (compaction etc. keep emitting
     them mid-turn). Other runs' frames (cron, heartbeat) do NOT."""
@@ -584,7 +584,7 @@ async def _await_response(ws, req_id: str) -> dict:
 _TOOL_ITEM_KINDS = {"command", "tool"}
 
 
-async def _relay_events(ws, run_id):
+async def _relay_events(ws, run_id, run_info: dict | None = None):
     """Translate gateway events for `run_id` into Odysseus SSE chunks.
 
     Live v4 mapping (verified 2026-06-03 against gpt-5.5):
@@ -603,19 +603,40 @@ async def _relay_events(ws, run_id):
         is Signal), not a user-facing action — its reply arrives as a chat delta, so
         we skip its (otherwise blank) tool card.
 
-    Streams `codex_app_server.*` are metadata-only and ignored. Concurrent cron /
-    heartbeat runs carry a different runId and are filtered out.
+    Streams `codex_app_server.*` are metadata-only and ignored for OUTPUT — but
+    they count as run-liveness for the stall watchdog (see _is_run_activity).
+    Concurrent cron / heartbeat runs carry a different runId and are filtered out.
     """
     emitted_len = 0        # fallback cumulative-text cursor
     analysis_seen: dict = {}  # itemId -> reasoning chars already emitted
     tool_since_text = False  # a tool card emitted since the last text delta?
     images_seen: set = set()  # image block urls already emitted (dedupe finals)
+    timing = run_info.setdefault("timing", {}) if run_info is not None else {}
+    last_activity = time.monotonic()
     while True:
-        frame = await _recv_json(ws)
+        # Stall watchdog: the gateway WS has pings disabled (a keepalive
+        # timeout would kill it mid-turn), so a codex stall used to hang this
+        # read — and the user's spinner — forever. Wake every tick, measure
+        # run-silence, surface it, and bail past the hard cap. websockets'
+        # recv() is cancellation-safe: a timed-out read loses no frame.
+        try:
+            frame = await asyncio.wait_for(_recv_json(ws), timeout=_STALL_TICK_S)
+        except TimeoutError:
+            silent = time.monotonic() - last_activity
+            action = _stall_action(silent)
+            if action == "cap":
+                raise _RunStalled(int(silent))
+            if action == "notice":
+                # Doubles as an SSE keepalive for the Tailscale Serve proxy.
+                yield _sse({"type": "stall", "silent_for": int(silent)})
+            continue
         if frame.get("type") != "event":
             continue
         event = frame.get("event")
         payload = frame.get("payload") or {}
+        if _is_run_activity(payload, run_id):
+            timing.setdefault("t_first_frame", time.monotonic())
+            last_activity = time.monotonic()
         frame_run = payload.get("runId")
         if run_id and frame_run is not None and frame_run != run_id:
             continue  # scope strictly to this turn
@@ -649,6 +670,7 @@ async def _relay_events(ws, run_id):
                     delta = text[emitted_len:]
                     emitted_len = len(text)
             if delta:
+                timing.setdefault("t_first_text", time.monotonic())
                 if tool_since_text:
                     yield _sse({"type": "agent_step"})  # open a fresh bubble
                     tool_since_text = False

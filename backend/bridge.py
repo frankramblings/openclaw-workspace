@@ -311,6 +311,9 @@ async def stream_turn(message: str, session_key: str | None = None,
                 run_info["stalled"] = True
             # Best-effort kill of the zombie run (the gateway itself may be
             # wedged — never let cleanup failure mask the user-facing path).
+            # If the abort fails the zombie may still complete later and
+            # double-write the session transcript — accepted risk (user chose
+            # auto-retry; see the 2026-06-11 spec).
             with contextlib.suppress(Exception):
                 await gateway_call("chat.abort",
                                    {"sessionKey": session_key, "runId": run_id},
@@ -319,10 +322,12 @@ async def stream_turn(message: str, session_key: str | None = None,
             if stalled_attempts > 1:
                 yield _sse({"type": "tool_output", "tool": "agent",
                             "output": ("🧠 no gateway activity for "
-                                       f"{int(config.STALL_CAP_S) // 60}m, retried "
+                                       f"{max(1, int(config.STALL_CAP_S) // 60)}m, retried "
                                        "once — codex looks stalled; try again or "
                                        "check the status dot"),
                             "exit_code": 1})
+                if run_info is not None:
+                    run_info.setdefault("timing", {})["t_end"] = time.monotonic()
                 break
             if run_info is not None:
                 run_info["retried"] = True

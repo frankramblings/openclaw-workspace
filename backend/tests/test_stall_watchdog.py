@@ -189,6 +189,7 @@ def test_double_stall_aborts_twice_then_errors(monkeypatch):
     assert terminal["type"] == "tool_output" and terminal["exit_code"] == 1
     assert "stalled" in terminal["output"]
     assert run_info["stalled"] is True and run_info["retried"] is True
+    assert "t_end" in run_info["timing"]
 
 
 def test_stall_then_success_recovers(monkeypatch):
@@ -222,3 +223,44 @@ def test_no_stall_no_abort(monkeypatch):
     assert aborts == []
     assert opens == [True]
     assert {"delta": "hi"} in out
+
+
+def test_warm_lock_released_when_retry_holds_it(monkeypatch):
+    """The retry _open_turn can legitimately promote its fresh socket to the
+    warm slot and hand back use_warm=True (allow_warm=False only skips REUSE,
+    not promotion). If that retry then stalls too, the per-iteration cleanup
+    must still release the warm lock — a leak here would silently force fresh
+    connect+auth on every later turn."""
+    opens = []
+    aborts = []
+
+    async def fake_open_turn(message, session_key, model_ref, attachments,
+                             run_info, allow_warm):
+        opens.append(allow_warm)
+        run_id = f"r{len(opens)}"
+        if run_info is not None:
+            run_info["runId"] = run_id
+        if len(opens) == 2:           # retry: promote to warm slot like the real code
+            await bridge._warm.lock.acquire()
+            bridge._warm.ws = FakeAliveWS()
+            return bridge._warm.ws, run_id, True
+        return FakeAliveWS(), run_id, False
+
+    async def fake_gateway_call(method, params=None, timeout=30.0):
+        aborts.append((method, params))
+        return {"ok": True, "payload": {}}
+
+    async def always_stall(ws, run_id, run_info=None):
+        raise bridge._RunStalled(240)
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(bridge, "_open_turn", fake_open_turn)
+    monkeypatch.setattr(bridge, "gateway_call", fake_gateway_call)
+    monkeypatch.setattr(bridge, "_relay_events", always_stall)
+
+    out = _collect_stream(bridge.stream_turn("hi", session_key="k"))
+
+    assert len(aborts) == 2
+    assert not bridge._warm.lock.locked(), "warm lock leaked by retry cleanup"
+    assert bridge._warm.ws is None, "stalled warm socket not invalidated"
+    assert out[-1]["exit_code"] == 1

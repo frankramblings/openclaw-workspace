@@ -85,7 +85,9 @@ pre, code, .hljs,
 /* With the label hidden, the newchat hover-expand (style.css widens to 68px)
    would animate to an empty pill — keep the button circular instead. */
 .send-btn.newchat-expanded { width: 34px !important; padding: 0; }
-/* Model picker as a dropdown chip */
+/* Model picker as a dropdown chip. It sits in the composer's bottom control
+   row (Hermes placement) — vendor style.css still carries the old
+   .chat-input-top absolute-positioning rules, which simply no longer match. */
 .model-picker-btn {
   border: 1px solid var(--border);
   border-radius: var(--hermes-pill);
@@ -93,6 +95,7 @@ pre, code, .hljs,
   background: transparent;
   font-size: 12px;
 }
+.chat-input-right .model-picker-menu { bottom: calc(100% + 10px); }
 
 /* ── Modals: Hermes settings-dialog conventions ── */
 .modal label, .modal .admin-toggle-label, .color-row label {
@@ -243,18 +246,6 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
   border-top: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 5px;
 }
-.hermes-footer-label {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
-  color: var(--hermes-faint);
-}
-#hermes-footer-model {
-  display: flex; align-items: center; justify-content: space-between; gap: 6px;
-  background: var(--input-bg, var(--panel));
-  border: 1px solid var(--border); border-radius: 8px;
-  color: var(--fg); font-size: 12px; padding: 6px 9px; cursor: pointer;
-  text-align: left;
-}
-#hermes-footer-model:hover { border-color: var(--red); }
 #hermes-footer-path {
   font-size: 10px; color: var(--hermes-faint);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

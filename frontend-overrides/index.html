@@ -956,13 +956,10 @@
         </button>
       </div>
     </div>
-      <!-- HERMES: footer console — model mirror + workspace path -->
+      <!-- HERMES: footer console — workspace path only. The model picker
+           lives solely in the chat input bar (no footer mirror; it read as
+           a second, duplicate picker). -->
       <div id="hermes-footer">
-        <div class="hermes-footer-label">MODEL</div>
-        <button type="button" id="hermes-footer-model" title="Switch model">
-          <span id="hermes-footer-model-label">…</span>
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
         <div id="hermes-footer-path" class="hermes-mono" hidden></div>
       </div>
   </nav>
@@ -1029,19 +1026,6 @@
       <div class="chat-input-top">
         <div id="message-ghost" class="ghost-text-overlay" aria-hidden="true"></div>
         <textarea id="message" placeholder="Message __AGENT_NAME__..." required autocomplete="off" aria-label="Message input" rows="1" autofocus></textarea>
-        <!-- Model picker (inside chatbox, top-right) -->
-        <div class="model-picker-wrap" id="model-picker-wrap">
-          <button type="button" class="model-picker-btn" id="model-picker-btn" title="Switch model"><span id="model-picker-label">Select model</span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
-          <div class="model-picker-menu hidden" id="model-picker-menu">
-            <div class="model-picker-search-row">
-              <input type="text" id="model-picker-search" placeholder="Search models..." autocomplete="off">
-              <button type="button" class="model-picker-action-btn primary" id="model-picker-add-models-btn" title="Add model endpoints" aria-label="Add model endpoints">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-              </button>
-            </div>
-            <div class="model-picker-list" id="model-picker-list"></div>
-          </div>
-        </div>
       </div>
       <div id="pinned-tools-bar"></div>
       <div class="chat-input-bottom" style="visibility:hidden">
@@ -1138,6 +1122,20 @@
           </button>
         </div>
         <div class="chat-input-right">
+          <!-- HERMES: model picker as a dropdown chip in the control row
+               (single picker — the sidebar footer no longer mirrors it) -->
+          <div class="model-picker-wrap" id="model-picker-wrap">
+            <button type="button" class="model-picker-btn" id="model-picker-btn" title="Switch model"><span id="model-picker-label">Select model</span> <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg></button>
+            <div class="model-picker-menu hidden" id="model-picker-menu">
+              <div class="model-picker-search-row">
+                <input type="text" id="model-picker-search" placeholder="Search models..." autocomplete="off">
+                <button type="button" class="model-picker-action-btn primary" id="model-picker-add-models-btn" title="Add model endpoints" aria-label="Add model endpoints">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                </button>
+              </div>
+              <div class="model-picker-list" id="model-picker-list"></div>
+            </div>
+          </div>
           <!-- Agent / Chat mode toggle -->
           <div class="mode-toggle">
             <button type="button" class="mode-toggle-btn active" id="mode-agent-btn">Agent</button>

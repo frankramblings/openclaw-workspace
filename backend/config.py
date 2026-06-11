@@ -105,6 +105,14 @@ DATA_DIR = Path(os.environ.get("WORKSPACE_DATA_DIR", REPO_ROOT / ".data"))
 # How long to wait on a single chat turn before giving up.
 TURN_TIMEOUT_S = float(os.environ.get("WORKSPACE_TURN_TIMEOUT_S", "180"))
 
+# Stall watchdog (workspace chat): run-silence thresholds for the bridge's
+# WS relay. Notice → SSE "stall" frames; cap → abort + retry-once.
+STALL_NOTICE_S = float(os.environ.get("WORKSPACE_STALL_NOTICE", "45"))
+STALL_CAP_S = float(os.environ.get("WORKSPACE_STALL_CAP", "240"))
+# Chat auto-titles run on a cheap model so they never race the user's real
+# turn through codex on the big one.
+TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL", "openai/gpt-5.4-mini")
+
 
 # --- Branding (the agent's name + theme accent) ------------------------------
 # The agent name is WORKSPACE branding, not OpenClaw config: OpenClaw's

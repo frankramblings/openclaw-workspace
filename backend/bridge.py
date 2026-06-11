@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import time
 import uuid
 
 import websockets
@@ -99,6 +100,36 @@ class _ChatSendRejected(Exception):
     def __init__(self, ack):
         super().__init__(str(ack))
         self.ack = ack
+
+
+# Watchdog tick: how often the relay wakes to check run-silence. Fixed — the
+# user-tunable knobs are config.STALL_NOTICE_S / STALL_CAP_S.
+_STALL_TICK_S = 20.0
+
+
+class _RunStalled(Exception):
+    """No run-scoped gateway activity for STALL_CAP_S — the caller should
+    abort the zombie run and retry once on a fresh connection."""
+
+
+def _stall_action(silent_s: float) -> str | None:
+    """What the watchdog should do after `silent_s` seconds of run-silence."""
+    if silent_s >= config.STALL_CAP_S:
+        return "cap"
+    if silent_s >= config.STALL_NOTICE_S:
+        return "notice"
+    return None
+
+
+def _is_run_activity(payload: dict, run_id) -> bool:
+    """Does this gateway event prove OUR run is alive? Own-run frames count;
+    so do codex_app_server.* runtime streams (compaction etc. keep emitting
+    them mid-turn). Other runs' frames (cron, heartbeat) do NOT."""
+    frame_run = payload.get("runId")
+    if frame_run is not None and frame_run == run_id:
+        return True
+    stream = payload.get("stream")
+    return isinstance(stream, str) and stream.startswith("codex_app_server")
 
 
 def _ws_alive(ws) -> bool:

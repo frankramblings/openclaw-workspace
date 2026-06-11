@@ -265,13 +265,21 @@ def _log_turn_timing(record: dict) -> None:
             fh.write(json.dumps(record) + "\n")
 
 
+# First checks fire fast — the reply usually already sits in the transcript
+# when this poll starts (it lands seconds *before* we get here on slow turns,
+# milliseconds after on fast ones). Tail stays ~10s total like the old
+# 5 × 2s schedule.
+_LATE_REPLY_SCHEDULE = (0.3, 0.5, 1.0, 2.0, 2.0, 2.0, 2.2)
+
+
 async def _late_reply(session_key: str, brain_message: str,
-                      attempts: int = 5, delay_s: float = 2.0) -> str | None:
+                      _sleep=asyncio.sleep) -> str | None:
     """Fetch the reply that the gateway commits to the transcript only AFTER
     the run's lifecycle end (message-tool delivery — see _relay_events docs).
-    Polls briefly; returns None if nothing lands (genuinely textless turn)."""
-    for _ in range(attempts):
-        await asyncio.sleep(delay_s)
+    Polls with fast-start backoff; returns None if nothing lands (genuinely
+    textless turn)."""
+    for delay_s in _LATE_REPLY_SCHEDULE:
+        await _sleep(delay_s)
         try:
             data = await bridge.fetch_history(session_key)
         except Exception:  # noqa: BLE001 - transient WS trouble: keep polling

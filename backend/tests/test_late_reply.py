@@ -51,3 +51,46 @@ def test_joins_multiple_assistant_messages():
             {"role": "assistant", "content": "part one"},
             {"role": "assistant", "content": "part two"}]
     assert reply_after(hist, "q") == "part one\npart two"
+
+
+# --- _late_reply backoff schedule -------------------------------------------------
+
+import asyncio
+
+from backend import app as app_module
+
+
+def test_late_reply_first_check_is_fast(monkeypatch):
+    """The reply already exists when this poll starts — a flat 2s first sleep
+    was pure added latency on every message-tool turn."""
+    delays = []
+
+    async def fake_sleep(s):
+        delays.append(s)
+
+    async def fake_fetch_history(session_key):
+        return {"history": [
+            {"role": "user", "content": "msg"},
+            {"role": "assistant", "content": "the reply"},
+        ]}
+
+    monkeypatch.setattr(app_module.bridge, "fetch_history", fake_fetch_history)
+    out = asyncio.run(app_module._late_reply("k", "msg", _sleep=fake_sleep))
+    assert out == "the reply"
+    assert delays == [0.3]
+
+
+def test_late_reply_walks_full_backoff_then_gives_up(monkeypatch):
+    delays = []
+
+    async def fake_sleep(s):
+        delays.append(s)
+
+    async def fake_fetch_history(session_key):
+        return {"history": []}
+
+    monkeypatch.setattr(app_module.bridge, "fetch_history", fake_fetch_history)
+    out = asyncio.run(app_module._late_reply("k", "msg", _sleep=fake_sleep))
+    assert out is None
+    assert delays == list(app_module._LATE_REPLY_SCHEDULE)
+    assert abs(sum(delays) - 10.0) < 0.01   # same ~10s ceiling as before

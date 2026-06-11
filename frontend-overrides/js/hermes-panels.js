@@ -12,12 +12,17 @@
   // rail = strip button(s) to light when this panel is visible;
   // nativeFs = class the tool itself uses for fullscreen (preferred over
   // generic geometry when present).
+  // Keys are DOM ids; `reg` is the modalManager registration id when it
+  // differs (inbox/notes register under virtual ids). Documents
+  // (#doc-editor-pane) is deliberately ABSENT: it's the drafting-mode
+  // companion designed to sit BESIDE the chat (and beside email for
+  // replies) — fullscreening it would break co-editing. It keeps the
+  // app's split-pane behavior.
   const PANEL_SPECS = {
     'email-lib-modal': { mode: 'full', rail: ['rail-email'], nativeFs: 'email-lib-fullscreen' },
     'calendar-modal':  { mode: 'full', rail: ['rail-calendar'] },
-    'doc-panel':       { mode: 'full', rail: ['rail-documents', 'rail-archive'] },
-    'inbox-panel':     { mode: 'column', width: 720, content: null, rail: ['rail-inbox'] },
-    'notes-panel':     { mode: 'column', width: 960, content: null, rail: ['rail-notes'] },
+    'inbox-modal':     { mode: 'column', width: 720, content: '.cron-modal-card', rail: ['rail-inbox'], reg: 'inbox-panel' },
+    'notes-pane':      { mode: 'column', width: 960, content: null, rail: ['rail-notes'], reg: 'notes-panel' },
     'memory-modal':    { mode: 'column', width: 960, content: '.modal-content', rail: ['rail-memory'] },
     'cron-modal':      { mode: 'column', width: 800, content: '.cron-modal-card', rail: ['rail-cron', 'rail-tasks'] },
   };
@@ -56,7 +61,10 @@
         if (id === exceptId) return;
         const el = document.getElementById(id);
         if (!el || !isVisible(el)) return;
-        if (MM.isRegistered(id)) { if (!MM.isMinimized(id)) MM.close(id); return; }
+        // modalManager knows some windows under a registration id that
+        // differs from the DOM id (inbox-panel/#inbox-modal etc.).
+        const reg = PANEL_SPECS[id].reg || id;
+        if (MM.isRegistered(reg)) { if (!MM.isMinimized(reg)) MM.close(reg); return; }
         const x = el.querySelector('.close-btn, .modal-close, [data-act="close"], button[title="Close"]');
         if (x) x.click(); else el.classList.add('hidden');
       });
@@ -105,7 +113,7 @@
       return el && isVisible(el);
     });
     visibleNow.forEach((id) => {
-      if (emailSplit && (id === 'email-lib-modal' || id === 'doc-panel')) return;
+      if (emailSplit && id === 'email-lib-modal') return;
       applyGeometry(id, document.getElementById(id));
     });
 
@@ -118,8 +126,10 @@
       : (visibleNow.includes(_lastVisible) ? _lastVisible
         : (visibleNow[visibleNow.length - 1] || null));
 
+    // (#doc-editor-pane is unclassified, so during the reply split the only
+    // classified visible window is email itself — leave the pair alone.)
     const splitPair = emailSplit
-      && visibleNow.every((id) => id === 'email-lib-modal' || id === 'doc-panel');
+      && visibleNow.every((id) => id === 'email-lib-modal');
     if (winner && !splitPair && (winner !== _lastVisible || visibleNow.length > 1)) {
       closeAll(winner);
     }

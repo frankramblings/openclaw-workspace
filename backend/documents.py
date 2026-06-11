@@ -337,10 +337,12 @@ async def export_document(doc_id: str, format: str = "docx"):
 # anchors and calls this; the doc it returns opens in the document editor.
 # Wrapper docs carry `vault_path` in frontmatter: _write mirrors edits back to
 # the file, and reopening refreshes the wrapper when the file changed on disk.
-# Editor-compatible vault file types → doc language. .md is first-class; the
-# rest open as text/code docs (the editor mirrors saves back to the file
-# either way, see _write). Anything not listed gets the explorer's read-only
-# preview overlay instead — the frontend treats a 400 here as "not editable".
+# The editor opens ANY vault file that is actually text: the only real gates
+# are UTF-8 decodability and a size ceiling the textarea (and the per-save
+# version snapshots) can stomach on this hardware. Extension is just a
+# syntax-language hint — unknown/missing extensions open as plain "text".
+# The frontend treats a 400 here as "not editable, use the preview overlay".
+EDITOR_MAX_BYTES = 2 * 1024 * 1024
 EDITOR_EXTS = {
     ".md": "markdown", ".txt": "text", ".json": "json", ".py": "python",
     ".js": "javascript", ".mjs": "javascript", ".ts": "typescript",
@@ -350,24 +352,22 @@ EDITOR_EXTS = {
 }
 
 
-def _editor_ext(rel: str) -> str | None:
-    """Editor-compatible extension for a vault path, or None. A .bak wrapper
-    resolves by its inner extension (note.md.bak → .md) so text backups open
-    too; bare/unknown-inner .bak stays incompatible (sqlite & co. ship as
-    binary .bak backups on this box)."""
+def _editor_language(rel: str) -> str:
+    """Syntax-language hint for a vault path. A .bak wrapper resolves by its
+    inner extension (note.md.bak → markdown); anything unrecognized is plain
+    text — it's a hint, not a gate."""
     base = posixpath.basename(rel)
     ext = posixpath.splitext(base)[1].lower()
     if ext == ".bak":
         ext = posixpath.splitext(base[: -len(".bak")])[1].lower()
-    return ext if ext in EDITOR_EXTS else None
+    return EDITOR_EXTS.get(ext, "text")
 
 
 @router.get("/api/vault/open")
 async def open_vault_file(path: str):
     rel = _vault_rel(path)
-    ext = _editor_ext(rel) if rel else None
-    if rel is None or ext is None:
-        return JSONResponse({"error": "not an editor-compatible vault file"}, status_code=400)
+    if rel is None:
+        return JSONResponse({"error": "not a vault file"}, status_code=400)
     f = vs.WORKSPACE / rel
     if not f.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
@@ -377,8 +377,10 @@ async def open_vault_file(path: str):
         if doc:
             return doc
     try:
+        if f.stat().st_size > EDITOR_MAX_BYTES:
+            return JSONResponse({"error": "too large for the editor"}, status_code=400)
         body = f.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
+    except (UnicodeDecodeError, OSError):
         return JSONResponse({"error": "not a text file"}, status_code=400)
     # Reuse an existing wrapper for this path; refresh it if the file moved on.
     if DOCS_DIR.exists():
@@ -401,7 +403,7 @@ async def open_vault_file(path: str):
         # x.md.bak) keeps its extension so tabs stay distinguishable.
         "title": posixpath.basename(rel)[:-len(".md")] if rel.endswith(".md")
                  else posixpath.basename(rel),
-        "language": EDITOR_EXTS[ext],
+        "language": _editor_language(rel),
         "session_id": "", "session_name": "",
         "vault_path": rel,
         "current_content": body,

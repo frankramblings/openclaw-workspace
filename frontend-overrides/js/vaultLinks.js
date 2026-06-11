@@ -8,8 +8,10 @@
 // wraps it as a real library doc (edits mirror back to the file; reopening
 // refreshes from disk). Capture phase so we beat the _blank navigation.
 //
-// The extension gate mirrors the backend's EDITOR_EXTS (documents.py) incl.
-// the .bak inner-extension rule — keep the two in sync when adding types.
+// The backend opens ANY vault text file (content-gated: UTF-8 + size cap;
+// extension is only a language hint — see documents.py). Explicit vault
+// references intercept unconditionally; bare relative paths still need a
+// text-ish extension so ordinary same-origin app links keep navigating.
 (function () {
   function vaultPath(rawHref) {
     if (!rawHref) return null;
@@ -27,7 +29,9 @@
       return null;
     }
     const bare = path.split('?')[0].split('#')[0];
-    if (!/\.(md|txt|json|py|js|mjs|ts|css|html|sh|yaml|yml|toml|ini|csv|log|skill)(\.bak)?$/i.test(bare)) return null;
+    const explicitVaultRef = bare.includes('.openclaw/workspace/') || /^~\//.test(bare);
+    if (!explicitVaultRef
+        && !/\.(md|txt|json|py|js|mjs|ts|css|html|sh|yaml|yml|toml|ini|csv|log|skill)(\.bak)?$/i.test(bare)) return null;
     return bare;
   }
 

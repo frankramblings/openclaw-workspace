@@ -47,26 +47,33 @@ def test_open_creates_wrapper_doc(vault):
 
 def test_open_missing_or_incompatible(vault):
     assert client.get("/api/vault/open?path=memory/nope.md").status_code == 404
-    # 2026-06-10: editor-compatible text types beyond .md open too (the
-    # workspace explorer routes them to the document editor).
+    # 2026-06-10: ANY vault text file opens — extension is only a language
+    # hint. Gates are UTF-8 decodability and the EDITOR_MAX_BYTES ceiling.
     vault("memory/data.txt", "plain text body")
     res = client.get("/api/vault/open?path=memory/data.txt")
     assert res.status_code == 200
     doc = res.json()
     assert doc["language"] == "text"
     assert doc["title"] == "data.txt"          # non-md keeps its extension
-    # .bak wrappers resolve by their inner extension: text backups open...
+    # .bak wrappers take their language from the inner extension.
     vault("memory/old-notes.md.bak", "backup body")
     res = client.get("/api/vault/open?path=memory/old-notes.md.bak")
     assert res.status_code == 200
     assert res.json()["language"] == "markdown"
     assert res.json()["title"] == "old-notes.md.bak"
-    # ...binary-ish backups (unknown inner ext) don't.
-    vault("memory/state.sqlite.bak", "x")
-    assert client.get("/api/vault/open?path=memory/state.sqlite.bak").status_code == 400
-    # Unknown/binary extensions still refuse (explorer falls back to preview).
-    vault("memory/blob.bin", "x")
+    # Unknown extensions — even none at all — open as plain text.
+    vault("memory/NOTES", "extensionless but text")
+    res = client.get("/api/vault/open?path=memory/NOTES")
+    assert res.status_code == 200
+    assert res.json()["language"] == "text"
+    # Actual binary content refuses (explorer falls back to preview)...
+    binpath = vault("memory/blob.bin", "x")
+    binpath.write_bytes(b"\x00\xff\xfe binary \x00")
     assert client.get("/api/vault/open?path=memory/blob.bin").status_code == 400
+    # ...as does anything over the size ceiling.
+    bigpath = vault("memory/huge.log", "x")
+    bigpath.write_text("y" * (2 * 1024 * 1024 + 1), encoding="utf-8")
+    assert client.get("/api/vault/open?path=memory/huge.log").status_code == 400
     assert client.get("/api/vault/open?path=../escape.md").status_code == 400
 
 

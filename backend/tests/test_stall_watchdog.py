@@ -286,9 +286,10 @@ def test_retry_after_streamed_text_opens_fresh_bubble_and_resets_first_stamps(mo
 
     retry_idx = next(i for i, f in enumerate(out) if f.get("type") == "stall_retry")
     assert out[retry_idx + 1] == {"type": "agent_step"}   # fresh bubble
-    # attempt-1 stamps dropped so retry deltas can't go negative
-    assert "t_first_frame" not in run_info["timing"] or \
-        run_info["timing"]["t_first_frame"] != 0.5
+    # attempt-1 stamps dropped so retry deltas can't go negative (the fake
+    # attempt-2 relay sets none, so both keys must be gone entirely)
+    assert "t_first_frame" not in run_info["timing"]
+    assert "t_first_text" not in run_info["timing"]
 
 
 def test_terminal_stall_card_carries_stall_tool_id(monkeypatch):

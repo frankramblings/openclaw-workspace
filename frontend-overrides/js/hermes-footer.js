@@ -69,11 +69,23 @@
       b.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
       b.addEventListener('click', () => {
         import('/static/js/modalManager.js').then((MM) => {
-          document.querySelectorAll('.modal:not(.hidden)').forEach((m) => {
+          // Net 1: every visibly-rendered .modal (computed style, not just the
+          // .hidden class — dynamic modals like calendar's toggle differently).
+          document.querySelectorAll('.modal').forEach((m) => {
             if (!m.id) return;
-            if (MM.isRegistered(m.id)) { MM.close(m.id); return; }
+            const cs = getComputedStyle(m);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return;
+            if (MM.isRegistered(m.id)) {
+              if (!MM.isMinimized(m.id)) MM.close(m.id);
+              return;
+            }
             const x = m.querySelector('.close-btn, .modal-close, button[title="Close"]');
             if (x) x.click(); else m.classList.add('hidden');
+          });
+          // Net 2: registered tool windows that aren't .modal elements.
+          // Minimized chips don't obscure the chat — leave them docked.
+          ['notes-panel', 'doc-panel', 'inbox-panel'].forEach((id) => {
+            try { if (MM.isRegistered(id) && !MM.isMinimized(id)) MM.close(id); } catch (e) {}
           });
         }).catch(() => {});
       });

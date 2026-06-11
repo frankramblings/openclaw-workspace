@@ -225,11 +225,15 @@ async def _open_turn(message, session_key, model_ref, attachments, run_info,
         if attachments:
             send_params["attachments"] = attachments
         send_id = uuid.uuid4().hex
+        if run_info is not None:
+            run_info.setdefault("timing", {})["t_send"] = time.monotonic()
         await ws.send(json.dumps({"type": "req", "id": send_id,
                                   "method": "chat.send", "params": send_params}))
         ack = await _await_response(ws, send_id)
         if not ack.get("ok"):
             raise _ChatSendRejected(ack)
+        if run_info is not None:
+            run_info["timing"]["t_ack"] = time.monotonic()
         run_id = (ack.get("payload") or {}).get("runId")
         if run_info is not None:
             run_info["runId"] = run_id

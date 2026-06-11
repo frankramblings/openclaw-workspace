@@ -15,6 +15,7 @@ import contextlib
 import json
 import mimetypes
 import re
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import Body, FastAPI, Form
@@ -222,6 +223,45 @@ def reply_after(history: list, brain_message: str) -> str | None:
     return text or None
 
 
+def _turn_timing_record(run_info: dict, session_key: str, model_ref: str | None,
+                        *, text_seen: bool, failed: bool) -> dict:
+    """One flat JSONL record describing where this turn's wall-clock went.
+    All *_ms fields are measured from chat.send write; None = never happened."""
+    timing = run_info.get("timing") or {}
+
+    def ms(a: str, b: str) -> int | None:
+        return (int((timing[b] - timing[a]) * 1000)
+                if a in timing and b in timing else None)
+
+    return {
+        "ts": int(time.time()),
+        "session": session_key,
+        "model": model_ref or "default",
+        "ack_ms": ms("t_send", "t_ack"),
+        "first_frame_ms": ms("t_send", "t_first_frame"),
+        "first_text_ms": ms("t_send", "t_first_text"),
+        "late_ms": ms("t_send", "t_late"),
+        "total_ms": ms("t_send", "t_end"),
+        "stalled": bool(run_info.get("stalled")),
+        "retried": bool(run_info.get("retried")),
+        "text_seen": text_seen,
+        "failed": failed,
+    }
+
+
+def _log_turn_timing(record: dict) -> None:
+    """Append one JSONL line to .data/turn_timings.jsonl. Telemetry must never
+    break a turn: every failure is swallowed. Single-generation rotation at
+    2MB keeps the file bounded on this disk-starved box."""
+    with contextlib.suppress(Exception):
+        path = config.DATA_DIR / "turn_timings.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > 2_000_000:
+            path.replace(path.with_name(path.name + ".old"))
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+
+
 async def _late_reply(session_key: str, brain_message: str,
                       attempts: int = 5, delay_s: float = 2.0) -> str | None:
     """Fetch the reply that the gateway commits to the transcript only AFTER
@@ -369,11 +409,15 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             if not text_seen and not failed:
                 late = await _late_reply(session_key, brain_message)
                 if late:
+                    run_info.setdefault("timing", {})["t_late"] = time.monotonic()
                     if tools_seen:
                         yield bridge._sse({"type": "agent_step"})  # fresh bubble
                     yield bridge._sse({"delta": late})
         finally:
             _ACTIVE_RUNS.pop(session_key, None)
+            _log_turn_timing(_turn_timing_record(
+                run_info, session_key, _model_ref(rec),
+                text_seen=text_seen, failed=failed))
             if draft_doc is not None:
                 try:
                     update = draft_mode.post_turn_payload(draft_doc)

@@ -613,30 +613,36 @@ async def _relay_events(ws, run_id, run_info: dict | None = None):
     images_seen: set = set()  # image block urls already emitted (dedupe finals)
     timing = run_info.setdefault("timing", {}) if run_info is not None else {}
     last_activity = time.monotonic()
+    last_notice = last_activity   # paces "stall" SSE frames to one per tick
     while True:
         # Stall watchdog: the gateway WS has pings disabled (a keepalive
         # timeout would kill it mid-turn), so a codex stall used to hang this
-        # read — and the user's spinner — forever. Wake every tick, measure
-        # run-silence, surface it, and bail past the hard cap. websockets'
-        # recv() is cancellation-safe: a timed-out read loses no frame.
+        # read — and the user's spinner — forever. The check runs EVERY
+        # iteration (not just on timeout): unrelated runs' frames keep
+        # arriving on this shared socket and would otherwise restart the
+        # wait window forever, starving detection. websockets' recv() is
+        # cancellation-safe: a timed-out read loses no frame.
+        now = time.monotonic()
+        silent = now - last_activity
+        action = _stall_action(silent)
+        if action == "cap":
+            raise _RunStalled(int(silent))
+        if action == "notice" and now - last_notice >= _STALL_TICK_S:
+            last_notice = now
+            # Doubles as an SSE keepalive for the Tailscale Serve proxy.
+            yield _sse({"type": "stall", "silent_for": int(silent)})
         try:
             frame = await asyncio.wait_for(_recv_json(ws), timeout=_STALL_TICK_S)
         except TimeoutError:
-            silent = time.monotonic() - last_activity
-            action = _stall_action(silent)
-            if action == "cap":
-                raise _RunStalled(int(silent))
-            if action == "notice":
-                # Doubles as an SSE keepalive for the Tailscale Serve proxy.
-                yield _sse({"type": "stall", "silent_for": int(silent)})
             continue
         if frame.get("type") != "event":
             continue
         event = frame.get("event")
         payload = frame.get("payload") or {}
         if _is_run_activity(payload, run_id):
-            timing.setdefault("t_first_frame", time.monotonic())
-            last_activity = time.monotonic()
+            now = time.monotonic()
+            timing.setdefault("t_first_frame", now)
+            last_activity = now
         frame_run = payload.get("runId")
         if run_id and frame_run is not None and frame_run != run_id:
             continue  # scope strictly to this turn

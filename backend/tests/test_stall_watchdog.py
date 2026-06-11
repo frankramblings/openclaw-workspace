@@ -100,3 +100,24 @@ def test_relay_records_first_frame_and_first_text_timing(monkeypatch):
     asyncio.run(go())
     timing = run_info["timing"]
     assert "t_first_frame" in timing and "t_first_text" in timing
+
+
+def test_unrelated_traffic_cannot_starve_stall_detection(monkeypatch):
+    """Other runs' frames keep the socket busy (recv never times out), but our
+    run is silent — the watchdog must still trip the cap."""
+    _fast_watchdog(monkeypatch, notice=0.0, cap=0.03)
+
+    class ChattyWS:
+        async def recv(self):
+            await asyncio.sleep(0.005)   # always faster than the tick
+            return json.dumps({"type": "event", "event": "agent",
+                               "payload": {"runId": "OTHER",
+                                           "stream": "lifecycle",
+                                           "data": {"phase": "end"}}})
+
+    async def go():
+        with pytest.raises(bridge._RunStalled):
+            async for _ in bridge._relay_events(ChattyWS(), "r1"):
+                pass
+
+    asyncio.run(go())

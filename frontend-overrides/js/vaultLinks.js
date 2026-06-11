@@ -1,4 +1,4 @@
-// Vault .md links in chat → open in the document editor.
+// Vault file links in chat → open in the document editor.
 //
 // The agent links files it writes by vault path (absolute, ~, or relative —
 // e.g. [radar](~/.openclaw/workspace/memory/proactive-drafts/x.md)).
@@ -7,6 +7,9 @@
 // them in the chat history and opens the file via GET /api/vault/open, which
 // wraps it as a real library doc (edits mirror back to the file; reopening
 // refreshes from disk). Capture phase so we beat the _blank navigation.
+//
+// The extension gate mirrors the backend's EDITOR_EXTS (documents.py) incl.
+// the .bak inner-extension rule — keep the two in sync when adding types.
 (function () {
   function vaultPath(rawHref) {
     if (!rawHref) return null;
@@ -24,7 +27,7 @@
       return null;
     }
     const bare = path.split('?')[0].split('#')[0];
-    if (!/\.md$/i.test(bare)) return null;
+    if (!/\.(md|txt|json|py|js|mjs|ts|css|html|sh|yaml|yml|toml|ini|csv|log|skill)(\.bak)?$/i.test(bare)) return null;
     return bare;
   }
 

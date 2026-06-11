@@ -417,3 +417,91 @@ body:not(.hermes-rail-fallback) #rail-gateway         /* duplicate of the gw dot
 
 /* Drag-to-reorder feedback for strip icons (strip-order.js) */
 .icon-rail-btn.hermes-dragging { opacity: 0.35; }
+
+/* ── HERMES panel mode (desktop only; mobile keeps bottom sheets) ──
+   Engine: js/hermes-panels.js adds .hermes-panel (+ .hermes-panel-column,
+   .hermes-panel-content on the inner card / .hermes-panel-content-self when
+   the window element itself is the column) and sets --hermes-panel-w on the
+   window element. body.hermes-floating scopes every geometric rule off. */
+@media (min-width: 769px) {
+  body:not(.hermes-floating) .hermes-panel {
+    position: fixed !important;
+    top: 0 !important; right: 0 !important; bottom: 0 !important;
+    /* Canonical pane-left used by the app's own fullscreen panels
+       (style.css ~4557/14143); strip mode re-declares --icon-rail-w:0 at
+       body level, so this is correct in both strip and rail-fallback. */
+    left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px)) !important;
+    width: auto !important; height: auto !important;
+    max-width: none !important; max-height: none !important;
+    transform: none !important;        /* defuse drag/snap offsets */
+    border-radius: 0 !important;
+    margin: 0 !important;
+    z-index: 200;
+  }
+  /* Docked/tiled states must not fight the panel */
+  body:not(.hermes-floating) .hermes-panel.modal-left-docked,
+  body:not(.hermes-floating) .hermes-panel.modal-right-docked {
+    left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px)) !important;
+    right: 0 !important;
+  }
+  /* Column variant: muted backdrop (replaces the dim/blur overlay) */
+  body:not(.hermes-floating) .hermes-panel-column {
+    background: var(--bg) !important;
+    backdrop-filter: none !important;  /* cron/inbox overlays blur(2px) */
+  }
+  /* Inner-card column (memory .modal-content, cron .cron-modal-card):
+     full-height centered column with 1px side borders. !important because
+     drags leave inline width/left styles on modal contents. */
+  body:not(.hermes-floating) .hermes-panel-column .hermes-panel-content {
+    max-width: var(--hermes-panel-w, 860px) !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    height: 100% !important;
+    max-height: none !important;       /* .cron-modal-card caps at 82vh */
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: var(--panel) !important;
+    border-top: none !important; border-bottom: none !important;
+    border-left: 1px solid var(--border) !important;
+    border-right: 1px solid var(--border) !important;
+  }
+  /* Self-case: the window element IS the column. It also carries
+     .hermes-panel (width:auto / max-width:none / margin:0 !important above)
+     — these equal-specificity rules sit later in source, so they win the
+     !important tie. left/right stay pinned full-pane; max-width + auto
+     margins center the over-constrained fixed box (CSS2.1 §10.3.7). */
+  body:not(.hermes-floating) .hermes-panel-content-self {
+    max-width: var(--hermes-panel-w, 860px) !important;
+    margin: 0 auto !important;
+    background: var(--panel) !important;
+    border-left: 1px solid var(--border) !important;
+    border-right: 1px solid var(--border) !important;
+  }
+  /* Muted gutters behind the centered self-column: pseudo backdrop filling
+     the pane; z-index:-1 stays inside the panel's own stacking context
+     (position:fixed + z-index:200), so it never dives under the app. */
+  body:not(.hermes-floating) .hermes-panel-content-self::before {
+    content: '';
+    position: fixed;
+    top: 0; bottom: 0; right: 0;
+    left: calc(var(--icon-rail-w, 48px) + var(--sidebar-w, 0px));
+    background: var(--bg);
+    z-index: -1;
+  }
+  /* Panel chrome — VERIFIED: windows have NO dedicated drag/resize handle
+     elements (.modal-drag-handle/.resize-handle/.modal-resize-handle don't
+     exist; the only *-resize-handle classes are sidebar/rail affordances).
+     Drag = windowDrag.js makeWindowDraggable bound to .modal-header, which
+     gets inline cursor:move and writes inline left/top/transform during
+     drags — all beaten by the !important geometry above. Just retire the
+     misleading move cursor on the real handle. */
+  body:not(.hermes-floating) .hermes-panel .modal-header {
+    cursor: default !important;
+  }
+}
+/* Active strip tab (all viewports) */
+.icon-rail-btn.hermes-active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: var(--red);
+}

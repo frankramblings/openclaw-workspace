@@ -1,7 +1,15 @@
 # Hermes Panel Mode — Design
 
 **Date:** 2026-06-10
-**Status:** Pending user review
+**Status:** Shipped 2026-06-11 (commits 190f006..95ea8ba + f8e0b27).
+Implementation deltas from this spec, all grounded during build:
+Deep Research dropped (input-mode toggle, not a window); **Documents dropped
+from PANEL_SPECS** — #doc-editor-pane is the drafting-mode companion designed
+to sit beside the chat (and beside email for replies); fullscreening it would
+break co-editing, so it keeps split-pane behavior. Real DOM ids mapped
+(#inbox-modal reg inbox-panel, #notes-pane reg notes-panel). Exclusivity is
+newcomer-aware (key-order bug found in review). The email reply split
+(email-snap-left + doc pane) is exempted from sweep/geometry.
 **Builds on:** `2026-06-10-hermes-ui-adoption-design.md` (shipped). User approved
 "panel-feel on the modal chassis" and asked for per-tab desktop/mobile layout
 optimization — a list tool like Inbox must not stretch absurdly at full width.

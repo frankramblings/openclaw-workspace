@@ -794,13 +794,22 @@ import createResearchSynapse from './researchSynapse.js';
       // (removing the declaration made every send with the web toggle on
       // throw ReferenceError before the fetch — chat went silently dead).
       const _isAgent = true;
-      const timeoutId = setTimeout(() => {
+      const _onTimeout = () => {
         if (!abortCtrl.signal.aborted) {
           timedOut = true;
           abortCtrl._reason = 'timeout';
           abortCtrl.abort();
         }
-      }, timeoutMs);
+      };
+      let timeoutId = setTimeout(_onTimeout, timeoutMs);
+      // Watchdog stall/retry frames prove the backend pipe is alive — push the
+      // client deadline out so the watchdog (not this blunt timer) owns
+      // hung-turn handling. Without this the 6-min abort fires before the
+      // watchdog's 8-min terminal card can ever reach the user.
+      const _extendTimeout = () => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(_onTimeout, timeoutMs);
+      };
       
       const box = el('chat-history');
       holder = document.createElement('div');
@@ -1905,6 +1914,8 @@ import createResearchSynapse from './researchSynapse.js';
                 if (currentHolder && json.id) currentHolder.dataset.dbId = json.id;
 
               } else if (json.type === 'stall') {
+                _extendTimeout(); // live pipe — push client deadline past the watchdog's cap
+                if (_isBg) continue;
                 // Backend watchdog: no gateway activity for silent_for seconds.
                 // Surface it on whichever wait indicator is live right now.
                 const _stallLabel = 'Still waiting — no activity for ' +
@@ -1914,6 +1925,8 @@ import createResearchSynapse from './researchSynapse.js';
                 if (_dots && _dots._spinner) _dots._spinner.updateMessage(_stallLabel);
                 else if (spinner && spinner.element && !accumulated) spinner.updateMessage(_stallLabel);
               } else if (json.type === 'stall_retry') {
+                _extendTimeout(); // retry proves the backend is alive — extend the deadline
+                if (_isBg) continue;
                 const _retryLabel = 'Stalled — retrying on a fresh connection…';
                 const _dots = document.querySelector('.agent-thinking-dots');
                 if (_dots && _dots._spinner) _dots._spinner.updateMessage(_retryLabel);

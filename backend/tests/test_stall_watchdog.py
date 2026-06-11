@@ -264,3 +264,39 @@ def test_warm_lock_released_when_retry_holds_it(monkeypatch):
     assert not bridge._warm.lock.locked(), "warm lock leaked by retry cleanup"
     assert bridge._warm.ws is None, "stalled warm socket not invalidated"
     assert out[-1]["exit_code"] == 1
+
+
+def test_retry_after_streamed_text_opens_fresh_bubble_and_resets_first_stamps(monkeypatch):
+    calls = {"n": 0}
+
+    async def stall_after_text(ws, run_id, run_info=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            if run_info is not None:
+                run_info.setdefault("timing", {})["t_first_text"] = 1.0
+                run_info["timing"]["t_first_frame"] = 0.5
+            yield bridge._sse({"delta": "partial"})
+            raise bridge._RunStalled(240)
+        yield bridge._sse({"delta": "full reply"})
+
+    run_info: dict = {}
+    opens, aborts = _wire_stall(monkeypatch, stall_after_text)
+    out = _collect_stream(bridge.stream_turn("hi", session_key="k",
+                                             run_info=run_info))
+
+    retry_idx = next(i for i, f in enumerate(out) if f.get("type") == "stall_retry")
+    assert out[retry_idx + 1] == {"type": "agent_step"}   # fresh bubble
+    # attempt-1 stamps dropped so retry deltas can't go negative
+    assert "t_first_frame" not in run_info["timing"] or \
+        run_info["timing"]["t_first_frame"] != 0.5
+
+
+def test_terminal_stall_card_carries_stall_tool_id(monkeypatch):
+    async def always_stall(ws, run_id, run_info=None):
+        raise bridge._RunStalled(240)
+        yield  # pragma: no cover
+
+    opens, aborts = _wire_stall(monkeypatch, always_stall)
+    out = _collect_stream(bridge.stream_turn("hi", session_key="k"))
+    terminal = out[-1]
+    assert terminal["exit_code"] == 1 and terminal["tool_id"] == "stall"

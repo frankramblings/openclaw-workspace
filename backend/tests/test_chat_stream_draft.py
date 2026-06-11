@@ -2,11 +2,19 @@
 emits doc_update before [DONE]. The bridge is faked; no gateway needed."""
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend import app as app_module
-from backend import bridge, documents
+from backend import bridge, config, documents
 from backend.app import app
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path, monkeypatch):
+    """Redirect config.DATA_DIR so /api/chat_stream tests never write to the
+    real .data/turn_timings.jsonl (every hit would pollute production telemetry)."""
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
 
 
 def _events(sse_text: str) -> list:

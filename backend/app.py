@@ -408,7 +408,10 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                     if frame.get("type") in ("tool_start", "tool_output"):
                         tools_seen = True
                     if (frame.get("exit_code") == 1
-                            and frame.get("tool") in ("bridge", "agent")) \
+                            and frame.get("tool") in ("bridge", "agent")
+                            # stall terminal card still allows the late-reply
+                            # poll to salvage a transcript-landed reply.
+                            and frame.get("tool_id") != "stall") \
                             or frame.get("tool_id") == "abort":
                         failed = True
                 yield chunk

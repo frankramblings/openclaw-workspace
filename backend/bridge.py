@@ -325,6 +325,10 @@ async def stream_turn(message: str, session_key: str | None = None,
             stalled_attempts += 1
             if stalled_attempts > 1:
                 yield _sse({"type": "tool_output", "tool": "agent",
+                            # tool_id "stall" lets app.py's failed-detection skip
+                            # this card so the late-reply poll can still salvage a
+                            # transcript-landed reply after an 8-min double stall.
+                            "tool_id": "stall",
                             "output": ("🧠 no gateway activity for "
                                        f"{max(1, int(config.STALL_CAP_S) // 60)}m, retried "
                                        "once — codex looks stalled; try again or "
@@ -336,6 +340,16 @@ async def stream_turn(message: str, session_key: str | None = None,
             if run_info is not None:
                 run_info["retried"] = True
             yield _sse({"type": "stall_retry"})
+            if run_info is not None and "t_first_text" in run_info.get("timing", {}):
+                # Attempt 1 already streamed text — open a fresh bubble so the
+                # retry's full reply doesn't concatenate into the partial one.
+                yield _sse({"type": "agent_step"})
+            if run_info is not None:
+                # Attempt-1 first-frame/first-text stamps would go negative
+                # against the retry's fresh t_send — drop them so all deltas
+                # describe the attempt that produced the outcome.
+                run_info.get("timing", {}).pop("t_first_frame", None)
+                run_info.get("timing", {}).pop("t_first_text", None)
             ws, run_id, use_warm = await _open_turn(
                 message, session_key, model_ref, attachments, run_info,
                 allow_warm=False)

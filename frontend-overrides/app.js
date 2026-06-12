@@ -3372,8 +3372,11 @@ function startWorkspaceApp() {
       _prevVPH = visualViewport.height;
       // Keyboard opened (viewport shrank significantly)
       if (delta < -50) {
+        // Only chase the bottom if the user was already pinned there —
+        // opening the keyboard to quote/copy an earlier message must not
+        // yank them down (review C4). uiModule guards every other scroller.
         const hist = document.getElementById('chat-history');
-        if (hist) {
+        if (hist && uiModule.getAutoScroll()) {
           hist.style.scrollBehavior = 'smooth';
           hist.scrollTop = hist.scrollHeight;
           // Reset after animation

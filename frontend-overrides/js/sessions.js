@@ -419,7 +419,15 @@ function createSessionItem(s) {
           if (mr.right > window.innerWidth - 8) { dd.style.left = 'auto'; dd.style.right = '8px'; }
         });
         // Close on tap outside
-        const close = (ev) => { if (!dd.contains(ev.target)) { dd.style.display = 'none'; document.removeEventListener('click', close, true); } };
+        // iOS fires a synthetic click after touchend (workspace-explorer.js
+        // documents the same trap) — if the finger lifts >100ms after the
+        // menu opened, that click would instantly dismiss it. Ignore clicks
+        // for 700ms after open.
+        const _openedAt = Date.now();
+        const close = (ev) => {
+          if (Date.now() - _openedAt < 700) return;
+          if (!dd.contains(ev.target)) { dd.style.display = 'none'; document.removeEventListener('click', close, true); }
+        };
         setTimeout(() => document.addEventListener('click', close, true), 100);
       }
     }, 500);
@@ -1634,7 +1642,13 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     const msgInput = document.getElementById('message');
     if (msgInput) {
       msgInput.disabled = false;
-      msgInput.value = '';
+      // Per-session draft stash: peeking at another chat must not eat a
+      // half-typed message (review C6). In-memory only — survives session
+      // switches, not reloads.
+      if (!window._composerDrafts) window._composerDrafts = new Map();
+      if (prevSessionId && msgInput.value.trim()) window._composerDrafts.set(prevSessionId, msgInput.value);
+      else if (prevSessionId) window._composerDrafts.delete(prevSessionId);
+      msgInput.value = window._composerDrafts.get(id) || '';
     }
     const sendBtn2 = document.querySelector('.send-btn');
     if (sendBtn2) {

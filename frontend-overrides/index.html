@@ -24,13 +24,24 @@
   window.__memoJson = (function () {
     var inflight = new Map();
     return function (url) {
-      var hit = inflight.get(url);
+      // Key on the ABSOLUTE url: app.js passes `${API_BASE}/api/x` while the
+      // pre-module scripts pass bare '/api/x' — same request, must share one
+      // Map entry or the dedupe silently does nothing.
+      var key;
+      try { key = new URL(url, location.origin).href; } catch (e) { key = url; }
+      var hit = inflight.get(key);
       if (hit) return hit;
-      var p = fetch(url, { credentials: 'same-origin' })
+      var p = (window.__fetchT || fetch)(key, { credentials: 'same-origin' })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .catch(function () { return null; });
-      inflight.set(url, p);
-      setTimeout(function () { inflight.delete(url); }, 10000);
+        .catch(function () { return null; })
+        .then(function (d) {
+          // Don't memoize failures: a force-refresh within the 10s window
+          // (e.g. the model-picker retry) must hit the network again.
+          if (d === null) inflight.delete(key);
+          return d;
+        });
+      inflight.set(key, p);
+      setTimeout(function () { inflight.delete(key); }, 10000);
       return p;
     };
   })();

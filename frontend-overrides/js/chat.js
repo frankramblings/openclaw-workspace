@@ -678,22 +678,27 @@ import createResearchSynapse from './researchSynapse.js';
           importBtn.textContent = 'Importing…';
           const EXT_LANG = {'.py':'python','.js':'javascript','.ts':'typescript','.html':'html','.css':'css','.md':'markdown','.json':'json','.yml':'yaml','.yaml':'yaml','.sh':'bash','.sql':'sql','.rs':'rust','.go':'go','.java':'java','.c':'c','.cpp':'cpp','.rb':'ruby','.php':'php','.xml':'xml','.jsx':'javascript','.tsx':'typescript'};
           let imported = 0;
+          let failed = 0;
           for (const { info, file } of _importableFiles) {
             try {
               const content = await file.text();
               const dotIdx = info.name.lastIndexOf('.');
               const title = dotIdx > 0 ? info.name.slice(0, dotIdx) : info.name;
               const ext = dotIdx >= 0 ? info.name.slice(dotIdx).toLowerCase() : '';
-              await fetch(`${API_BASE}/api/document`, {
+              const res = await fetch(`${API_BASE}/api/document`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title, language: EXT_LANG[ext] || '', content }),
               });
+              if (!res.ok) throw new Error('HTTP ' + res.status);
               imported++;
-            } catch (e) { console.error('Import failed:', info.name, e); }
+            } catch (e) { failed++; console.error('Import failed:', info.name, e); }
           }
-          banner.textContent = `Imported ${imported} file${imported !== 1 ? 's' : ''}`;
-          setTimeout(() => banner.remove(), 2000);
+          const total = _importableFiles.length;
+          banner.textContent = failed
+            ? `Imported ${imported} of ${total} file${total !== 1 ? 's' : ''} (${failed} failed)`
+            : `Imported ${imported} file${imported !== 1 ? 's' : ''}`;
+          setTimeout(() => banner.remove(), failed ? 4000 : 2000);
         });
         banner.appendChild(importBtn);
         const dismissBtn = document.createElement('button');

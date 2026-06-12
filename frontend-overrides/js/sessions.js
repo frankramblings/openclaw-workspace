@@ -654,6 +654,9 @@ function createSessionItem(s) {
       return;
     }
     dropdown.style.display = 'none';
+    // Only unguarded destructive path (bulk/folder delete already confirm);
+    // the gateway transcript goes with it, so there is no undo.
+    if (!await uiModule.styledConfirm(`Delete "${s.name || 'this session'}"? This cannot be undone.`, { confirmText: 'Delete', danger: true })) return;
     // Optimistic: remove from UI immediately
     const sessionEl = document.querySelector(`.list-item[data-session-id="${s.id}"]`);
     if (sessionEl) sessionEl.remove();

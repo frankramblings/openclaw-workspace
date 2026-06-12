@@ -80,7 +80,9 @@ def test_normal_turn_unaffected_by_watchdog(monkeypatch):
                                  "data": {"phase": "end"}}},
                 ]), "r1")]]
 
-    assert asyncio.run(go()) == [{"delta": "hi"}]
+    out = asyncio.run(go())
+    assert {"delta": "hi"} in out
+    assert not any(f.get("type") == "stall" for f in out)
 
 
 def test_relay_records_first_frame_and_first_text_timing(monkeypatch):
@@ -301,3 +303,44 @@ def test_terminal_stall_card_carries_stall_tool_id(monkeypatch):
     out = _collect_stream(bridge.stream_turn("hi", session_key="k"))
     terminal = out[-1]
     assert terminal["exit_code"] == 1 and terminal["tool_id"] == "stall"
+
+
+# --- run_alive frame ---------------------------------------------------------------
+
+def test_run_alive_emitted_once_before_first_delta(monkeypatch):
+    _fast_watchdog(monkeypatch, notice=10.0, cap=20.0)
+
+    async def go():
+        return [json.loads(c[5:]) for c in
+                [x async for x in bridge._relay_events(SilentWS([
+                    {"type": "event", "event": "chat",
+                     "payload": {"runId": "r1", "deltaText": "a"}},
+                    {"type": "event", "event": "chat",
+                     "payload": {"runId": "r1", "deltaText": "b"}},
+                    {"type": "event", "event": "agent",
+                     "payload": {"runId": "r1", "stream": "lifecycle",
+                                 "data": {"phase": "end"}}},
+                ]), "r1")]]
+
+    out = asyncio.run(go())
+    assert out[0] == {"type": "run_alive"}
+    assert [f for f in out if f.get("type") == "run_alive"] == [{"type": "run_alive"}]
+    assert {"delta": "a"} in out and {"delta": "b"} in out
+
+
+def test_no_run_alive_without_activity(monkeypatch):
+    # Other runs' frames are not OUR activity — no run_alive for them.
+    _fast_watchdog(monkeypatch, notice=10.0, cap=0.05)
+
+    async def go():
+        out = []
+        with pytest.raises(bridge._RunStalled):
+            async for c in bridge._relay_events(SilentWS([
+                {"type": "event", "event": "chat",
+                 "payload": {"runId": "OTHER", "deltaText": "x"}},
+            ]), "r1"):
+                out.append(json.loads(c[5:]))
+        return out
+
+    out = asyncio.run(go())
+    assert not any(f.get("type") == "run_alive" for f in out)

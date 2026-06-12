@@ -31,7 +31,9 @@ def test_delta_passthrough_and_lifecycle_end():
         {"type": "event", "event": "agent",
          "payload": {"runId": "r1", "stream": "lifecycle", "data": {"phase": "end"}}},
     ])
-    assert out == [{"delta": "hi"}]
+    assert {"delta": "hi"} in out
+    assert out[0] == {"type": "run_alive"}
+    assert not any(f.get("type") == "stall" for f in out)
 
 
 def test_aborted_state_maps_to_stopped_card():
@@ -39,10 +41,11 @@ def test_aborted_state_maps_to_stopped_card():
         {"type": "event", "event": "chat",
          "payload": {"runId": "r1", "state": "aborted"}},
     ])
-    assert len(out) == 1
-    assert out[0]["type"] == "tool_output"
-    assert out[0]["exit_code"] == 0
-    assert "stopped" in out[0]["output"]
+    # run_alive precedes the aborted card (same frame triggers activity + abort)
+    tool_cards = [f for f in out if f.get("type") == "tool_output"]
+    assert len(tool_cards) == 1
+    assert tool_cards[0]["exit_code"] == 0
+    assert "stopped" in tool_cards[0]["output"]
 
 
 def test_disconnect_message_reflects_monitor_state():
@@ -103,4 +106,5 @@ def test_textless_analysis_frames_emit_nothing():
          "payload": {"runId": "r1", "stream": "lifecycle",
                      "data": {"phase": "end"}}},
     ])
-    assert out == []
+    # run_alive fires on the first own-run frame; no text/thinking deltas expected
+    assert out == [{"type": "run_alive"}]

@@ -714,7 +714,11 @@ async def _relay_events(ws, run_id, run_info: dict | None = None):
         payload = frame.get("payload") or {}
         if _is_run_activity(payload, run_id):
             now = time.monotonic()
-            timing.setdefault("t_first_frame", now)
+            if "t_first_frame" not in timing:
+                timing["t_first_frame"] = now
+                # First proof of life: tell the SPA the model is actually
+                # working so it can stop guessing with canned captions.
+                yield _sse({"type": "run_alive"})
             last_activity = now
         frame_run = payload.get("runId")
         if run_id and frame_run is not None and frame_run != run_id:

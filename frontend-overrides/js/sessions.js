@@ -1923,6 +1923,9 @@ export async function materializePendingSession() {
   if (pending.endpointId) {
     fd.append('endpoint_id', pending.endpointId);
   }
+  if (pending.speed) {
+    fd.append('speed', pending.speed);   // toggle clicked before first message
+  }
 
   let res;
   try {
@@ -2013,10 +2016,12 @@ export function initSpeedToggle() {
     const sess = sessions.find(x => x.id === currentSessionId);
     if (sess) sess.speed = next;              // local cache
     const sid = currentSessionId;
-    // v1: before the first message creates the session record, the toggle
-    // only updates locally and is NOT carried into creation — flip it after
-    // the first reply.
-    if (!sid) return;
+    if (!sid) {
+      // Pending chat: no record to PATCH yet — stash the choice so
+      // materializePendingSession carries it into creation.
+      if (_pendingChat) _pendingChat.speed = next;
+      return;
+    }
     const fd = new FormData();
     fd.append('speed', next);
     try {

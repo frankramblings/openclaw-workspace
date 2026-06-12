@@ -65,13 +65,15 @@ def session_key_for(session_id: str) -> str:
 
 def create(name: str | None = None, model: str | None = None,
            endpoint_url: str | None = None, endpoint_id: str | None = None,
-           origin: str | None = None) -> dict:
+           origin: str | None = None, speed: str | None = None) -> dict:
     sid = uuid.uuid4().hex[:12]
     rec = {
         "id": sid,
         "name": name or "New chat",
         "model": model or "openclaw",
-        "speed": "normal",   # thinking depth: fast|normal|deep (web toggle)
+        # thinking depth: fast|normal|deep (web toggle); a pending-chat toggle
+        # click arrives here at materialization so it isn't silently dropped.
+        "speed": speed if speed in ("fast", "normal", "deep") else "normal",
         "sessionKey": f"{config.web_session_prefix()}-{sid}",
         "endpoint_url": endpoint_url or config.gateway_ws_url(),
         "endpoint_id": endpoint_id or "openclaw",

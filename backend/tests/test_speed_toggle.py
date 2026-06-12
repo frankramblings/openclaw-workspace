@@ -39,6 +39,19 @@ def test_old_records_without_speed_read_as_normal():
     assert (rec.get("speed") or "normal") == "normal"
 
 
+def test_create_accepts_initial_speed():
+    """Pending-chat fix: a toggle clicked before the first message must carry
+    into the record at creation."""
+    rec = sessions_store.create(name="t", speed="fast")
+    assert rec["speed"] == "fast"
+    assert sessions_store.get(rec["id"])["speed"] == "fast"
+
+
+def test_create_invalid_speed_falls_back_to_normal():
+    rec = sessions_store.create(name="t", speed="warp")
+    assert rec["speed"] == "normal"
+
+
 # ---------------------------------------------------------------------------
 # Endpoint tests — FastAPI TestClient (matching test_chat_stream_draft style)
 # ---------------------------------------------------------------------------
@@ -51,6 +64,15 @@ def test_patch_speed_valid_persists():
     resp = client.patch(f"/api/session/{sid}", data={"speed": "deep"})
     assert resp.status_code == 200
     assert sessions_store.get(sid)["speed"] == "deep"
+
+
+def test_create_endpoint_accepts_speed():
+    """POST /api/session with speed=fast (the materialize-pending path)."""
+    client = TestClient(app)
+    resp = client.post("/api/session", data={"name": "pending-fix", "speed": "fast"})
+    assert resp.status_code == 200
+    sid = resp.json()["id"]
+    assert sessions_store.get(sid)["speed"] == "fast"
 
 
 def test_patch_speed_invalid_ignored():

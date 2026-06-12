@@ -481,10 +481,12 @@ async def sessions():
 @app.post("/api/session")
 async def create_session(name: str = Form(default=""), model: str = Form(default=""),
                          endpoint_url: str = Form(default=""),
-                         endpoint_id: str = Form(default="")):
+                         endpoint_id: str = Form(default=""),
+                         speed: str = Form(default="")):
     return sessions_store.create(name=name or None, model=model or None,
                                  endpoint_url=endpoint_url or None,
-                                 endpoint_id=endpoint_id or None)
+                                 endpoint_id=endpoint_id or None,
+                                 speed=speed or None)
 
 
 @app.get("/api/history/{session_id}")

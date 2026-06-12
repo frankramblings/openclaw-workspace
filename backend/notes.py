@@ -16,6 +16,8 @@ Frontend contract (js/notes.js):
 """
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -61,7 +63,9 @@ def _neg_iso(s: str) -> str:
 @router.get("/api/notes")
 async def list_notes(archived: str | None = None):
     want_archived = str(archived).lower() == "true"
-    notes = [n for n in _load_all() if bool(n.get("archived")) == want_archived]
+    # Disk scan off the event loop — same rationale as documents._scan_docs.
+    all_notes = await asyncio.to_thread(_load_all)
+    notes = [n for n in all_notes if bool(n.get("archived")) == want_archived]
     notes.sort(key=_sort_key)
     return {"notes": notes}
 

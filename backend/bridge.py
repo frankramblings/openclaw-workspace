@@ -573,7 +573,7 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
         by_provider.setdefault(m.get("provider", "other"), []).append(m)
 
     # Default provider (the configured primary agent's) sorts first.
-    default_provider, _default_model = config.default_model()
+    default_provider, default_model = config.default_model()
     order = sorted(by_provider, key=lambda p: (p != default_provider, p))
 
     items = []
@@ -581,6 +581,13 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
         objs = [m for m in by_provider[provider] if m.get("id")]
         if not objs:
             continue
+        # The SPA picker auto-defaults every NEW chat to models[0] (it never
+        # consults /api/default-chat) — so that slot must be the configured
+        # primary. The gateway catalog is sorted, and gpt-5.4's arrival put
+        # it ahead of gpt-5.5: every fresh chat silently landed on 5.4.
+        # Stable sort: default first, rest keep gateway order.
+        if provider == default_provider:
+            objs.sort(key=lambda m: m["id"] != default_model)
         ids = [m["id"] for m in objs]
         meta = _PROVIDER_META.get(
             provider, {"endpoint_id": provider, "endpoint_name": provider.title()})

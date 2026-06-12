@@ -543,6 +543,7 @@ body:not(.hermes-rail-fallback) #rail-theme { display: none; }
 #we-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 5; touch-action: none; }
 .we-header #we-refresh { margin-left: 0; }        /* old auto-push superseded */
 .we-header #we-new-file { margin-left: auto; }    /* button cluster sits right */
+.we-header button svg { display: block; }         /* center icon, no baseline gap */
 #we-hidden-ind { color: var(--red); font-size: 10px; }
 .we-tabs { display: flex; gap: 2px; padding: 0 6px; border-bottom: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); }
 .we-tab { background: none; border: none; color: var(--hermes-faint); font: inherit; font-size: 11px; padding: 4px 8px; cursor: pointer; border-bottom: 2px solid transparent; }

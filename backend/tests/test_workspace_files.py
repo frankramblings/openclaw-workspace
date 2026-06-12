@@ -287,3 +287,23 @@ def test_move_conflict_and_bad_dest(api_ws):
     assert client.post("/api/workspace/move",
                        json={"path": "docs/note.md",
                              "dest_dir": "docs/note.md"}).status_code == 404
+
+
+# --- delete ---
+
+def test_delete_file_and_dir_recursive(api_ws):
+    assert client.post("/api/workspace/delete",
+                       json={"path": "docs/note.md"}).status_code == 200
+    assert not (api_ws / "docs" / "note.md").exists()
+    assert client.post("/api/workspace/delete",
+                       json={"path": "screenshots"}).status_code == 200
+    assert not (api_ws / "screenshots").exists()
+
+
+def test_delete_refuses_root_protected_missing(api_ws):
+    assert client.post("/api/workspace/delete",
+                       json={"path": "."}).status_code == 400
+    assert client.post("/api/workspace/delete",
+                       json={"path": ".git"}).status_code == 400
+    assert client.post("/api/workspace/delete",
+                       json={"path": "nope.md"}).status_code == 404

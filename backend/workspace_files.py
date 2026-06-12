@@ -226,6 +226,19 @@ def workspace_move(body: MoveBody):
     return {"ok": True, "path": dst.relative_to(rootr).as_posix()}
 
 
+@router.post("/api/workspace/delete")
+def workspace_delete(body: PathBody):
+    target = _mutable_or_400(body.path)
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="not found")
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    _invalidate_cache()
+    return {"ok": True}
+
+
 @router.get("/api/workspace/tree")
 def workspace_tree(fresh: int = 0, hidden: int = 0):
     key = bool(hidden)

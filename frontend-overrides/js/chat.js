@@ -1241,6 +1241,24 @@ import createResearchSynapse from './researchSynapse.js';
         uiModule.scrollHistory();
       };
 
+      // Per-delta renders are O(full message) — markdown re-parse, offscreen
+      // height measure (forced reflow), innerHTML swap, hljs. Coalesce bursts
+      // to one render per animation frame; structural call sites (tool_start,
+      // agent_step, think-close, stream-end) still call _renderStream()
+      // directly because they need the DOM current before their next line.
+      let _renderQueued = false;
+      const _queueRenderStream = () => {
+        if (_renderQueued) return;
+        _renderQueued = true;
+        requestAnimationFrame(() => {
+          _renderQueued = false;
+          // A queued render firing after the round finalized / the stream
+          // completed / agent_step reset the round would stomp newer DOM.
+          if (roundFinalized || _streamSawDone || !roundText) return;
+          _renderStream();
+        });
+      };
+
       // Walk text nodes, skip past `prevLen` characters of old text,
       // wrap everything after that in <span class="token-new"> for fade-in
       function _fadeNewTokens(container, prevLen) {
@@ -1646,7 +1664,7 @@ import createResearchSynapse from './researchSynapse.js';
                 } else {
                   // Normal streaming
                   if (spinner && spinner.element) spinner.destroy();
-                  _renderStream();
+                  _queueRenderStream();
                   _scheduleThinkingSpinner();
                   // Feed streaming TTS with accumulated text
                   if (streamingTTS) window.aiTTSManager.streamingUpdate(roundText);

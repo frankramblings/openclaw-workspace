@@ -231,10 +231,52 @@
   </script>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="modulepreload" href="/static/app.js">
+  <!-- Full static-import graph: without these, the second tier is only
+       discovered after app.js (172KB) downloads+parses — 2-3 extra RTT waves
+       on the phone-over-Tailscale path. Keep in sync with the import lists of
+       app.js / js/chat.js (this is the eager graph; lazy imports excluded). -->
   <link rel="modulepreload" href="/static/js/chat.js">
   <link rel="modulepreload" href="/static/js/ui.js">
   <link rel="modulepreload" href="/static/js/sessions.js">
   <link rel="modulepreload" href="/static/js/markdown.js">
+  <link rel="modulepreload" href="/static/js/storage.js">
+  <link rel="modulepreload" href="/static/js/theme.js">
+  <link rel="modulepreload" href="/static/js/spinner.js">
+  <link rel="modulepreload" href="/static/js/memory.js">
+  <link rel="modulepreload" href="/static/js/models.js">
+  <link rel="modulepreload" href="/static/js/rag.js">
+  <link rel="modulepreload" href="/static/js/presets.js">
+  <link rel="modulepreload" href="/static/js/search.js">
+  <link rel="modulepreload" href="/static/js/tts-ai.js">
+  <link rel="modulepreload" href="/static/js/document.js">
+  <link rel="modulepreload" href="/static/js/gallery.js">
+  <link rel="modulepreload" href="/static/js/group.js">
+  <link rel="modulepreload" href="/static/js/notes.js">
+  <link rel="modulepreload" href="/static/js/tasks.js">
+  <link rel="modulepreload" href="/static/js/calendar.js">
+  <link rel="modulepreload" href="/static/js/admin.js">
+  <link rel="modulepreload" href="/static/js/censor.js">
+  <link rel="modulepreload" href="/static/js/settings.js">
+  <link rel="modulepreload" href="/static/js/keyboard-shortcuts.js">
+  <link rel="modulepreload" href="/static/js/sidebar-layout.js">
+  <link rel="modulepreload" href="/static/js/section-management.js">
+  <link rel="modulepreload" href="/static/js/search-chat.js">
+  <link rel="modulepreload" href="/static/js/cookbook.js">
+  <link rel="modulepreload" href="/static/js/compare/index.js">
+  <link rel="modulepreload" href="/static/js/fileHandler.js">
+  <link rel="modulepreload" href="/static/js/voiceRecorder.js">
+  <link rel="modulepreload" href="/static/js/chatRenderer.js">
+  <link rel="modulepreload" href="/static/js/chatStream.js">
+  <link rel="modulepreload" href="/static/js/codeRunner.js">
+  <link rel="modulepreload" href="/static/js/emailInbox.js">
+  <link rel="modulepreload" href="/static/js/emailLibrary.js">
+  <link rel="modulepreload" href="/static/js/emailLibrary/replyRecipients.js">
+  <link rel="modulepreload" href="/static/js/research/panel.js">
+  <link rel="modulepreload" href="/static/js/researchSynapse.js">
+  <link rel="modulepreload" href="/static/js/slashCommands.js">
+  <link rel="modulepreload" href="/static/js/modalManager.js">
+  <link rel="modulepreload" href="/static/js/modelPicker.js">
+  <link rel="modulepreload" href="/static/js/providers.js">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content, viewport-fit=cover" />
   <link rel="stylesheet" href="/static/workspace.css">
   <link rel="stylesheet" href="/static/hermes.css">

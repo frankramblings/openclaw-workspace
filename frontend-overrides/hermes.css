@@ -525,3 +525,13 @@ body:not(.hermes-rail-fallback) #rail-gateway         /* duplicate of the gw dot
    any stale persisted collapsed state) */
 #sessions-section .section-collapse-btn { display: none !important; }
 #sessions-section .section-title { pointer-events: none; }
+
+/* ── Brain / Scheduled / Theme live in Settings now (user request
+   2026-06-11) — their strip icons go; the fallback rail keeps them.
+   The tools themselves are untouched (panel mode still applies when
+   launched from Settings). ── */
+body:not(.hermes-rail-fallback) #rail-memory,
+body:not(.hermes-rail-fallback) #rail-tasks,
+body:not(.hermes-rail-fallback) #rail-cron,
+body:not(.hermes-rail-fallback) #rail-theme { display: none; }
+.hermes-settings-launcher { margin-top: 6px; }

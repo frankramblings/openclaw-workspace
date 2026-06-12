@@ -1370,6 +1370,15 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             <span>Reminders</span>
           </button>
+          <!-- HERMES: Brain + Scheduled relocated from the icon strip -->
+          <button class="settings-nav-item" data-settings-tab="brain">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/><line x1="10" y1="22" x2="14" y2="22"/></svg>
+            <span>Brain</span>
+          </button>
+          <button class="settings-nav-item" data-settings-tab="scheduled">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span>Scheduled</span>
+          </button>
           <div class="settings-sidebar-divider"></div>
           <!-- Section 3: UX (Appearance → Shortcuts) -->
           <button class="settings-nav-item" data-settings-tab="appearance">
@@ -1663,7 +1672,27 @@
         </div>
 
         <!-- ═══ APPEARANCE TAB ═══ -->
+        <!-- HERMES: launcher panels for tools relocated out of the icon strip -->
+        <div data-settings-panel="brain" class="hidden">
+          <div class="admin-card">
+            <h2>Brain</h2>
+            <p class="settings-help-text">__AGENT_NAME__'s long-term memories and skills — browse, edit, pin, and audit them.</p>
+            <button type="button" class="theme-io-btn hermes-settings-launcher" id="settings-open-brain">Open Brain</button>
+          </div>
+        </div>
+        <div data-settings-panel="scheduled" class="hidden">
+          <div class="admin-card">
+            <h2>Scheduled</h2>
+            <p class="settings-help-text">Recurring jobs — run now, enable/disable, and inspect run history.</p>
+            <button type="button" class="theme-io-btn hermes-settings-launcher" id="settings-open-cron">Open Scheduled jobs</button>
+          </div>
+        </div>
         <div data-settings-panel="appearance" class="settings-appearance-panel hidden">
+          <div class="admin-card" style="padding-bottom:10px;">
+            <h2>Theme</h2>
+            <p class="settings-help-text">Colorways, fonts, density and background effects.</p>
+            <button type="button" class="theme-io-btn hermes-settings-launcher" id="settings-open-theme">Open theme picker</button>
+          </div>
           <div class="admin-card" style="padding-bottom:6px;">
             <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>Sidebar</h2>
             <div class="vis-toggles">

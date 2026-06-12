@@ -78,6 +78,22 @@
       strip.insertBefore(b, strip.firstChild);
     })();
 
+    // Settings launchers for tools relocated out of the icon strip
+    // (Brain / Scheduled / Theme — the hidden #tools-section buttons still
+    // exist with live handlers, so launching = close Settings + click them).
+    [['settings-open-brain', 'tool-memory-btn'],
+     ['settings-open-cron', 'tool-tasks-btn'],
+     ['settings-open-theme', 'tool-theme-btn']].forEach(([launcherId, toolId]) => {
+      document.getElementById(launcherId)?.addEventListener('click', () => {
+        const settings = document.getElementById('settings-modal');
+        // Use the modal's own close control so vendor close-side-effects run
+        // (appearance-open body class, opacity sync); fall back to .hidden.
+        const x = settings?.querySelector('.close-btn, .modal-close');
+        if (x) x.click(); else settings?.classList.add('hidden');
+        document.getElementById(toolId)?.click();
+      });
+    });
+
     // CHATS always starts open: drop any persisted collapsed flag and
     // un-collapse (section-management runs before us and may have applied
     // it). In-session collapse still works; it just never persists.

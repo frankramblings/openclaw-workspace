@@ -1944,9 +1944,10 @@ import createResearchSynapse from './researchSynapse.js';
                 if (_isBg) continue;
                 // Backend watchdog: no gateway activity for silent_for seconds.
                 // Surface it on whichever wait indicator is live right now.
+                // Total elapsed lives in the turn-clock span beside the
+                // spinner — repeating it here doubled the m:ss display.
                 const _stallLabel = 'Still waiting — no activity for ' +
-                  (json.silent_for || 0) + 's (' +
-                  _fmtElapsed(Date.now() - _turnStart) + ' total)';
+                  (json.silent_for || 0) + 's';
                 const _dots = document.querySelector('.agent-thinking-dots');
                 if (_dots && _dots._spinner) _dots._spinner.updateMessage(_stallLabel);
                 else if (spinner && spinner.element && !accumulated) spinner.updateMessage(_stallLabel);

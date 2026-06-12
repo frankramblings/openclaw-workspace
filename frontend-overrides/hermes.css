@@ -310,7 +310,9 @@ body.hermes-rail-fallback #sidebar { margin-left: 48px; }
   border: 1px solid var(--border); border-radius: var(--hermes-pill);
   background: var(--panel); color: var(--fg);
   font-size: 11px; padding: 4px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px; /* folder icon + label */
 }
+#we-reopen[hidden] { display: none; } /* inline-flex would defeat the hidden attr */
 /* Preview overlay */
 #we-preview-overlay {
   position: fixed; inset: 0; z-index: 300;

@@ -174,3 +174,27 @@ def test_tree_endpoint_hidden_variants_cached_separately(api_ws):
     r2 = client.get("/api/workspace/tree").json()
     dot2 = next(n for n in r2["tree"] if n["name"] == ".attachments")
     assert dot2["children"] == []
+
+
+# --- mutation guard ---
+
+@pytest.mark.parametrize("bad", [
+    ".git/config", "node_modules/x", ".versions/v1",
+    "docs/../.git/config", "docs/node_modules/pkg/index.js",
+])
+def test_resolve_mutable_rejects_protected(ws, bad):
+    (ws / "docs" / "node_modules" / "pkg").mkdir(parents=True)
+    with pytest.raises(ValueError):
+        wf.resolve_mutable(ws, bad)
+
+
+@pytest.mark.parametrize("bad", [".", "", "../outside"])
+def test_resolve_mutable_rejects_root_and_escapes(ws, bad):
+    with pytest.raises(ValueError):
+        wf.resolve_mutable(ws, bad)
+
+
+def test_resolve_mutable_accepts_normal_and_new(ws):
+    assert wf.resolve_mutable(ws, "docs/note.md") == (ws / "docs" / "note.md").resolve()
+    # not-yet-existing targets resolve too (create/mkdir/upload need this)
+    assert wf.resolve_mutable(ws, "docs/new-file.md").name == "new-file.md"

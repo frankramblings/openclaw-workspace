@@ -2,8 +2,8 @@
 
 Serves a size-annotated tree of the OpenClaw agent workspace (the same root
 the Notes/Documents vault adapters use: ``vault_store.WORKSPACE``) and
-individual file contents. Read-only by construction — GET routes only,
-path-traversal guarded (symlink-aware).
+individual file contents. Read routes are GET; mutation routes are POST and
+additionally refuse SKIP_CONTENTS segments and the workspace root itself.
 """
 from __future__ import annotations
 
@@ -121,6 +121,22 @@ def resolve_safe(root: Path, rel: str) -> Path:
     rootr = root.resolve()
     if target != rootr and rootr not in target.parents:
         raise ValueError("path escapes workspace root")
+    return target
+
+
+def resolve_mutable(root: Path, rel: str) -> Path:
+    """`resolve_safe` plus mutation rails: never the workspace root itself and
+    never inside a protected segment (.git, .versions, node_modules, ...) — the
+    explorer must not be able to nuke vault history or repo internals, even
+    past a confirm dialog. The target itself may not exist yet (create paths).
+    """
+    target = resolve_safe(root, rel)
+    rootr = root.resolve()
+    if target == rootr:
+        raise ValueError("workspace root is not mutable")
+    for seg in target.relative_to(rootr).parts:
+        if seg in SKIP_CONTENTS:
+            raise ValueError("protected path")
     return target
 
 

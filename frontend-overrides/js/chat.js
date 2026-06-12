@@ -523,6 +523,7 @@ import createResearchSynapse from './researchSynapse.js';
     let finalMeta = null;
     let finalModelName = null;
     let spinner = null;
+    let _turnTicker = null;   // turn-clock interval — cleared in the finally
     let timedOut = false;
     let processingProbeTimer = null;
     let processingProbeAbort = null;
@@ -852,9 +853,10 @@ import createResearchSynapse from './researchSynapse.js';
       spinner.start();
 
       // Turn clock: elapsed mm:ss beside the spinner, and the base for the
-      // stall captions below. Self-guarding ticker — clears itself the moment
-      // the spinner leaves the DOM (first token, error, abort), so no teardown
-      // wiring is needed.
+      // stall captions below. Spinners are destroyed/recreated across agent
+      // rounds (agent_step), so the ticker re-attaches the span to whichever
+      // spinner is current and idles while text is streaming (no spinner).
+      // Torn down in the finally.
       const _turnStart = Date.now();
       const _fmtElapsed = (ms) => {
         const s = Math.floor(ms / 1000);
@@ -864,11 +866,9 @@ import createResearchSynapse from './researchSynapse.js';
       _elapsedSpan.className = 'turn-elapsed';
       _elapsedSpan.style.cssText = 'opacity:.55;margin-left:6px;font-size:.85em';
       if (spinner.element) spinner.element.appendChild(_elapsedSpan);
-      const _turnTicker = setInterval(() => {
-        if (!spinner || !spinner.element || !spinner.element.isConnected) {
-          clearInterval(_turnTicker);
-          return;
-        }
+      _turnTicker = setInterval(() => {
+        if (!spinner || !spinner.element || !spinner.element.isConnected) return;
+        if (_elapsedSpan.parentElement !== spinner.element) spinner.element.appendChild(_elapsedSpan);
         _elapsedSpan.textContent = _fmtElapsed(Date.now() - _turnStart);
       }, 1000);
 
@@ -2789,6 +2789,7 @@ import createResearchSynapse from './researchSynapse.js';
       }
     } finally {
       clearProcessingProbe();
+      if (_turnTicker) { clearInterval(_turnTicker); _turnTicker = null; }
       // Always clean up research tracking regardless of background state
       _researchingStreamIds.delete(streamSessionId);
       if (_researchingStreamIds.size === 0) {

@@ -37,7 +37,7 @@
   document.body.appendChild(bar);
 
   var armed = false, pulling = false, refreshing = false;
-  var startY = 0, dist = 0;
+  var startX = 0, startY = 0, dist = 0;
 
   function update(px) {
     bar.style.setProperty('--ptr', px + 'px');
@@ -69,7 +69,17 @@
     if (refreshing || e.touches.length !== 1) { armed = false; return; }
     var t = e.target;
     if (t && t.closest && t.closest(LAYERS)) { armed = false; return; }
+    // Never claim drags that start on the composer or any text field, and
+    // stand down entirely while the keyboard is up: the iOS "swipe down to
+    // dismiss keyboard" gesture starts exactly here, and a reload would eat
+    // the unsent draft (there is no draft persistence).
+    var ae = document.activeElement;
+    if ((t && t.closest && t.closest('.chat-input-bar, textarea, input, [contenteditable="true"]')) ||
+        (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT' || ae.isContentEditable))) {
+      armed = false; return;
+    }
     armed = atTop(t);
+    startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     pulling = false;
     dist = 0;
@@ -79,6 +89,8 @@
     if (!armed || refreshing) return;
     var dy = e.touches[0].clientY - startY;
     if (!pulling) {
+      var dx = Math.abs(e.touches[0].clientX - startX);
+      if (dx > Math.abs(dy)) { armed = false; return; }  // horizontal intent (sidebar edge-swipe) — let go
       if (dy > ARM_SLOP) pulling = true;       // it's a pull — claim it
       else if (dy < -4) { armed = false; return; }  // scrolling up — let go
       else return;

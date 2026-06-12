@@ -1348,17 +1348,25 @@
 
     bottomBtn.addEventListener('click', () => {
       cancelAutoScroll();
-      const target = container.scrollHeight - container.clientHeight;
+      // Target recomputed each frame: during streaming the bottom keeps
+      // moving and a once-captured target lands the user short (review D7).
       _scrollingToBottom = true;
+      if (window.uiModule && window.uiModule.setAutoScroll) window.uiModule.setAutoScroll(true);
       function step() {
         if (!_scrollingToBottom) return;
+        const target = container.scrollHeight - container.clientHeight;
         const diff = target - container.scrollTop;
         if (diff <= 8) { container.scrollTop = target; _scrollingToBottom = false; return; }
         container.scrollTop += diff * 0.2;
         _scrollRaf = requestAnimationFrame(step);
       }
       step();
-      _scrollTimeout = setTimeout(() => { if (_scrollingToBottom) { container.scrollTop = target; _scrollingToBottom = false; } }, 1500);
+      _scrollTimeout = setTimeout(() => {
+        if (_scrollingToBottom) {
+          container.scrollTop = container.scrollHeight - container.clientHeight;
+          _scrollingToBottom = false;
+        }
+      }, 1500);
     });
     new ResizeObserver(reposition).observe(chatBar);
     new MutationObserver(update).observe(container, {childList:true, subtree:true});

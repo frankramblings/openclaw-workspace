@@ -198,3 +198,36 @@ def test_resolve_mutable_accepts_normal_and_new(ws):
     assert wf.resolve_mutable(ws, "docs/note.md") == (ws / "docs" / "note.md").resolve()
     # not-yet-existing targets resolve too (create/mkdir/upload need this)
     assert wf.resolve_mutable(ws, "docs/new-file.md").name == "new-file.md"
+
+
+# --- create / mkdir ---
+
+def test_create_file_and_409(api_ws):
+    r = client.post("/api/workspace/create", json={"path": "docs/new.md"})
+    assert r.status_code == 200
+    assert (api_ws / "docs" / "new.md").is_file()
+    assert client.post("/api/workspace/create",
+                       json={"path": "docs/new.md"}).status_code == 409
+
+
+def test_create_refuses_protected_and_traversal(api_ws):
+    assert client.post("/api/workspace/create",
+                       json={"path": ".git/x"}).status_code == 400
+    assert client.post("/api/workspace/create",
+                       json={"path": "../evil"}).status_code == 400
+
+
+def test_mkdir_nested_and_409(api_ws):
+    assert client.post("/api/workspace/mkdir",
+                       json={"path": "newdir/sub"}).status_code == 200
+    assert (api_ws / "newdir" / "sub").is_dir()
+    assert client.post("/api/workspace/mkdir",
+                       json={"path": "newdir/sub"}).status_code == 409
+
+
+def test_mutation_invalidates_tree_cache(api_ws):
+    r0 = client.get("/api/workspace/tree").json()
+    assert not any(n["name"] == "made.md" for n in r0["tree"])
+    client.post("/api/workspace/create", json={"path": "made.md"})
+    r1 = client.get("/api/workspace/tree").json()
+    assert any(n["name"] == "made.md" for n in r1["tree"])

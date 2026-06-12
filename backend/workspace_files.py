@@ -8,12 +8,14 @@ additionally refuse SKIP_CONTENTS segments and the workspace root itself.
 from __future__ import annotations
 
 import mimetypes
+import shutil
 import subprocess
 import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, PlainTextResponse
+from pydantic import BaseModel
 
 from . import vault_store as vs
 
@@ -138,6 +140,42 @@ def resolve_mutable(root: Path, rel: str) -> Path:
         if seg in SKIP_CONTENTS:
             raise ValueError("protected path")
     return target
+
+
+class PathBody(BaseModel):
+    path: str
+
+
+def _invalidate_cache() -> None:
+    _cache.clear()
+
+
+def _mutable_or_400(rel: str) -> Path:
+    try:
+        return resolve_mutable(workspace_root(), rel)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/api/workspace/create")
+def workspace_create(body: PathBody):
+    target = _mutable_or_400(body.path)
+    if target.exists():
+        raise HTTPException(status_code=409, detail="already exists")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.touch()
+    _invalidate_cache()
+    return {"ok": True, "path": body.path}
+
+
+@router.post("/api/workspace/mkdir")
+def workspace_mkdir(body: PathBody):
+    target = _mutable_or_400(body.path)
+    if target.exists():
+        raise HTTPException(status_code=409, detail="already exists")
+    target.mkdir(parents=True, exist_ok=True)
+    _invalidate_cache()
+    return {"ok": True, "path": body.path}
 
 
 @router.get("/api/workspace/tree")

@@ -237,7 +237,8 @@ def reply_after(history: list, brain_message: str) -> str | None:
 
 
 def _turn_timing_record(run_info: dict, session_key: str, model_ref: str | None,
-                        *, text_seen: bool, failed: bool) -> dict:
+                        *, text_seen: bool, failed: bool,
+                        thinking: str | None = None) -> dict:
     """One flat JSONL record describing where this turn's wall-clock went.
     All *_ms fields are measured from chat.send write; None = never happened."""
     timing = run_info.get("timing") or {}
@@ -250,6 +251,7 @@ def _turn_timing_record(run_info: dict, session_key: str, model_ref: str | None,
         "ts": int(time.time()),
         "session": session_key,
         "model": model_ref or "default",
+        "thinking": thinking,   # the chat.send override sent (None = normal)
         "ack_ms": ms("t_send", "t_ack"),
         "first_frame_ms": ms("t_send", "t_first_frame"),
         "first_text_ms": ms("t_send", "t_first_text"),
@@ -442,7 +444,8 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             _ACTIVE_RUNS.pop(session_key, None)
             _log_turn_timing(_turn_timing_record(
                 run_info, session_key, _model_ref(rec),
-                text_seen=text_seen, failed=failed))
+                text_seen=text_seen, failed=failed,
+                thinking=_thinking_for_speed((rec or {}).get("speed"))))
             if draft_doc is not None:
                 try:
                     update = draft_mode.post_turn_payload(draft_doc)

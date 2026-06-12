@@ -11,13 +11,15 @@ def test_record_computes_ms_deltas_and_flags():
                 "stalled": False}
     rec = app_module._turn_timing_record(run_info, "agent:main:web-x",
                                          "openai/gpt-5.5",
-                                         text_seen=True, failed=False)
+                                         text_seen=True, failed=False,
+                                         thinking="low")
     assert rec["ack_ms"] == 500
     assert rec["first_frame_ms"] == 1000
     assert rec["first_text_ms"] == 2000
     assert rec["total_ms"] == 3000
     assert rec["late_ms"] is None
     assert rec["model"] == "openai/gpt-5.5"
+    assert rec["thinking"] == "low"
     assert rec["stalled"] is False and rec["retried"] is False
     assert rec["text_seen"] is True and rec["failed"] is False
 
@@ -27,6 +29,7 @@ def test_record_tolerates_empty_run_info():
                                          text_seen=False, failed=True)
     assert rec["ack_ms"] is None and rec["total_ms"] is None
     assert rec["model"] == "default"
+    assert rec["thinking"] is None   # normal speed sends no override
 
 
 def test_log_appends_jsonl_and_rotates_at_2mb(tmp_path, monkeypatch):

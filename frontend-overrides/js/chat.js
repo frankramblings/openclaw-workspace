@@ -2048,6 +2048,7 @@ import createResearchSynapse from './researchSynapse.js';
                   const waveFrames = ['▁▂▃', '▂▃▄', '▃▄▅', '▄▅▆', '▅▆▇', '▆▅▄', '▅▄▃', '▄▃▂'];
                   let waveIdx = 0;
                   node._waveInterval = setInterval(() => {
+                    if (document.hidden) return;   // no animation work in a hidden tab
                     waveIdx = (waveIdx + 1) % waveFrames.length;
                     waveEl.textContent = waveFrames[waveIdx];
                   }, 250);
@@ -2057,6 +2058,9 @@ import createResearchSynapse from './researchSynapse.js';
                 // always shows visible motion and never reads as frozen.
                 node._startTime = Date.now();
                 node._elapsedTicker = setInterval(() => {
+                  // Computed from _startTime, so it catches up instantly when
+                  // the tab becomes visible again — no drift from skipping.
+                  if (document.hidden) return;
                   const hdr2 = node.querySelector('.agent-thread-header');
                   if (!hdr2) return;
                   let el2 = hdr2.querySelector('.agent-thread-elapsed');

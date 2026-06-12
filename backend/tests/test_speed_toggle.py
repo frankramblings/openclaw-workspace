@@ -63,3 +63,95 @@ def test_patch_speed_invalid_ignored():
     resp = client.patch(f"/api/session/{sid}", data={"speed": "warp"})
     assert resp.status_code == 200
     assert sessions_store.get(sid)["speed"] == "deep"
+
+
+# --- thinking pass-through (bridge) ------------------------------------------------
+
+import asyncio
+import json
+
+from backend import bridge
+
+
+def _run_open_turn(monkeypatch, **kwargs):
+    sent = {}
+
+    class WS:
+        async def send(self, raw):
+            sent.update(json.loads(raw))
+
+    async def fake_connect():
+        return WS()
+
+    async def fake_await_response(ws, req_id):
+        return {"ok": True, "payload": {"runId": "r1"}}
+
+    monkeypatch.setattr(bridge, "_connect_and_auth", fake_connect)
+    monkeypatch.setattr(bridge, "_await_response", fake_await_response)
+
+    async def go():
+        ws, run_id, use_warm = await bridge._open_turn(
+            "hi", "k", None, None, None, allow_warm=False, **kwargs)
+        # _open_turn may promote the fresh socket to the warm slot and hold
+        # the lock — release so tests stay leak-free (see warm-lock tests).
+        if use_warm:
+            bridge._warm.lock.release()
+        bridge._warm.ws = None
+        bridge._pinned.clear()
+
+    asyncio.run(go())
+    return sent
+
+
+def test_open_turn_includes_thinking_when_set(monkeypatch):
+    sent = _run_open_turn(monkeypatch, thinking="low")
+    assert sent["params"]["thinking"] == "low"
+
+
+def test_open_turn_omits_thinking_by_default(monkeypatch):
+    sent = _run_open_turn(monkeypatch)
+    assert "thinking" not in sent["params"]
+
+
+def test_stall_retry_preserves_thinking(monkeypatch):
+    seen_thinking = []
+
+    async def fake_open_turn(message, session_key, model_ref, attachments,
+                             run_info, allow_warm, thinking=None):
+        seen_thinking.append(thinking)
+        run_id = f"r{len(seen_thinking)}"
+        if run_info is not None:
+            run_info["runId"] = run_id
+
+        class _S:
+            name = "OPEN"
+
+        class _WS:
+            state = _S()
+
+            async def close(self):
+                pass
+
+        return _WS(), run_id, False
+
+    calls = {"n": 0}
+
+    async def stall_once(ws, run_id, run_info=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise bridge._RunStalled(240)
+        yield bridge._sse({"delta": "ok"})
+
+    async def fake_gateway_call(method, params=None, timeout=30.0):
+        return {"ok": True, "payload": {}}
+
+    monkeypatch.setattr(bridge, "_open_turn", fake_open_turn)
+    monkeypatch.setattr(bridge, "gateway_call", fake_gateway_call)
+    monkeypatch.setattr(bridge, "_relay_events", stall_once)
+
+    async def go():
+        return [c async for c in bridge.stream_turn("hi", session_key="k",
+                                                    thinking="low")]
+
+    asyncio.run(go())
+    assert seen_thinking == ["low", "low"]

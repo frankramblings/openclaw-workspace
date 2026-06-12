@@ -153,7 +153,7 @@ def _wire_stall(monkeypatch, relay_factory):
     aborts = []
 
     async def fake_open_turn(message, session_key, model_ref, attachments,
-                             run_info, allow_warm):
+                             run_info, allow_warm, thinking=None):
         opens.append(allow_warm)
         run_id = f"r{len(opens)}"
         if run_info is not None:
@@ -235,7 +235,7 @@ def test_warm_lock_released_when_retry_holds_it(monkeypatch):
     aborts = []
 
     async def fake_open_turn(message, session_key, model_ref, attachments,
-                             run_info, allow_warm):
+                             run_info, allow_warm, thinking=None):
         opens.append(allow_warm)
         run_id = f"r{len(opens)}"
         if run_info is not None:

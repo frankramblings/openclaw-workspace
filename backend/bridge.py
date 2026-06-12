@@ -171,7 +171,7 @@ async def _connect_and_auth():
 
 
 async def _open_turn(message, session_key, model_ref, attachments, run_info,
-                     allow_warm: bool):
+                     allow_warm: bool, thinking: str | None = None):
     """Acquire a connection (warm if free+alive, else fresh), pin the model only
     if it changed, send chat.send. Returns (ws, run_id, use_warm) on success — and
     when use_warm is True the CALLER owns _warm.lock and must release it. On ANY
@@ -224,6 +224,10 @@ async def _open_turn(message, session_key, model_ref, attachments, run_info,
         # (gpt-5.5) inline image blocks (offloading large ones to media refs).
         if attachments:
             send_params["attachments"] = attachments
+        if thinking:
+            # Per-turn thinking override (verified: chat.send p.thinking →
+            # thinkingLevelOverride). Nothing persists gateway-side.
+            send_params["thinking"] = thinking
         send_id = uuid.uuid4().hex
         if run_info is not None:
             run_info.setdefault("timing", {})["t_send"] = time.monotonic()
@@ -254,6 +258,7 @@ async def _open_turn(message, session_key, model_ref, attachments, run_info,
 async def stream_turn(message: str, session_key: str | None = None,
                       model_ref: str | None = None,
                       attachments: list | None = None,
+                      thinking: str | None = None,
                       run_info: dict | None = None):
     """Async generator yielding SSE strings for one user turn.
 
@@ -273,13 +278,13 @@ async def stream_turn(message: str, session_key: str | None = None,
         try:
             ws, run_id, use_warm = await _open_turn(
                 message, session_key, model_ref, attachments, run_info,
-                allow_warm=True)
+                allow_warm=True, thinking=thinking)
         except (websockets.ConnectionClosed, OSError, asyncio.TimeoutError):
             # Warm socket was stale/dead (or a fresh connect raced a gateway
             # blip): retry once on a guaranteed-fresh connection.
             ws, run_id, use_warm = await _open_turn(
                 message, session_key, model_ref, attachments, run_info,
-                allow_warm=False)
+                allow_warm=False, thinking=thinking)
 
         # Relay events for this run until lifecycle end. On a stall (no
         # run-activity for STALL_CAP_S) abort the zombie run and retry ONCE on
@@ -352,7 +357,7 @@ async def stream_turn(message: str, session_key: str | None = None,
                 run_info.get("timing", {}).pop("t_first_text", None)
             ws, run_id, use_warm = await _open_turn(
                 message, session_key, model_ref, attachments, run_info,
-                allow_warm=False)
+                allow_warm=False, thinking=thinking)
     except _ChatSendRejected as rej:
         yield _sse({"type": "tool_output", "tool": "bridge",
                     "output": f"chat.send rejected: {rej.ack}", "exit_code": 1})

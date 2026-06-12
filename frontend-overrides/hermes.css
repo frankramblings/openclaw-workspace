@@ -535,3 +535,32 @@ body:not(.hermes-rail-fallback) #rail-tasks,
 body:not(.hermes-rail-fallback) #rail-cron,
 body:not(.hermes-rail-fallback) #rail-theme { display: none; }
 .hermes-settings-launcher { margin-top: 6px; }
+
+/* ---- Explorer Hermes-parity controls (2026-06-11) ---- */
+#workspace-explorer { position: relative; }
+#we-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 5; touch-action: none; }
+.we-header #we-refresh { margin-left: 0; }        /* old auto-push superseded */
+.we-header #we-new-file { margin-left: auto; }    /* button cluster sits right */
+#we-hidden-ind { color: var(--red); font-size: 10px; }
+.we-tabs { display: flex; gap: 2px; padding: 0 6px; border-bottom: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); }
+.we-tab { background: none; border: none; color: var(--hermes-faint); font: inherit; font-size: 11px; padding: 4px 8px; cursor: pointer; border-bottom: 2px solid transparent; }
+.we-tab.active { color: var(--fg); border-bottom-color: var(--red); }
+#we-art-count { opacity: .6; }
+.we-artifacts { overflow-y: auto; flex: 1; padding: 6px 4px; font-size: 12px; }
+.we-artifact { padding: 3px 8px; cursor: pointer; border-radius: 4px; }
+.we-artifact:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.we-artifact .we-art-dir { color: var(--hermes-faint); font-size: 10px; display: block; }
+.we-menu { position: fixed; z-index: 1000; min-width: 160px; background: var(--bg); border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); border-radius: 6px; padding: 4px 0; font-size: 13px; box-shadow: 0 6px 24px rgba(0, 0, 0, .35); }
+.we-menu-item { padding: 6px 14px; cursor: pointer; }
+.we-menu-item:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.we-menu-item.danger { color: var(--accent-error, #e94560); }
+.we-menu hr { border: none; border-top: 1px solid color-mix(in srgb, var(--fg) 15%, transparent); margin: 4px 0; }
+.we-dialog-overlay { position: fixed; inset: 0; z-index: 1001; background: rgba(0, 0, 0, .45); display: flex; align-items: center; justify-content: center; }
+.we-dialog { background: var(--bg); color: var(--fg); border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); border-radius: 8px; padding: 16px; min-width: 280px; max-width: 90vw; font-size: 13px; }
+.we-dialog input { width: 100%; margin-top: 10px; font: inherit; padding: 6px 8px; background: transparent; color: var(--fg); border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); border-radius: 4px; box-sizing: border-box; }
+.we-dialog-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.we-dialog-btns button { font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 4px; border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); background: none; color: var(--fg); cursor: pointer; }
+.we-dialog-btns button.danger { color: #fff; background: var(--accent-error, #e94560); border-color: transparent; }
+.we-toast { position: fixed; bottom: 18px; right: 18px; z-index: 1002; background: var(--bg); color: var(--fg); border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); border-radius: 6px; padding: 8px 14px; font-size: 12px; box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
+.we-file.drag-over, .we-tree summary.drag-over { background: color-mix(in srgb, var(--red) 18%, transparent); }
+.we-file.dragging { opacity: .5; }

@@ -225,6 +225,9 @@
             try { window.mermaid.run({ nodes: pending }); } catch (e) {}
           }
         }, { once: true });
+        // A failed CDN fetch must not wedge the flag — allow a retry on the
+        // next diagram (spotty phone connectivity is the expected case here).
+        s.addEventListener('error', function () { _mermaidLoading = false; s.remove(); }, { once: true });
         document.head.appendChild(s);
       };
     })();

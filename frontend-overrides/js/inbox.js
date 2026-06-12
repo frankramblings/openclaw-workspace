@@ -438,7 +438,7 @@
     catch (_) { return new Set(); }
   }
   async function _fetchItemIds() {
-    const r = await fetch(`${API}/api/items?limit=200`, { credentials: 'same-origin' });
+    const r = await (window.__fetchT || fetch)(`${API}/api/items?limit=200`, { credentials: 'same-origin' });
     const data = await r.json();
     return (data.items || []).map((it) => String(it.id)).filter(Boolean);
   }
@@ -469,7 +469,7 @@
     const body = $('#inbox-body');
     if (body && !_items.length) body.innerHTML = '<div class="cron-empty">Loading…</div>';
     try {
-      const r = await fetch(`${API}/api/items?limit=200${force ? '&_=' + Date.now() : ''}`,
+      const r = await (window.__fetchT || fetch)(`${API}/api/items?limit=200${force ? '&_=' + Date.now() : ''}`,
         { credentials: 'same-origin' });
       const data = await r.json();
       _items = data.items || [];

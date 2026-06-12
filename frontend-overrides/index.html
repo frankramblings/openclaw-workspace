@@ -17,6 +17,31 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <script nonce="{{CSP_NONCE}}">
   window._odysseusLoadTime = Date.now();
+  // Boot fetch memo: app boot fires ~18 API calls, several duplicated across
+  // modules (/api/auth/status ×2, /api/auth/settings ×3, /api/models ×2).
+  // Same-URL GETs within 10s share one request+parse. Window-scoped so the
+  // pre-module scripts (strip-order, search) and modules all see it.
+  window.__memoJson = (function () {
+    var inflight = new Map();
+    return function (url) {
+      var hit = inflight.get(url);
+      if (hit) return hit;
+      var p = fetch(url, { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+      inflight.set(url, p);
+      setTimeout(function () { inflight.delete(url); }, 10000);
+      return p;
+    };
+  })();
+  // Status/list fetches must not hang for minutes on a half-dead tailnet
+  // link (review E7): same fetch, 8s abort.
+  window.__fetchT = function (url, opts, ms) {
+    var ctl = new AbortController();
+    var t = setTimeout(function () { ctl.abort(); }, ms || 8000);
+    return fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}, { signal: ctl.signal }))
+      .finally(function () { clearTimeout(t); });
+  };
   (function(){
     try {
       var t = JSON.parse(localStorage.getItem('odysseus-theme'));

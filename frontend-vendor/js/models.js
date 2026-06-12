@@ -176,8 +176,9 @@ export async function refreshModels(force = false) {
     box.appendChild(_loadingSpinner.createElement());
     _loadingSpinner.start();
     try {
-      const res = await fetch(`${API_BASE}/api/models`);
-      const data = await res.json();
+      const data = window.__memoJson ? await window.__memoJson(`${API_BASE}/api/models`)
+        : await fetch(`${API_BASE}/api/models`).then(r => r.ok ? r.json() : null);
+      if (!data) { box.textContent = '(scan failed)'; return; }
       _lastFetchTime = Date.now();
       _cachedItems = data.items || [];
     } catch (e) {

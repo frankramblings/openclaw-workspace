@@ -168,7 +168,15 @@
     // childList for dynamically-created ones (calendar, cron). Debounced to
     // one sync per frame.
     let raf = null;
-    const kick = () => { if (!raf) raf = requestAnimationFrame(() => { raf = null; sync(); }); };
+    // Streaming rewrites #chat-history every frame; panels never live there —
+    // don't pay a panel-geometry sync per token (review E5).
+    const kick = (muts) => {
+      if (muts && muts.length && muts.every((m) => {
+        const t = m.target;
+        return t && t.nodeType === 1 && t.closest && t.closest('#chat-history');
+      })) return;
+      if (!raf) raf = requestAnimationFrame(() => { raf = null; sync(); });
+    };
     new MutationObserver(kick).observe(document.body, {
       childList: true, subtree: true, attributes: true,
       attributeFilter: ['class', 'style'],

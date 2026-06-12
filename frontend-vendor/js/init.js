@@ -26,9 +26,9 @@ window.addEventListener('pageshow', clearFreshComposerRestore);
 // in without the previous one logging out cleanly.
 (async () => {
   try {
-    const res = await fetch('/api/auth/status', { credentials: 'same-origin' });
-    if (!res.ok) return;
-    const data = await res.json().catch(() => ({}));
+    const data = window.__memoJson ? await window.__memoJson('/api/auth/status')
+      : await fetch('/api/auth/status', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!data) return;
     const liveUser = (data && data.username) || '';
     if (!liveUser) return;
     const KEY = 'odysseus-auth-user';

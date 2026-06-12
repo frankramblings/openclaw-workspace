@@ -69,3 +69,29 @@ async def test_unknown_action_rejected(client):
         r = await c.post("/api/items/action",
                          json={"source": "gmail", "id": "g1", "action": "explode"})
     assert r.status_code == 400
+
+
+def test_spinoff_dedupes_recent_same_item(monkeypatch, tmp_path):
+    """A runaway client hammered spinoff for one stuck item (~100 'Reply: Q
+    about quotas' sessions in 5 days, each burning a seeding agent turn).
+    Repeat spinoffs for the same item within the dedupe window must return
+    the EXISTING session — no new session, no new seed turn."""
+    import asyncio
+    from backend import inbox
+    from backend import sessions_store
+
+    monkeypatch.setattr(sessions_store, "_STORE_FILE",
+                        tmp_path / "sessions.json")
+    seeded = []
+
+    async def fake_turn(seed, key, model):
+        seeded.append(key)
+    monkeypatch.setattr(inbox, "_agent_turn", fake_turn)
+
+    item = {"id": "slack-123", "source": "slack", "title": "Q about quotas",
+            "subtitle": "#help", "snippet": "?", "meta": {}}
+    first = asyncio.run(inbox.spinoff({"item": item}))
+    second = asyncio.run(inbox.spinoff({"item": item}))
+    assert first["session_id"] == second["session_id"]
+    assert len(seeded) == 1, "second spinoff must not re-seed"
+    assert second.get("deduped") is True

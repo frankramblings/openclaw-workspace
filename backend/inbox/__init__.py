@@ -7,10 +7,13 @@ dismiss/snooze state filters the merge. Response keeps the dashboard's shape:
 {items, total, sources: {name: count}, errors: {name: msg}, generatedAt}."""
 from __future__ import annotations
 
+import json as _json
+import time as _time
+
 import asyncio
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from .. import bridge, config, email_himalaya, sessions_store
@@ -242,8 +245,27 @@ async def triage(payload: dict | None = None):
             "capHit": len(pending) > len(chosen)}
 
 
+SPINOFF_DEDUPE_MS = 24 * 3600 * 1000
+
+
+def _log_spinoff(request, item, session_id, deduped):
+    """Append-only caller trail (.data/spinoff.log) — a runaway client
+    created ~100 sessions for one item before anyone noticed; the UA/IP
+    line is how the next one gets identified in minutes, not days."""
+    try:
+        rec = {"ts": int(_time.time() * 1000), "item_id": item.get("id"),
+               "session_id": session_id, "deduped": deduped,
+               "client": getattr(getattr(request, "client", None), "host", None),
+               "ua": (request.headers.get("user-agent", "")[:160]
+                      if request is not None else None)}
+        with open(config.DATA_DIR / "spinoff.log", "a") as f:
+            f.write(_json.dumps(rec) + "\n")
+    except Exception:  # noqa: BLE001 - diagnostics must never break the route
+        pass
+
+
 @router.post("/api/items/spinoff")
-async def spinoff(payload: dict):
+async def spinoff(payload: dict, request: Request = None):
     """'Hand to Gary': mint a chat session seeded with the item (the client
     sends the rendered card fields). Same awaited-seed pattern as
     research.spinoff."""
@@ -277,6 +299,16 @@ async def spinoff(payload: dict):
                 "Reply with one short sentence confirming you have the context; "
                 "the user will say what they need next.")
         sess_name = f"Inbox: {title[:48]}"
+    # One thread per item per day: repeat spinoffs return the existing
+    # session instead of minting + re-seeding another (each seed costs a
+    # full agent turn — the runaway-client incident burned ~100 of them).
+    now_ms = int(_time.time() * 1000)
+    for existing in sessions_store.list_sessions():
+        if existing.get("name") == sess_name and not existing.get("archived") \
+                and now_ms - (existing.get("created") or 0) < SPINOFF_DEDUPE_MS:
+            _log_spinoff(request, item, existing["id"], deduped=True)
+            return {"session_id": existing["id"], "deduped": True}
+
     sess = sessions_store.create(name=sess_name, origin="inbox")
     try:
         await asyncio.wait_for(_agent_turn(seed, sess["sessionKey"], None),
@@ -285,4 +317,5 @@ async def spinoff(payload: dict):
         sessions_store.delete(sess["id"])
         return JSONResponse(status_code=502,
                             content={"detail": f"could not seed the chat: {exc}"})
+    _log_spinoff(request, item, sess["id"], deduped=False)
     return {"session_id": sess["id"]}

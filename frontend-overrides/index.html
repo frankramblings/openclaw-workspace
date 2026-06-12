@@ -1217,15 +1217,27 @@
 
 
   </main>
-  <!-- HERMES: right-hand WORKSPACE explorer (read-only; Phase 3) -->
+  <!-- HERMES: right-hand WORKSPACE explorer (Phase 3 + Hermes-parity controls) -->
   <aside id="workspace-explorer" hidden aria-label="Workspace files">
+    <div id="we-resize" aria-hidden="true"></div>
     <div class="we-header">
       <span class="we-title">WORKSPACE</span>
+      <span id="we-hidden-ind" title="Hidden files are visible — toggle in options" hidden>&#x25CE;</span>
       <span id="we-branch" class="we-branch" hidden></span>
+      <button type="button" id="we-new-file" title="New file">&#xFF0B;</button>
+      <button type="button" id="we-new-folder" title="New folder">&#x229E;</button>
+      <button type="button" id="we-upload" title="Upload files">&#x2912;</button>
+      <button type="button" id="we-prefs" title="Options">&#x22EF;</button>
       <button type="button" id="we-refresh" title="Refresh">&#x27F3;</button>
       <button type="button" id="we-collapse" title="Hide panel">&#x2715;</button>
     </div>
+    <div class="we-tabs" role="tablist" aria-label="Explorer views">
+      <button type="button" id="we-tab-files" class="we-tab active" role="tab">Files</button>
+      <button type="button" id="we-tab-artifacts" class="we-tab" role="tab">Artifacts <span id="we-art-count">0</span></button>
+    </div>
+    <input type="file" id="we-upload-input" multiple hidden>
     <div id="we-tree" class="we-tree"></div>
+    <div id="we-artifacts" class="we-artifacts" hidden></div>
   </aside>
   <button type="button" id="we-reopen" title="Workspace files" hidden>Files</button>
   <button id="scroll-bottom-btn" class="scroll-nav-btn" title="Scroll to bottom">▼</button>

@@ -1221,7 +1221,14 @@ import createResearchSynapse from './researchSynapse.js';
         // Smooth expand only for regular chat text (not thinking/agent blocks)
         const _hasThinking = html.includes('thinking-section');
         const _isAgentRound = roundHolder !== holder;
-        if (!_hasThinking && !_isAgentRound) {
+        // The offscreen measure forces a synchronous reflow between DOM writes
+        // EVERY frame; min-height only exists to stop scroll jitter. Re-measure
+        // every ~256 chars instead — same stability, a fraction of the layout
+        // work on long replies (review E6).
+        const _grewEnough = (contentEl.textContent.length - (contentEl._lastMeasuredLen || 0)) >= 256;
+        if (_hasThinking || _isAgentRound) {
+          contentEl.style.minHeight = '';
+        } else if (_grewEnough || !contentEl._lastMeasuredLen) {
           // Render into offscreen clone to measure new height before swapping
           if (!_measureDiv) {
             _measureDiv = document.createElement('div');
@@ -1235,8 +1242,7 @@ import createResearchSynapse from './researchSynapse.js';
           _measureDiv.remove();
           const curMin = parseFloat(contentEl.style.minHeight) || 0;
           contentEl.style.minHeight = Math.max(curMin, measuredH) + 'px';
-        } else {
-          contentEl.style.minHeight = '';
+          contentEl._lastMeasuredLen = contentEl.textContent.length;
         }
 
         contentEl.innerHTML = html;
@@ -2709,6 +2715,20 @@ import createResearchSynapse from './researchSynapse.js';
                 `<span style="color: var(--color-error);">[${recoveryMsg}]</span>`;
               holder.querySelector('.body').appendChild(recoveryNote);
             }
+            // iOS suspends the PWA on every app switch >30s; the fetch dies
+            // but the BRAIN finishes server-side. Reload the session (same as
+            // the wasDiscarded path) so the persisted reply replaces the
+            // stale partial instead of hiding until a manual switch.
+            const _recoverySid = sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId();
+            setTimeout(() => {
+              try {
+                // Stand down if the user already started a new stream (the
+                // reload would wipe its live bubble) or switched sessions.
+                if (isStreaming) return;
+                const sid = sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId();
+                if (sid && sid === _recoverySid) sessionModule.selectSession(sid);
+              } catch (e) { /* keep the partial visible */ }
+            }, 800);
             currentAbort = null;
             return;
           }
@@ -2822,7 +2842,13 @@ import createResearchSynapse from './researchSynapse.js';
         if (messageInput) {
           messageInput.disabled = false;
           if (window.innerWidth <= 768) {
-            messageInput.blur();
+            // Blur to dismiss the keyboard — but NOT if the user is mid-
+            // composition (input re-enables during the stream so they can
+            // type the follow-up; yanking the keyboard then loses iOS
+            // autocorrect state and their flow).
+            if (document.activeElement !== messageInput || !messageInput.value.trim()) {
+              messageInput.blur();
+            }
           } else {
             messageInput.focus();
           }

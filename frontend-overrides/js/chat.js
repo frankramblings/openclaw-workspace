@@ -821,6 +821,7 @@ import createResearchSynapse from './researchSynapse.js';
       
       const modelName = sessionModule.getCurrentModel() || null;
 
+      let _runAlive = false;   // backend confirmed the model is working; stops canned staged captions
       let loadingText = 'Initializing...';
 
       if (el('web-toggle').checked && !_isAgent) {
@@ -884,12 +885,12 @@ import createResearchSynapse from './researchSynapse.js';
         if (endpointUrlForProbe && modelName) {
           processingProbeTimer = setTimeout(async () => {
             processingProbeTimer = null;
-            if (accumulated || !spinner || !spinner.element || (currentAbort && currentAbort.signal.aborted)) return;
+            if (_runAlive || accumulated || !spinner || !spinner.element || (currentAbort && currentAbort.signal.aborted)) return;
             processingProbeAbort = new AbortController();
             try {
               spinner.updateMessage('Checking model endpoint');
               const status = await _probeCurrentEndpointStatus(endpointUrlForProbe, processingProbeAbort.signal);
-              if (accumulated || !spinner || !spinner.element || (currentAbort && currentAbort.signal.aborted)) return;
+              if (_runAlive || accumulated || !spinner || !spinner.element || (currentAbort && currentAbort.signal.aborted)) return;
               if (!status) {
                 spinner.updateMessage('Still waiting for model');
               } else if (status.alive) {
@@ -906,7 +907,7 @@ import createResearchSynapse from './researchSynapse.js';
                 spinner.updateMessage(`Endpoint offline — cancelling in ${_countdown}s`);
                 const _tick = setInterval(() => {
                   _countdown--;
-                  if (!spinner || !spinner.element || (currentAbort && currentAbort.signal.aborted) || accumulated) {
+                  if (_runAlive || !spinner || !spinner.element || (currentAbort && currentAbort.signal.aborted) || accumulated) {
                     clearInterval(_tick);
                     return;
                   }
@@ -922,7 +923,7 @@ import createResearchSynapse from './researchSynapse.js';
                 }, 1000);
               }
             } catch (e) {
-              if (e && e.name !== 'AbortError' && spinner && spinner.element && !accumulated) {
+              if (e && e.name !== 'AbortError' && !_runAlive && spinner && spinner.element && !accumulated) {
                 spinner.updateMessage('Still waiting for model');
               }
             } finally {
@@ -1913,6 +1914,13 @@ import createResearchSynapse from './researchSynapse.js';
                 if (_isBg) continue;
                 if (currentHolder && json.id) currentHolder.dataset.dbId = json.id;
 
+              } else if (json.type === 'run_alive') {
+                _extendTimeout();              // proof of life, same as stall frames
+                _runAlive = true;              // stop the canned staged captions
+                if (_isBg) continue;
+                if (spinner && spinner.element && !accumulated) {
+                  spinner.updateMessage('Model is thinking…');
+                }
               } else if (json.type === 'stall') {
                 _extendTimeout(); // live pipe — push client deadline past the watchdog's cap
                 if (_isBg) continue;

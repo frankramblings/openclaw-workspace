@@ -143,12 +143,10 @@ async def create_document(request: Request):
     return JSONResponse(_write(doc))
 
 
-# NOTE: register /api/documents/library BEFORE /api/documents/{session_id} so
-# the literal path wins over the path param.
-@router.get("/api/documents/library")
-async def library(sort: str = "recent", offset: int = 0, limit: int = 50,
-                  search: str = "", language: str = "", archived: str | None = None):
-    want_archived = str(archived).lower() == "true"
+def _scan_docs() -> list[dict]:
+    """Read every doc entry from disk. Sync — callers run it via to_thread
+    so the scan's file I/O never blocks the event loop (slow disk on this
+    host; a big library scan used to stall every in-flight request)."""
     docs = []
     if DOCS_DIR.exists():
         for p in DOCS_DIR.glob("*.md"):
@@ -156,6 +154,16 @@ async def library(sort: str = "recent", offset: int = 0, limit: int = 50,
                 docs.append(vs.load_entry(p, content_key="current_content"))
             except Exception:
                 continue
+    return docs
+
+
+# NOTE: register /api/documents/library BEFORE /api/documents/{session_id} so
+# the literal path wins over the path param.
+@router.get("/api/documents/library")
+async def library(sort: str = "recent", offset: int = 0, limit: int = 50,
+                  search: str = "", language: str = "", archived: str | None = None):
+    want_archived = str(archived).lower() == "true"
+    docs = await asyncio.to_thread(_scan_docs)
     docs = [d for d in docs if bool(d.get("archived")) == want_archived]
     if search:
         s = search.lower()
@@ -193,15 +201,10 @@ async def library(sort: str = "recent", offset: int = 0, limit: int = 50,
 
 @router.get("/api/documents/{session_id}")
 async def list_session_docs(session_id: str):
-    docs = []
-    if DOCS_DIR.exists():
-        for p in DOCS_DIR.glob("*.md"):
-            try:
-                d = vs.load_entry(p, content_key="current_content")
-            except Exception:
-                continue
-            if d.get("session_id") == session_id and d.get("is_active", True) and not d.get("archived"):
-                docs.append(d)
+    all_docs = await asyncio.to_thread(_scan_docs)
+    docs = [d for d in all_docs
+            if d.get("session_id") == session_id and d.get("is_active", True)
+            and not d.get("archived")]
     docs.sort(key=lambda d: d.get("updated_at", ""), reverse=True)
     return docs
 

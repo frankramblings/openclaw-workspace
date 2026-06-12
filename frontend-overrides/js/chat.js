@@ -1932,6 +1932,7 @@ import createResearchSynapse from './researchSynapse.js';
                 if (_dots && _dots._spinner) _dots._spinner.updateMessage(_retryLabel);
                 else if (spinner && spinner.element && !accumulated) spinner.updateMessage(_retryLabel);
               } else if (json.type === 'tool_start') {
+                try { window.dispatchEvent(new CustomEvent('workspace:toolframe', { detail: json })); } catch (_we) {}
                 if (_isBg) continue;
                 _cancelThinkingTimer();
                 _removeThinkingSpinner();
@@ -2072,6 +2073,7 @@ import createResearchSynapse from './researchSynapse.js';
                 uiModule.scrollHistory();
 
               } else if (json.type === 'tool_output') {
+                try { window.dispatchEvent(new CustomEvent('workspace:toolframe', { detail: json })); } catch (_we) {}
                 if (_isBg) continue;
                 // Re-point to the card this output actually belongs to. Tools
                 // interleave (start A, start B, end B, end A), so closing

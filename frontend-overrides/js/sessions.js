@@ -1562,6 +1562,7 @@ export async function loadSessions() {
 }
 
 export async function selectSession(id, { keepSidebar = false } = {}) {
+  try { window.dispatchEvent(new CustomEvent('workspace:session-switch')); } catch (_we) {}
   // Exit compare mode cleanly if active
   if (window.compareModule && window.compareModule.isActive()) {
     window.compareModule.deactivate(true);

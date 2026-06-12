@@ -71,6 +71,7 @@ def create(name: str | None = None, model: str | None = None,
         "id": sid,
         "name": name or "New chat",
         "model": model or "openclaw",
+        "speed": "normal",   # thinking depth: fast|normal|deep (web toggle)
         "sessionKey": f"{config.web_session_prefix()}-{sid}",
         "endpoint_url": endpoint_url or config.gateway_ws_url(),
         "endpoint_id": endpoint_id or "openclaw",
@@ -94,7 +95,7 @@ def update(session_id: str, **fields) -> dict | None:
     """Patch allowed fields on a record. Unknown keys are ignored so a stray
     form field from the SPA can't inject arbitrary data."""
     allowed = {"name", "model", "folder", "archived", "important",
-               "endpoint_url", "endpoint_id"}
+               "endpoint_url", "endpoint_id", "speed"}
     with _LOCK:
         data = _load()
         for s in data.get("sessions", []):

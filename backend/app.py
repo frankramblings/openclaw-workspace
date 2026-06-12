@@ -494,10 +494,14 @@ async def history(session_id: str):
 async def patch_session(session_id: str, name: str = Form(default=None),
                         model: str = Form(default=None), folder: str = Form(default=None),
                         endpoint_url: str = Form(default=None),
-                        endpoint_id: str = Form(default=None)):
+                        endpoint_id: str = Form(default=None),
+                        speed: str = Form(default=None)):
+    if speed is not None and speed not in ("fast", "normal", "deep"):
+        speed = None   # invalid value → ignored, like other bad fields
     fields = {k: v for k, v in {
         "name": name, "model": model, "folder": folder,
         "endpoint_url": endpoint_url, "endpoint_id": endpoint_id,
+        "speed": speed,
     }.items() if v is not None}
     return sessions_store.update(session_id, **fields) or JSONResponse(
         status_code=404, content={"detail": "no such session"})

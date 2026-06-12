@@ -155,3 +155,54 @@ def test_stall_retry_preserves_thinking(monkeypatch):
 
     asyncio.run(go())
     assert seen_thinking == ["low", "low"]
+
+
+# --- speed → thinking mapping -----------------------------------------------
+
+def test_speed_maps_to_thinking():
+    from backend.app import _thinking_for_speed
+    assert _thinking_for_speed("fast") == "low"
+    assert _thinking_for_speed("deep") == "high"
+    assert _thinking_for_speed("normal") is None
+    assert _thinking_for_speed(None) is None
+    assert _thinking_for_speed("warp") is None
+
+
+# --- integration: chat_stream passes correct thinking kwarg -----------------
+# Titler-avoidance strategy: name sessions with a non-placeholder name
+# (e.g. "Speed Test Chat") so _needs_title() returns False and the titler
+# task is never created — stream_turn is called EXACTLY once per POST, making
+# the captured `thinking` unambiguous.
+
+def test_chat_stream_passes_thinking_by_speed(monkeypatch):
+    """POST /api/chat_stream uses the session's speed to set thinking on
+    bridge.stream_turn. Monkeypatches bridge ON app_module so the call-site
+    import (from . import bridge) resolves to the patched object."""
+    captured = {}
+
+    async def fake_stream_turn(message, *, session_key, model_ref=None,
+                               attachments=None, run_info=None, thinking=None):
+        captured["thinking"] = thinking
+        if run_info is not None:
+            run_info["runId"] = "fake-run"
+        yield f"data: {json.dumps({'delta': 'hello'})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    monkeypatch.setattr(app_module.bridge, "stream_turn", fake_stream_turn)
+
+    client = TestClient(app)
+
+    # --- speed=fast → thinking="low" -----------------------------------------
+    rec = sessions_store.create(name="Speed Test Chat")
+    sessions_store.update(rec["id"], speed="fast")
+    resp = client.post("/api/chat_stream",
+                       data={"message": "hello", "session": rec["id"]})
+    assert resp.status_code == 200
+    assert captured.get("thinking") == "low", f"expected 'low', got {captured.get('thinking')!r}"
+
+    # --- speed=normal → thinking=None ----------------------------------------
+    sessions_store.update(rec["id"], speed="normal")
+    resp = client.post("/api/chat_stream",
+                       data={"message": "hello", "session": rec["id"]})
+    assert resp.status_code == 200
+    assert captured.get("thinking") is None, f"expected None, got {captured.get('thinking')!r}"

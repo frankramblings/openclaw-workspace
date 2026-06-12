@@ -197,20 +197,36 @@
     @font-face { font-family: 'Inter'; font-weight: 600; font-style: normal; font-display: swap; src: url('/static/fonts/Inter-SemiBold.woff2') format('woff2'); }
   </style>
   <!-- KaTeX CSS is loaded with media="print" so it doesn't block render,
-       then flipped to "all" via JS after load. Mermaid init runs once the
-       library finishes loading. Both hooks are wired via addEventListener
-       below (inline onload= attrs are blocked by CSP script-src-attr). -->
+       then flipped to "all" via JS after load. Both hooks are wired via
+       addEventListener below (inline onload= attrs are blocked by CSP
+       script-src-attr). Mermaid is lazy-loaded on demand (see ensureMermaid). -->
   <link id="katex-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" media="print">
   <script async src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
-  <script id="mermaid-script" async src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script nonce="{{CSP_NONCE}}">
     (function(){
       var k = document.getElementById('katex-css');
       if (k) k.addEventListener('load', function(){ k.media = 'all'; }, { once: true });
-      var m = document.getElementById('mermaid-script');
-      if (m) m.addEventListener('load', function(){
-        if (window.odysseusInitMermaid) window.odysseusInitMermaid();
-      }, { once: true });
+      // Mermaid is ~905KB gzipped / ~2.8MB parsed — load it only when a
+      // diagram actually needs rendering (chat.js calls window.ensureMermaid).
+      // Pinned version: @11 range-alias re-downloads on short CDN max-age.
+      var _mermaidLoading = false;
+      window.ensureMermaid = function () {
+        if (window.mermaid || _mermaidLoading) return;
+        _mermaidLoading = true;
+        var s = document.createElement('script');
+        s.id = 'mermaid-script';
+        s.src = 'https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js';
+        s.async = true;
+        s.addEventListener('load', function () {
+          if (window.odysseusInitMermaid) window.odysseusInitMermaid();
+          // Render any diagrams that arrived while the lib was loading.
+          var pending = document.querySelectorAll('pre.mermaid:not([data-processed])');
+          if (pending.length && window.mermaid) {
+            try { window.mermaid.run({ nodes: pending }); } catch (e) {}
+          }
+        }, { once: true });
+        document.head.appendChild(s);
+      };
     })();
   </script>
   <link rel="stylesheet" href="/static/style.css">

@@ -2509,7 +2509,15 @@ import createResearchSynapse from './researchSynapse.js';
             window.hljs.highlightElement(block);
           });
         }
-        if (markdownModule.renderMermaid) markdownModule.renderMermaid(roundHolder);
+        if (markdownModule.renderMermaid) {
+          // Lazy mermaid: the lib is no longer loaded at boot. renderMermaid
+          // no-ops without window.mermaid; kick the loader when a diagram is
+          // actually present (its load handler renders pending nodes).
+          if (!window.mermaid && window.ensureMermaid && roundHolder.querySelector('pre.mermaid')) {
+            window.ensureMermaid();
+          }
+          markdownModule.renderMermaid(roundHolder);
+        }
 
         uiModule.scrollHistory();
         // Render RAG sources if present

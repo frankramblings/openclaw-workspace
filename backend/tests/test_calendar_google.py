@@ -59,3 +59,19 @@ def test_to_rfc3339_and_ics_iso():
     assert _to_rfc3339("2026-06-04T10:00:00Z", False) == "2026-06-04T10:00:00Z"
     assert _ics_iso("20260704") == "2026-07-04"
     assert _ics_iso("20260704T130000Z") == "2026-07-04T13:00:00Z"
+
+
+def test_http_client_is_shared_and_recreated_when_closed():
+    import asyncio
+    from backend import calendar_google as cg
+
+    async def main():
+        c1 = cg._http()
+        c2 = cg._http()
+        assert c1 is c2          # one client, reused across calls
+        await c1.aclose()
+        c3 = cg._http()
+        assert c3 is not c1      # closed → lazily recreated
+        await c3.aclose()
+
+    asyncio.run(main())

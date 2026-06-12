@@ -33,16 +33,32 @@ def _cal_path(cal_id: str) -> str:
     return urllib.parse.quote(cal_id or "primary", safe="")
 
 
+# One shared client: each request used to pay a fresh TCP+TLS handshake, and
+# the events view fans out to every visible calendar (~8 calls per view).
+_client: httpx.AsyncClient | None = None
+
+
+def _http() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=30)
+    return _client
+
+
+async def _headers() -> dict:
+    # access_token() does a sync httpx POST on refresh — keep it off the loop.
+    return await asyncio.to_thread(_auth)
+
+
 async def _get(path: str, params: dict | None = None) -> dict:
-    async with httpx.AsyncClient(timeout=30) as c:
-        r = await c.get(f"{_API}{path}", headers=_auth(), params=params or {})
+    r = await _http().get(f"{_API}{path}", headers=await _headers(),
+                          params=params or {})
     r.raise_for_status()
     return r.json()
 
 
 async def _post(path: str, body: dict) -> dict:
-    async with httpx.AsyncClient(timeout=30) as c:
-        r = await c.post(f"{_API}{path}", json=body, headers=_auth())
+    r = await _http().post(f"{_API}{path}", json=body, headers=await _headers())
     r.raise_for_status()
     return r.json()
 
@@ -147,8 +163,8 @@ async def create_event(payload: dict = Body(...)):
 async def update_event(uid: str, payload: dict = Body(...)):
     cal = payload.get("calendar") or "primary"
     url = f"{_API}/calendars/{_cal_path(cal)}/events/{urllib.parse.quote(uid, safe='')}"
-    async with httpx.AsyncClient(timeout=30) as c:
-        r = await c.patch(url, json=to_google_event(payload), headers=_auth())
+    r = await _http().patch(url, json=to_google_event(payload),
+                            headers=await _headers())
     if r.status_code >= 300:
         return JSONResponse(status_code=502, content={"error": r.text[:300]})
     return map_event(r.json(), cal, payload.get("color") or _DEFAULT_COLOR)
@@ -158,8 +174,7 @@ async def update_event(uid: str, payload: dict = Body(...)):
 async def delete_event(uid: str, request: Request):
     cal = request.query_params.get("calendar") or "primary"
     url = f"{_API}/calendars/{_cal_path(cal)}/events/{urllib.parse.quote(uid, safe='')}"
-    async with httpx.AsyncClient(timeout=30) as c:
-        r = await c.delete(url, headers=_auth())
+    r = await _http().delete(url, headers=await _headers())
     if r.status_code not in (200, 204):
         return JSONResponse(status_code=502, content={"ok": False, "error": r.text[:300]})
     return {"ok": True, "deleted": [uid]}

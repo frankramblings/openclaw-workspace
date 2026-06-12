@@ -282,10 +282,31 @@ fi
 # they belong above this one). CACHE_NAME must change whenever any served asset
 # changes, or clients keep precached stale files (see feedback: never ?v= a
 # module script; bump CACHE_NAME instead — now automated).
+# Also generates the precache manifest from actually-deployed files (sw.js holds
+# a /*__PRECACHE__*/ token); previously the hand-maintained list had rotted.
 SW="$DEST/sw.js"
 if [[ -f "$SW" ]]; then
-  ASSET_HASH=$(find "$DEST" -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.webmanifest' \) ! -name 'sw.js' -print0 \
-    | sort -z | xargs -0 cat | md5 -q | cut -c1-10)
+  # Generate the precache manifest from what's actually deployed (sw.js holds
+  # a /*__PRECACHE__*/ token). Keep it to the shell the app needs offline:
+  # all JS/CSS, fonts, icons, manifest. Exclude sw.js itself and source maps.
+  PRECACHE_LIST=$(cd "$DEST" && find . -type f \
+      \( -name '*.js' -o -name '*.css' -o -name '*.woff2' -o -name '*.png' \
+         -o -name '*.svg' -o -name 'manifest.json' \) \
+      ! -name 'sw.js' ! -name '*.map' \
+    | sort | sed "s|^\./|'/static/|; s|\$|',|" | tr '\n' ' ')
+  python3 - "$SW" "$PRECACHE_LIST" <<'PYEOF'
+import sys
+sw_path, entries = sys.argv[1], sys.argv[2]
+src = open(sw_path).read()
+src = src.replace("/*__PRECACHE__*/", entries.rstrip())
+open(sw_path, "w").write(src)
+PYEOF
+  echo "injected $(echo "$PRECACHE_LIST" | grep -o "/static/" | wc -l | tr -d ' ') precache entries into sw.js"
+
+  # Portable content hash (md5 is macOS-only; md5sum is Linux/CI).
+  hash_cmd() { if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi; }
+  ASSET_HASH=$(find "$DEST" -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.webmanifest' -o -name 'manifest.json' \) ! -name 'sw.js' -print0 \
+    | sort -z | xargs -0 cat | hash_cmd | cut -c1-10)
   sedi "s/^const CACHE_NAME = .*/const CACHE_NAME = 'gary-${ASSET_HASH}';/" "$SW"
   echo "stamped sw.js CACHE_NAME = gary-${ASSET_HASH}"
 fi

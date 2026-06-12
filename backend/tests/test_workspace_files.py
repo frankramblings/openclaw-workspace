@@ -342,3 +342,28 @@ def test_upload_cap_and_protected_dir(api_ws, monkeypatch):
     assert r.status_code == 413
     assert client.post("/api/workspace/upload", data={"dir": ".git"},
                        files=[("files", ("c.txt", b"x"))]).status_code == 400
+
+
+# --- archive ---
+import io as _io
+import zipfile as _zipfile
+
+
+def test_archive_zips_dir_skipping_protected(api_ws):
+    (api_ws / "docs" / "node_modules").mkdir()
+    (api_ws / "docs" / "node_modules" / "junk.js").write_text("x")
+    r = client.get("/api/workspace/archive?path=docs")
+    assert r.status_code == 200
+    names = _zipfile.ZipFile(_io.BytesIO(r.content)).namelist()
+    assert "docs/note.md" in names
+    assert not any("node_modules" in n for n in names)
+
+
+def test_archive_cap_413(api_ws, monkeypatch):
+    monkeypatch.setattr(wf, "ARCHIVE_CAP", 4)
+    assert client.get("/api/workspace/archive?path=docs").status_code == 413
+
+
+def test_archive_rejects_files_and_escapes(api_ws):
+    assert client.get("/api/workspace/archive?path=docs/note.md").status_code == 404
+    assert client.get("/api/workspace/archive?path=../x").status_code == 400

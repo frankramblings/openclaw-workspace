@@ -7,14 +7,17 @@ additionally refuse SKIP_CONTENTS segments and the workspace root itself.
 """
 from __future__ import annotations
 
+import io
 import mimetypes
+import os
 import shutil
 import subprocess
 import time
+import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from . import vault_store as vs
@@ -26,6 +29,7 @@ MAX_ENTRIES = 2000
 MAX_PER_DIR = 200  # one 9k-file dir must not starve its siblings (depth-first walk)
 PREVIEW_CAP = 512 * 1024  # bytes of text served inline
 UPLOAD_CAP = 50 * 1024 * 1024   # bytes per uploaded file
+ARCHIVE_CAP = 100 * 1024 * 1024  # uncompressed bytes per folder zip
 CACHE_TTL = 10.0          # seconds; the 2014-mini disk hates re-walks
 SKIP_CONTENTS = {".git", "node_modules", "__pycache__", ".venv", ".versions"}
 TEXT_EXTS = {
@@ -272,6 +276,39 @@ async def workspace_upload(files: list[UploadFile] = File(...),
         saved.append(target.relative_to(rootr).as_posix())
     _invalidate_cache()
     return {"ok": True, "saved": saved}
+
+
+@router.get("/api/workspace/archive")
+def workspace_archive(path: str):
+    """Zip a workspace folder for download. Prunes SKIP_CONTENTS, refuses
+    oversize folders (the 2014 mini builds the zip in RAM)."""
+    root = workspace_root()
+    try:
+        target = resolve_safe(root, path)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not target.is_dir():
+        raise HTTPException(status_code=404, detail="not a directory")
+    total = 0
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for dirpath, dirnames, filenames in os.walk(target):
+            dirnames[:] = [d for d in dirnames
+                           if d not in SKIP_CONTENTS
+                           and not Path(dirpath, d).is_symlink()]
+            for fn in sorted(filenames):
+                p = Path(dirpath) / fn
+                if p.is_symlink() or not p.is_file():
+                    continue
+                total += p.stat().st_size
+                if total > ARCHIVE_CAP:
+                    raise HTTPException(status_code=413,
+                                        detail="folder too large to zip")
+                zf.write(p, p.relative_to(target.parent).as_posix())
+    return Response(
+        buf.getvalue(), media_type="application/zip",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{target.name}.zip"'})
 
 
 @router.get("/api/workspace/tree")

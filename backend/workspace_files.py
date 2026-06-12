@@ -178,6 +178,54 @@ def workspace_mkdir(body: PathBody):
     return {"ok": True, "path": body.path}
 
 
+class RenameBody(BaseModel):
+    path: str
+    new_name: str
+
+
+class MoveBody(BaseModel):
+    path: str
+    dest_dir: str = ""
+
+
+@router.post("/api/workspace/rename")
+def workspace_rename(body: RenameBody):
+    rootr = workspace_root().resolve()
+    src = _mutable_or_400(body.path)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="not found")
+    name = body.new_name.strip()
+    if (not name or "/" in name or "\\" in name or "\x00" in name
+            or name in (".", "..") or name in SKIP_CONTENTS):
+        raise HTTPException(status_code=400, detail="invalid name")
+    dst = src.with_name(name)
+    if dst.exists():
+        raise HTTPException(status_code=409, detail="target exists")
+    src.rename(dst)
+    _invalidate_cache()
+    return {"ok": True, "path": dst.relative_to(rootr).as_posix()}
+
+
+@router.post("/api/workspace/move")
+def workspace_move(body: MoveBody):
+    rootr = workspace_root().resolve()
+    src = _mutable_or_400(body.path)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="not found")
+    dd = body.dest_dir.strip().strip("/")
+    dest = rootr if dd in ("", ".") else _mutable_or_400(dd)
+    if not dest.is_dir():
+        raise HTTPException(status_code=404, detail="destination is not a directory")
+    if dest == src or src in dest.parents:
+        raise HTTPException(status_code=400, detail="cannot move a folder into itself")
+    dst = dest / src.name
+    if dst.exists():
+        raise HTTPException(status_code=409, detail="target exists")
+    shutil.move(str(src), str(dst))
+    _invalidate_cache()
+    return {"ok": True, "path": dst.relative_to(rootr).as_posix()}
+
+
 @router.get("/api/workspace/tree")
 def workspace_tree(fresh: int = 0, hidden: int = 0):
     key = bool(hidden)

@@ -231,3 +231,59 @@ def test_mutation_invalidates_tree_cache(api_ws):
     client.post("/api/workspace/create", json={"path": "made.md"})
     r1 = client.get("/api/workspace/tree").json()
     assert any(n["name"] == "made.md" for n in r1["tree"])
+
+
+# --- rename / move ---
+
+def test_rename_file(api_ws):
+    r = client.post("/api/workspace/rename",
+                    json={"path": "docs/note.md", "new_name": "renamed.md"})
+    assert r.status_code == 200
+    assert r.json()["path"] == "docs/renamed.md"
+    assert (api_ws / "docs" / "renamed.md").exists()
+    assert not (api_ws / "docs" / "note.md").exists()
+
+
+@pytest.mark.parametrize("bad", ["a/b", "..", ".git", ""])
+def test_rename_rejects_bad_names(api_ws, bad):
+    r = client.post("/api/workspace/rename",
+                    json={"path": "docs/note.md", "new_name": bad})
+    assert r.status_code == 400
+
+
+def test_rename_conflict_409_and_missing_404(api_ws):
+    (api_ws / "docs" / "other.md").write_text("y")
+    assert client.post("/api/workspace/rename",
+                       json={"path": "docs/note.md",
+                             "new_name": "other.md"}).status_code == 409
+    assert client.post("/api/workspace/rename",
+                       json={"path": "docs/nope.md",
+                             "new_name": "x.md"}).status_code == 404
+
+
+def test_move_file_and_to_root(api_ws):
+    r = client.post("/api/workspace/move",
+                    json={"path": "docs/note.md", "dest_dir": "screenshots"})
+    assert r.status_code == 200
+    assert (api_ws / "screenshots" / "note.md").exists()
+    r2 = client.post("/api/workspace/move",
+                     json={"path": "screenshots/note.md", "dest_dir": ""})
+    assert r2.status_code == 200
+    assert (api_ws / "note.md").exists()
+
+
+def test_move_dir_into_itself_rejected(api_ws):
+    (api_ws / "docs" / "sub").mkdir()
+    r = client.post("/api/workspace/move",
+                    json={"path": "docs", "dest_dir": "docs/sub"})
+    assert r.status_code == 400
+
+
+def test_move_conflict_and_bad_dest(api_ws):
+    (api_ws / "screenshots" / "note.md").write_text("z")
+    assert client.post("/api/workspace/move",
+                       json={"path": "docs/note.md",
+                             "dest_dir": "screenshots"}).status_code == 409
+    assert client.post("/api/workspace/move",
+                       json={"path": "docs/note.md",
+                             "dest_dir": "docs/note.md"}).status_code == 404

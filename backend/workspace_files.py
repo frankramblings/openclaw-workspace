@@ -13,7 +13,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 
@@ -25,6 +25,7 @@ MAX_DEPTH = 6
 MAX_ENTRIES = 2000
 MAX_PER_DIR = 200  # one 9k-file dir must not starve its siblings (depth-first walk)
 PREVIEW_CAP = 512 * 1024  # bytes of text served inline
+UPLOAD_CAP = 50 * 1024 * 1024   # bytes per uploaded file
 CACHE_TTL = 10.0          # seconds; the 2014-mini disk hates re-walks
 SKIP_CONTENTS = {".git", "node_modules", "__pycache__", ".venv", ".versions"}
 TEXT_EXTS = {
@@ -237,6 +238,40 @@ def workspace_delete(body: PathBody):
         target.unlink()
     _invalidate_cache()
     return {"ok": True}
+
+
+def _dedupe_name(p: Path) -> Path:
+    """Finder-style collision suffix: a.txt -> a (1).txt -> a (2).txt ..."""
+    if not p.exists():
+        return p
+    for i in range(1, 1000):
+        cand = p.with_name(f"{p.stem} ({i}){p.suffix}")
+        if not cand.exists():
+            return cand
+    raise HTTPException(status_code=409, detail="too many name collisions")
+
+
+@router.post("/api/workspace/upload")
+async def workspace_upload(files: list[UploadFile] = File(...),
+                           dest: str = Form("", alias="dir")):
+    rootr = workspace_root().resolve()
+    dd = dest.strip().strip("/")
+    target_dir = rootr if dd in ("", ".") else _mutable_or_400(dd)
+    if target_dir.exists() and not target_dir.is_dir():
+        raise HTTPException(status_code=400, detail="destination is not a directory")
+    target_dir.mkdir(parents=True, exist_ok=True)  # folder drops create paths
+    saved = []
+    for f in files:
+        data = await f.read()
+        if len(data) > UPLOAD_CAP:
+            raise HTTPException(status_code=413,
+                                detail=f"{f.filename} exceeds 50MB upload cap")
+        name = Path(f.filename or "upload").name  # strip any client-sent path
+        target = _dedupe_name(target_dir / name)
+        target.write_bytes(data)
+        saved.append(target.relative_to(rootr).as_posix())
+    _invalidate_cache()
+    return {"ok": True, "saved": saved}
 
 
 @router.get("/api/workspace/tree")

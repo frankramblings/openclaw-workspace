@@ -307,3 +307,38 @@ def test_delete_refuses_root_protected_missing(api_ws):
                        json={"path": ".git"}).status_code == 400
     assert client.post("/api/workspace/delete",
                        json={"path": "nope.md"}).status_code == 404
+
+
+# --- upload ---
+
+def test_upload_and_collision_suffix(api_ws):
+    r = client.post("/api/workspace/upload", data={"dir": ""},
+                    files=[("files", ("a.txt", b"hello"))])
+    assert r.status_code == 200 and r.json()["saved"] == ["a.txt"]
+    r2 = client.post("/api/workspace/upload", data={"dir": ""},
+                     files=[("files", ("a.txt", b"world"))])
+    assert r2.json()["saved"] == ["a (1).txt"]
+    assert (api_ws / "a (1).txt").read_bytes() == b"world"
+
+
+def test_upload_to_subdir_creates_dirs(api_ws):
+    r = client.post("/api/workspace/upload", data={"dir": "docs/drops"},
+                    files=[("files", ("b.txt", b"x"))])
+    assert r.status_code == 200
+    assert (api_ws / "docs" / "drops" / "b.txt").exists()
+
+
+def test_upload_strips_client_paths(api_ws):
+    client.post("/api/workspace/upload", data={"dir": "docs"},
+                files=[("files", ("../evil.txt", b"x"))])
+    assert (api_ws / "docs" / "evil.txt").exists()
+    assert not (api_ws / "evil.txt").exists()
+
+
+def test_upload_cap_and_protected_dir(api_ws, monkeypatch):
+    monkeypatch.setattr(wf, "UPLOAD_CAP", 10)
+    r = client.post("/api/workspace/upload", data={"dir": ""},
+                    files=[("files", ("big.bin", b"x" * 11))])
+    assert r.status_code == 413
+    assert client.post("/api/workspace/upload", data={"dir": ".git"},
+                       files=[("files", ("c.txt", b"x"))]).status_code == 400

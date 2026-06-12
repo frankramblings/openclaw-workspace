@@ -5,7 +5,20 @@ vault; its helpers read the module globals at call time, so monkeypatching the
 two globals redirects every read/write/snapshot into tmp_path."""
 import pytest
 
-from backend import documents
+from backend import config, documents, sessions_store
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path, monkeypatch):
+    """Keep every test away from the live .data/ store. Route tests used to
+    write REAL session records into .data/sessions.json (~100 junk 'Q about
+    quotas' sessions accumulated in the user's sidebar), and the leftovers
+    made the spinoff-dedupe test fail forever after. _STORE_FILE is computed
+    at import so patch the module global; spinoff.log and friends resolve
+    config.DATA_DIR at call time so patching the config global covers them.
+    Tests that point these at their own tmp paths simply override this."""
+    monkeypatch.setattr(sessions_store, "_STORE_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
 
 
 @pytest.fixture

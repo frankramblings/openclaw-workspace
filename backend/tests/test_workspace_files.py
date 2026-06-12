@@ -124,3 +124,53 @@ def test_per_dir_cap_preserves_siblings(ws):
     after = _find(tree, "zzz_after")
     assert after is not None
     assert _find(after["children"], "kept.md") is not None
+
+
+# --- hidden walking + dirty flag + per-variant cache (Hermes controls) ---
+from fastapi.testclient import TestClient
+
+from backend import vault_store as vs
+from backend.app import app
+
+client = TestClient(app)
+
+
+@pytest.fixture()
+def api_ws(ws, monkeypatch):
+    """ws fixture + WORKSPACE redirected + a clean endpoint cache."""
+    monkeypatch.setattr(vs, "WORKSPACE", ws)
+    wf._cache.clear()
+    return ws
+
+
+def test_hidden_dirs_walked_with_flag(ws):
+    (ws / ".attachments").mkdir()
+    (ws / ".attachments" / "img.png").write_bytes(b"x")
+    tree, _ = wf.build_tree(ws, include_hidden=True)
+    dot = _find(tree, ".attachments")
+    assert _find(dot["children"], "img.png") is not None
+
+
+def test_skip_contents_never_walked_even_hidden(ws):
+    tree, _ = wf.build_tree(ws, include_hidden=True)
+    assert _find(tree, ".git")["children"] == []
+
+
+def test_git_dirty_false_outside_repo(tmp_path):
+    assert wf.git_dirty(tmp_path) is False
+
+
+def test_tree_endpoint_hidden_variants_cached_separately(api_ws):
+    (api_ws / ".attachments").mkdir()
+    (api_ws / ".attachments" / "img.png").write_bytes(b"x")
+    r0 = client.get("/api/workspace/tree").json()
+    assert "dirty" in r0
+    dot0 = next(n for n in r0["tree"] if n["name"] == ".attachments")
+    assert dot0["children"] == []
+    r1 = client.get("/api/workspace/tree?hidden=1").json()
+    dot1 = next(n for n in r1["tree"] if n["name"] == ".attachments")
+    assert dot1["children"] != []
+    # hidden=0 again must come from its own cache slot, still unwalked
+    r2 = client.get("/api/workspace/tree").json()
+    dot2 = next(n for n in r2["tree"] if n["name"] == ".attachments")
+    assert dot2["children"] == []

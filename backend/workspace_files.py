@@ -30,7 +30,7 @@ TEXT_EXTS = {
     ".sh", ".yaml", ".yml", ".toml", ".ini", ".csv", ".log", ".skill",
 }
 
-_cache: dict = {"t": 0.0, "data": None}
+_cache: dict = {}  # hidden_flag(bool) -> (timestamp, data); cleared on any mutation
 
 
 def workspace_root() -> Path:
@@ -51,9 +51,22 @@ def git_branch(root: Path) -> str | None:
     return out.stdout.strip() or None
 
 
+def git_dirty(root: Path) -> bool:
+    """True when the workspace repo has uncommitted changes; False on any failure."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return False
+    return out.returncode == 0 and bool(out.stdout.strip())
+
+
 def build_tree(root: Path, max_depth: int = MAX_DEPTH,
                max_entries: int = MAX_ENTRIES,
-               max_per_dir: int = MAX_PER_DIR) -> tuple[list[dict], bool]:
+               max_per_dir: int = MAX_PER_DIR,
+               include_hidden: bool = False) -> tuple[list[dict], bool]:
     """Nested {name,path,type,size,children} nodes + truncated flag.
 
     Dirs sort before files (case-insensitive). Entries in SKIP_CONTENTS are
@@ -80,7 +93,8 @@ def build_tree(root: Path, max_depth: int = MAX_DEPTH,
                 # Hidden dirs are listed but never walked: the real workspace
                 # root is dominated by .attachments/.clawhub/... whose contents
                 # would eat the MAX_ENTRIES budget before any real dir renders.
-                if not is_link and p.name not in SKIP_CONTENTS and not p.name.startswith("."):
+                if not is_link and p.name not in SKIP_CONTENTS \
+                        and (include_hidden or not p.name.startswith(".")):
                     if depth >= max_depth:
                         state["truncated"] = True
                     else:
@@ -111,19 +125,22 @@ def resolve_safe(root: Path, rel: str) -> Path:
 
 
 @router.get("/api/workspace/tree")
-def workspace_tree(fresh: int = 0):
+def workspace_tree(fresh: int = 0, hidden: int = 0):
+    key = bool(hidden)
     now = time.time()
-    if not fresh and _cache["data"] is not None and now - _cache["t"] < CACHE_TTL:
-        return _cache["data"]
+    ent = _cache.get(key)
+    if not fresh and ent is not None and now - ent[0] < CACHE_TTL:
+        return ent[1]
     root = workspace_root()
     if not root.is_dir():
-        data = {"root": str(root), "branch": None, "tree": [],
+        data = {"root": str(root), "branch": None, "dirty": False, "tree": [],
                 "truncated": False, "missing": True}
     else:
-        tree, truncated = build_tree(root)
-        data = {"root": str(root), "branch": git_branch(root), "tree": tree,
+        tree, truncated = build_tree(root, include_hidden=key)
+        data = {"root": str(root), "branch": git_branch(root),
+                "dirty": git_dirty(root), "tree": tree,
                 "truncated": truncated, "missing": False}
-    _cache.update(t=now, data=data)
+    _cache[key] = (now, data)
     return data
 
 

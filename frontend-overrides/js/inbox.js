@@ -1060,10 +1060,11 @@
         if (!document.getElementById('rail-inbox')) injectRailButton();
       }).observe(rail, { childList: true });
     }
-    // Initial unread-dot check, then refresh every 60s (matches Email's dot).
+    // Initial unread-dot check, then refresh every 120s; server cache TTL is
+    // 150s so these hit cache and avoid re-running the collectors.
     // Skipped while the tab is hidden; refreshed on return.
     refreshInboxDot();
-    setInterval(() => { if (!document.hidden) refreshInboxDot(); }, 60000);
+    setInterval(() => { if (!document.hidden) refreshInboxDot(); }, 120000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) refreshInboxDot();
     });

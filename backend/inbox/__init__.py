@@ -31,9 +31,11 @@ SOURCES = {
     "documents": documents_stale.fetch,
 }
 
-# Per-source 60s cache: (ts_ms, items). Cleared by actions on that source.
+# Per-source cache: (ts_ms, items). Cleared by actions on that source.
+# Must outlive the frontend's 120s unread-dot poll or every poll re-runs the
+# collectors (the dot only diffs ids — staleness is invisible there).
 _cache: dict[str, tuple[float, list]] = {}
-CACHE_TTL_MS = 60_000
+CACHE_TTL_MS = 150_000
 
 
 async def _fetch_source(name: str) -> list[dict]:

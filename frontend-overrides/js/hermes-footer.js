@@ -7,16 +7,19 @@
     const path = document.getElementById('hermes-footer-path');
 
     // Agent initial for chat avatars (Phase 4 CSS reads this var).
+    // Also reads workspace_root so the footer path needs no separate tree walk.
     fetch('/api/config').then(r => r.ok ? r.json() : null).then(cfg => {
       const name = (cfg && (cfg.agent_name || cfg.name)) || '';
       if (name) document.documentElement.style.setProperty('--hermes-agent-initial', JSON.stringify(name[0].toUpperCase()));
+      if (path && cfg && cfg.workspace_root) {
+        path.textContent = cfg.workspace_root; path.title = cfg.workspace_root; path.hidden = false;
+      } else if (path) {
+        // Old backend without workspace_root: fall back to the tree endpoint.
+        fetch('/api/workspace/tree').then(r => r.ok ? r.json() : null).then(d => {
+          if (d && d.root) { path.textContent = d.root; path.title = d.root; path.hidden = false; }
+        }).catch(() => {});
+      }
     }).catch(() => {});
-
-    if (path) {
-      fetch('/api/workspace/tree').then(r => r.ok ? r.json() : null).then(d => {
-        if (d && d.root) { path.textContent = d.root; path.title = d.root; path.hidden = false; }
-      }).catch(() => {});
-    }
 
     // Mirror the unread dots of the now-hidden Inbox/Email sidebar rows onto
     // their strip icons (hermes.css draws .hermes-rail-unread::after).

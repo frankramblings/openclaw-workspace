@@ -39,6 +39,7 @@ from .skills import router as skills_router
 from .uploads import ATTACH_DIR
 from .uploads import router as uploads_router
 from .workspace_files import router as workspace_files_router
+from . import workspace_files
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
@@ -102,6 +103,9 @@ async def workspace_config():
     return {
         "agent_name": config.agent_name(),
         "accent": config.accent_color(),
+        # The footer shows this; previously it fetched the ENTIRE workspace
+        # tree walk just to read .root (2026-06-12 mobile review E2).
+        "workspace_root": str(workspace_files.workspace_root()),
     }
 
 

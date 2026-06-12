@@ -1542,6 +1542,7 @@ export async function loadSessions() {
         window.chatModule.showWelcomeScreen();
       }
       updateModelPicker();
+      _renderSpeed('normal');
       // Only auto-create if there are truly zero sessions (not just unselected)
       if (activeSessions.length === 0 && !_autoCreateInProgress) {
         _autoCreateInProgress = true;
@@ -1654,6 +1655,7 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     }
     // Update model picker visibility
     updateModelPicker();
+    _renderSpeed(getCurrentSpeed());
 
     // Refresh session cost badge for the newly selected session
     if (chatRenderer.updateSessionCostUI) chatRenderer.updateSessionCostUI();
@@ -1682,6 +1684,7 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
         if (sMeta && sMeta.model !== modelName) {
           sMeta.model = modelName;
           updateModelPicker();
+          _renderSpeed(getCurrentSpeed());
         }
       }
     }
@@ -1886,6 +1889,7 @@ export function createDirectChat(url, modelId, endpointId) {
 
   // Update model picker to show the pending model
   updateModelPicker();
+  _renderSpeed('normal');
 
   // Update current-meta header
   const metaEl = document.getElementById('current-meta');
@@ -1975,6 +1979,50 @@ export function getCurrentModel() {
   // Pending session not yet materialized — read from model picker label
   const label = document.getElementById('model-picker-label');
   return label ? label.textContent.trim() : null;
+}
+
+const SPEED_ORDER = ['normal', 'fast', 'deep'];
+const SPEED_META = {
+  fast:   { label: '⚡ Fast',  title: 'Speed: Fast — low thinking, quickest replies' },
+  normal: { label: 'Normal',  title: 'Speed: Normal — default thinking' },
+  deep:   { label: '🧠 Deep', title: 'Speed: Deep — high thinking, best answers' },
+};
+
+function _renderSpeed(speed) {
+  const btn = document.getElementById('speed-toggle-btn');
+  if (!btn) return;
+  const meta = SPEED_META[speed] || SPEED_META.normal;
+  btn.dataset.speed = speed;
+  const lbl = document.getElementById('speed-toggle-label');
+  if (lbl) lbl.textContent = meta.label;
+  btn.title = meta.title + ' — click to change';
+}
+
+export function getCurrentSpeed() {
+  const sess = sessions.find(x => x.id === currentSessionId);
+  return (sess && sess.speed) || 'normal';
+}
+
+export function initSpeedToggle() {
+  const btn = document.getElementById('speed-toggle-btn');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const cur = btn.dataset.speed || 'normal';
+    const next = SPEED_ORDER[(SPEED_ORDER.indexOf(cur) + 1) % SPEED_ORDER.length];
+    _renderSpeed(next);                       // optimistic
+    const sess = sessions.find(x => x.id === currentSessionId);
+    if (sess) sess.speed = next;              // local cache
+    const sid = currentSessionId;
+    // v1: before the first message creates the session record, the toggle
+    // only updates locally and is NOT carried into creation — flip it after
+    // the first reply.
+    if (!sid) return;
+    const fd = new FormData();
+    fd.append('speed', next);
+    try {
+      await fetch(`${API_BASE}/api/session/${sid}`, { method: 'PATCH', body: fd });
+    } catch (e) { console.warn('speed save failed:', e); }
+  });
 }
 
 /** Endpoint URL serving the current (or pending) session's model. Used to
@@ -2300,6 +2348,7 @@ function _initAllDropdowns() {
     setPendingChat: (v) => { _pendingChat = v; },
     createDirectChat,
   });
+  initSpeedToggle();
   _initDropdownDismiss();
   _initBulkSelect();
 
@@ -3183,10 +3232,12 @@ const sessionModule = {
   getCurrentSessionId,
   getSessions,
   getCurrentModel,
+  getCurrentSpeed,
   getCurrentEndpointUrl,
   setCurrentSessionId,
   initDragSort,
   updateModelPicker,
+  initSpeedToggle,
   markResearching,
   clearResearching,
   markStreaming,

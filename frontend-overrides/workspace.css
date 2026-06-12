@@ -491,6 +491,10 @@
   textarea, select,
   input[type="text"], input[type="search"], input[type="email"],
   input[type="password"], input[type="url"], input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="tel"],
   input:not([type]), [contenteditable="true"] {
     font-size: 16px !important;
   }
@@ -598,4 +602,17 @@
   border: 1px solid var(--border-color, rgba(128, 128, 128, 0.18));
   display: block;
   cursor: zoom-in;
+}
+
+/* ── Chat markdown tables: side-scroll instead of hard clip (review D2) ──
+   .msg has overflow:hidden and .chat-history overflow-x:hidden; the mobile
+   block gave pre/cmd/details overflow-x:auto but skipped tables — columns
+   past the bubble edge were unreachable on a phone. display:block makes the
+   table its own scrollbox (header/body stay column-aligned: one <table>). */
+.msg table {
+  display: block;
+  max-width: 100%;
+  width: max-content;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }

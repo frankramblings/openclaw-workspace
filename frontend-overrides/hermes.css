@@ -567,3 +567,15 @@ body:not(.hermes-rail-fallback) #rail-theme { display: none; }
 .we-toast { position: fixed; bottom: 18px; right: 18px; z-index: 1002; background: var(--bg); color: var(--fg); border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); border-radius: 6px; padding: 8px 14px; font-size: 12px; box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
 .we-file.drag-over, .we-tree summary.drag-over { background: color-mix(in srgb, var(--red) 18%, transparent); }
 .we-file.dragging { opacity: .5; }
+
+/* ── Mobile safe-area: capsule composer (2026-06-12 mobile review C1) ──
+   The capsule rule's `padding` SHORTHAND above wipes style.css's mobile
+   `padding-bottom: calc(10px + env(safe-area-inset-bottom))` (equal
+   specificity, this sheet loads later) — so the bottom control row sat in
+   the home-indicator gesture zone in the standalone PWA. Append-only block
+   so it survives edits to the base rule. */
+@media (max-width: 768px) {
+  .chat-input-bar {
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+}

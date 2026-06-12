@@ -883,6 +883,8 @@ async function _streamToHolder(modelIdx, sessionId, msg, holderEl, abortCtrl) {
       markdownModule.squashOutsideCode(accumulated)
     );
     if (window.hljs) holderEl.querySelectorAll('pre code').forEach(b => window.hljs.highlightElement(b));
+    // Lazy mermaid: kick the loader if a diagram is present; render if already loaded.
+    if (!window.mermaid && window.ensureMermaid && holderEl.querySelector && holderEl.querySelector('pre.mermaid')) window.ensureMermaid();
     if (markdownModule.renderMermaid) markdownModule.renderMermaid(holderEl);
     holderEl.appendChild(chatRenderer.createMsgFooter(holderEl));
   } else if (!bodyEl.querySelector('.agent-tool-event') && !bodyEl.querySelector('img')) {

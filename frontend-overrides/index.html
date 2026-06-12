@@ -14,7 +14,7 @@
        in email bodies — was wrapping random digits in <a href="tel:..."> with
        browser-default styling that didn't match the Odysseus theme. -->
   <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
-  <link rel="apple-touch-icon" href="/static/icon-192.png?v=gary1">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <script nonce="{{CSP_NONCE}}">
   window._odysseusLoadTime = Date.now();
   (function(){
@@ -2320,7 +2320,7 @@
 <script type="module" src="/static/js/chatRenderer.js"></script>
 <script type="module" src="/static/js/codeRunner.js"></script>
 <script type="module" src="/static/js/chatStream.js"></script>
-<script type="module" src="/static/js/chat.js?v=20260520m"></script>
+<script type="module" src="/static/js/chat.js"></script>
 <script type="module" src="/static/js/cookbook.js"></script>
 <script type="module" src="/static/js/search-chat.js"></script>
 <script type="module" src="/static/js/compare/index.js"></script>
@@ -2329,9 +2329,9 @@
 <script type="module" src="/static/js/settings.js"></script>
 <script type="module" src="/static/js/admin.js"></script>
 <script type="module" src="/static/js/assistant.js"></script>
-<script type="module" src="/static/app.js?v=20260607a"></script>  <!-- app.js must be LAST; bump ?v= when app.js changes (iOS PWA caches hard) -->
+<script type="module" src="/static/app.js"></script>  <!-- app.js must be LAST; cache-bust via CACHE_NAME (sync-frontend.sh stamps it) — NEVER ?v= a module (double-instance bug) -->
 <script type="module" src="/static/js/init.js"></script>
-<script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
+<script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}</script>
   <script src="/static/js/cron.js" defer></script>
   <!-- Inbox tab: durable home for this tag. The sync script's injector only
        writes to frontend/ (gitignored), so the tag was silently lost whenever

@@ -139,8 +139,12 @@ html { background-color: var(--bg); }
     top: 0;
     left: 0;
     right: 0;
-    height: env(safe-area-inset-top, 0px);
-    background: var(--bg);
+    /* DIAGNOSTIC (temporary): fixed 120px so it always paints, bright cyan so
+       it's unmistakable. Tells us if the page can paint behind the status bar
+       at all (full-bleed) or if iOS owns that area. Revert to
+       height:env(safe-area-inset-top); background:var(--bg); after the test. */
+    height: 120px;
+    background: #00e5ff;
     pointer-events: none;
   }
 

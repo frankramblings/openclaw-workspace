@@ -69,13 +69,11 @@
     if (refreshing || e.touches.length !== 1) { armed = false; return; }
     var t = e.target;
     if (t && t.closest && t.closest(LAYERS)) { armed = false; return; }
-    // Never claim drags that start on the composer or any text field, and
-    // stand down entirely while the keyboard is up: the iOS "swipe down to
-    // dismiss keyboard" gesture starts exactly here, and a reload would eat
-    // the unsent draft (there is no draft persistence).
-    var ae = document.activeElement;
-    if ((t && t.closest && t.closest('.chat-input-bar, textarea, input, [contenteditable="true"]')) ||
-        (ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT' || ae.isContentEditable))) {
+    // Never claim drags that START on the composer or a text field — the iOS
+    // "swipe down to dismiss keyboard" gesture begins there and a reload would
+    // eat the unsent draft. Scoped to the drag's origin only; do NOT disarm
+    // whenever an input merely has focus (that killed PTR app-wide).
+    if (t && t.closest && t.closest('.chat-input-bar, textarea, input, [contenteditable="true"]')) {
       armed = false; return;
     }
     armed = atTop(t);
@@ -90,10 +88,13 @@
     var dy = e.touches[0].clientY - startY;
     if (!pulling) {
       var dx = Math.abs(e.touches[0].clientX - startX);
-      if (dx > Math.abs(dy)) { armed = false; return; }  // horizontal intent (sidebar edge-swipe) — let go
-      if (dy > ARM_SLOP) pulling = true;       // it's a pull — claim it
-      else if (dy < -4) { armed = false; return; }  // scrolling up — let go
-      else return;
+      var ady = Math.abs(dy);
+      // Don't decide direction on sub-slop jitter — a genuine vertical pull
+      // starts with a few px of sideways noise that must NOT disarm it.
+      if (dx < ARM_SLOP && ady < ARM_SLOP) return;     // still ambiguous — wait
+      if (dx > ady) { armed = false; return; }         // horizontal (sidebar edge-swipe) — let go
+      if (dy > 0) { pulling = true; }                  // downward pull — claim it
+      else { armed = false; return; }                  // upward scroll — let go
     }
     if (dy <= 0) { pulling = false; update(0); return; }
     e.preventDefault(); // suppress rubber-banding while we own the gesture

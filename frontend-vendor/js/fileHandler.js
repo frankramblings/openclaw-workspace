@@ -48,15 +48,10 @@ export function init(apiBase) {
 export function openPicker() {
   const input = document.getElementById('file-input');
   if (!input) return;
-
-  // Mobile Safari is more reliable when the picker is opened through the
-  // native API during the original tap event. Keep click() for older browsers.
-  if (typeof input.showPicker === 'function') {
-    try {
-      input.showPicker();
-      return;
-    } catch (_) {}
-  }
+  // Canonical, iOS-reliable path: synchronously click the (display:none) file
+  // input inside the user gesture. showPicker() is flakier on iOS standalone
+  // PWAs (can silently no-op or throw), so the attach button is a real <button>
+  // whose click handler calls this — not a <label>+showPicker.
   input.click();
 }
 

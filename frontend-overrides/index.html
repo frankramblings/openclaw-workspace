@@ -10,12 +10,15 @@
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#1e1f22">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <!-- `default` (not black-translucent): on modern iOS the standalone status
-       bar is tinted by <meta name=theme-color>, which theme.js keeps synced to
-       the live theme bg — so the bar matches every theme and the clock stays
-       legible. black-translucent forced an opaque black bar here (it wasn't
-       full-bleeding, so the page never showed through behind the clock). -->
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <!-- iOS IGNORES theme-color / manifest theme_color for the status bar — only
+       this meta (default|black|black-translucent) matters. black-translucent is
+       the ONLY value that lets the page paint behind the clock: it makes the
+       webview full-bleed under the status bar, and html::before (below) fills
+       that strip with the theme bg (var(--bg)). This also gives edge-to-edge
+       use of the screen. NOTE: iOS caches this style hard per-site — picking up
+       a change needs the home-screen icon removed AND the site's website-data
+       cleared, then re-added (a plain reopen/re-add won't refresh it). -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <!-- Disable iOS / Android auto-linkifying of numbers (phone/date/address)
        in email bodies — was wrapping random digits in <a href="tel:..."> with
        browser-default styling that didn't match the Odysseus theme. -->

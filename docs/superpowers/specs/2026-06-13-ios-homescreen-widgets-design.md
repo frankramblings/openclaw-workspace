@@ -40,15 +40,17 @@ left untouched and continues to work alongside it.
 |---|---|---|
 | `…/?action=new` | Enter new-chat mode, focus composer (keyboard up) | new-chat-mode path (`app.js:~3695`) |
 | `…/?action=photo` | New chat, then open the attach file-picker | `overflow-attach-btn` / file input |
-| `…/?action=voice` | New chat, then activate STT | existing STT affordance |
+| `…/?action=voice` | New chat with empty composer so the mic button is showing (one tap to record) | existing STT affordance / mic mode |
 | `…/?action=inbox` | Switch to the Inbox tab | existing tab switcher |
 | `…/` (no param) | Unchanged — resumes last chat | existing default |
 
 Notes:
-- **Camera cannot auto-open** on load (browsers require a user gesture to trigger a
-  file input). `action=photo` therefore lands the user in a new chat with the attach
-  UI ready; one tap opens the camera/picker. This is a deliberate, documented limit
-  — do not try to force `.click()` on the file input at boot.
+- **Camera and microphone cannot auto-start** on load — browsers require a user
+  gesture to trigger a file input or `getUserMedia`. So `action=photo` lands the user
+  in a new chat with the attach UI ready (one tap opens the camera/picker), and
+  `action=voice` lands them in a new chat with the mic button showing (one tap
+  records). These are deliberate, documented limits — do not try to force `.click()`
+  or auto-start recording at boot.
 - Param dispatch must run **after** the relevant UI is initialized (new-chat mode,
   tabs, attach button must exist). Implementation plan determines the exact hook
   point; the contract here is "param read once, dispatched to existing handler,
@@ -90,7 +92,7 @@ Scriptable is a skin over Part A; if Part A works, Part C is layout only.
    launch is only available to a native wrapper, which is explicitly out of scope.
 2. **No free-text input on a widget face.** No iOS widget (native included, pre-input
    APIs) takes typed text. Buttons launch into the composer instead.
-3. **Camera can't auto-pop** (see Part A note).
+3. **Camera and mic can't auto-start** (see Part A note) — photo/voice land one tap away.
 4. **Tailscale must be connected** on the iPhone (already true in normal use).
 
 ## Out of scope (YAGNI)

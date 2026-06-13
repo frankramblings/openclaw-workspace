@@ -18,6 +18,7 @@ import chatRenderer from './js/chatRenderer.js';
 import sessionModule from './js/sessions.js';
 import memoryModule from './js/memory.js';
 import voiceRecorderModule from './js/voiceRecorder.js';
+import './js/deeplink.js';  // ?action= widget/Shortcut deep links (self-inits)
 import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
 import tasksModule from './js/tasks.js';

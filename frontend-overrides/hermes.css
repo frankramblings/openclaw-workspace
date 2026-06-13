@@ -615,13 +615,13 @@ body:not(.hermes-rail-fallback) #rail-theme { display: none; }
 #message { font-size: var(--chat-font-size, calc(13px * var(--ui-font-scale, 1))) !important; }
 
 /* ── Mobile safe-area: capsule composer (2026-06-12 mobile review C1) ──
-   The capsule rule's `padding` SHORTHAND above wipes style.css's mobile
-   `padding-bottom: calc(10px + env(safe-area-inset-bottom))` (equal
-   specificity, this sheet loads later) — so the bottom control row sat in
-   the home-indicator gesture zone in the standalone PWA. Append-only block
-   so it survives edits to the base rule. */
+   Clear the home indicator with MARGIN below the capsule, not padding inside
+   it. The earlier padding version (and style.css's mobile rule) added the
+   ~34px safe-area inset INSIDE the capsule, leaving a big empty gap under the
+   controls. Keep the capsule compact (8px) and float it above the indicator. */
 @media (max-width: 768px) {
   .chat-input-bar {
-    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: 8px;
+    margin-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   }
 }

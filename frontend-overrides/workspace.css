@@ -127,9 +127,11 @@
 html { background-color: var(--bg); }
 
 @media (max-width: 768px) {
-  /* iOS only exposes default/black/black-translucent status-bar styles; it
-     cannot render a custom theme color there. Match the app's mobile header to
-     the native black-translucent surface so it reads as one continuous bar. */
+  /* black-translucent makes the iOS status bar TRANSPARENT — the page shows
+     through behind the clock/island, so we paint the strip ourselves. Use the
+     live theme bg (NOT a hardcoded color) so it's the same gray as the rest of
+     the UI and follows theme changes. This strip sits above everything so the
+     area behind the status bar is a solid, uniform theme color in every view. */
   html::before {
     content: "";
     position: fixed;
@@ -138,7 +140,7 @@ html { background-color: var(--bg); }
     left: 0;
     right: 0;
     height: env(safe-area-inset-top, 0px);
-    background: #000;
+    background: var(--bg);
     pointer-events: none;
   }
 
@@ -158,7 +160,9 @@ html { background-color: var(--bg); }
     min-height: 44px;
     margin-top: 0;
     padding: 0 56px !important;
-    background: #000;
+    /* Same theme gray as the chat area so the header reads as part of one
+       continuous surface (opaque, so content scrolls invisibly beneath it). */
+    background: var(--bg);
   }
   .hamburger-btn  { top: env(safe-area-inset-top, 0px) !important; }
   /* The drawer itself is full-bleed. Its header and bottom nav paint through

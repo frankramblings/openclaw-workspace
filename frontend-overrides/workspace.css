@@ -173,8 +173,11 @@ html { background-color: var(--bg); }
     background: var(--sidebar-bg, var(--panel));
   }
   .sidebar-header {
-    min-height: calc(40px + env(safe-area-inset-top, 0px));
-    padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 4px !important;
+    /* The app is NOT full-bleed on iOS (the status bar is iOS-drawn ABOVE the
+       webview), so safe-area-inset-top here only pushed the title down with
+       phantom space. Drop it and tighten. */
+    min-height: 36px;
+    padding: 4px 12px 4px !important;
   }
   .sidebar-inner {
     padding-top: 6px !important;

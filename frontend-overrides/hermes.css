@@ -210,6 +210,22 @@ body:not(.hermes-rail-fallback) #sidebar .icon-rail .rail-separator { display: n
   body:not(.hermes-rail-fallback) #sidebar .icon-rail { display: flex !important; }
 }
 
+/* Keep the in-drawer strip to ONE row. The 44px coarse tap target (set
+   globally for other controls) overflowed the 80%-width (max 340px) drawer and
+   wrapped an icon to a second row, leaving an orphaned icon + dead space.
+   Scope a smaller size to THIS strip only so all icons fit across. */
+@media (pointer: coarse) {
+  body:not(.hermes-rail-fallback) #sidebar .icon-rail {
+    padding-left: 4px;
+    padding-right: 4px;
+    gap: 2px;
+  }
+  body:not(.hermes-rail-fallback) #sidebar .icon-rail .icon-rail-btn {
+    width: 36px;
+    height: 36px;
+  }
+}
+
 /* init.js measures the rail and publishes --icon-rail-w on <html>; with the
    rail now spanning the sidebar, that measurement would double-offset every
    fullscreen panel that does left:calc(--icon-rail-w + --sidebar-w). The rail

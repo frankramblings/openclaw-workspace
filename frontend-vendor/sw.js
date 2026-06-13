@@ -42,14 +42,18 @@ self.addEventListener('activate', (e) => {
   );
 });
 
-// On a half-dead link (cellular drop, tailnet relay blackhole) a plain
-// fetch() hangs for the full OS TCP timeout before the cache fallback runs.
-// Race it: network wins whenever it actually answers, cache wins after ~4s.
-function networkWithTimeout(req, ms) {
+// Force the network WITH revalidation, plus a timeout. `cache:'no-cache'` makes
+// a conditional request (304 when unchanged — cheap), so a stale HTTP-cache
+// entry can never be served silently; the SW cache is the OFFLINE fallback
+// only. The timeout means a dead/half-open link falls back to cache instead of
+// hanging for the full OS TCP timeout.
+function freshFetch(req, ms) {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('sw-timeout')), ms || 4000);
-    fetch(req).then(res => { clearTimeout(t); resolve(res); },
-                    err => { clearTimeout(t); reject(err); });
+    const t = setTimeout(() => reject(new Error('sw-timeout')), ms || 4500);
+    fetch(req, { cache: 'no-cache' }).then(
+      res => { clearTimeout(t); resolve(res); },
+      err => { clearTimeout(t); reject(err); }
+    );
   });
 }
 
@@ -59,40 +63,34 @@ self.addEventListener('fetch', (e) => {
   // Never touch API calls or non-GET.
   if (url.pathname.startsWith('/api/') || e.request.method !== 'GET') return;
 
-  // HTML navigation: stale-while-revalidate the app shell — but ONLY for the
-  // SPA root. Other navigations (e.g. a deep-linked /static/*.html page) must
-  // go to the network/static handlers below; otherwise every navigation was
-  // served the app index, replacing the page the user actually asked for.
-  if (e.request.mode === 'navigate' && url.pathname === '/') {
+  // App shell — the SPA root HTML + all JS/CSS: NETWORK-FIRST with revalidation
+  // so an edit always lands on the next online reopen (no more "fully close /
+  // re-add the PWA" dance). Cache is the offline fallback only. (HTML was
+  // stale-while-revalidate, which left the shell one reopen behind; JS/CSS was
+  // plain network-first, which the HTTP cache could still answer with a stale
+  // copy.) Non-root navigations (deep-linked /static/*.html) fall through.
+  const isNav  = e.request.mode === 'navigate' && url.pathname === '/';
+  const isCode = url.pathname.startsWith('/static/') &&
+                 /\.(js|css)(\?|$)/.test(url.pathname + url.search);
+  if (isNav || isCode) {
+    const cacheKey = isNav ? '/' : e.request;
+    // For navigation use a URL string, not the navigate-mode Request (which
+    // can't carry a custom cache mode); JS/CSS pass their Request through.
+    const netReq = isNav ? url.href : e.request;
     e.respondWith(
-      caches.open(CACHE_NAME).then(async cache => {
-        const cached = await cache.match('/');
-        const network = networkWithTimeout(e.request, 4000).then(res => {
-          if (res && res.ok) cache.put('/', res.clone());
-          return res;
-        }).catch(() => cached);
-        return cached || network;
-      })
-    );
-    return;
-  }
-
-  // JS/CSS: network-first — always try the network so code/style edits show up
-  // on a normal reload; fall back to cache only when offline.
-  if (url.pathname.startsWith('/static/') && /\.(js|css)(\?|$)/.test(url.pathname + url.search)) {
-    e.respondWith(
-      networkWithTimeout(e.request).then(res => {
+      freshFetch(netReq).then(res => {
         if (res && res.ok) {
           const copy = res.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(e.request, copy));
+          caches.open(CACHE_NAME).then(cache => cache.put(cacheKey, copy));
         }
         return res;
-      }).catch(() => caches.match(e.request).then(c => c || fetch(e.request)))
+      }).catch(() => caches.match(cacheKey).then(c => c || (isNav ? caches.match('/') : undefined)))
     );
     return;
   }
 
-  // Other static assets (images, fonts, libs): cache-first with background refresh.
+  // Other static assets (images, fonts, libs): cache-first with background
+  // refresh — content-stable and heavy, so instant-from-cache is right here.
   if (url.pathname.startsWith('/static/')) {
     e.respondWith(
       caches.open(CACHE_NAME).then(async cache => {

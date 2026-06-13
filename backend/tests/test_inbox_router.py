@@ -97,3 +97,10 @@ def test_spinoff_dedupes_recent_same_item(monkeypatch, tmp_path):
     assert first["session_id"] == second["session_id"]
     assert len(seeded) == 1, "second spinoff must not re-seed"
     assert second.get("deduped") is True
+
+
+def test_cache_ttl_outlives_dot_poll():
+    """The unread-dot polls every 120s; TTL must exceed it or every poll
+    re-runs the gmail/slack/asana collectors (0.9s+ on the mini)."""
+    from backend import inbox
+    assert inbox.CACHE_TTL_MS >= 150_000

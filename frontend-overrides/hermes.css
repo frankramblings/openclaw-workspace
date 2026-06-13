@@ -613,3 +613,15 @@ body:not(.hermes-rail-fallback) #rail-theme { display: none; }
    outrank style.css's `13px !important`. */
 .msg { font-size: var(--chat-font-size, inherit); }
 #message { font-size: var(--chat-font-size, calc(13px * var(--ui-font-scale, 1))) !important; }
+
+/* ── Mobile safe-area: capsule composer (2026-06-12 mobile review C1) ──
+   The capsule rule's `padding` SHORTHAND above wipes style.css's mobile
+   `padding-bottom: calc(10px + env(safe-area-inset-bottom))` (equal
+   specificity, this sheet loads later) — so the bottom control row sat in
+   the home-indicator gesture zone in the standalone PWA. Append-only block
+   so it survives edits to the base rule. */
+@media (max-width: 768px) {
+  .chat-input-bar {
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+}

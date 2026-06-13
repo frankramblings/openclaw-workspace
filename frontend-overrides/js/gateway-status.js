@@ -92,7 +92,7 @@
   async function refresh() {
     let got = false;
     try {
-      const res = await fetch(`${API}/api/gateway/status`);
+      const res = await (window.__fetchT || fetch)(`${API}/api/gateway/status`);
       if (res.ok) { render(await res.json()); got = true; }
     } catch (_) { /* network blip — keep last known state */ }
     // Until the FIRST successful render the dot sits gray — and a mobile cold
@@ -113,7 +113,7 @@
       }).observe(rail, { childList: true });
     }
     refresh();
-    setInterval(refresh, POLL_MS);
+    setInterval(() => { if (!document.hidden) refresh(); }, POLL_MS);
     window.addEventListener('focus', refresh);
     // iOS PWAs resume without a reliable window 'focus' — visibilitychange is
     // the event that actually fires when the app comes back to the foreground.

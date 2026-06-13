@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from fastapi import Body, FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from . import bridge, capabilities, config, doctor, draft_mode, monitor, sessions_store, websearch
 from .memory import maybe_auto_extract
@@ -38,6 +39,7 @@ from .skills import router as skills_router
 from .uploads import ATTACH_DIR
 from .uploads import router as uploads_router
 from .workspace_files import router as workspace_files_router
+from . import workspace_files
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
@@ -50,6 +52,13 @@ async def _lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)
+
+# Wire bytes matter on the phone-over-Tailscale path and nothing upstream
+# compresses (Tailscale Serve passes bytes through): style.css alone is 1MB
+# raw / 227KB gzipped. Streaming responses (SSE) are flushed per-chunk by
+# Starlette's GZipResponder, so /api/chat/stream keeps streaming.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 app.include_router(inbox_router)
 app.include_router(memory_router)
 app.include_router(skills_router)
@@ -94,6 +103,9 @@ async def workspace_config():
     return {
         "agent_name": config.agent_name(),
         "accent": config.accent_color(),
+        # The footer shows this; previously it fetched the ENTIRE workspace
+        # tree walk just to read .root (2026-06-12 mobile review E2).
+        "workspace_root": str(workspace_files.workspace_root()),
     }
 
 
@@ -686,6 +698,22 @@ async def save_auth_settings(payload: dict = Body(default=None)):
 @app.get("/api/{path:path}")
 async def _unimplemented_api(path: str):
     return []
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Serve the service worker from the ORIGIN ROOT.
+
+    Registered at /static/sw.js the SW's max scope is /static/ and it can
+    never control the SPA at / — the whole offline story was inert (2026-06-12
+    mobile review, P0). Served at /sw.js its default scope is the origin root.
+    no-cache so browsers revalidate the worker itself on each check.
+    """
+    sw = config.FRONTEND_DIR / "sw.js"
+    if not sw.exists():
+        return JSONResponse(status_code=404, content={"error": "sw.js not built"})
+    return FileResponse(str(sw), media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache"})
 
 
 # --- Serve the reused Odysseus SPA ------------------------------------------

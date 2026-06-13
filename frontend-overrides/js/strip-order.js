@@ -68,7 +68,7 @@
   }
 
   function pullServerOrder(strip) {
-    fetch('/api/auth/settings').then(r => r.ok ? r.json() : null).then(s => {
+    (window.__memoJson ? window.__memoJson('/api/auth/settings') : fetch('/api/auth/settings').then(r => r.ok ? r.json() : null)).then(s => {
       if (!s) return;
       const remote = s[SERVER_KEY];
       const local = readOrder();

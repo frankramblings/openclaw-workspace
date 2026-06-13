@@ -19,8 +19,10 @@ export function init(apiBase) {
 
 async function _fetchProvider() {
   try {
-    const res = await fetch((API_BASE || '') + '/api/auth/settings', { credentials: 'same-origin' });
-    const s = await res.json();
+    const url = (API_BASE || '') + '/api/auth/settings';
+    const s = window.__memoJson ? await window.__memoJson(url)
+      : await (await fetch(url, { credentials: 'same-origin' })).json();
+    if (!s) return;
     _provider = s.search_provider || 'serpapi';
     _loaded = true;
   } catch (e) { /* keep default */ }

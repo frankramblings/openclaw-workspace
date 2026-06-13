@@ -438,7 +438,7 @@
     catch (_) { return new Set(); }
   }
   async function _fetchItemIds() {
-    const r = await fetch(`${API}/api/items?limit=200`, { credentials: 'same-origin' });
+    const r = await (window.__fetchT || fetch)(`${API}/api/items?limit=200`, { credentials: 'same-origin' });
     const data = await r.json();
     return (data.items || []).map((it) => String(it.id)).filter(Boolean);
   }
@@ -469,7 +469,7 @@
     const body = $('#inbox-body');
     if (body && !_items.length) body.innerHTML = '<div class="cron-empty">Loading…</div>';
     try {
-      const r = await fetch(`${API}/api/items?limit=200${force ? '&_=' + Date.now() : ''}`,
+      const r = await (window.__fetchT || fetch)(`${API}/api/items?limit=200${force ? '&_=' + Date.now() : ''}`,
         { credentials: 'same-origin' });
       const data = await r.json();
       _items = data.items || [];
@@ -1060,10 +1060,11 @@
         if (!document.getElementById('rail-inbox')) injectRailButton();
       }).observe(rail, { childList: true });
     }
-    // Initial unread-dot check, then refresh every 60s (matches Email's dot).
+    // Initial unread-dot check, then refresh every 120s; server cache TTL is
+    // 150s so these hit cache and avoid re-running the collectors.
     // Skipped while the tab is hidden; refreshed on return.
     refreshInboxDot();
-    setInterval(() => { if (!document.hidden) refreshInboxDot(); }, 60000);
+    setInterval(() => { if (!document.hidden) refreshInboxDot(); }, 120000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) refreshInboxDot();
     });

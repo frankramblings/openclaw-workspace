@@ -15,9 +15,45 @@
        in email bodies — was wrapping random digits in <a href="tel:..."> with
        browser-default styling that didn't match the Odysseus theme. -->
   <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
-  <link rel="apple-touch-icon" href="/static/icon-192.png?v=gary1">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <script nonce="{{CSP_NONCE}}">
   window._odysseusLoadTime = Date.now();
+  // Boot fetch memo: app boot fires ~18 API calls, several duplicated across
+  // modules (/api/auth/status ×2, /api/auth/settings ×3, /api/models ×2).
+  // Same-URL GETs within 10s share one request+parse. Window-scoped so the
+  // pre-module scripts (strip-order, search) and modules all see it.
+  window.__memoJson = (function () {
+    var inflight = new Map();
+    return function (url) {
+      // Key on the ABSOLUTE url: app.js passes `${API_BASE}/api/x` while the
+      // pre-module scripts pass bare '/api/x' — same request, must share one
+      // Map entry or the dedupe silently does nothing.
+      var key;
+      try { key = new URL(url, location.origin).href; } catch (e) { key = url; }
+      var hit = inflight.get(key);
+      if (hit) return hit;
+      var p = (window.__fetchT || fetch)(key, { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; })
+        .then(function (d) {
+          // Don't memoize failures: a force-refresh within the 10s window
+          // (e.g. the model-picker retry) must hit the network again.
+          if (d === null) inflight.delete(key);
+          return d;
+        });
+      inflight.set(key, p);
+      setTimeout(function () { inflight.delete(key); }, 10000);
+      return p;
+    };
+  })();
+  // Status/list fetches must not hang for minutes on a half-dead tailnet
+  // link (review E7): same fetch, 8s abort.
+  window.__fetchT = function (url, opts, ms) {
+    var ctl = new AbortController();
+    var t = setTimeout(function () { ctl.abort(); }, ms || 8000);
+    return fetch(url, Object.assign({ credentials: 'same-origin' }, opts || {}, { signal: ctl.signal }))
+      .finally(function () { clearTimeout(t); });
+  };
   (function(){
     try {
       var t = JSON.parse(localStorage.getItem('odysseus-theme'));
@@ -198,28 +234,89 @@
     @font-face { font-family: 'Inter'; font-weight: 600; font-style: normal; font-display: swap; src: url('/static/fonts/Inter-SemiBold.woff2') format('woff2'); }
   </style>
   <!-- KaTeX CSS is loaded with media="print" so it doesn't block render,
-       then flipped to "all" via JS after load. Mermaid init runs once the
-       library finishes loading. Both hooks are wired via addEventListener
-       below (inline onload= attrs are blocked by CSP script-src-attr). -->
+       then flipped to "all" via JS after load. Both hooks are wired via
+       addEventListener below (inline onload= attrs are blocked by CSP
+       script-src-attr). Mermaid is lazy-loaded on demand (see ensureMermaid). -->
   <link id="katex-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css" media="print">
   <script async src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
-  <script id="mermaid-script" async src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script nonce="{{CSP_NONCE}}">
     (function(){
       var k = document.getElementById('katex-css');
       if (k) k.addEventListener('load', function(){ k.media = 'all'; }, { once: true });
-      var m = document.getElementById('mermaid-script');
-      if (m) m.addEventListener('load', function(){
-        if (window.odysseusInitMermaid) window.odysseusInitMermaid();
-      }, { once: true });
+      // Mermaid is ~905KB gzipped / ~2.8MB parsed — load it only when a
+      // diagram actually needs rendering (chat.js calls window.ensureMermaid).
+      // Pinned version: @11 range-alias re-downloads on short CDN max-age.
+      var _mermaidLoading = false;
+      window.ensureMermaid = function () {
+        if (window.mermaid || _mermaidLoading) return;
+        _mermaidLoading = true;
+        var s = document.createElement('script');
+        s.id = 'mermaid-script';
+        s.src = 'https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js';
+        s.async = true;
+        s.addEventListener('load', function () {
+          if (window.odysseusInitMermaid) window.odysseusInitMermaid();
+          // Render any diagrams that arrived while the lib was loading.
+          var pending = document.querySelectorAll('pre.mermaid:not([data-processed])');
+          if (pending.length && window.mermaid) {
+            try { window.mermaid.run({ nodes: pending }); } catch (e) {}
+          }
+        }, { once: true });
+        // A failed CDN fetch must not wedge the flag — allow a retry on the
+        // next diagram (spotty phone connectivity is the expected case here).
+        s.addEventListener('error', function () { _mermaidLoading = false; s.remove(); }, { once: true });
+        document.head.appendChild(s);
+      };
     })();
   </script>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="modulepreload" href="/static/app.js">
+  <!-- Full static-import graph: without these, the second tier is only
+       discovered after app.js (172KB) downloads+parses — 2-3 extra RTT waves
+       on the phone-over-Tailscale path. Keep in sync with the import lists of
+       app.js / js/chat.js (this is the eager graph; lazy imports excluded). -->
   <link rel="modulepreload" href="/static/js/chat.js">
   <link rel="modulepreload" href="/static/js/ui.js">
   <link rel="modulepreload" href="/static/js/sessions.js">
   <link rel="modulepreload" href="/static/js/markdown.js">
+  <link rel="modulepreload" href="/static/js/storage.js">
+  <link rel="modulepreload" href="/static/js/theme.js">
+  <link rel="modulepreload" href="/static/js/spinner.js">
+  <link rel="modulepreload" href="/static/js/memory.js">
+  <link rel="modulepreload" href="/static/js/models.js">
+  <link rel="modulepreload" href="/static/js/rag.js">
+  <link rel="modulepreload" href="/static/js/presets.js">
+  <link rel="modulepreload" href="/static/js/search.js">
+  <link rel="modulepreload" href="/static/js/tts-ai.js">
+  <link rel="modulepreload" href="/static/js/document.js">
+  <link rel="modulepreload" href="/static/js/gallery.js">
+  <link rel="modulepreload" href="/static/js/group.js">
+  <link rel="modulepreload" href="/static/js/notes.js">
+  <link rel="modulepreload" href="/static/js/tasks.js">
+  <link rel="modulepreload" href="/static/js/calendar.js">
+  <link rel="modulepreload" href="/static/js/admin.js">
+  <link rel="modulepreload" href="/static/js/censor.js">
+  <link rel="modulepreload" href="/static/js/settings.js">
+  <link rel="modulepreload" href="/static/js/keyboard-shortcuts.js">
+  <link rel="modulepreload" href="/static/js/sidebar-layout.js">
+  <link rel="modulepreload" href="/static/js/section-management.js">
+  <link rel="modulepreload" href="/static/js/search-chat.js">
+  <link rel="modulepreload" href="/static/js/cookbook.js">
+  <link rel="modulepreload" href="/static/js/compare/index.js">
+  <link rel="modulepreload" href="/static/js/fileHandler.js">
+  <link rel="modulepreload" href="/static/js/voiceRecorder.js">
+  <link rel="modulepreload" href="/static/js/chatRenderer.js">
+  <link rel="modulepreload" href="/static/js/chatStream.js">
+  <link rel="modulepreload" href="/static/js/codeRunner.js">
+  <link rel="modulepreload" href="/static/js/emailInbox.js">
+  <link rel="modulepreload" href="/static/js/emailLibrary.js">
+  <link rel="modulepreload" href="/static/js/emailLibrary/replyRecipients.js">
+  <link rel="modulepreload" href="/static/js/research/panel.js">
+  <link rel="modulepreload" href="/static/js/researchSynapse.js">
+  <link rel="modulepreload" href="/static/js/slashCommands.js">
+  <link rel="modulepreload" href="/static/js/modalManager.js">
+  <link rel="modulepreload" href="/static/js/modelPicker.js">
+  <link rel="modulepreload" href="/static/js/providers.js">
   <link rel="stylesheet" href="/static/workspace.css">
   <link rel="stylesheet" href="/static/hermes.css">
 </head>
@@ -1324,17 +1421,25 @@
 
     bottomBtn.addEventListener('click', () => {
       cancelAutoScroll();
-      const target = container.scrollHeight - container.clientHeight;
+      // Target recomputed each frame: during streaming the bottom keeps
+      // moving and a once-captured target lands the user short (review D7).
       _scrollingToBottom = true;
+      if (window.uiModule && window.uiModule.setAutoScroll) window.uiModule.setAutoScroll(true);
       function step() {
         if (!_scrollingToBottom) return;
+        const target = container.scrollHeight - container.clientHeight;
         const diff = target - container.scrollTop;
         if (diff <= 8) { container.scrollTop = target; _scrollingToBottom = false; return; }
         container.scrollTop += diff * 0.2;
         _scrollRaf = requestAnimationFrame(step);
       }
       step();
-      _scrollTimeout = setTimeout(() => { if (_scrollingToBottom) { container.scrollTop = target; _scrollingToBottom = false; } }, 1500);
+      _scrollTimeout = setTimeout(() => {
+        if (_scrollingToBottom) {
+          container.scrollTop = container.scrollHeight - container.clientHeight;
+          _scrollingToBottom = false;
+        }
+      }, 1500);
     });
     new ResizeObserver(reposition).observe(chatBar);
     new MutationObserver(update).observe(container, {childList:true, subtree:true});
@@ -2357,7 +2462,7 @@
 <script type="module" src="/static/js/chatRenderer.js"></script>
 <script type="module" src="/static/js/codeRunner.js"></script>
 <script type="module" src="/static/js/chatStream.js"></script>
-<script type="module" src="/static/js/chat.js?v=20260520m"></script>
+<script type="module" src="/static/js/chat.js"></script>
 <script type="module" src="/static/js/cookbook.js"></script>
 <script type="module" src="/static/js/search-chat.js"></script>
 <script type="module" src="/static/js/compare/index.js"></script>
@@ -2366,9 +2471,9 @@
 <script type="module" src="/static/js/settings.js"></script>
 <script type="module" src="/static/js/admin.js"></script>
 <script type="module" src="/static/js/assistant.js"></script>
-<script type="module" src="/static/app.js?v=20260607a"></script>  <!-- app.js must be LAST; bump ?v= when app.js changes (iOS PWA caches hard) -->
+<script type="module" src="/static/app.js"></script>  <!-- app.js must be LAST; cache-bust via CACHE_NAME (sync-frontend.sh stamps it) — NEVER ?v= a module (double-instance bug) -->
 <script type="module" src="/static/js/init.js"></script>
-<script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
+<script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}</script>
   <script src="/static/js/cron.js" defer></script>
   <!-- Inbox tab: durable home for this tag. The sync script's injector only
        writes to frontend/ (gitignored), so the tag was silently lost whenever

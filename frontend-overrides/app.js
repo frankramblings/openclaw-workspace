@@ -1102,9 +1102,9 @@ function initializeEventListeners() {
   }
 
   // Fetch auth status — populate user bar and show admin button if admin
-  fetch(`${API_BASE}/api/auth/status`, { credentials: 'same-origin' })
-    .then(r => r.json())
-    .then(d => {
+  (window.__memoJson ? window.__memoJson(`${API_BASE}/api/auth/status`)
+                     : fetch(`${API_BASE}/api/auth/status`, { credentials: 'same-origin' }).then(r => r.json()))
+    .then(d => { if (!d) return;
       window._isAdmin = !!d.is_admin;
       if (d.is_admin && userBarAdmin) userBarAdmin.style.display = '';
       const userBarName = el('user-bar-name');
@@ -1313,8 +1313,9 @@ function initializeEventListeners() {
   sessionStorage.removeItem('ody-prefetch-settings');
   window._initSettingsReady = (_prefetchedSettings
     ? Promise.resolve(JSON.parse(_prefetchedSettings))
-    : fetch(`${API_BASE}/api/auth/settings`, { credentials: 'same-origin' }).then(r => r.json())
-  ).then(settings => {
+    : (window.__memoJson ? window.__memoJson(`${API_BASE}/api/auth/settings`)
+                         : fetch(`${API_BASE}/api/auth/settings`, { credentials: 'same-origin' }).then(r => r.json()))
+  ).then(settings => { if (!settings) return;
       // NOTE: image_gen_enabled only governs *generating* images in chat — the
       // tool is blocked server-side (chat_routes / agent_loop). The Gallery
       // holds uploads and past images too, so it stays visible regardless;
@@ -3186,8 +3187,9 @@ function initializeEventListeners() {
     async function fetchModels() {
       if (modelCache && Date.now() - modelCache.ts < CACHE_TTL) return modelCache.models;
       try {
-        const res = await fetch(`${API_BASE}/api/models`, { credentials: 'same-origin' });
-        const data = await res.json();
+        const data = window.__memoJson ? await window.__memoJson(`${API_BASE}/api/models`)
+          : await (await fetch(`${API_BASE}/api/models`, { credentials: 'same-origin' })).json();
+        if (!data) return modelCache ? modelCache.models : [];
         const models = [];
         (data.items || []).forEach(ep => {
           const displayNames = ep.models_display || ep.models || [];
@@ -3375,8 +3377,11 @@ function startWorkspaceApp() {
       _prevVPH = visualViewport.height;
       // Keyboard opened (viewport shrank significantly)
       if (delta < -50) {
+        // Only chase the bottom if the user was already pinned there —
+        // opening the keyboard to quote/copy an earlier message must not
+        // yank them down (review C4). uiModule guards every other scroller.
         const hist = document.getElementById('chat-history');
-        if (hist) {
+        if (hist && uiModule.getAutoScroll()) {
           hist.style.scrollBehavior = 'smooth';
           hist.scrollTop = hist.scrollHeight;
           // Reset after animation

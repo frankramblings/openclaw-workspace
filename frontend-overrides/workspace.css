@@ -446,6 +446,7 @@ html { background-color: var(--bg); }
 @keyframes gw-pulse { 50% { opacity: 0.35; } }
 #gw-banner { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 300;
   align-items: center; gap: 10px; padding: 7px 14px; font-size: 13px;
+  padding-top: calc(7px + env(safe-area-inset-top, 0px));
   background: rgba(255, 159, 10, 0.14); color: inherit;
   border-bottom: 1px solid rgba(255, 159, 10, 0.45); }
 #gw-banner button { margin-left: auto; background: none; border: none;
@@ -548,6 +549,10 @@ html { background-color: var(--bg); }
   textarea, select,
   input[type="text"], input[type="search"], input[type="email"],
   input[type="password"], input[type="url"], input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="tel"],
   input:not([type]), [contenteditable="true"] {
     font-size: 16px !important;
   }
@@ -655,4 +660,58 @@ html { background-color: var(--bg); }
   border: 1px solid var(--border-color, rgba(128, 128, 128, 0.18));
   display: block;
   cursor: zoom-in;
+}
+
+/* ── Chat markdown tables: side-scroll instead of hard clip (review D2) ──
+   .msg has overflow:hidden and .chat-history overflow-x:hidden; the mobile
+   block gave pre/cmd/details overflow-x:auto but skipped tables — columns
+   past the bubble edge were unreachable on a phone. display:block makes the
+   table its own scrollbox (header/body stay column-aligned: one <table>). */
+.msg table {
+  display: block;
+  max-width: 100%;
+  width: max-content;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Mobile touch ergonomics + sheet fixes (2026-06-12 review D1/D4/D5/D6) ── */
+@media (pointer: coarse) {
+  /* The Hermes icon strip is the ONLY nav on mobile but kept desktop 34px
+     buttons; 44px is the tap-target floor. The strip is a wrapping flex row
+     inside the drawer — bigger buttons wrap to more rows, they don't clip. */
+  .icon-rail-btn { width: 44px; height: 44px; }
+  /* Tool-call expander is the main way to inspect agent work on a phone. */
+  .agent-thread-header { padding: 8px 0; }
+  /* Composer model chip: 21px tall upstream. */
+  .model-picker-btn { min-height: 30px; }
+  /* Cron panel controls (deliberately not bottom-sheeted; just make the
+     existing card tappable). */
+  .cron-modal-close { min-width: 44px; min-height: 44px; }
+  .cron-btn { padding: 8px 12px; }
+  /* Session rows use 500ms long-press for the context menu — suppress iOS
+     text-selection/callout fighting the hold (D6). */
+  #session-list .list-item {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Theme designer sheet: 65vh + no bottom inset put the last control row in
+     the home-indicator zone (and behind the URL bar in-browser). */
+  #theme-popup {
+    height: 65dvh !important;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* style.css declares 85dvh THEN 85vh (same specificity) so vh wins in every
+     dvh-capable browser — inverted fallback. Re-assert dvh here (this sheet
+     loads last). Selector list mirrors style.css's bottom-sheet block. */
+  .modal-content,
+  .memory-modal-content,
+  .settings-modal-content,
+  #compare-model-overlay .modal-content {
+    max-height: 85dvh !important;
+  }
 }

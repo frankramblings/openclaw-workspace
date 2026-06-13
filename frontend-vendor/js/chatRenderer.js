@@ -1989,6 +1989,8 @@ export function addMessage(role, content, modelName, metadata) {
       if (window.hljs) {
         box.querySelectorAll('pre code:not(.hljs)').forEach(b => window.hljs.highlightElement(b));
       }
+      // Lazy mermaid: kick the loader if a diagram is present; render if already loaded.
+      if (!window.mermaid && window.ensureMermaid && box.querySelector && box.querySelector('pre.mermaid')) window.ensureMermaid();
       if (markdownModule.renderMermaid) markdownModule.renderMermaid(box);
       return lastWrap;
     }
@@ -2268,6 +2270,8 @@ export function addMessage(role, content, modelName, metadata) {
 
     // TTS is now part of the msg-actions system
     if (role === 'assistant' && markdownModule.renderMermaid) {
+      // Lazy mermaid: kick the loader if a diagram is present; render if already loaded.
+      if (!window.mermaid && window.ensureMermaid && wrap.querySelector && wrap.querySelector('pre.mermaid')) window.ensureMermaid();
       markdownModule.renderMermaid(wrap);
     }
     return wrap;

@@ -344,6 +344,8 @@ function typewriterReply(text, options = {}) {
           requestAnimationFrame(() => {
             body.style.whiteSpace = '';
             body.innerHTML = markdownModule.processWithThinking(markdownModule.squashOutsideCode(text));
+            // Lazy mermaid: kick the loader if a diagram is present; render if already loaded.
+            if (!window.mermaid && window.ensureMermaid && body.querySelector && body.querySelector('pre.mermaid')) window.ensureMermaid();
             if (markdownModule.renderMermaid) markdownModule.renderMermaid(body);
             uiModule.scrollHistory();
           });

@@ -9,58 +9,12 @@
 // Bump CACHE_NAME whenever the precache list or SW logic changes.
 const CACHE_NAME = 'gary-v327';
 
-// Core shell precached on install so repeat opens are instant without any
-// network wait. Keep this list in sync with the <script type="module"> tags
-// and <link rel="stylesheet"> in index.html.
+// Generated at deploy time by scripts/sync-frontend.sh from the files
+// actually present in frontend/ (the hand-maintained list rotted: it missed
+// the whole workspace overlay layer and still listed removed files).
 const PRECACHE = [
   '/',
-  '/static/style.css',
-  '/static/app.js',
-  '/static/js/storage.js',
-  '/static/js/ui.js',
-  '/static/js/markdown.js',
-  '/static/js/dragSort.js',
-  '/static/js/sessions.js',
-  '/static/js/memory.js',
-  '/static/js/skills.js',
-  '/static/js/tourHints.js',
-  '/static/js/fileHandler.js',
-  '/static/js/voiceRecorder.js',
-  '/static/js/models.js',
-  '/static/js/rag.js',
-  '/static/js/presets.js',
-  '/static/js/search.js',
-  '/static/js/spinner.js',
-  '/static/js/tts-ai.js',
-  '/static/js/document.js',
-  '/static/js/gallery.js',
-  '/static/js/chatRenderer.js',
-  '/static/js/codeRunner.js',
-  '/static/js/chatStream.js',
-  '/static/js/chat.js',
-  '/static/js/cookbook.js',
-  '/static/js/search-chat.js',
-  '/static/js/compare/index.js',
-  '/static/js/theme.js',
-  '/static/js/censor.js',
-  '/static/js/settings.js',
-  '/static/js/admin.js',
-  '/static/js/init.js',
-  '/static/js/slashCommands.js',
-  '/static/js/emailInbox.js',
-  '/static/js/emailLibrary/utils.js',
-  '/static/js/emailLibrary/signatureFold.js',
-  '/static/js/emailLibrary/state.js',
-  '/static/js/notes.js',
-  '/static/js/tasks.js',
-  '/static/js/calendar.js',
-  '/static/js/calendar/utils.js',
-  '/static/js/calendar/reminders.js',
-  '/static/js/group.js',
-  '/static/js/keyboard-shortcuts.js',
-  '/static/js/sidebar-layout.js',
-  '/static/js/section-management.js',
-  '/static/lib/highlight.min.js',
+  /*__PRECACHE__*/
 ];
 
 self.addEventListener('install', (e) => {
@@ -88,6 +42,17 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// On a half-dead link (cellular drop, tailnet relay blackhole) a plain
+// fetch() hangs for the full OS TCP timeout before the cache fallback runs.
+// Race it: network wins whenever it actually answers, cache wins after ~4s.
+function networkWithTimeout(req, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('sw-timeout')), ms || 4000);
+    fetch(req).then(res => { clearTimeout(t); resolve(res); },
+                    err => { clearTimeout(t); reject(err); });
+  });
+}
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
 
@@ -102,7 +67,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       caches.open(CACHE_NAME).then(async cache => {
         const cached = await cache.match('/');
-        const network = fetch(e.request).then(res => {
+        const network = networkWithTimeout(e.request, 4000).then(res => {
           if (res && res.ok) cache.put('/', res.clone());
           return res;
         }).catch(() => cached);
@@ -116,13 +81,13 @@ self.addEventListener('fetch', (e) => {
   // on a normal reload; fall back to cache only when offline.
   if (url.pathname.startsWith('/static/') && /\.(js|css)(\?|$)/.test(url.pathname + url.search)) {
     e.respondWith(
-      fetch(e.request).then(res => {
+      networkWithTimeout(e.request).then(res => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(e.request, copy));
         }
         return res;
-      }).catch(() => caches.match(e.request))
+      }).catch(() => caches.match(e.request).then(c => c || fetch(e.request)))
     );
     return;
   }

@@ -54,6 +54,10 @@ export const THEMES = {
 const DEFAULT_THEME = 'hermesCharcoal';   // HERMES: was 'dark'
 const LS_KEY = 'odysseus-theme';
 const CUSTOM_THEMES_KEY = 'odysseus-custom-themes';
+// Device-global sizes — deliberately NOT part of saved/shared themes
+// (eyesight/device preferences, so they must survive theme switches).
+const TEXT_SIZE_KEY = 'odysseus-text-size';        // UI text scale
+const CHAT_SIZE_KEY = 'odysseus-chat-text-size';   // chat bubbles + composer
 
 const FONT_MAP = {
   mono: "'Fira Code', monospace",
@@ -423,6 +427,86 @@ export function applyFontDensity(font, density) {
   document.documentElement.style.setProperty('--font-family', family);
   document.documentElement.classList.remove('density-compact', 'density-spacious');
   if (d !== 'comfortable') document.documentElement.classList.add('density-' + d);
+}
+
+// Text size: scales TEXT ONLY (not boxes/icons/layout). The stylesheet pins
+// UI-chrome text in px, which root font-size alone can't reach, so the first
+// non-default apply rewrites every `font-size: <N>px` rule in the loaded
+// stylesheets to `calc(Npx * var(--ui-font-scale, 1))` and from then on the
+// size is driven by that one variable. With the var unset the calc equals the
+// original value, so the default look is byte-identical. em text inherits
+// from the scaled px parents; rem text follows the :root rule in hermes.css.
+// Stylesheets injected after the pass won't scale until the next apply.
+function _scaleFontRules() {
+  const visit = (rules) => {
+    for (const rule of rules) {
+      const fs = rule.style && rule.style.getPropertyValue('font-size');
+      const m = fs && /^(\d+(?:\.\d+)?)px$/.exec(fs.trim());
+      if (m) {
+        rule.style.setProperty('font-size',
+          'calc(' + m[1] + 'px * var(--ui-font-scale, 1))',
+          rule.style.getPropertyPriority('font-size'));
+      }
+      if (rule.cssRules) visit(rule.cssRules); // @media / @supports / nesting
+    }
+  };
+  for (const sheet of document.styleSheets) {
+    try { visit(sheet.cssRules); } catch { /* cross-origin (KaTeX CDN) */ }
+  }
+}
+
+export function applyTextSize(px) {
+  const n = parseInt(px, 10);
+  if (n >= 10 && n <= 40 && n !== 16) {
+    _scaleFontRules(); // idempotent — already-rewritten rules no longer match
+    document.documentElement.style.setProperty('--ui-font-scale', String(n / 16));
+  } else {
+    document.documentElement.style.removeProperty('--ui-font-scale');
+  }
+}
+
+export function getTextSize() {
+  return Storage.get(TEXT_SIZE_KEY, '') || '';
+}
+
+export function setTextSize(px) {
+  const n = parseInt(px, 10);
+  if (n >= 10 && n <= 40) Storage.set(TEXT_SIZE_KEY, String(n));
+  else Storage.remove(TEXT_SIZE_KEY);
+  applyTextSize(px);
+}
+
+// Chat text size: sets --chat-font-size, which hermes.css scopes to the
+// message bubbles (.msg) and the composer (#message). An explicit value is
+// absolute — "Chat text 18" renders at exactly 18px regardless of UI size;
+// unset, chat text follows the UI text scale like everything else.
+export function applyChatTextSize(px) {
+  const n = parseInt(px, 10);
+  if (n >= 10 && n <= 32) {
+    document.documentElement.style.setProperty('--chat-font-size', n + 'px');
+  } else {
+    document.documentElement.style.removeProperty('--chat-font-size');
+  }
+}
+
+export function getChatTextSize() {
+  return Storage.get(CHAT_SIZE_KEY, '') || '';
+}
+
+export function setChatTextSize(px) {
+  const n = parseInt(px, 10);
+  if (n >= 10 && n <= 32) Storage.set(CHAT_SIZE_KEY, String(n));
+  else Storage.remove(CHAT_SIZE_KEY);
+  applyChatTextSize(px);
+}
+
+// Apply at module load so the saved sizes are in effect before first paint.
+applyTextSize(getTextSize());
+applyChatTextSize(getChatTextSize());
+// Re-run after load: catches stylesheets that finished loading (or were
+// injected) after the first font-rule pass, so their px rules scale too.
+if (getTextSize() && document.readyState !== 'complete') {
+  window.addEventListener('load', () => applyTextSize(getTextSize()), { once: true });
 }
 
 const _BG_CLASSES = ['bg-pattern-dots',
@@ -1170,6 +1254,22 @@ export function initThemeUI() {
       applyFontDensity(document.getElementById('theme-font-select').value, nd.value);
       const s = getSaved(); if (s) _saveFull(s.name, s.colors);
     });
+  }
+  // Text size is device-global (TEXT_SIZE_KEY), not part of the theme —
+  // no _saveFull here, and theme switches/imports leave it alone.
+  const sizeSelect = document.getElementById('theme-size-select');
+  if (sizeSelect) {
+    const ns = sizeSelect.cloneNode(true); sizeSelect.parentNode.replaceChild(ns, sizeSelect);
+    ns.value = getTextSize();
+    if (ns.value !== getTextSize()) ns.value = ''; // stored size not among options
+    ns.addEventListener('change', () => setTextSize(ns.value));
+  }
+  const chatSizeSelect = document.getElementById('theme-chat-size-select');
+  if (chatSizeSelect) {
+    const nc = chatSizeSelect.cloneNode(true); chatSizeSelect.parentNode.replaceChild(nc, chatSizeSelect);
+    nc.value = getChatTextSize();
+    if (nc.value !== getChatTextSize()) nc.value = '';
+    nc.addEventListener('change', () => setChatTextSize(nc.value));
   }
   if (patternSelect) {
     const np = patternSelect.cloneNode(true); patternSelect.parentNode.replaceChild(np, patternSelect);
@@ -2065,6 +2165,8 @@ function _initEmbers() {
 
 const themeModule = { initThemeUI, togglePopup, closePopup, makeDraggable,
                        THEMES, applyColors, applyFontDensity, applyBgPattern,
+                       applyTextSize, getTextSize, setTextSize,
+                       applyChatTextSize, getChatTextSize, setChatTextSize,
                        applyBgEffectColor, applyBgEffectIntensity, applyBgEffectSize,
                        applyFrostedGlass,
                        save, getSaved, saveCustomTheme, deleteCustomTheme,

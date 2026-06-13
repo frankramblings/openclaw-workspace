@@ -46,7 +46,18 @@ export function init(apiBase) {
  * Open file picker dialog
  */
 export function openPicker() {
-  document.getElementById('file-input').click();
+  const input = document.getElementById('file-input');
+  if (!input) return;
+
+  // Mobile Safari is more reliable when the picker is opened through the
+  // native API during the original tap event. Keep click() for older browsers.
+  if (typeof input.showPicker === 'function') {
+    try {
+      input.showPicker();
+      return;
+    } catch (_) {}
+  }
+  input.click();
 }
 
 const MAX_VISIBLE = 3;

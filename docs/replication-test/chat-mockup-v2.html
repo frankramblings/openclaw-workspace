@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claw Chat</title>
+<style>
+/* ============================================================
+   TOKEN LAYER (§2) — five base colors drive everything
+   ============================================================ */
+:root {
+  /* §2.2 Color — default Dark theme (canonical) */
+  --bg: #282c34;
+  --fg: #9cdef2;
+  --panel: #111111;
+  --border: #355a66;
+  --red: #e06c75;
+  --accent: var(--red);
+  --brand-color: var(--red);
+  --green: #50fa7b;
+  --warn: #f0ad4e;
+
+  /* §2.4 Semantic & status constants */
+  --color-error: #ff4444;
+  --color-success: #4caf50;
+  --color-warning: #f0ad4e;
+  --color-danger: #c0392b;
+  --color-recording: #ff3b30;
+  --color-accent: #00aaff;       /* secondary info accent — rail active tint */
+  --color-brand-blue: #3b82f6;
+  --color-muted: #888888;
+  --color-muted-alt: #6b7280;
+  --color-link-hover: #66c7ff;
+
+  /* gateway status dots (fixed) */
+  --gw-ok: #34c759;
+  --gw-restarting: #ff9f0a;
+  --gw-down: #ff3b30;
+  --gw-idle: #8e8e93;
+
+  /* §2.5 Syntax highlight (One Dark) */
+  --hl-keyword: #c678dd;
+  --hl-string: #e5c07b;
+  --hl-comment: #828997;
+  --hl-function: #61afef;
+  --hl-number: #d19a66;
+  --hl-builtin: #56b6c2;
+  --hl-variable: #abb2bf;
+  --hl-params: #a8c0d4;
+  --hl-bg: #1e2228;
+
+  /* §2.6 per-surface advanced overrides — reproduce the FALLBACKS */
+  --user-bubble-bg: color-mix(in srgb, var(--fg) 8%, var(--bg));
+  --ai-bubble-bg: var(--panel);
+  --bubble-border: var(--border);
+  --sidebar-bg: var(--panel);
+  --input-bg: var(--panel);
+  --input-border: var(--border);
+  --send-btn-bg: var(--red);
+  --send-btn-hover: color-mix(in srgb, var(--red) 80%, white);
+
+  /* §4.5 avatar dot */
+  --model-dot: color-mix(in srgb, var(--fg) 30%, transparent);
+
+  /* §2.7 Typography families */
+  --font-mono: 'Fira Code', monospace;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-family: var(--font-mono);
+
+  /* §3.1 live-width tracking vars */
+  --icon-rail-w: 48px;
+  --sidebar-w: 240px;
+  --chat-max: 800px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: row;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-family);
+  font-size: 16px; /* comfortable density default */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* §2.10 focus */
+:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+/* §2.10 scrollbars */
+.chat-history::-webkit-scrollbar { width: 8px; }
+.chat-history::-webkit-scrollbar-track { background: var(--panel); border-radius: 4px; }
+.chat-history::-webkit-scrollbar-thumb { background: var(--red); border-radius: 4px; }
+.chat-history::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--red) 80%, white); }
+
+/* ============================================================
+   §3.1 ICON RAIL (48px)
+   ============================================================ */
+.icon-rail {
+  width: var(--icon-rail-w);
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 4px 8px;
+  gap: 4px;
+  position: relative;
+}
+
+.rail-btn {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--accent);
+  opacity: 0.5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: opacity 0.08s, background 0.08s;
+  padding: 0;
+}
+.rail-btn svg { width: 16px; height: 16px; display: block; }
+.rail-btn:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.rail-btn.active {
+  opacity: 1;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+.rail-btn.delete-btn {
+  font-size: 16px;
+  line-height: 1;
+  font-family: var(--font-mono);
+}
+/* dynamic items hidden until active */
+.rail-btn.dynamic { display: none; }
+/* hidden in this workspace (no backend) */
+.rail-btn.hidden-item { display: none; }
+
+.rail-divider {
+  width: 24px;
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+.rail-spacer { flex: 1; }
+
+/* optional badge dot */
+.rail-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+/* ============================================================
+   §3.1 SIDEBAR (240px)
+   ============================================================ */
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+  backdrop-filter: blur(10px);
+  overflow-y: auto;
+}
+
+/* §A.3.1 Header */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.brand-mark svg { width: 22px; height: 22px; }
+.brand-wordmark {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--fg);
+  letter-spacing: -0.01em;
+}
+/* gateway status twin-dot */
+.gw-twin {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.gw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gw-ok);
+}
+
+/* sections */
+.section { display: block; }
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fg);
+  transition: background 0.12s;
+}
+.section-header:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.section-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--accent);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.section-icon svg { width: 13px; height: 13px; }
+.section-chevron {
+  margin-left: auto;
+  width: 12px;
+  height: 12px;
+  color: var(--fg);
+  opacity: 0.5;
+  transition: transform 0.2s;
+  transform: rotate(90deg); /* open */
+}
+.section-chevron.collapsed { transform: rotate(0deg); }
+.notif-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 6px;
+  flex-shrink: 0;
+  animation: email-notif-breathe 2.2s ease-in-out infinite;
+}
+.header-action {
+  margin-left: 6px;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  opacity: 0.55;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+.header-action:hover { opacity: 1; color: var(--accent); }
+.header-action svg { width: 13px; height: 13px; }
+
+/* list items */
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 30px;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.list-item:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.list-item.active { color: var(--accent); }
+.list-item.hidden-item { display: none; }
+
+/* ============================================================
+   §3.1 CHAT CONTAINER
+   ============================================================ */
+.chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.chat-top-bar {
+  min-height: 25px;
+  padding: 5px 0 0;
+  z-index: 2;
+  text-align: center;
+  font-size: 14px;
+  color: var(--fg);
+  opacity: 0.85;
+}
+
+.chat-history {
+  flex: 1;
+  overflow-y: auto;
+  padding-left: max(0px, calc((100% - var(--chat-max)) / 2));
+  padding-right: max(0px, calc((100% - var(--chat-max)) / 2));
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+/* §4.3 message container */
+.msg {
+  display: flex;
+  flex-direction: column;
+  width: fit-content;
+  max-width: 85%;
+  min-width: 80px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  border: 1px solid var(--bubble-border);
+  animation: msg-enter 0.3s ease-out;
+}
+
+/* §4.4 user bubble */
+.msg.user {
+  margin-left: auto;
+  margin-right: 8px;
+  background: var(--user-bubble-bg);
+  border-radius: 18px 18px 0 18px; /* square bottom-right */
+}
+/* §4.4 agent bubble */
+.msg.agent {
+  margin-right: auto;
+  margin-left: 8px;
+  width: 85%;
+  max-width: 85%;
+  background: var(--ai-bubble-bg);
+  border-radius: 18px 18px 18px 0; /* square bottom-left */
+}
+
+/* §4.5 role + avatar dot */
+.role {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.role::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--model-dot);
+  flex-shrink: 0;
+}
+.msg.user .role {
+  color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+.msg.user .role::before {
+  background: color-mix(in srgb, var(--fg) 40%, transparent);
+}
+
+/* §4.6 body / timestamp / footer */
+.msg-body {
+  font-size: 0.95em;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.msg-body > * + * { margin-top: 8px; }
+.timestamp {
+  font-size: 10px;
+  color: color-mix(in srgb, var(--fg) 45%, transparent);
+  text-align: right;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+.msg-footer {
+  display: flex;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--color-muted-alt);
+  margin-top: 6px;
+}
+.msg-footer button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 1.1rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  line-height: 1;
+}
+.msg-footer button:hover { color: var(--accent); }
+.msg-footer button.delete:hover { color: var(--red); }
+
+/* ============================================================
+   §4.7 / §A.4 AGENT THREAD / TOOL CALL (signature)
+   ============================================================ */
+.agent-thread {
+  position: relative;
+  margin: 2px 0 2px 28px;
+  padding: 4px 0 4px 22px;
+  max-width: calc(85% - 20px);
+}
+/* rail */
+.agent-thread::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  border-radius: 1px;
+}
+/* streaming pulse dot — default variant = synapse-capped-short (§A.5) */
+.agent-thread.streaming::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 3px 1px var(--red);
+  animation: synapse-capped-short 0.8s ease-in-out infinite;
+}
+.agent-thread.has-top.streaming::after { animation-name: synapse-capped; }
+.agent-thread.has-bottom.streaming::after { animation-name: synapse-travel-short; }
+.agent-thread.has-top.has-bottom.streaming::after { animation-name: synapse-travel; }
+
+/* node dot */
+.agent-thread-dot {
+  position: absolute;
+  left: -20px;
+  top: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  border: 2px solid var(--bg);
+  box-sizing: content-box;
+}
+.agent-thread-dot.running {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 25%, transparent);
+  animation: thread-pulse 1.5s ease-in-out infinite;
+}
+.agent-thread-dot.error { background: var(--color-error); }
+
+/* header */
+.thread-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85em;
+  color: color-mix(in srgb, var(--fg) 70%, transparent);
+  cursor: pointer;
+}
+.thread-header:hover { color: var(--fg); }
+.thread-chevron {
+  width: 11px;
+  height: 11px;
+  transition: transform 0.2s;
+  transform: rotate(90deg);
+  flex-shrink: 0;
+}
+.tool-name {
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--red);
+  letter-spacing: 0.3px;
+}
+.thread-elapsed {
+  font-size: 11px;
+  color: var(--red);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* command block */
+.command-block {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-top: 6px;
+  font-size: 0.95em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ============================================================
+   §3.1 / §4.8 COMPOSER + SEND
+   ============================================================ */
+.composer-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 14px;
+}
+.chat-input-bar {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 16px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 800px;
+  width: 100%;
+}
+.composer-textarea {
+  background: transparent;
+  border: none;
+  resize: none;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  width: 100%;
+  min-height: 24px;
+  max-height: 200px;
+  outline: none;
+}
+.composer-textarea::placeholder { color: color-mix(in srgb, var(--fg) 45%, transparent); }
+.composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.composer-left {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.send-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--send-btn-bg);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s, width 0.3s cubic-bezier(0.34, 1, 0.64, 1);
+}
+.send-btn:hover { background: var(--send-btn-hover); }
+.send-btn svg { width: 16px; height: 16px; }
+
+/* ============================================================
+   §2.11 / §A.4 KEYFRAMES
+   ============================================================ */
+@keyframes msg-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* §A.4 synapse variants */
+@keyframes synapse-capped-short {
+  0%   { top: 14px; opacity: 0; }
+  5%   { opacity: .5; }
+  70%  { opacity: .35; top: calc(100% - 20px); }
+  100% { opacity: 0; top: calc(100% - 20px); }
+}
+@keyframes synapse-capped {
+  0%   { top: 0%; opacity: 0; }
+  5%   { opacity: .5; }
+  70%  { opacity: .35; top: calc(100% - 20px); }
+  100% { opacity: 0; top: calc(100% - 20px); }
+}
+@keyframes synapse-travel-short {
+  0%   { top: 14px; opacity: 0; }
+  5%   { opacity: .5; }
+  85%  { opacity: .35; }
+  100% { top: 100%; opacity: 0; }
+}
+@keyframes synapse-travel {
+  0%   { top: 0%; opacity: 0; }
+  5%   { opacity: .5; }
+  85%  { opacity: .35; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* §A.4 node dot pulse */
+@keyframes thread-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--red) 20%, transparent); }
+  50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--red) 10%, transparent); }
+}
+
+/* §A.4 unread breathe */
+@keyframes email-notif-breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.45; transform: scale(0.8); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg,
+  .agent-thread.streaming::after,
+  .agent-thread-dot.running,
+  .notif-dot,
+  .send-btn { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- =========================================================
+     §3.1 / §A.2 ICON RAIL — 48px
+     Visible order: Search · New · Delete │ Calendar · Deep Research ·
+     Email · Library · Brain · Notes · Theme … Settings
+     Dynamic (Chats/Documents) hidden until active.
+     Hidden (no backend): Compare · Cookbook · Gallery · Tasks.
+     ========================================================= -->
+<nav class="icon-rail" aria-label="Primary">
+  <!-- 1. Search (stroke 2.5) -->
+  <button class="rail-btn" title="Search (⌘K)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+  </button>
+  <!-- 2. New chat (stroke 2.5) -->
+  <button class="rail-btn" title="New chat">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </button>
+  <!-- 3. Delete session — ✕ glyph (the one non-SVG) -->
+  <button class="rail-btn delete-btn" title="Delete session">&#x2715;</button>
+
+  <!-- divider -->
+  <div class="rail-divider"></div>
+
+  <!-- 4. Chats — dynamic, hidden until active -->
+  <button class="rail-btn dynamic" title="Chats">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
+  </button>
+  <!-- 5. Documents — dynamic, hidden until active -->
+  <button class="rail-btn dynamic" title="Documents">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="14 3 14 9 20 9"/></svg>
+  </button>
+
+  <!-- 6. Calendar -->
+  <button class="rail-btn" title="Calendar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+  </button>
+
+  <!-- 7. Compare — hidden -->
+  <button class="rail-btn hidden-item" title="Compare">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6a3 3 0 0 1 3 3v6"/></svg>
+  </button>
+  <!-- 8. Cookbook — hidden -->
+  <button class="rail-btn hidden-item" title="Cookbook">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+  </button>
+
+  <!-- 9. Deep Research — magnifier-plus -->
+  <button class="rail-btn" title="Deep Research">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+  </button>
+
+  <!-- 10. Email — envelope -->
+  <button class="rail-btn" title="Email">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>
+  </button>
+
+  <!-- 11. Gallery — hidden -->
+  <button class="rail-btn hidden-item" title="Gallery">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+  </button>
+
+  <!-- 12. Library — archive box (id rail-archive) -->
+  <button class="rail-btn" id="rail-archive" title="Library">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+  </button>
+
+  <!-- 13. Brain — memory (id rail-memory) -->
+  <button class="rail-btn" id="rail-memory" title="Brain">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3a3 3 0 0 0-3 3 3 3 0 0 0-1 5.8A3 3 0 0 0 6 18a3 3 0 0 0 3 3 1.5 1.5 0 0 0 1.5-1.5V4.5A1.5 1.5 0 0 0 9 3z"/><path d="M15 3a3 3 0 0 1 3 3 3 3 0 0 1 1 5.8A3 3 0 0 1 18 18a3 3 0 0 1-3 3 1.5 1.5 0 0 1-1.5-1.5V4.5A1.5 1.5 0 0 1 15 3z"/></svg>
+  </button>
+
+  <!-- 14. Notes — note/pencil -->
+  <button class="rail-btn" title="Notes">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+  </button>
+
+  <!-- 15. Tasks — hidden -->
+  <button class="rail-btn hidden-item" title="Tasks">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+  </button>
+
+  <!-- 16. Theme — contrast circle — shown active per task -->
+  <button class="rail-btn active" title="Theme">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>
+  </button>
+
+  <!-- flex spacer pushes Settings to bottom -->
+  <div class="rail-spacer"></div>
+
+  <!-- 17. Settings — gear, bottom-anchored -->
+  <button class="rail-btn" title="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</nav>
+
+<!-- =========================================================
+     §3.1 / §A.3 SIDEBAR — 240px
+     Header → Chats → Inbox → Email → Models → Tools
+     ========================================================= -->
+<aside class="sidebar" aria-label="Sidebar">
+  <!-- Header: brand mark + wordmark + gateway twin-dot -->
+  <div class="sidebar-header">
+    <span class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5c2 4 4 6 8 6"/><path d="M20 5c-2 4-4 6-8 6"/><path d="M12 11v8"/><path d="M8 19l4-3 4 3"/></svg>
+    </span>
+    <span class="brand-wordmark">Claw</span>
+    <span class="gw-twin" title="Gateway connected">
+      <span class="gw-dot"></span>
+      <span class="gw-dot"></span>
+    </span>
+  </div>
+
+  <!-- Chats -->
+  <div class="section" id="sessions-section">
+    <div class="section-header">
+      <span class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg>
+      </span>
+      Chats
+      <span class="notif-dot"></span>
+      <button class="header-action" title="Manage Chats">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/></svg>
+      </button>
+      <button class="header-action" title="Sort">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="9" y2="18"/></svg>
+      </button>
+      <span class="section-chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></span>
+    </div>
+    <div class="list-item active">Designing the synapse rail</div>
+    <div class="list-item">Inbox triage swipe bug</div>
+    <div class="list-item">Codex model rotation notes</div>
+  </div>
+
+  <!-- Inbox -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 6h13l3 6v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6z"/></svg>
+      </span>
+      Inbox
+      <span class="notif-dot" id="inbox-unread-dot"></span>
+    </div>
+  </div>
+
+  <!-- Email -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>
+      </span>
+      Email
+      <span class="notif-dot" id="email-unread-dot"></span>
+      <button class="header-action" title="Compose">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Models -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><line x1="9" y1="2" x2="9" y2="4"/><line x1="15" y1="2" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="22"/><line x1="15" y1="20" x2="15" y2="22"/><line x1="2" y1="9" x2="4" y2="9"/><line x1="2" y1="15" x2="4" y2="15"/><line x1="20" y1="9" x2="22" y2="9"/><line x1="20" y1="15" x2="22" y2="15"/></svg>
+      </span>
+      Models
+      <button class="header-action" title="Sort">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="9" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="list-item active">gpt-5.5</div>
+    <div class="list-item">gpt-5.4</div>
+    <div class="list-item">gpt-5.4-mini</div>
+  </div>
+
+  <!-- Tools -->
+  <div class="section">
+    <div class="section-header">
+      <span class="section-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2.3-.4-.4-2.3z"/></svg>
+      </span>
+      Tools
+      <span class="section-chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg></span>
+    </div>
+    <!-- order: Brain · Calendar · Compare* · Cookbook* · Deep Research · Gallery* · Library · Notes · Tasks* · Theme -->
+    <div class="list-item">Brain</div>
+    <div class="list-item">Calendar</div>
+    <div class="list-item hidden-item">Compare</div>
+    <div class="list-item hidden-item">Cookbook</div>
+    <div class="list-item">Deep Research</div>
+    <div class="list-item hidden-item">Gallery</div>
+    <div class="list-item">Library</div>
+    <div class="list-item">Notes</div>
+    <div class="list-item hidden-item">Tasks</div>
+    <div class="list-item">Theme</div>
+  </div>
+</aside>
+
+<!-- =========================================================
+     §3.1 CHAT CONTAINER
+     ========================================================= -->
+<main class="chat-container">
+  <div class="chat-top-bar">Designing the synapse rail</div>
+
+  <div class="chat-history">
+
+    <!-- user bubble -->
+    <div class="msg user">
+      <div class="role">You</div>
+      <div class="msg-body">Can you show me the current git status and the diff for the synapse rail change?</div>
+      <div class="timestamp">14:21</div>
+    </div>
+
+    <!-- agent bubble -->
+    <div class="msg agent">
+      <div class="role">Claw</div>
+      <div class="msg-body">Sure — let me check the working tree and pull up the diff for the agent-thread rail.</div>
+      <div class="timestamp">14:21</div>
+      <div class="msg-footer">
+        <button title="Copy">⧉</button>
+        <button title="Regenerate">↻</button>
+        <button title="Fork">⑂</button>
+        <button title="Shorten">⊼</button>
+        <button class="delete" title="Delete">✕</button>
+      </div>
+    </div>
+
+    <!-- agent tool-call thread (streaming, default synapse-capped-short variant) -->
+    <div class="agent-thread streaming">
+      <span class="agent-thread-dot running"></span>
+      <div class="thread-header">
+        <span class="thread-chevron">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>
+        </span>
+        <span class="tool-name">bash</span>
+        <span class="thread-elapsed">0.4s</span>
+      </div>
+      <div class="command-block">git status --short
+ M frontend/style.css
+ M frontend-overrides/index.html</div>
+    </div>
+
+  </div>
+
+  <!-- composer -->
+  <div class="composer-wrap">
+    <div class="chat-input-bar">
+      <textarea class="composer-textarea" rows="1" placeholder="Message Claw…"></textarea>
+      <div class="composer-row">
+        <div class="composer-left">
+          <!-- attach -->
+          <button class="rail-btn" style="opacity:.6;color:var(--fg);" title="Attach">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.05 12.25 20.2a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.49"/></svg>
+          </button>
+        </div>
+        <button class="send-btn" title="Send">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</main>
+
+</body>
+</html>

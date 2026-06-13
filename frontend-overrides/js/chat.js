@@ -2577,6 +2577,12 @@ import createResearchSynapse from './researchSynapse.js';
             }
           }
         }
+        // Backend sends a {type:"metrics"} frame with the turn's server-side
+        // wall clock; if it never arrived (aborted relay, old backend), fall
+        // back to the client-side turn clock so the footer still shows a time.
+        if (!metrics && _turnStart) {
+          metrics = { response_time: Math.round((Date.now() - _turnStart) / 100) / 10 };
+        }
         if (metrics) {
           displayMetrics(footerTarget, metrics);
         }

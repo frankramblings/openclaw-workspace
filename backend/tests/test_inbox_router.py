@@ -87,6 +87,8 @@ def test_spinoff_dedupes_recent_same_item(monkeypatch, tmp_path):
     async def fake_turn(seed, key, model):
         seeded.append(key)
     monkeypatch.setattr(inbox, "_agent_turn", fake_turn)
+    # Keep the caller-trail out of the real .data/spinoff.log
+    monkeypatch.setattr(inbox, "_log_spinoff", lambda *a, **k: None)
 
     item = {"id": "slack-123", "source": "slack", "title": "Q about quotas",
             "subtitle": "#help", "snippet": "?", "meta": {}}

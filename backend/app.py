@@ -440,6 +440,22 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                     if tools_seen:
                         yield bridge._sse({"type": "agent_step"})  # fresh bubble
                     yield bridge._sse({"delta": late})
+            # Final turn metrics: the vendor SPA renders a footer time from a
+            # {type:"metrics"} frame (chatRenderer.displayMetrics) that its
+            # original backends sent and we never did. response_time prefers
+            # t_late over t_end — that's when the user actually saw the reply.
+            # No token/cost fields: the gateway doesn't expose usage, and
+            # displayMetrics degrades to a plain "12.3s" without them.
+            timing = run_info.get("timing") or {}
+            if "t_send" in timing and not failed:
+                t_done = timing.get("t_late") or timing.get("t_end") or time.monotonic()
+                data = {"response_time": round(t_done - timing["t_send"], 1)}
+                if "t_first_text" in timing:  # pre-text wait = thinking + prep
+                    data["agent_model_wait_time"] = round(
+                        timing["t_first_text"] - timing["t_send"], 1)
+                if _model_ref(rec):
+                    data["model"] = _model_ref(rec)
+                yield bridge._sse({"type": "metrics", "data": data})
         finally:
             _ACTIVE_RUNS.pop(session_key, None)
             _log_turn_timing(_turn_timing_record(

@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenClaw Workspace — Chat (cleanroom mockup)</title>
+<style>
+  /* =========================================================================
+     §2 DESIGN TOKENS
+     The whole palette derives from five base colors (bg/fg/panel/border/red).
+     Everything else is var()/color-mix() off these so recoloring the five
+     recolors the UI. (§2.1 "Derive, don't hardcode")
+     ========================================================================= */
+  :root {
+    /* ---- 2.1/2.2 Five base tokens (default Dark theme) ---- */
+    --bg:     #282c34;   /* One Dark charcoal — app background          */
+    --fg:     #9cdef2;   /* soft cyan — primary text                    */
+    --panel:  #111111;   /* raised surfaces (DARKER than bg, by design) */
+    --border: #355a66;   /* muted teal — all hairline borders           */
+    --red:    #e06c75;   /* THE accent / coral                          */
+
+    /* --accent ≈ --red (components reference var(--accent, var(--red))) */
+    --accent:      var(--red);
+    --brand-color: var(--red);
+
+    /* ---- 2.2 other themed status colors ---- */
+    --green: #50fa7b;
+    --warn:  #f0ad4e;
+
+    /* ---- 2.4 Semantic & status constants (theme-independent) ---- */
+    --color-error:     #ff4444;
+    --color-success:   #4caf50;
+    --color-warning:   #f0ad4e;
+    --color-danger:    #c0392b;
+    --color-accent:    #00aaff;   /* secondary "info" accent (rail active tint) */
+    --color-muted:     #888888;
+    --color-muted-alt: #6b7280;
+    --color-link-hover:#66c7ff;
+
+    /* gateway status dots */
+    --gw-ok:        #34c759;
+    --gw-restart:   #ff9f0a;
+    --gw-down:      #ff3b30;
+    --gw-idle:      #8e8e93;
+
+    /* ---- 2.5 Syntax highlighting (One Dark defaults; derived in real app) ---- */
+    --hl-bg:       #1e2228;
+    --hl-keyword:  #c678dd;
+    --hl-string:   #e5c07b;
+    --hl-comment:  #828997;
+    --hl-function: #61afef;
+    --hl-number:   #d19a66;
+    --hl-builtin:  #56b6c2;
+    --hl-variable: #abb2bf;
+
+    /* ---- 2.6 Per-surface advanced overrides: reproduce the FALLBACKS ---- */
+    --user-bubble-bg: color-mix(in srgb, var(--fg) 8%, var(--bg));
+    --ai-bubble-bg:   var(--panel);
+    --bubble-border:  var(--border);
+    --sidebar-bg:     var(--panel);
+    --input-bg:       var(--panel);
+    --input-border:   var(--border);
+    --send-btn-bg:    var(--red);
+    --send-btn-hover: color-mix(in srgb, var(--red) 80%, white);
+
+    /* derived role/avatar tints (§4.5) */
+    --model-dot:      color-mix(in srgb, var(--fg) 30%, transparent);
+
+    /* ---- 2.7 Typography families ---- */
+    --font-mono:  'Fira Code', monospace;
+    --font-sans:  system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-serif: Georgia, 'Times New Roman', serif;
+    --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-family: var(--font-mono); /* default = mono */
+
+    /* ---- 2.8 layout metrics ---- */
+    --chat-max: 800px;
+
+    /* §3.1 live width vars (used so modals can offset; included for fidelity) */
+    --icon-rail-w: 48px;
+    --sidebar-w:   240px;
+  }
+
+  /* §2.3 Light theme alternate (activated by :root.light) — included to show
+     the theming model; the default page renders dark. */
+  :root.light {
+    --bg:     #f5f5f5;
+    --fg:     #2b2b2b;
+    --panel:  #ffffff;
+    --border: #bbbbbb;
+    /* --red / accent stays coral */
+    --color-error: #ff6666;
+  }
+
+  /* =========================================================================
+     RESET / BASE
+     ========================================================================= */
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    /* §2.7 density: comfortable -> root font-size = browser default (16px) */
+    font-size: 16px;
+    font-family: var(--font-family);
+    background: var(--bg);
+    color: var(--fg);
+    /* §3.1 app shell */
+    display: flex;
+    flex-direction: row;
+    height: 100dvh;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* §2.10 global focus ring */
+  :focus-visible {
+    outline: 2px solid var(--red);
+    outline-offset: 2px;
+  }
+
+  /* §2.10 thin scrollbars, coral thumb on panel track */
+  .scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scroll::-webkit-scrollbar-track { background: var(--panel); }
+  .scroll::-webkit-scrollbar-thumb {
+    background: var(--red);
+    border-radius: 4px;
+  }
+  .scroll::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--red) 80%, white);
+  }
+
+  /* =========================================================================
+     §3.1 ICON RAIL (48px)
+     ========================================================================= */
+  .icon-rail {
+    width: var(--icon-rail-w);
+    flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 4px 8px;   /* top 48 leaves room for hamburger / safe-area */
+    gap: 4px;
+  }
+
+  /* §4.1 rail button: 34x34, transparent, radius 6, glyph 16, opacity .5 rest */
+  .rail-btn {
+    position: relative;
+    width: 34px;
+    height: 34px;
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    color: var(--accent);
+    font-size: 16px;
+    line-height: 1;
+    opacity: 0.5;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.08s, background 0.08s;   /* §2.11 micro */
+  }
+  .rail-btn:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+  /* active section: opacity 1 + info-accent 15% wash */
+  .rail-btn.active {
+    opacity: 1;
+    background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  }
+  /* §4.1 optional 6x6 accent badge dot, top-right, with bg ring */
+  .rail-btn .badge {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg);
+  }
+
+  /* §3.1 rail divider: 24px x 1px */
+  .rail-divider {
+    width: 24px;
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+
+  /* =========================================================================
+     §3.1 SIDEBAR (240px)
+     ========================================================================= */
+  .sidebar {
+    width: var(--sidebar-w);
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 12px rgba(0,0,0,.1);
+    backdrop-filter: blur(10px);
+    overflow: hidden;
+  }
+
+  /* sidebar header — brand area */
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  /* brand mask mark inherits currentColor (=accent) per §2.13 */
+  .brand-mark {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    background: var(--accent);
+    /* approximate the single-color logo mask paint */
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .brand-name {
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+  }
+  .brand-sub {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--color-muted);
+  }
+
+  .sidebar-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+  }
+
+  /* §4.2 section header (collapsible) */
+  .section { background: transparent; }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    padding: 8px 12px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .section-header:hover {
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+  }
+  .chevron {
+    width: 10px;
+    transition: transform 0.2s;   /* §4.2 rotates 90deg when open */
+    color: var(--color-muted);
+    flex-shrink: 0;
+  }
+  .section.open > .section-header .chevron { transform: rotate(90deg); }
+  .section-label { flex: 1; }
+
+  .section-body { display: none; padding: 2px 0 6px; }
+  .section.open > .section-body { display: block; }
+
+  /* §4.2 list item: transparent row, faint hover wash, right-aligned notif dot */
+  .list-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px 7px 26px;
+    font-size: 13.5px;
+    font-weight: 550;
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .list-item:hover {
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+  }
+  .list-item .li-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* §4.2 6x6 accent notif dot, breathing (2.2s) */
+  .notif-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+    animation: notif-breathe 2.2s ease-in-out infinite;
+  }
+  @keyframes notif-breathe {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: .45; transform: scale(.8); }
+  }
+
+  /* sidebar footer: gateway status dot (10x10 in main chrome / twin) */
+  .sidebar-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--color-muted);
+  }
+  .gw-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--gw-ok);
+    flex-shrink: 0;
+  }
+
+  /* =========================================================================
+     §3.1 CHAT CONTAINER
+     ========================================================================= */
+  .chat-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0 16px;
+    margin-top: 8px;
+    min-width: 0;
+  }
+
+  /* §3.1 chat top bar: centered title */
+  .chat-top-bar {
+    min-height: 25px;
+    padding: 5px 0 0;
+    z-index: 2;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .chat-title {
+    font-size: 0.95em;
+    font-weight: 600;
+    color: color-mix(in srgb, var(--fg) 75%, transparent);
+    letter-spacing: -0.01em;
+  }
+
+  /* §3.1 chat history: centered in 800px column via auto side padding */
+  .chat-history {
+    flex: 1;
+    overflow-y: auto;
+    /* centered max column: gutters auto */
+    padding-left:  max(16px, calc((100% - var(--chat-max)) / 2));
+    padding-right: max(16px, calc((100% - var(--chat-max)) / 2));
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  /* =========================================================================
+     §4.3–4.6 CHAT MESSAGES
+     ========================================================================= */
+  .msg {
+    display: flex;
+    flex-direction: column;
+    width: fit-content;
+    max-width: 85%;
+    min-width: 80px;
+    margin: 8px 0;
+    padding: 10px 12px;          /* comfortable density */
+    line-height: 1.4;
+    overflow: hidden;
+    border: 1px solid var(--bubble-border);
+    animation: msg-enter 0.3s ease-out;
+  }
+  @keyframes msg-enter {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* §4.4 USER bubble: right aligned, fg-8%-over-bg fill, square bottom-right */
+  .msg.user {
+    margin-left: auto;
+    margin-right: 8px;
+    background: var(--user-bubble-bg);
+    border-radius: 18px 18px 0 18px;
+  }
+  /* §4.4 AGENT bubble: left aligned, panel fill, square bottom-left, fills column */
+  .msg.agent {
+    margin-right: auto;
+    margin-left: 8px;
+    width: 85%;
+    max-width: 85%;
+    background: var(--ai-bubble-bg);
+    border-radius: 18px 18px 18px 0;
+  }
+
+  /* §4.5 role + avatar dot */
+  .role {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .role::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--model-dot);   /* fg 30% */
+    flex-shrink: 0;
+  }
+  /* user role text 60% fg, 40% dot */
+  .msg.user .role { color: color-mix(in srgb, var(--fg) 60%, transparent); }
+  .msg.user .role::before { background: color-mix(in srgb, var(--fg) 40%, transparent); }
+
+  /* §4.6 body / timestamp */
+  .msg-body {
+    font-size: 0.95em;
+    line-height: 1.5;
+    word-break: break-word;
+  }
+  .msg-body > * + * { margin-top: 8px; }
+  .timestamp {
+    font-size: 10px;
+    color: color-mix(in srgb, var(--fg) 45%, transparent);
+    text-align: right;
+    opacity: .7;
+    margin-top: 6px;
+  }
+  /* §4.6 footer / action row */
+  .msg-footer {
+    display: flex;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--color-muted-alt);
+    margin-top: 6px;
+  }
+  .msg-action {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .msg-action:hover { color: var(--accent); }
+  .msg-action.delete:hover { color: var(--red); }
+
+  /* =========================================================================
+     §4.7 AGENT THREAD / TOOL CALL (signature "synapse")
+     ========================================================================= */
+  .agent-thread {
+    position: relative;
+    margin: 2px 0 2px 28px;
+    padding: 4px 0 4px 22px;
+    max-width: calc(85% - 20px);
+  }
+  /* rail */
+  .agent-thread::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 14px;
+    bottom: 14px;
+    width: 2px;
+    background: color-mix(in srgb, var(--red) 18%, transparent);
+    border-radius: 1px;
+  }
+  /* streaming pulse dot traveling the rail */
+  .agent-thread.streaming::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 3px 1px var(--red);
+    animation: synapse 0.8s linear infinite;
+  }
+  @keyframes synapse {
+    from { top: 14px; opacity: 0; }
+    15%  { opacity: 1; }
+    85%  { opacity: 1; }
+    to   { top: calc(100% - 14px); opacity: 0; }
+  }
+
+  /* node dot: 8x8 coral, left:-20px (relative to padded content), bg ring */
+  .thread-node {
+    position: relative;
+  }
+  .thread-node::before {
+    content: "";
+    position: absolute;
+    left: -20px;
+    top: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    box-shadow: 0 0 0 2px var(--bg);
+  }
+  /* running -> pulsing halo */
+  .agent-thread.streaming .thread-node::before {
+    animation: thread-pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes thread-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px color-mix(in srgb, var(--red) 60%, transparent); }
+    50%      { box-shadow: 0 0 0 2px var(--bg), 0 0 0 6px color-mix(in srgb, var(--red) 0%, transparent); }
+  }
+
+  /* header */
+  .thread-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    color: color-mix(in srgb, var(--fg) 70%, transparent);
+    cursor: pointer;
+  }
+  .thread-header:hover { color: var(--fg); }
+  .thread-chevron {
+    width: 9px;
+    transition: transform 0.2s;
+    color: inherit;
+  }
+  .agent-thread.open .thread-chevron { transform: rotate(90deg); }
+  .tool-name {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--red);
+  }
+  .thread-elapsed {
+    margin-left: auto;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: var(--red);
+  }
+
+  /* command block */
+  .command-block {
+    margin-top: 6px;
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.95em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+  .command-block .tok-builtin  { color: var(--hl-builtin); }
+  .command-block .tok-string   { color: var(--hl-string); }
+  .command-block .tok-keyword  { color: var(--hl-keyword); }
+
+  /* =========================================================================
+     §3.1 / §4.8 COMPOSER + SEND BUTTON
+     ========================================================================= */
+  .composer-wrap {
+    padding-bottom: 10px;
+    padding-left:  max(16px, calc((100% - var(--chat-max)) / 2));
+    padding-right: max(16px, calc((100% - var(--chat-max)) / 2));
+  }
+  .chat-input-bar {
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 16px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: var(--chat-max);
+    margin: 0 auto;
+  }
+  .composer-textarea {
+    background: transparent;
+    border: none;
+    resize: none;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    width: 100%;
+    min-height: 24px;
+    max-height: 200px;
+    outline: none;
+  }
+  .composer-textarea::placeholder {
+    color: color-mix(in srgb, var(--fg) 40%, transparent);
+  }
+  .composer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .composer-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--color-muted-alt);
+  }
+  .composer-left .pill-hint {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 11px;
+  }
+  /* §4.8 send button: 32x32, red bg, white glyph, radius 8 */
+  .send-btn {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: var(--send-btn-bg);
+    color: #fff;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    line-height: 1;
+    transition: background 0.12s, width 0.3s cubic-bezier(0.34, 1, 0.64, 1);
+  }
+  .send-btn:hover { background: var(--send-btn-hover); }
+
+  /* =========================================================================
+     §3.2 RESPONSIVE (primary breakpoint 768px)
+     ========================================================================= */
+  @media (max-width: 768px) {
+    .icon-rail { display: none; }
+    .sidebar {
+      position: fixed;
+      inset-block: 0;
+      left: 0;
+      width: 80%;
+      max-width: 340px;
+      z-index: 200;
+      box-shadow: 4px 0 20px rgba(0,0,0,.5);
+    }
+    .chat-container { padding: 10px; padding-top: 42px; margin-top: 0; }
+    .send-btn { width: 48px; height: 48px; border-radius: 12px; }
+    /* iOS focus-zoom guard */
+    .composer-textarea { font-size: 16px; }
+  }
+
+  /* §2.11 reduced motion: looping animations drop to static */
+  @media (prefers-reduced-motion: reduce) {
+    .agent-thread.streaming::after,
+    .agent-thread.streaming .thread-node::before,
+    .notif-dot { animation: none; }
+    .msg { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- =====================================================================
+       §3.1 ICON RAIL (48px)
+       ===================================================================== -->
+  <nav class="icon-rail" aria-label="Primary">
+    <button class="rail-btn active" title="Chat" aria-current="page">&#128172;</button>
+    <button class="rail-btn" title="Inbox">
+      &#128229;
+      <span class="badge" aria-hidden="true"></span>
+    </button>
+    <button class="rail-btn" title="Documents">&#128196;</button>
+    <button class="rail-btn" title="Calendar">&#128197;</button>
+    <div class="rail-divider" role="separator"></div>
+    <button class="rail-btn" title="Settings">&#9881;</button>
+  </nav>
+
+  <!-- =====================================================================
+       §3.1 SIDEBAR (240px)
+       ===================================================================== -->
+  <aside class="sidebar" aria-label="Sidebar">
+    <div class="sidebar-header">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Claw</span>
+      <span class="brand-sub">workspace</span>
+    </div>
+
+    <div class="sidebar-scroll scroll">
+      <!-- collapsible section: Chats -->
+      <div class="section open">
+        <button class="section-header">
+          <svg class="chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 2 8 6 4 10"/></svg>
+          <span class="section-label">Chats</span>
+        </button>
+        <div class="section-body">
+          <div class="list-item"><span class="li-label">Inbox summary</span></div>
+          <div class="list-item"><span class="li-label">Deploy notes</span></div>
+          <div class="list-item">
+            <span class="li-label">Standup recap</span>
+            <span class="notif-dot" title="unread" aria-label="unread"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- collapsible section: Tools -->
+      <div class="section open">
+        <button class="section-header">
+          <svg class="chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 2 8 6 4 10"/></svg>
+          <span class="section-label">Tools</span>
+        </button>
+        <div class="section-body">
+          <div class="list-item"><span class="li-label">Inbox</span></div>
+          <div class="list-item">
+            <span class="li-label">Cron</span>
+            <span class="notif-dot" title="due" aria-label="due"></span>
+          </div>
+          <div class="list-item"><span class="li-label">Skills</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <span class="gw-dot" aria-hidden="true"></span>
+      <span>gateway · ok</span>
+    </div>
+  </aside>
+
+  <!-- =====================================================================
+       §3.1 CHAT CONTAINER
+       ===================================================================== -->
+  <main class="chat-container">
+    <div class="chat-top-bar">
+      <span class="chat-title">Inbox summary</span>
+    </div>
+
+    <div class="chat-history scroll">
+
+      <!-- USER message (§4.4) -->
+      <div class="msg user">
+        <div class="role">You</div>
+        <div class="msg-body">Can you summarize what's in my inbox this morning?</div>
+        <div class="timestamp">9:02 AM</div>
+      </div>
+
+      <!-- AGENT tool-call thread (§4.7, signature) -->
+      <div class="agent-thread streaming open">
+        <div class="thread-node">
+          <div class="thread-header">
+            <svg class="thread-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 2 8 6 4 10"/></svg>
+            <span class="tool-name">inbox.fetch</span>
+            <span class="thread-elapsed">0.8s</span>
+          </div>
+          <div class="command-block"><span class="tok-builtin">inbox</span>.<span class="tok-builtin">fetch</span>(<span class="tok-keyword">sources</span>=[<span class="tok-string">"gmail"</span>, <span class="tok-string">"slack"</span>], <span class="tok-keyword">since</span>=<span class="tok-string">"06:00"</span>, <span class="tok-keyword">unread_only</span>=<span class="tok-keyword">true</span>)</div>
+        </div>
+      </div>
+
+      <!-- AGENT message (§4.4) -->
+      <div class="msg agent">
+        <div class="role">Claw</div>
+        <div class="msg-body">You have 12 unread items this morning. The highlights: a deploy-failure alert from CI that needs eyes, two PR review requests (one stale since yesterday), and a calendar nudge for the 10:30 standup. The rest is mostly newsletters and Slack mentions in #workspace that can wait.</div>
+        <div class="timestamp">9:02 AM</div>
+        <div class="msg-footer">
+          <button class="msg-action" title="Copy">&#128203;</button>
+          <button class="msg-action" title="Regenerate">&#8635;</button>
+          <button class="msg-action" title="Fork">&#11122;</button>
+          <button class="msg-action" title="Shorten">&#9776;</button>
+          <button class="msg-action delete" title="Delete">&#128465;</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- §3.1 / §4.8 COMPOSER -->
+    <div class="composer-wrap">
+      <div class="chat-input-bar">
+        <textarea class="composer-textarea" rows="1" placeholder="Message Claw…"></textarea>
+        <div class="composer-row">
+          <div class="composer-left">
+            <span class="pill-hint">Fira Code</span>
+          </div>
+          <button class="send-btn" title="Send" aria-label="Send">&#10148;</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+</body>
+</html>

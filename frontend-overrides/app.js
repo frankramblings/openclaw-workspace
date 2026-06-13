@@ -94,10 +94,20 @@ function initializeEventListeners() {
 
   // File attachments (inside overflow menu)
   const _overflowAttach = el('overflow-attach-btn');
-  if (_overflowAttach) _overflowAttach.addEventListener('click', fileHandlerModule.openPicker);
+  if (_overflowAttach && _overflowAttach.tagName !== 'LABEL') {
+    _overflowAttach.addEventListener('click', fileHandlerModule.openPicker);
+  }
+  if (_overflowAttach) {
+    _overflowAttach.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      fileHandlerModule.openPicker();
+    });
+  }
   el('file-input').addEventListener('change', (e)=>{
-    for (const f of e.target.files) fileHandlerModule.addFiles([f]);
-    fileHandlerModule.renderAttachStrip();
+    const files = [...e.target.files];
+    e.target.value = '';
+    fileHandlerModule.addFiles(files);
     // Refocus textarea after file picker closes (mobile keyboard)
     const ta = el('message');
     if (ta) setTimeout(() => ta.focus(), 100);
@@ -1776,10 +1786,6 @@ function initializeEventListeners() {
       }
       menu.style.top = (r.top - 8 - h) + 'px';
     }
-    // Tapping the chevron must NOT steal focus from the message box, or the
-    // mobile keyboard collapses. preventDefault on pointerdown keeps the
-    // textarea focused (keyboard stays up) while click still opens the menu.
-    plusBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); });
     plusBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       // Closing path needs to play the fold-in animation, not just flip
@@ -1797,9 +1803,8 @@ function initializeEventListeners() {
       document.body.appendChild(menu);  // escape the composer's container-type trap
       // Hide pill bar label so it doesn't show through the menu
       if (pickerWrap) pickerWrap.style.visibility = 'hidden';
-      // Keep the textarea focused so the keyboard stays up if it was open (the
-      // pointerdown handler above prevents the focus-steal). Still watch
-      // visualViewport so the menu follows the chevron if the viewport shifts.
+      // The browser may dismiss the mobile keyboard as the button takes focus.
+      // Watch visualViewport so the menu follows the chevron during that shift.
       positionMenu();
       if (window.visualViewport && !_vvReposition) {
         _vvReposition = () => positionMenu();
@@ -1828,11 +1833,9 @@ function initializeEventListeners() {
         if (ownerWrap) ownerWrap.appendChild(menu);  // restore from <body> portal
       }, 400);
     }
-    // Close menu when clicking any item inside it. preventDefault on pointerdown
-    // so tapping an item (e.g. Attach files) doesn't steal focus from the message
-    // box — keeps the mobile keyboard up.
+    // Close the menu after an item activates. Do not cancel pointerdown here:
+    // iOS relies on the native event path for label-backed file inputs.
     menu.querySelectorAll('.overflow-menu-item').forEach(item => {
-      item.addEventListener('pointerdown', (e) => { e.preventDefault(); });
       item.addEventListener('click', () => closeOverflowMenu());
     });
     document.addEventListener('click', (e) => {

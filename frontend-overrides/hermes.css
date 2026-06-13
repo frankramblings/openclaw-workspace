@@ -61,10 +61,12 @@ pre, code, .hljs,
 
 /* ── Message input: floating capsule bar ── */
 .chat-input-bar {
+  box-sizing: border-box;
   border: 1px solid var(--input-border, var(--border));
   background: var(--input-bg, var(--panel));
   border-radius: 22px;
-  margin: 0 14px 14px;
+  width: calc(100% - 28px);
+  margin: 0 auto 14px;
   padding: 8px 12px;
   box-shadow: 0 4px 18px color-mix(in srgb, var(--bg) 55%, transparent);
 }
@@ -75,7 +77,13 @@ pre, code, .hljs,
 /* Circular accent send button */
 .send-btn {
   border-radius: 50% !important;
-  width: 34px; height: 34px;
+  box-sizing: border-box;
+  width: 44px;
+  min-width: 44px;
+  height: 44px !important;
+  min-height: 44px;
+  aspect-ratio: 1;
+  padding: 0;
   background: var(--send-btn-bg, var(--red));
   color: var(--bg);
   display: inline-flex; align-items: center; justify-content: center;
@@ -84,7 +92,28 @@ pre, code, .hljs,
 .send-btn .send-btn-label { display: none; } /* icon-only, Hermes style */
 /* With the label hidden, the newchat hover-expand (style.css widens to 68px)
    would animate to an empty pill — keep the button circular instead. */
-.send-btn.newchat-expanded { width: 34px !important; padding: 0; }
+.send-btn.newchat-expanded { width: 44px !important; padding: 0; }
+
+/* Mobile Safari needs a full-size, stable hit target inside the fixed tools
+   menu. Avoid delayed tap handling and keep the item above the composer. */
+#overflow-attach-btn {
+  min-height: 44px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: auto;
+}
+
+/* Keep the real file input in the accessibility tree so iOS can activate it
+   through the label above; display:none file inputs are unreliable in PWAs. */
+.native-file-input {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  left: -2px;
+  bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 /* Model picker as a dropdown chip. It sits in the composer's bottom control
    row (Hermes placement) — vendor style.css still carries the old
    .chat-input-top absolute-positioning rules, which simply no longer match. */
@@ -567,3 +596,20 @@ body:not(.hermes-rail-fallback) #rail-theme { display: none; }
 .we-toast { position: fixed; bottom: 18px; right: 18px; z-index: 1002; background: var(--bg); color: var(--fg); border: 1px solid color-mix(in srgb, var(--fg) 25%, transparent); border-radius: 6px; padding: 8px 14px; font-size: 12px; box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
 .we-file.drag-over, .we-tree summary.drag-over { background: color-mix(in srgb, var(--red) 18%, transparent); }
 .we-file.dragging { opacity: .5; }
+
+/* ── UI text scale ──────────────────────────────────────────────────────
+   --ui-font-scale is set on <html> by theme.js, which also rewrites the
+   px font-size rules in the loaded stylesheets to calc(Npx * the var).
+   This :root rule covers the rem-sized stragglers; the density-compact/
+   spacious :root rules in style.css win on specificity and are themselves
+   rewritten by the same pass, so density still works under scaling. */
+:root { font-size: calc(16px * var(--ui-font-scale, 1)); }
+
+/* ── Chat text size ─────────────────────────────────────────────────────
+   --chat-font-size is set on <html> by theme.js (device-global, separate
+   from the UI text scale; an explicit value is absolute px). Unset =
+   follow the UI scale: .msg inherits scaled text, #message falls back to
+   its style.css 13px times the scale. #message needs !important to
+   outrank style.css's `13px !important`. */
+.msg { font-size: var(--chat-font-size, inherit); }
+#message { font-size: var(--chat-font-size, calc(13px * var(--ui-font-scale, 1))) !important; }

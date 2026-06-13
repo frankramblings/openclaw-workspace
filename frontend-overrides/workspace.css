@@ -173,11 +173,12 @@ html { background-color: var(--bg); }
     background: var(--sidebar-bg, var(--panel));
   }
   .sidebar-header {
-    /* The app is NOT full-bleed on iOS (the status bar is iOS-drawn ABOVE the
-       webview), so safe-area-inset-top here only pushed the title down with
-       phantom space. Drop it and tighten. */
-    min-height: 36px;
-    padding: 4px 12px 4px !important;
+    /* The webview IS full-bleed under the status bar and iOS paints its opaque
+       bar ON TOP — so content MUST be kept below that bar via
+       safe-area-inset-top (removing it clipped "Gary" under the bar). Keep the
+       inset; trim only the base padding (8px→4px) for a small tighten. */
+    min-height: calc(36px + env(safe-area-inset-top, 0px));
+    padding: calc(4px + env(safe-area-inset-top, 0px)) 12px 4px !important;
   }
   .sidebar-inner {
     padding-top: 6px !important;

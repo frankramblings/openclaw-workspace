@@ -723,3 +723,18 @@ html { background-color: var(--bg); }
     max-height: 85dvh !important;
   }
 }
+
+/* ── Mobile drawer: kill the dead space below the icon strip ──────────────
+   The strip (DOM-position 2, right after the header) is floated to the bottom
+   by the flex column + #hermes-footer's margin-top:auto, but that left the
+   strip NOT flush — a tall gap sat below it down to the home indicator.
+   Make it explicit: the conversation list fills the height, and the bottom
+   block stacks flush above the home indicator (user bar → footer path → strip).
+   .sidebar-resize-handle is position:absolute (out of flow), so the in-flow
+   column is just header → list → these three. */
+@media (max-width: 768px) {
+  #sidebar .sidebar-inner { flex: 1 1 auto !important; min-height: 0; }
+  #sidebar .sidebar-user-bar { order: 10; }
+  #sidebar #hermes-footer { order: 11; margin-top: 0 !important; }
+  body:not(.hermes-rail-fallback) #sidebar .icon-rail { order: 12; margin-top: 0 !important; }
+}

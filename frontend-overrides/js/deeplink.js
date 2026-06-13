@@ -6,6 +6,9 @@
 export const ACTION_PLANS = {
   new:   { newChat: true,  focus: 'input', openAttach: false, openInbox: false },
   photo: { newChat: true,  focus: 'none',  openAttach: true,  openInbox: false },
+  // voice: like attach, mic capture can't be auto-started without a user gesture,
+  // so this intentionally just lands the user in a fresh chat (empty composer →
+  // the mic button is showing) — one tap records. Not incomplete wiring.
   voice: { newChat: true,  focus: 'none',  openAttach: false, openInbox: false },
   inbox: { newChat: false, focus: 'none',  openAttach: false, openInbox: true  },
 };

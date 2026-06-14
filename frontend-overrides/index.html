@@ -4,18 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content, viewport-fit=cover" />
   <title>__AGENT_NAME__ Chat</title>
-  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=gary1">
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=gary1">
-  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=gary1">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=gary3">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png?v=gary3">
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png?v=gary3">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#1e1f22">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- iOS IGNORES theme-color / manifest theme_color for the status bar — only
+       this meta (default|black|black-translucent) matters. black-translucent is
+       the ONLY value that lets the page paint behind the clock: it makes the
+       webview full-bleed under the status bar, and html::before (below) fills
+       that strip with the theme bg (var(--bg)). This also gives edge-to-edge
+       use of the screen. NOTE: iOS caches this style hard per-site — picking up
+       a change needs the home-screen icon removed AND the site's website-data
+       cleared, then re-added (a plain reopen/re-add won't refresh it). -->
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <!-- Disable iOS / Android auto-linkifying of numbers (phone/date/address)
        in email bodies — was wrapping random digits in <a href="tel:..."> with
        browser-default styling that didn't match the Odysseus theme. -->
   <meta name="format-detection" content="telephone=no, date=no, address=no, email=no">
-  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=gary3">
   <script nonce="{{CSP_NONCE}}">
   window._odysseusLoadTime = Date.now();
   // Boot fetch memo: app boot fires ~18 API calls, several duplicated across

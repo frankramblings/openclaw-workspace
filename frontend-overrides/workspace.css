@@ -738,3 +738,16 @@ html { background-color: var(--bg); }
   #sidebar #hermes-footer { order: 11; margin-top: 0 !important; }
   body:not(.hermes-rail-fallback) #sidebar .icon-rail { order: 12; margin-top: 0 !important; }
 }
+
+/* ── Mobile chat: anchor messages to the bottom ───────────────────────────
+   Short conversations top-aligned the bubbles, leaving a gap above the
+   composer (dead space). Make #chat-history a flex column and push the stack
+   down: the latest message sits just above the composer; the empty room (when
+   few messages) moves to the top, below the header — standard chat behavior.
+   .msg keeps its fit-content width + margin-left/right:auto, which align on
+   the cross axis under flex, so bubble L/R alignment is unchanged. margin-top
+   :auto collapses once content overflows, so scrolling still works. */
+@media (max-width: 768px) {
+  #chat-history { display: flex; flex-direction: column; }
+  #chat-history > :first-child { margin-top: auto; }
+}

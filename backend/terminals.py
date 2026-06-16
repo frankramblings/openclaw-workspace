@@ -12,6 +12,7 @@ import pty
 import signal
 import struct
 import termios
+import time
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket
 from starlette.websockets import WebSocketDisconnect
@@ -111,16 +112,29 @@ class PtySession:
             self._append(text)
         return text
 
-    def _mark_exited(self) -> None:
-        if self.exited:
+    def _reap(self, *, block: bool) -> None:
+        """Reap the child if possible; record exit_code only on an actual reap.
+
+        WNOHANG returning (0, 0) means the child is still alive (or not yet
+        reapable) — leave self.pid set so a later call retries. exit_code is
+        recorded ONLY when waitpid returns a real pid (i.e. an actual reap)."""
+        if self.pid is None:
             return
-        self.exited = True
         try:
-            if self.pid:
-                _, status = os.waitpid(self.pid, os.WNOHANG)
-                self.exit_code = os.waitstatus_to_exitcode(status) if status else 0
+            wpid, status = os.waitpid(self.pid, 0 if block else os.WNOHANG)
         except (ChildProcessError, OSError):
-            self.exit_code = self.exit_code if self.exit_code is not None else 0
+            self.pid = None  # already reaped (or never a real child)
+            return
+        if wpid == 0:
+            return  # WNOHANG: not exited yet — keep pid so a later call retries
+        self.exit_code = os.waitstatus_to_exitcode(status)
+        self.pid = None
+
+    def _mark_exited(self) -> None:
+        # EOF/error path: the child has exited (slave side closed). Stop reads
+        # and reap best-effort without blocking the asyncio reader.
+        self.exited = True
+        self._reap(block=False)
 
     def write(self, data: str) -> None:
         if self.master_fd is None or self.exited:
@@ -141,19 +155,33 @@ class PtySession:
             pass
 
     def close(self) -> None:
-        if self.pid:
+        # Idempotent: safe to call twice, and safe if start() never set a pid.
+        if self.pid is not None:
             try:
                 os.kill(self.pid, signal.SIGHUP)
             except ProcessLookupError:
                 pass
-        self._mark_exited()
-        self._detach_reader()
         if self.master_fd is not None:
             try:
                 os.close(self.master_fd)
             except OSError:
                 pass
             self.master_fd = None
+        # GUARANTEE the child is reaped — no zombie left behind. Give SIGHUP a
+        # brief, bounded window to land, then escalate to SIGKILL and block.
+        for _ in range(10):  # ~0.2s total
+            self._reap(block=False)
+            if self.pid is None:
+                break
+            time.sleep(0.02)
+        if self.pid is not None:
+            try:
+                os.kill(self.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            self._reap(block=True)
+        self.exited = True
+        self._detach_reader()
 
     # --- live streaming (used by the WS handler, not by the unit tests) ---
     def attach_reader(self, loop: asyncio.AbstractEventLoop) -> None:

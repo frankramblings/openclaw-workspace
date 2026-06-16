@@ -62,6 +62,19 @@ def test_close_marks_exited():
     assert sess.exited is True
 
 
+def test_close_reaps_child_no_zombie():
+    sess = terminals.PtySession("test-reap")
+    sess.start()
+    pid = sess.pid
+    sess.close()
+    assert sess.exited is True
+    # Child must be fully reaped — waiting on it again raises (no zombie left).
+    import os
+    import pytest as _pytest
+    with _pytest.raises(ChildProcessError):
+        os.waitpid(pid, os.WNOHANG)
+
+
 def test_guard_rejects_non_loopback():
     assert terminals.terminal_access_allowed(
         "192.168.1.20", {"tailscale-user-login": "frank@example.com"}

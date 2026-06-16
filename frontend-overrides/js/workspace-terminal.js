@@ -92,6 +92,7 @@
     try { ws = new WebSocket(wsUrl(key)); } catch (e) { status('terminal unavailable'); return; }
     ws.onopen = () => { status(''); fitAndResize(); };
     ws.onmessage = (ev) => {
+      if (!term) return;  // defense in depth: never write before the terminal is built
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.type === 'output') term.write(m.data);
       else if (m.type === 'exit') {

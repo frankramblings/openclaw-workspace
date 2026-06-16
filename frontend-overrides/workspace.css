@@ -738,3 +738,10 @@ html { background-color: var(--bg); }
   #sidebar #hermes-footer { order: 11; margin-top: 0 !important; }
   body:not(.hermes-rail-fallback) #sidebar .icon-rail { order: 12; margin-top: 0 !important; }
 }
+
+/* Email modal: low-friction multi-select ---------------------------------- */
+#email-lib-grid .doclib-card .email-card-check { opacity: 0; transition: opacity .12s ease; }
+#email-lib-grid .doclib-card:hover .email-card-check,
+#email-lib-grid .doclib-card.selected .email-card-check,
+#email-lib-modal.select-mode .doclib-card .email-card-check { opacity: 1; }
+@media (pointer: coarse) { #email-lib-grid .doclib-card:hover .email-card-check { opacity: 0; } }

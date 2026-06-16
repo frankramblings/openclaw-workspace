@@ -22,6 +22,7 @@ import {
   _tryFoldHintSig, _foldSignature, _SIG_ICON, _QUOTE_ICON,
 } from './emailLibrary/signatureFold.js';
 import { state } from './emailLibrary/state.js';
+import { toggleInSet, allSelected, chunk, summarizeBulk } from './emailLibrary/triageLogic.js';
 
 const API_BASE = window.location.origin;
 let _emailUnreadChipClickWired = false;
@@ -1632,17 +1633,18 @@ function _createCard(em) {
   card.dataset.uid = String(em.uid);
   if (state._selectMode && state._selectedUids.has(em.uid)) card.classList.add('selected');
 
-  // Checkbox in select mode
-  if (state._selectMode) {
+  // Checkbox — always rendered; opacity toggled by CSS on hover/select-mode
+  {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.className = 'memory-select-cb';
+    cb.className = 'memory-select-cb email-card-check';
     cb.checked = state._selectedUids.has(em.uid);
-    cb.addEventListener('click', e => e.stopPropagation());
-    cb.addEventListener('change', () => {
-      if (cb.checked) state._selectedUids.add(em.uid);
-      else state._selectedUids.delete(em.uid);
-      card.classList.toggle('selected', cb.checked);
+    cb.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state._selectedUids = toggleInSet(state._selectedUids, em.uid);
+      state._selectMode = state._selectedUids.size > 0;
+      cb.checked = state._selectedUids.has(em.uid);
+      card.classList.toggle('selected', state._selectedUids.has(em.uid));
       _updateBulkBar();
     });
     card.appendChild(cb);
@@ -1840,7 +1842,14 @@ function _createCard(em) {
         card._suppressNextClick = true;
         setTimeout(() => { card._suppressNextClick = false; }, 400);
         if (navigator.vibrate) try { navigator.vibrate(15); } catch {}
-        _showCardMenu(em, menuBtn);
+        // Long-press toggles selection (mobile multi-select path).
+        // Three-dot menu button still opens the menu on explicit tap.
+        state._selectedUids = toggleInSet(state._selectedUids, em.uid);
+        state._selectMode = state._selectedUids.size > 0;
+        const cb = card.querySelector('.memory-select-cb');
+        if (cb) cb.checked = state._selectedUids.has(em.uid);
+        card.classList.toggle('selected', state._selectedUids.has(em.uid));
+        _updateBulkBar();
       }, 500);
     });
     card.addEventListener('pointermove', (e) => {
@@ -4619,7 +4628,8 @@ function _updateBulkBar() {
   const count = document.getElementById('email-lib-selected-count');
   if (count) count.textContent = `${state._selectedUids.size} Selected`;
   const all = document.getElementById('email-lib-select-all');
-  if (all) all.checked = state._libEmails.length > 0 && state._libEmails.every(e => state._selectedUids.has(e.uid));
+  if (all) all.checked = allSelected(state._libEmails.map((e) => e.uid), state._selectedUids);
+  document.getElementById('email-lib-modal')?.classList.toggle('select-mode', state._selectMode);
   // When something's selected, brighten Actions to the same full --fg color as
   // the "N Selected" count (the button is a dimmer 60% --fg by default).
   const actions = document.getElementById('email-lib-bulk-actions');

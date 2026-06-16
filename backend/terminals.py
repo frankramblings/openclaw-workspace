@@ -64,6 +64,7 @@ class PtySession:
         self.master_fd: int | None = None
         self.pid: int | None = None
         self.buffer = ""
+        self.total_written = 0
         self.exited = False
         self.exit_code: int | None = None
         self._subscribers: set[asyncio.Queue] = set()
@@ -94,6 +95,7 @@ class PtySession:
         self.resize(self.cols, self.rows)
 
     def _append(self, text: str) -> None:
+        self.total_written += len(text)
         self.buffer += text
         if len(self.buffer) > MAX_BUFFER:
             self.buffer = self.buffer[-MAX_BUFFER:]
@@ -351,24 +353,30 @@ async def terminal_close(session_key: str, request: Request):
 
 # --- Gary-drive: loopback MCP-facing endpoints ------------------------------
 async def _await_settled_output(sess, cursor, settle=1.2, cap=20.0):
-    """Wait until the PTY buffer stops growing for `settle` seconds (or `cap`
-    elapses), then return everything written since `cursor`."""
+    """Poll until total_written stops growing for `settle`s or `cap` elapses;
+    return the chars appended since `cursor` (a prior total_written value),
+    clamped to what's still in the rotated buffer."""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + cap
-    last_len = len(sess.buffer)
+    last = sess.total_written
     quiet_until = loop.time() + settle
     while loop.time() < deadline:
         await asyncio.sleep(0.1)
-        if len(sess.buffer) != last_len:
-            last_len = len(sess.buffer)
+        if sess.total_written != last:
+            last = sess.total_written
             quiet_until = loop.time() + settle
         elif loop.time() >= quiet_until:
             break
-    return sess.buffer[cursor:]
+    new_chars = sess.total_written - cursor
+    if new_chars <= 0:
+        return ""
+    return sess.buffer[-new_chars:] if new_chars <= len(sess.buffer) else sess.buffer
 
 
 @router.post("/api/terminal/mcp/run")
 async def terminal_mcp_run(request: Request):
+    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
     body = await request.json()
     session_key = resolve_terminal_token(str(body.get("token", "")))
     if not session_key:
@@ -377,7 +385,7 @@ async def terminal_mcp_run(request: Request):
         raise HTTPException(status_code=403, detail="Gary terminal control is off for this chat")
     sess = get_or_create(session_key)
     sess.attach_reader(asyncio.get_running_loop())
-    cursor = len(sess.buffer)
+    cursor = sess.total_written
     sess.write(str(body.get("command", "")) + "\n")
     output = await _await_settled_output(sess, cursor, cap=float(body.get("timeout", 20)))
     return {"output": output, "exited": sess.exited, "exit_code": sess.exit_code}
@@ -385,6 +393,8 @@ async def terminal_mcp_run(request: Request):
 
 @router.post("/api/terminal/mcp/read")
 async def terminal_mcp_read(request: Request):
+    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
     body = await request.json()
     session_key = resolve_terminal_token(str(body.get("token", "")))
     if not session_key:
@@ -396,6 +406,8 @@ async def terminal_mcp_read(request: Request):
 
 @router.post("/api/terminal/mcp/write")
 async def terminal_mcp_write(request: Request):
+    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
     body = await request.json()
     session_key = resolve_terminal_token(str(body.get("token", "")))
     if not session_key:

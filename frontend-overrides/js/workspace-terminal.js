@@ -9,6 +9,7 @@
   const LS_WIDTH = 'hermes-terminal-width';
   const VENDOR = '/static/js/vendor/xterm/';
   let term = null, fit = null, ws = null, sessionKey = null, followTimer = null;
+  let garyEffective = null;  // last-known effective gary-mode for the active key
 
   function curSession() {
     try {
@@ -58,6 +59,7 @@
         '<span class="wt-title">Terminal</span>' +
         '<span class="wt-cwd" id="wt-cwd"></span>' +
         '<span class="wt-spacer"></span>' +
+        '<button class="wt-btn" id="wt-gary" title="Gary terminal control">Gary: …</button>' +
         '<button class="wt-btn" id="wt-restart" title="Restart shell">↻</button>' +
         '<button class="wt-btn" id="wt-close" title="Close panel">✕</button>' +
       '</header>' +
@@ -68,6 +70,7 @@
     if (w > 360 && w < 1100) aside.style.width = w + 'px';
     document.getElementById('wt-close').addEventListener('click', hide);
     document.getElementById('wt-restart').addEventListener('click', restart);
+    document.getElementById('wt-gary').addEventListener('click', toggleGary);
     wireResize(aside);
   }
 
@@ -82,6 +85,47 @@
   }
   function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
+  // --- Gary-mode toggle -----------------------------------------------------
+  // The button reflects the EFFECTIVE state (per-chat override else global
+  // default). It keys on the SAME value the WS uses (curSession() || 'global')
+  // so the toggle the user sets and the gate the MCP run path reads line up.
+  function renderGary() {
+    const b = document.getElementById('wt-gary');
+    if (!b) return;
+    if (garyEffective === null) {
+      b.textContent = 'Gary: …';
+      b.classList.remove('active');
+      b.title = 'Gary terminal control';
+      return;
+    }
+    b.textContent = 'Gary: ' + (garyEffective ? 'on' : 'off');
+    b.classList.toggle('active', !!garyEffective);
+    b.style.color = garyEffective ? '#7ee787' : '';
+    b.title = garyEffective
+      ? 'Gary can run commands in this terminal — click to turn off for this chat'
+      : 'Gary cannot run commands in this terminal — click to turn on for this chat';
+  }
+  function refreshGary(key) {
+    garyEffective = null;
+    renderGary();
+    fetch('/api/terminal/gary-mode?session_key=' + encodeURIComponent(key))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
+      .then((d) => { if (sessionKey === key) { garyEffective = !!d.effective; renderGary(); } })
+      .catch(() => { /* leave indeterminate; not fatal to the terminal itself */ });
+  }
+  function toggleGary() {
+    const key = sessionKey || curSession() || 'global';
+    const next = !garyEffective;
+    fetch('/api/terminal/gary-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: 'session', session_key: key, enabled: next }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
+      .then((d) => { if (sessionKey === key) { garyEffective = !!d.effective; renderGary(); } })
+      .catch(() => status('could not change Gary terminal control'));
+  }
+
   function disconnect() {
     if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; }
   }
@@ -89,6 +133,7 @@
     disconnect();
     sessionKey = key;
     status('');
+    refreshGary(key);
     try { ws = new WebSocket(wsUrl(key)); } catch (e) { status('terminal unavailable'); return; }
     ws.onopen = () => { status(''); fitAndResize(); };
     ws.onmessage = (ev) => {

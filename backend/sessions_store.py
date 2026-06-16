@@ -115,12 +115,27 @@ def update(session_id: str, **fields) -> dict | None:
 
 
 def gary_terminal_override(session_key: str):
-    """Return the per-session gary-terminal flag (bool) or None (inherit), found
-    by matching the record's stored gateway sessionKey."""
+    """Return the per-session gary-terminal flag (bool) or None (inherit).
+
+    Matches by the record's stored gateway sessionKey OR by its SPA id: the
+    terminal panel keys its WebSocket (and therefore the gary-mode calls) on the
+    SPA session id from getCurrentSessionId(), while the MCP-side token is minted
+    against the gateway sessionKey. Accepting either keeps the toggle the panel
+    sets and the gate the MCP run path reads pointed at the same record."""
     with _LOCK:
         for s in _load().get("sessions", []):
-            if s.get("sessionKey") == session_key:
+            if s.get("sessionKey") == session_key or s.get("id") == session_key:
                 return s.get("gary_terminal")
+    return None
+
+
+def id_for_session_key(session_key: str) -> str | None:
+    """Resolve a panel/gateway key to a record id, matching by gateway
+    sessionKey OR by SPA id (see gary_terminal_override for why both)."""
+    with _LOCK:
+        for s in _load().get("sessions", []):
+            if s.get("sessionKey") == session_key or s.get("id") == session_key:
+                return s.get("id")
     return None
 
 

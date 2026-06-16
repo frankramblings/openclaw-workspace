@@ -5,7 +5,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import sessions_store, terminals
+from backend import sessions_store, terminals, websearch
 from backend.app import app
 
 
@@ -101,6 +101,67 @@ def test_mcp_write_bad_token_404():
 def test_mcp_read_bad_token_404():
     r = TestClient(app).post("/api/terminal/mcp/read", json={"token": "bad"})
     assert r.status_code == 404
+
+
+# --- gary-mode routes -------------------------------------------------------
+
+def test_gary_mode_get_returns_three_keys(monkeypatch):
+    monkeypatch.setattr(terminals, "gary_mode_default", lambda: True)
+    monkeypatch.setattr(sessions_store, "gary_terminal_override", lambda k: None)
+    r = TestClient(app).get("/api/terminal/gary-mode", params={"session_key": "k"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert set(body.keys()) == {"global_default", "override", "effective"}
+    assert body == {"global_default": True, "override": None, "effective": True}
+
+
+def test_gary_mode_set_global_flips_default(monkeypatch):
+    saved = {}
+
+    def _save(patch):
+        saved.update(patch or {})
+        return saved
+
+    monkeypatch.setattr(websearch, "save_settings", _save)
+    # gary_mode_default reads load_settings; reflect what was saved.
+    monkeypatch.setattr(
+        websearch, "load_settings",
+        lambda: {"gary_terminal_default": saved.get("gary_terminal_default", True)},
+    )
+    r = TestClient(app).post("/api/terminal/gary-mode", json={"scope": "global", "enabled": False})
+    assert r.status_code == 200, r.text
+    assert saved.get("gary_terminal_default") is False
+    assert r.json()["global_default"] is False
+
+
+def test_gary_mode_set_session_override(monkeypatch):
+    monkeypatch.setattr(sessions_store, "id_for_session_key", lambda k: "rec-id" if k == "the-key" else None)
+    captured = {}
+    monkeypatch.setattr(sessions_store, "set_gary_terminal",
+                        lambda sid, enabled: captured.update(sid=sid, enabled=enabled))
+    monkeypatch.setattr(sessions_store, "gary_terminal_override", lambda k: False)
+    monkeypatch.setattr(terminals, "gary_mode_default", lambda: True)
+    r = TestClient(app).post(
+        "/api/terminal/gary-mode",
+        json={"scope": "session", "session_key": "the-key", "enabled": False},
+    )
+    assert r.status_code == 200, r.text
+    assert captured == {"sid": "rec-id", "enabled": False}
+    assert r.json()["effective"] is False
+
+
+def test_gary_mode_set_session_unknown_404(monkeypatch):
+    monkeypatch.setattr(sessions_store, "id_for_session_key", lambda k: None)
+    r = TestClient(app).post(
+        "/api/terminal/gary-mode",
+        json={"scope": "session", "session_key": "nope", "enabled": True},
+    )
+    assert r.status_code == 404
+
+
+def test_gary_mode_set_bad_scope_400():
+    r = TestClient(app).post("/api/terminal/gary-mode", json={"scope": "bad"})
+    assert r.status_code == 400
 
 
 # --- MCP endpoints: happy path (real PTY) -----------------------------------

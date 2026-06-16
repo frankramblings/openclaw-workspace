@@ -375,6 +375,45 @@ async def terminal_stream(websocket: WebSocket, session_key: str):
         sess.unsubscribe(queue)
 
 
+@router.get("/api/terminal/gary-mode")
+async def terminal_gary_mode_get(request: Request, session_key: str = ""):
+    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    from . import sessions_store
+    override = sessions_store.gary_terminal_override(session_key) if session_key else None
+    return {
+        "global_default": gary_mode_default(),
+        "override": override,                       # None | bool
+        "effective": gary_mode_for_session(session_key) if session_key else gary_mode_default(),
+    }
+
+
+@router.post("/api/terminal/gary-mode")
+async def terminal_gary_mode_set(request: Request):
+    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    from . import sessions_store
+    body = await request.json()
+    scope = body.get("scope")
+    enabled = body.get("enabled")   # bool, or None to clear a session override (inherit)
+    session_key = str(body.get("session_key", ""))
+    if scope == "global":
+        from . import websearch
+        websearch.save_settings({"gary_terminal_default": bool(enabled)})
+    elif scope == "session":
+        sid = sessions_store.id_for_session_key(session_key)
+        if not sid:
+            raise HTTPException(status_code=404, detail="unknown session")
+        sessions_store.set_gary_terminal(sid, enabled if enabled is None else bool(enabled))
+    else:
+        raise HTTPException(status_code=400, detail="scope must be 'session' or 'global'")
+    return {
+        "global_default": gary_mode_default(),
+        "override": (sessions_store.gary_terminal_override(session_key) if session_key else None),
+        "effective": gary_mode_for_session(session_key) if session_key else gary_mode_default(),
+    }
+
+
 @router.post("/api/terminal/{session_key}/close")
 async def terminal_close(session_key: str, request: Request):
     client_host = request.client.host if request.client else None

@@ -43,7 +43,10 @@ whether Gary's writes are accepted.
 - Default cwd = workspace root.
 - Human types directly **or** Gary drives the same shell.
 - "Gary can do anything here" mode: default on, global default + per-chat override.
-- Terminal surface reachable only through the tailnet front door (loopback-only).
+- Terminal surface reachable only through the tailnet front door (loopback-only
+  **plus** the Tailscale-Serve identity header).
+- A Gary write lands on **exactly** the chat it is answering — precise binding,
+  no cross-chat misfire.
 
 ## Non-goals (v1)
 
@@ -74,14 +77,20 @@ Bidirectional WebSocket on the FastAPI router:
 - client→server: `{type:"input", data}` and `{type:"resize", cols, rows}`.
 - On connect, replays the scrollback buffer so a reopened panel is continuous.
 
-**Security guard (loopback-only):** the WS handler accepts the connection only
-when the socket peer is `127.0.0.1`. This permits 100% of real traffic (it all
-arrives through Serve as loopback) and rejects any LAN device hitting `:8800`
-directly (those carry a `192.168.x` peer). Optional belt-and-suspenders: also
-require the `Tailscale-User-Login` header Serve injects, so only requests through
-the tailnet front door qualify (not just any local process). File-explorer and
-other routes keep their current LAN-open posture — only the terminal surface is
-hardened.
+**Security guard (loopback + Serve identity header, both required):**
+1. **Loopback floor (hard):** accept only when the socket peer is `127.0.0.1`.
+   Permits 100% of real traffic (it all arrives through Serve as loopback) and
+   rejects any LAN device hitting `:8800` directly (those carry a `192.168.x`
+   peer).
+2. **Serve identity header (required from the start):** additionally require the
+   `Tailscale-User-Login` header that Serve injects, so a bare local process on
+   the box can't reach the terminal — only requests through the tailnet front
+   door qualify. **Lockout safeguard:** PR1 smoke must confirm the header is
+   actually present on the 8443 path *before* enforcing it; loopback remains the
+   guaranteed floor if a deployment ever lacks Serve identity.
+
+File-explorer and other routes keep their current LAN-open posture — only the
+terminal surface is hardened.
 
 ### 3. Frontend panel — `frontend-overrides/js/workspace-terminal.js`
 
@@ -116,16 +125,27 @@ output), `terminal_close`. It calls the FastAPI terminal REST over **`127.0.0.1`
 against the *same* registry, so Gary's commands and their output stream into the
 user's panel live.
 
-**Implicit session→terminal resolution (no injected id):** the MCP tools do not
-require a terminal id. The backend resolves "this chat's terminal" implicitly:
-- Preferred: derive the workspace session from the agent's run context if the
-  gateway exposes it to the tool environment (**verify availability during
-  implementation**).
-- Fallback for single-user v1: the backend's currently-active terminal (the
-  most-recently-active chat's PTY). Acceptable because it's one user driving one
-  chat at a time; can misfire only if the user chats in B while the panel is on A.
-- An explicit `session_key` argument remains available on the tools for
-  correctness/testing, but is optional.
+**Precise session→terminal binding (hard requirement, no heuristic fallback):**
+a Gary write MUST land on exactly the PTY of the chat whose turn Gary is
+answering — never another chat's terminal. Gary stays oblivious to ids (implicit
+from his side); precision comes from identity that flows **automatically** from
+the agent run into the `terminal-mcp` process, not from Gary passing an id:
+- The bridge maintains a `session_key ↔ openclaw conversation/run id` table — it
+  already knows both, since it issues `chat.send` for a workspace `session_key`
+  and receives the run/conversation id back.
+- `terminal-mcp` reads the run/conversation identifier the gateway exposes to the
+  agent's tool environment (candidate: an env var on the tool exec env) and
+  passes it to the FastAPI terminal REST, which maps it to the bound `session_key`
+  and PTY.
+- The tools keep an explicit `session_key` parameter as the *carrier*, populated
+  automatically from the resolved identity — not typed by Gary.
+
+**PR2 opens with a feasibility spike** to confirm which identifier OpenClaw
+actually exposes to the tool/MCP environment. If none is exposed, PR2 adds the
+minimal gateway-side exposure, or failing that a per-turn opaque token carried in
+the bridge hint and read by the tool. The single-user "active terminal" heuristic
+is explicitly **rejected** as a correctness mechanism. A write whose session
+cannot be resolved is **refused, not guessed**.
 
 ### 6. Bridge capability hint — `backend/bridge.py`
 
@@ -159,11 +179,14 @@ the tool.
 
 Respecting "no headless Chrome on this box":
 - **pytest** (`backend/tests`): `PtySession` spawn `echo`/write/buffer/resize/
-  close/exit; WS loopback guard rejects a simulated non-loopback peer; effective
-  Gary-mode resolution (global default vs per-chat override); MCP write 403s when
-  mode off.
-- **MCP unit test:** a `terminal_write` routes into the registry and the bytes
-  reach the PTY (implicit resolution targets the active session).
+  close/exit; WS guard rejects a simulated non-loopback peer **and** a loopback
+  request lacking the `Tailscale-User-Login` header; effective Gary-mode
+  resolution (global default vs per-chat override); MCP write 403s when mode off.
+- **Precise-binding test:** a write resolved for session A never reaches session
+  B's PTY; a write whose session cannot be resolved is refused, not routed to any
+  terminal.
+- **MCP unit test:** a `terminal_write` carrying a resolved `session_key` routes
+  into that session's registry entry and the bytes reach its PTY.
 - **Manual smoke:** `node --check` the new JS; curl the WS upgrade handshake and
   the terminal REST; confirm Tailscale Serve forwards the WS upgrade for
   `/api/terminal/*` on the 8443 origin; user eyeballs the panel.
@@ -173,16 +196,20 @@ Respecting "no headless Chrome on this box":
 - **PR 1 — human-interactive terminal:** §1 PtySession, §2 WS + loopback guard,
   §3 panel, §4 mode state. Standalone value: a real attached terminal you can type
   in.
-- **PR 2 — Gary-drive:** §5 terminal-mcp + REST, §6 bridge hint + AGENTS/skill
-  nudge. Lights up "have Gary drive it".
+- **PR 2 — Gary-drive:** opens with the §5 precise-binding feasibility spike
+  (what identifier does OpenClaw expose to the tool env?), then §5 terminal-mcp +
+  REST with precise binding, §6 bridge hint + AGENTS/skill nudge. Lights up "have
+  Gary drive it".
 
 ## Open risks
 
 1. **§6 discovery/use** — does the capability hint reliably reach Gary's turn and
    does Gary actually pick up the MCP tool? Highest risk; validate early in PR 2.
-2. **Agent session exposure (§5)** — whether the gateway exposes the workspace
-   session to the MCP tool environment determines precise vs. active-terminal
-   resolution. Verify during PR 2; fallback is acceptable for single-user v1.
+2. **Precise binding mechanism (§5)** — precise session-binding is a hard
+   requirement, so PR 2 must first confirm what session/run identifier OpenClaw
+   exposes to the agent tool environment. If nothing suitable exists, PR 2 needs a
+   minimal gateway-side change or a per-turn token; the active-terminal heuristic
+   is **not** an acceptable fallback. This is the gating unknown for PR 2.
 3. **PTY under uvicorn loop** — stdlib `pty` master-fd async reads vs.
    `ptyprocess`; pick during PR 1 behind the `PtySession` interface.
 4. **Serve WS passthrough** — confirm Tailscale Serve proxies the WS upgrade for

@@ -4728,6 +4728,7 @@ function _showBulkActionsMenu(anchor) {
           dropdown.remove();
           document.removeEventListener('click', close, true);
           const uids = Array.from(state._selectedUids);
+          const srcFolder = state._libFolder;   // capture now; Undo restores to this
           const res = await _runBulkEmail(uids, (uid) => _emailMove([uid], dest).then(a => a[0]));
           const { ok, failed } = summarizeBulk(res);
           const okUids = res.filter(r => r.ok).map(r => r.uid);
@@ -4744,7 +4745,9 @@ function _showBulkActionsMenu(anchor) {
           showToast(
             failed ? `Moved ${ok}, ${failed} failed` : `Moved ${ok} to ${dest}`,
             { duration: 6000, action: 'Undo', onAction: async () => {
-              await _runBulkEmail(uids, (uid) => _emailMove([uid], state._libFolder).then(a => a[0]));
+              // Best-effort: an IMAP move can reissue uids, so reversing by the
+              // original uid may not always land. Restore to the captured source.
+              await _runBulkEmail(uids, (uid) => _emailMove([uid], srcFolder).then(a => a[0]));
               _loadEmailsFresh();
             }},
           );

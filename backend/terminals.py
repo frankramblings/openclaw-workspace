@@ -10,6 +10,7 @@ import contextlib
 import fcntl
 import os
 import pty
+import secrets
 import signal
 import struct
 import termios
@@ -233,6 +234,12 @@ def get_or_create(session_key: str, *, cols: int = DEFAULT_COLS, rows: int = DEF
         sess = PtySession(session_key, cols=cols, rows=rows)
         sess.start()
         _sessions[session_key] = sess
+    # Always-on reader: keep `buffer` current even with no WebSocket attached, so
+    # Gary's MCP read/run see live output. attach_reader is idempotent.
+    try:
+        sess.attach_reader(asyncio.get_running_loop())
+    except RuntimeError:
+        pass  # no running loop (sync unit tests) — WS/endpoints attach later
     return sess
 
 
@@ -240,6 +247,46 @@ def close_session(session_key: str) -> None:
     sess = _sessions.pop(session_key, None)
     if sess:
         sess.close()
+
+
+# --- Gary-drive: per-turn token map -----------------------------------------
+# A short-lived token mints a capability to drive ONE chat's PTY, handed to the
+# loopback MCP server for a single turn. Tokens expire (TTL) and are pruned
+# lazily so the map can't grow unbounded.
+_TERMINAL_TOKENS: dict[str, tuple[str, float]] = {}
+TERMINAL_TOKEN_TTL = 1800.0
+
+
+def _prune_terminal_tokens() -> None:
+    now = time.time()
+    for t in [t for t, (_, exp) in _TERMINAL_TOKENS.items() if exp <= now]:
+        _TERMINAL_TOKENS.pop(t, None)
+
+
+def mint_terminal_token(session_key: str) -> str:
+    _prune_terminal_tokens()
+    token = secrets.token_urlsafe(18)
+    _TERMINAL_TOKENS[token] = (session_key, time.time() + TERMINAL_TOKEN_TTL)
+    return token
+
+
+def resolve_terminal_token(token: str) -> str | None:
+    _prune_terminal_tokens()
+    entry = _TERMINAL_TOKENS.get(token)
+    return entry[0] if entry else None
+
+
+# --- Gary-mode resolution ---------------------------------------------------
+# Effective state = per-session override if set, else the global default (ON).
+def gary_mode_default() -> bool:
+    from . import websearch
+    return bool(websearch.load_settings().get("gary_terminal_default", True))
+
+
+def gary_mode_for_session(session_key: str) -> bool:
+    from . import sessions_store
+    override = sessions_store.gary_terminal_override(session_key)
+    return override if isinstance(override, bool) else gary_mode_default()
 
 
 @router.websocket("/api/terminal/{session_key}/stream")
@@ -299,4 +346,63 @@ async def terminal_close(session_key: str, request: Request):
     if not terminal_access_allowed(client_host, request.headers):
         raise HTTPException(status_code=403, detail="forbidden")
     close_session(session_key)
+    return {"ok": True}
+
+
+# --- Gary-drive: loopback MCP-facing endpoints ------------------------------
+async def _await_settled_output(sess, cursor, settle=1.2, cap=20.0):
+    """Wait until the PTY buffer stops growing for `settle` seconds (or `cap`
+    elapses), then return everything written since `cursor`."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + cap
+    last_len = len(sess.buffer)
+    quiet_until = loop.time() + settle
+    while loop.time() < deadline:
+        await asyncio.sleep(0.1)
+        if len(sess.buffer) != last_len:
+            last_len = len(sess.buffer)
+            quiet_until = loop.time() + settle
+        elif loop.time() >= quiet_until:
+            break
+    return sess.buffer[cursor:]
+
+
+@router.post("/api/terminal/mcp/run")
+async def terminal_mcp_run(request: Request):
+    body = await request.json()
+    session_key = resolve_terminal_token(str(body.get("token", "")))
+    if not session_key:
+        raise HTTPException(status_code=404, detail="invalid or expired terminal token")
+    if not gary_mode_for_session(session_key):
+        raise HTTPException(status_code=403, detail="Gary terminal control is off for this chat")
+    sess = get_or_create(session_key)
+    sess.attach_reader(asyncio.get_running_loop())
+    cursor = len(sess.buffer)
+    sess.write(str(body.get("command", "")) + "\n")
+    output = await _await_settled_output(sess, cursor, cap=float(body.get("timeout", 20)))
+    return {"output": output, "exited": sess.exited, "exit_code": sess.exit_code}
+
+
+@router.post("/api/terminal/mcp/read")
+async def terminal_mcp_read(request: Request):
+    body = await request.json()
+    session_key = resolve_terminal_token(str(body.get("token", "")))
+    if not session_key:
+        raise HTTPException(status_code=404, detail="invalid or expired terminal token")
+    sess = _sessions.get(session_key)
+    tail = int(body.get("tail", 4000))
+    return {"output": (sess.buffer[-tail:] if sess else ""), "running": bool(sess and not sess.exited)}
+
+
+@router.post("/api/terminal/mcp/write")
+async def terminal_mcp_write(request: Request):
+    body = await request.json()
+    session_key = resolve_terminal_token(str(body.get("token", "")))
+    if not session_key:
+        raise HTTPException(status_code=404, detail="invalid or expired terminal token")
+    if not gary_mode_for_session(session_key):
+        raise HTTPException(status_code=403, detail="Gary terminal control is off for this chat")
+    sess = get_or_create(session_key)
+    sess.attach_reader(asyncio.get_running_loop())
+    sess.write(str(body.get("data", "")))
     return {"ok": True}

@@ -315,16 +315,13 @@ def gary_capability_note(session_key: str) -> str:
 
 def strip_capability_note(text: str) -> str:
     """Remove an injected gary_capability_note block from a stored message for
-    display. The block runs from the marker to the first blank line (\\n\\n)."""
-    if not isinstance(text, str):
+    display. Anchored at the start: the note is always *prepended*, so we only
+    strip a leading block (marker → first blank line). Anchoring avoids silently
+    truncating a legitimate user message that merely contains the marker."""
+    if not isinstance(text, str) or not text.startswith(_GARY_NOTE_PREFIX):
         return text
-    idx = text.find(_GARY_NOTE_PREFIX)
-    if idx == -1:
-        return text
-    end = text.find("\n\n", idx)
-    if end == -1:
-        return text[:idx].rstrip()
-    return (text[:idx] + text[end + 2:]).lstrip("\n")
+    end = text.find("\n\n")
+    return text[end + 2:] if end != -1 else ""
 
 
 @router.websocket("/api/terminal/{session_key}/stream")

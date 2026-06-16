@@ -183,3 +183,13 @@ def test_strip_capability_note_roundtrip():
     note = terminals.gary_capability_note("agent:main:web-xyz")
     assert terminals.strip_capability_note(note + "hello world") == "hello world"
     assert terminals.strip_capability_note("no note here") == "no note here"
+
+
+def test_strip_capability_note_is_anchored_no_truncation():
+    # A legit user message that merely CONTAINS the marker mid-text (paste / echo)
+    # must NOT be truncated — only a leading injected block is stripped.
+    marker = terminals._GARY_NOTE_PREFIX
+    msg = f"real user text {marker} and more text after, no strip"
+    assert terminals.strip_capability_note(msg) == msg
+    msg2 = f"line one\n\nsecond para mentioning {marker} here"
+    assert terminals.strip_capability_note(msg2) == msg2

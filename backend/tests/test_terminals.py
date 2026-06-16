@@ -7,9 +7,12 @@ import pytest
 from backend import terminals
 
 
-def _spin(sess, needle, tries=80):
-    """PTY output is async; poll drain_once() until the needle shows up."""
-    for _ in range(tries):
+def _spin(sess, needle, timeout=8.0):
+    """PTY output is async; poll drain_once() until the needle shows up.
+    Deadline-based (not fixed-iteration) so a slow cold `bash -i`/`zsh` spawn on
+    a loaded box doesn't exhaust the budget before the prompt lands."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         sess.drain_once()
         if needle in sess.buffer:
             return True
@@ -75,25 +78,29 @@ def test_close_reaps_child_no_zombie():
         os.waitpid(pid, os.WNOHANG)
 
 
-def test_guard_rejects_non_loopback():
+def test_guard_allows_local_loopback_without_header():
+    # On-box callers (health checks, local curl) — already have shell access.
+    assert terminals.terminal_access_allowed("127.0.0.1", {}) is True
+    assert terminals.terminal_access_allowed("::1", {}) is True
+
+
+def test_guard_allows_serve_tailnet_user_via_header():
+    # Through Serve, uvicorn surfaces the tailnet client IP, not loopback; the
+    # injected identity header is what authenticates the request.
     assert terminals.terminal_access_allowed(
-        "192.168.1.20", {"tailscale-user-login": "frank@example.com"}
-    ) is False
-
-
-def test_guard_rejects_loopback_without_header():
-    assert terminals.terminal_access_allowed("127.0.0.1", {}) is False
-
-
-def test_guard_allows_loopback_with_header():
-    assert terminals.terminal_access_allowed(
-        "127.0.0.1", {"tailscale-user-login": "frank@example.com"}
+        "100.64.1.2", {"tailscale-user-login": "frank@example.com"}
     ) is True
 
 
-def test_guard_header_override_relaxes_to_loopback_only(monkeypatch):
+def test_guard_rejects_remote_without_identity_header():
+    # A remote (non-loopback) request with no Serve identity header is refused.
+    assert terminals.terminal_access_allowed("100.64.1.2", {}) is False
+
+
+def test_guard_override_allows_remote_without_header(monkeypatch):
+    # The escape hatch trusts the 127.0.0.1 bind and allows all.
     monkeypatch.setenv("OPENCLAW_TERMINAL_REQUIRE_TSHEADER", "0")
-    assert terminals.terminal_access_allowed("127.0.0.1", {}) is True
+    assert terminals.terminal_access_allowed("100.64.1.2", {}) is True
 
 
 def test_get_or_create_reuses_live_session():

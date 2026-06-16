@@ -32,13 +32,19 @@ def _shell() -> str:
 
 
 def terminal_access_allowed(client_host: str | None, headers) -> bool:
-    """Loopback floor + Serve identity header. All legitimate traffic arrives via
-    Tailscale Serve as 127.0.0.1 WITH a Tailscale-User-Login header; LAN devices
-    (192.168.x) and bare local processes (no header) are refused. The
-    OPENCLAW_TERMINAL_REQUIRE_TSHEADER=0 escape relaxes to loopback-only — the
-    lockout safeguard if a deployment lacks Serve identity."""
-    if client_host not in ("127.0.0.1", "::1"):
-        return False
+    """Authenticate terminal access.
+
+    uvicorn binds 127.0.0.1 only, so the LAN cannot reach this port at all — the
+    sole remote path is Tailscale Serve, which injects a `Tailscale-User-Login`
+    identity header for the authenticated tailnet user. Behind Serve, uvicorn
+    surfaces the *tailnet* client IP (via X-Forwarded-For), NOT loopback, so we
+    must key on the identity header, not the client IP (the original loopback
+    check rejected every Serve request). Genuine on-box loopback callers
+    (health checks, local curl) are always allowed — they already have shell.
+    OPENCLAW_TERMINAL_REQUIRE_TSHEADER=0 trusts the 127.0.0.1 bind and allows all
+    — the escape hatch if a deployment's Serve lacks identity headers."""
+    if client_host in ("127.0.0.1", "::1"):
+        return True
     if os.environ.get("OPENCLAW_TERMINAL_REQUIRE_TSHEADER", "1") == "0":
         return True
     return bool(headers.get("tailscale-user-login"))
@@ -294,3 +300,23 @@ async def terminal_close(session_key: str, request: Request):
         raise HTTPException(status_code=403, detail="forbidden")
     close_session(session_key)
     return {"ok": True}
+
+
+@router.get("/api/terminal/_debug/probe")
+async def terminal_debug_probe(request: Request):
+    """TEMPORARY diagnostic — reveal how requests reach the backend through
+    Tailscale Serve (client IP + identity/forwarding headers) so we can confirm
+    what the guard sees. Exposes only header metadata, no secrets. REMOVE after
+    debugging."""
+    h = request.headers
+    return {
+        "client_host": request.client.host if request.client else None,
+        "has_ts_login": bool(h.get("tailscale-user-login")),
+        "ts_login": h.get("tailscale-user-login"),
+        "x_forwarded_for": h.get("x-forwarded-for"),
+        "x_forwarded_proto": h.get("x-forwarded-proto"),
+        "tailscale_headers": sorted(k for k in h.keys() if k.lower().startswith("tailscale")),
+        "guard_would_allow": terminal_access_allowed(
+            request.client.host if request.client else None, h
+        ),
+    }

@@ -1,12 +1,9 @@
-// HERMES: pure stack-layout math for the terminal manager. No DOM. Dual-export:
-// window.WTLayout (browser <script>) + module.exports (node --test).
-// .cjs so it stays CommonJS even though frontend-overrides/js/package.json
-// declares "type": "module".
-(function (factory) {
-  const api = factory();
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  if (typeof window !== 'undefined') window.WTLayout = api;
-})(function () {
+// HERMES: pure stack-layout math for the terminal manager. No DOM.
+// Loaded in the browser as a classic <script> (sets window.WTLayout) and served
+// as application/javascript (a .cjs would not get a JS MIME type and the browser
+// would refuse it). The node test loads THIS file via `vm` with a fake `window`
+// (see __tests__/workspace-terminal-layout.test.js), so no module.exports needed.
+(function () {
   // orderedRightToLeft: [{id, width}] with index 0 = rightmost. baseOffset px
   // reserves space on the right (e.g. an open Files explorer). Returns each id's
   // CSS `right` px and the total terminal width (for the chat margin; excludes base).
@@ -29,5 +26,5 @@
     return order;
   }
 
-  return { computeStack, orderVisible };
-});
+  if (typeof window !== 'undefined') window.WTLayout = { computeStack, orderVisible };
+})();

@@ -1,6 +1,15 @@
-const test = require('node:test');
-const assert = require('node:assert');
-const { computeStack, orderVisible } = require('../workspace-terminal-layout.cjs');
+// ESM test (frontend-overrides/js/package.json declares "type":"module").
+// The module under test is a classic browser <script> that sets window.WTLayout,
+// so we run its source in a vm sandbox with a fake `window` and pull the API out.
+import { test } from 'node:test';
+import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+
+const code = readFileSync(new URL('../workspace-terminal-layout.js', import.meta.url), 'utf8');
+const sandbox = { window: {} };
+vm.runInNewContext(code, sandbox);
+const { computeStack, orderVisible } = sandbox.window.WTLayout;
 
 test('computeStack right-anchors with base offset and sums widths', () => {
   // ordered right->left: A (rightmost) then B then C (leftmost)

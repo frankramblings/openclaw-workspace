@@ -1,0 +1,24 @@
+#!/usr/bin/env node
+// Resolve a [name.ext] terminal-image token to its real path, for CLIs running
+// inside a chat's attached terminal. Reads OPENCLAW_SESSION_KEY (set on the PTY)
+// and asks the workspace backend. Usage: claude "look at $(garyimg gary.png)"
+const key = process.env.OPENCLAW_SESSION_KEY;
+const arg = process.argv[2];
+if (!key) {
+  process.stderr.write('garyimg: OPENCLAW_SESSION_KEY not set (run inside the chat terminal)\n');
+  process.exit(2);
+}
+if (!arg) {
+  process.stderr.write('usage: garyimg <name.ext|[name.ext]>\n');
+  process.exit(2);
+}
+const token = arg.startsWith('[') ? arg : `[${arg}]`;
+const base = process.env.OPENCLAW_TERMINAL_BASE || 'http://127.0.0.1:8800';
+const url = `${base}/api/terminal/${encodeURIComponent(key)}/resolve`
+  + `?token=${encodeURIComponent(token)}`;
+fetch(url).then(async (r) => {
+  if (!r.ok) { process.stderr.write(`garyimg: ${token} not found\n`); process.exit(1); }
+  const d = await r.json();
+  if (!d.path) { process.stderr.write(`garyimg: ${token} not found\n`); process.exit(1); }
+  process.stdout.write(d.path + '\n');
+}).catch((e) => { process.stderr.write('garyimg: ' + e.message + '\n'); process.exit(1); });

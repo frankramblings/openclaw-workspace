@@ -6,6 +6,7 @@ Spec: docs/superpowers/specs/2026-06-16-attached-terminal-design.md
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fcntl
 import os
 import pty
@@ -253,12 +254,15 @@ async def terminal_stream(websocket: WebSocket, session_key: str):
     queue = sess.subscribe()
 
     async def pump_out():
-        while True:
-            kind, payload = await queue.get()
-            if kind == "output":
-                await websocket.send_json({"type": "output", "data": payload})
-            elif kind == "exit":
-                await websocket.send_json({"type": "exit", "code": payload})
+        try:
+            while True:
+                kind, payload = await queue.get()
+                if kind == "output":
+                    await websocket.send_json({"type": "output", "data": payload})
+                elif kind == "exit":
+                    await websocket.send_json({"type": "exit", "code": payload})
+        except (WebSocketDisconnect, RuntimeError):
+            pass  # peer gone; the receive loop tears down
 
     out_task = asyncio.create_task(pump_out())
     try:
@@ -268,11 +272,18 @@ async def terminal_stream(websocket: WebSocket, session_key: str):
             if mtype == "input":
                 sess.write(msg.get("data", ""))
             elif mtype == "resize":
-                sess.resize(int(msg.get("cols", DEFAULT_COLS)), int(msg.get("rows", DEFAULT_ROWS)))
+                try:
+                    cols = int(msg.get("cols", DEFAULT_COLS))
+                    rows = int(msg.get("rows", DEFAULT_ROWS))
+                except (ValueError, TypeError):
+                    continue
+                sess.resize(cols, rows)
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         out_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await out_task
         sess.unsubscribe(queue)
 
 

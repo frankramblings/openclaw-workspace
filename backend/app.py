@@ -17,6 +17,7 @@ import mimetypes
 import re
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Body, FastAPI, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -354,6 +355,36 @@ def _resolve_attachments(raw: str) -> list[dict]:
     return out
 
 
+def _terminal_attachments(terminal_key: str) -> list[dict]:
+    """Pending images the user dropped into this chat's terminal → chat.send
+    image blocks, then mark them consumed so each rides exactly one turn. The
+    token→path mapping itself persists (terminals registry) for later resolves.
+    Mirrors _resolve_attachments' block shape; image/* only; bad files skipped."""
+    out: list[dict] = []
+    consumed: list[str] = []
+    for it in terminals.list_attachments(terminal_key, pending_only=True):
+        path = Path(it.get("path", ""))
+        if not path.is_file():
+            continue
+        mime = it.get("mime") or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+        if not mime.startswith("image/"):
+            continue
+        try:
+            data = path.read_bytes()
+        except Exception:  # noqa: BLE001 - unreadable → skip, never break the turn
+            continue
+        out.append({
+            "type": "image",
+            "mimeType": mime,
+            "fileName": path.name,
+            "content": base64.b64encode(data).decode("ascii"),
+        })
+        consumed.append(it["token"])
+    if consumed:
+        terminals.mark_consumed(terminal_key, consumed)
+    return out
+
+
 @app.post("/api/chat_stream")
 async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                       use_web: str = Form(default=""),
@@ -429,12 +460,18 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             # the one the user sees. New/unsaved chats fall back to "global",
             # which is what the panel sends (curSession() || "global").
             terminal_key = rec["id"] if rec else "global"
+            # Terminal image drops: prepend the (history-stripped) token→path map
+            # and merge any pending dropped images into THIS turn's vision blocks.
+            att_note = terminals.terminal_attachment_note(terminal_key)
+            if att_note:
+                brain_message = att_note + brain_message
+            turn_attachments = chat_attachments + _terminal_attachments(terminal_key)
             if terminals.gary_mode_for_session(terminal_key):
                 brain_message = terminals.gary_capability_note(terminal_key) + brain_message
             _ACTIVE_RUNS[session_key] = run_info
             async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
                                                   model_ref=_model_ref(rec),
-                                                  attachments=chat_attachments,
+                                                  attachments=turn_attachments,
                                                   run_info=run_info,
                                                   thinking=_thinking_for_speed((rec or {}).get("speed"))):
                 if "[DONE]" in chunk:

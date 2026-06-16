@@ -83,6 +83,7 @@ class PtySession:
         env = dict(os.environ)
         env["TERM"] = env.get("TERM") or "xterm-256color"
         env["OPENCLAW_ATTACHED_TERMINAL"] = "1"
+        env["OPENCLAW_SESSION_KEY"] = self.session_key
 
         pid, master_fd = pty.fork()
         if pid == 0:  # child: become the shell (slave is already stdio + ctty)
@@ -404,6 +405,7 @@ def gary_mode_for_session(session_key: str) -> bool:
 # (strip_capability_note) so the user never sees it. The marker is led by an
 # invisible separator (U+2063) so it can't collide with normal message content.
 _GARY_NOTE_PREFIX = "⁣[terminal-control]"
+_ATTACH_NOTE_PREFIX = "⁣[terminal-images]"
 
 
 def gary_capability_note(session_key: str) -> str:
@@ -428,15 +430,32 @@ def gary_capability_note(session_key: str) -> str:
     )
 
 
+def terminal_attachment_note(session_key: str) -> str:
+    """A per-turn, history-stripped note mapping the chat's terminal image
+    tokens to their on-disk paths, so Gary can resolve a [name.ext] he sees in
+    chat text or terminal output. Empty when the chat has no terminal images."""
+    items = list_attachments(session_key)
+    if not items:
+        return ""
+    lines = "\n".join(f"  {it['token']} → {it['path']}" for it in items)
+    return (
+        f"{_ATTACH_NOTE_PREFIX} Images the user dropped into THIS chat's terminal "
+        "are saved as files. A [name.ext] token in the terminal or chat refers to:\n"
+        f"{lines}\n\n"
+    )
+
+
 def strip_capability_note(text: str) -> str:
-    """Remove an injected gary_capability_note block from a stored message for
-    display. Anchored at the start: the note is always *prepended*, so we only
-    strip a leading block (marker → first blank line). Anchoring avoids silently
-    truncating a legitimate user message that merely contains the marker."""
-    if not isinstance(text, str) or not text.startswith(_GARY_NOTE_PREFIX):
+    """Remove injected per-turn context blocks (terminal-control and/or
+    terminal-images) from a stored message for display. Anchored at the start —
+    the notes are always *prepended* — and looped so multiple stacked blocks are
+    all removed. Each block runs from its marker to the first blank line."""
+    if not isinstance(text, str):
         return text
-    end = text.find("\n\n")
-    return text[end + 2:] if end != -1 else ""
+    while text.startswith(_GARY_NOTE_PREFIX) or text.startswith(_ATTACH_NOTE_PREFIX):
+        end = text.find("\n\n")
+        text = text[end + 2:] if end != -1 else ""
+    return text
 
 
 @router.websocket("/api/terminal/{session_key}/stream")

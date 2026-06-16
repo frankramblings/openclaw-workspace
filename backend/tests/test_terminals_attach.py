@@ -95,3 +95,24 @@ def test_resolve_route(client):
     assert ok.status_code == 200 and ok.json()["path"].endswith("/.attachments/c1.png")
     miss = client.get("/api/terminal/reskey/resolve", params={"token": "[nope.png]"})
     assert miss.status_code == 404
+
+
+def test_attachment_note_lists_tokens_and_strips():
+    terminals.register_attachment("notek", "ii.png", name="gary.png", mime="image/png")
+    note = terminals.terminal_attachment_note("notek")
+    assert note.startswith(terminals._ATTACH_NOTE_PREFIX)
+    assert "[gary.png]" in note and note.endswith("\n\n")
+    msg = note + "hello user"
+    assert terminals.strip_capability_note(msg) == "hello user"
+
+
+def test_attachment_note_empty_when_none():
+    assert terminals.terminal_attachment_note("emptyk") == ""
+
+
+def test_strip_handles_both_leading_blocks(monkeypatch):
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: True)
+    cap = terminals.gary_capability_note("bothk")
+    terminals.register_attachment("bothk", "jj.png", name="z.png", mime="image/png")
+    att = terminals.terminal_attachment_note("bothk")
+    assert terminals.strip_capability_note(cap + att + "BODY") == "BODY"

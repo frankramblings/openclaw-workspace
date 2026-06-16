@@ -4448,6 +4448,26 @@ function _emailMoveFolders() {
   return all.filter(f => f && f !== cur && f !== '__scheduled__');
 }
 
+async function _handEmailsToAgent(emails) {
+  try {
+    const body = emails.length === 1
+      ? { intent: 'reply', item: { source: 'gmail', title: emails[0].subject || '(no subject)',
+            subtitle: emails[0].from_name || emails[0].from_address || '',
+            meta: { uid: String(emails[0].uid), folder: state._libFolder } } }
+      : { items: emails.map((em) => ({ source: 'gmail', title: em.subject || '(no subject)',
+            subtitle: em.from_name || em.from_address || '',
+            meta: { uid: String(em.uid), folder: state._libFolder } })) };
+    const r = await fetch(`${API_BASE}/api/items/spinoff`, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok || !d.session_id) throw new Error(d.detail || 'no session');
+    window.location.hash = '#' + d.session_id;
+    window.location.reload();
+  } catch (err) {
+    showToast('Hand-to-agent failed: ' + String(err.message || err));
+  }
+}
+
 async function _archiveCard(em) {
   await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
   await _animateEmailCardRemoval([em.uid]);
@@ -4554,6 +4574,14 @@ function _showCardMenu(em, anchor) {
     const _moveIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
     actions.push({ label: 'Move to…', icon: _moveIcon, submenu: 'move' });
   }
+
+  // "Hand to agent" — mint a chat session seeded from this email.
+  const _agentIcon = _replyIcon;
+  actions.push({
+    label: 'Hand to __AGENT_NAME__',
+    icon: _agentIcon,
+    action: () => _handEmailsToAgent([em]),
+  });
 
   // "Select" — switch to multi-select mode with THIS email pre-selected so
   // the user can quickly fan-out to neighbours with the bulk bar.

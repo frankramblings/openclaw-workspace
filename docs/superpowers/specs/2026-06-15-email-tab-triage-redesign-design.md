@@ -1,8 +1,47 @@
 # Email Tab Triage Redesign — Design
 
-**Date:** 2026-06-15
-**Status:** Approved (design); pending implementation plan
-**Surface:** Workspace Email tab (`frontend/js/emailInbox.js` + `frontend/js/emailLibrary.js`)
+**Date:** 2026-06-15 (corrected 2026-06-16)
+**Status:** SUPERSEDED in part — see "Correction" below. Focused scope tracked in `docs/superpowers/plans/2026-06-16-email-tab-triage-focused.md`.
+**Surface:** Workspace Email tab — the **`emailLibrary.js` modal** (`#email-lib-modal`), reached via `openEmailLibrary()`.
+
+> ## Correction (2026-06-16)
+>
+> During implementation the live DOM revealed that this design mis-identified the
+> target file. Findings:
+>
+> - **The live Email tab is the `emailLibrary.js` modal.** Clicking the sidebar
+>   "Email" section calls `openEmailLibrary()` (`emailInbox.js:217`), which builds
+>   `#email-lib-modal` and its card grid `#email-lib-grid` (`emailLibrary.js:545`).
+> - **`emailInbox.js`'s list path is dead code.** `loadEmails`/`_renderList`/
+>   `_createEmailItem`/`#email-list` have no DOM element and no reachable caller.
+>   `emailInbox.js` is still live for `_openEmail` (single-message reader / reply /
+>   AI-reply / compose), invoked via the Library's `onEmailClick`.
+> - **Reading is already inline-expand**, not "open as a heavy document." Clicking a
+>   card runs `_toggleCardPreview` (`emailLibrary.js:1916`) — an accordion reader
+>   in place with the sanitized body. The doc pane only opens on Reply/Forward.
+> - **Bulk already exists** behind a "Select" **toggle** (`#email-lib-select-btn`,
+>   `emailLibrary.js:633`) → checkboxes + a bulk bar offering only mark read/unread
+>   + delete (`_bulkAction`, `emailLibrary.js:4631`). No archive, move, or
+>   hand-to-agent in the bar.
+> - **Move-to-folder does not exist** anywhere. Per-row actions live behind a
+>   three-dot menu / long-press (`_showCardMenu`, `emailLibrary.js:4399`).
+>
+> **Consequences for this design:**
+> - "Fold the Library into the Email tab / retire the Library" **is dropped** —
+>   there is only one surface; the Library *is* the tab.
+> - The desktop reading-pane / mobile quick-look **reading-model rework is dropped**
+>   for now — the inline-expand reader already reads-in-place. (A desktop two-pane
+>   reader remains a possible future enhancement; user chose to keep the current
+>   reader.)
+> - The remaining, still-valid goals — **hover/long-press select, richer bulk verbs
+>   (archive + move + hand-to-agent), per-row hover quick actions, and
+>   move-to-folder** — are retargeted onto `emailLibrary.js` in the focused plan.
+> - Still-valid from the original plan: the backend bulk-spinoff extension, and the
+>   pure selection/bulk logic (relocated to a shared, tested module).
+>
+> The sections below are retained for history; read them through the lens of this
+> correction (substitute "the `emailLibrary.js` modal" for "the Email tab list",
+> and ignore the reading-pane/quick-look and retire-Library sections).
 
 ## Problem
 

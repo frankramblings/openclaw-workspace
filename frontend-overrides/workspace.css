@@ -738,35 +738,50 @@ html { background-color: var(--bg); }
   #sidebar #hermes-footer { order: 11; margin-top: 0 !important; }
   body:not(.hermes-rail-fallback) #sidebar .icon-rail { order: 12; margin-top: 0 !important; }
 }
-/* Attached terminal panel — right-side resizable pane (mirrors #workspace-explorer). */
-#workspace-terminal {
-  position: fixed; top: 0; right: 0; height: 100vh; width: 560px;
+/* Attached terminal panels — floating, stacked, chat-reflowing (multi-panel manager). */
+.wt-panel {
+  position: fixed; top: 0; height: 100vh; width: 560px;
   display: flex; flex-direction: column;
   background: #0b0e14; color: #cdd6f4;
   border-left: 1px solid var(--border, #2a2f3a);
-  z-index: 60; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+  z-index: 55; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
 }
-#workspace-terminal[hidden] { display: none; }
-#workspace-terminal .wt-resize {
-  position: absolute; left: 0; top: 0; width: 6px; height: 100%; cursor: col-resize;
+.wt-panel[hidden] { display: none; }
+.wt-panel.wt-narrow { right: 0 !important; width: 100vw !important; }
+.wt-panel .wt-resize {
+  position: absolute; left: 0; top: 0; width: 6px; height: 100%; cursor: col-resize; z-index: 2;
 }
-#workspace-terminal .wt-head {
+.wt-panel .wt-head {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px; font-size: 12px; border-bottom: 1px solid #2a2f3a;
 }
-#workspace-terminal .wt-title { font-weight: 600; }
-#workspace-terminal .wt-cwd {
+.wt-panel .wt-title { font-weight: 600; }
+.wt-panel .wt-cwd {
   opacity: 0.6; font-family: ui-monospace, Menlo, monospace;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px;
 }
-#workspace-terminal .wt-spacer { flex: 1; }
-#workspace-terminal .wt-btn {
+.wt-panel .wt-spacer { flex: 1; }
+.wt-panel .wt-btn {
   background: none; border: none; color: inherit; cursor: pointer;
   font-size: 13px; padding: 2px 6px; border-radius: 4px;
 }
-#workspace-terminal .wt-btn:hover { background: rgba(255, 255, 255, 0.08); }
-#workspace-terminal .wt-screen { flex: 1; min-height: 0; padding: 4px 6px; }
-#workspace-terminal .wt-status { padding: 4px 10px; font-size: 12px; color: #f38ba8; }
-@media (max-width: 720px) {
-  #workspace-terminal { width: 100vw !important; }
+.wt-panel .wt-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.wt-panel .wt-pin.active { color: #7ee787; }
+.wt-panel .wt-kill:hover { background: rgba(243, 139, 168, 0.18); }
+.wt-panel .wt-screen { flex: 1; min-height: 0; padding: 4px 6px; }
+.wt-panel .wt-status { padding: 4px 10px; font-size: 12px; color: #f38ba8; }
+
+/* Floating launcher pill — stacked just above the Files pill (#we-reopen). */
+#wt-launch {
+  position: fixed; right: 10px; top: 40px; z-index: 50;
+  border: 1px solid var(--border); border-radius: var(--hermes-pill, 999px);
+  background: var(--panel); color: var(--fg);
+  font-size: 11px; padding: 4px 10px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px;
 }
+#wt-launch.active { border-color: #7ee787; color: #7ee787; }
+#wt-launch svg { display: block; }
+@media (max-width: 1100px) { #wt-launch { display: none; } }
+
+/* Stack the Files pill (#we-reopen, hermes.css top:40px) below the Terminal pill. */
+#we-reopen { top: 74px; }

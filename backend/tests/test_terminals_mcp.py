@@ -235,9 +235,11 @@ def test_await_settled_output_slice_matches_after_cap():
     assert out == "B" * 5000
 
 
-def test_capability_note_contains_token_and_tool():
+def test_capability_note_contains_token_and_endpoint():
     note = terminals.gary_capability_note("agent:main:web-xyz")
-    assert "terminal.run_command" in note and "token=" in note
+    assert "/api/terminal/mcp/run" in note and '"token":"' in note
+    # the fast path is a direct curl, NOT a node-cold-start mcporter call
+    assert "mcporter call" not in note
 
 
 def test_strip_capability_note_roundtrip():
@@ -282,7 +284,7 @@ def test_chat_stream_binds_gary_token_to_spa_id(monkeypatch):
     try:
         res = TestClient(app).post("/api/chat_stream", data={"message": "hi", "session": rec["id"]})
         assert res.status_code == 200
-        m = re.search(r"token=(\S+)", sent.get("message", ""))
+        m = re.search(r'"token":"([^"]+)"', sent.get("message", ""))
         assert m, f"no token injected: {sent.get('message')!r}"
         resolved = terminals.resolve_terminal_token(m.group(1))
         assert resolved == rec["id"]

@@ -302,14 +302,23 @@ _GARY_NOTE_PREFIX = "⁣[terminal-control]"
 
 def gary_capability_note(session_key: str) -> str:
     token = mint_terminal_token(session_key)
+    # IMPORTANT: instruct a DIRECT loopback curl, not `mcporter call`. On this
+    # host every mcporter invocation cold-starts Node (seconds), so the agent
+    # lagged and then went hunting for the binary (10+ tool calls, ~3 min for a
+    # trivial command). curl is one fast shot, no Node spawn.
     return (
         f"{_GARY_NOTE_PREFIX} A shell terminal is attached to THIS chat "
         "(cwd = workspace root); the user watches its output live in their terminal "
-        "panel. To run a command in it, shell out:\n"
-        f'  mcporter call terminal.run_command token={token} command="<cmd>"\n'
-        f"To read latest output:  mcporter call terminal.read_output token={token}\n"
-        "Prefer this over your own bash when the user refers to 'the terminal'. "
-        "If it returns 403, terminal control is off for this chat.\n\n"
+        "panel. Run a command in it with ONE curl — do NOT use mcporter, do NOT "
+        "search for any binary, do NOT retry; the response body IS the command "
+        "output:\n"
+        "  curl -sS http://127.0.0.1:8800/api/terminal/mcp/run "
+        "-H 'content-type: application/json' "
+        f'-d \'{{"token":"{token}","command":"<your command>"}}\'\n'
+        "It returns JSON {output, exited, exit_code}. For interactive input use "
+        f'.../api/terminal/mcp/write with {{"token":"{token}","data":"<keys>"}}. '
+        "A 403 means terminal control is off for this chat. Prefer this over your "
+        "own bash whenever the user refers to 'the terminal'.\n\n"
     )
 
 

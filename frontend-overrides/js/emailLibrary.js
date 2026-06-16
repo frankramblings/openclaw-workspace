@@ -4423,6 +4423,31 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
   setTimeout(() => document.addEventListener('click', close, true), 10);
 }
 
+// Move one or more emails to a destination folder. Returns an array of
+// { uid, ok, error? } so bulk callers (F7) can inspect per-uid results.
+async function _emailMove(uids, dest) {
+  const src = encodeURIComponent(state._libFolder || 'INBOX');
+  return Promise.all(uids.map(async (uid) => {
+    try {
+      const r = await fetch(
+        `${API_BASE}/api/email/move/${uid}?folder=${src}&dest=${encodeURIComponent(dest)}${_acct()}`,
+        { method: 'POST', credentials: 'same-origin' }
+      );
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return { uid, ok: true };
+    } catch (e) { return { uid, ok: false, error: String(e.message || e) }; }
+  }));
+}
+
+// Returns the list of folder names suitable as move-to destinations —
+// all folders from state._libFolders, minus the current folder and
+// the virtual __scheduled__ folder.
+function _emailMoveFolders() {
+  const cur = state._libFolder || 'INBOX';
+  const all = Array.isArray(state._libFolders) ? state._libFolders : [];
+  return all.filter(f => f && f !== cur && f !== '__scheduled__');
+}
+
 async function _archiveCard(em) {
   await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
   await _animateEmailCardRemoval([em.uid]);
@@ -4523,6 +4548,13 @@ function _showCardMenu(em, anchor) {
     });
   }
 
+  // "Move to…" — folder submenu; only shown when folders are available.
+  const _moveFolders = _emailMoveFolders();
+  if (_moveFolders.length > 0) {
+    const _moveIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+    actions.push({ label: 'Move to…', icon: _moveIcon, submenu: 'move' });
+  }
+
   // "Select" — switch to multi-select mode with THIS email pre-selected so
   // the user can quickly fan-out to neighbours with the bulk bar.
   // Match the chat-sidebar Select icon — a thick bullet character reads
@@ -4553,6 +4585,10 @@ function _showCardMenu(em, anchor) {
       e.stopPropagation();
       if (a.submenu === 'remind') {
         _showLibRemindSubmenu(em, dropdown);
+        return;
+      }
+      if (a.submenu === 'move') {
+        _showLibMoveSubmenu(em, dropdown, anchor);
         return;
       }
       dropdown.remove();
@@ -4860,6 +4896,56 @@ function _showLibRemindSubmenu(em, parentDropdown) {
     tmp.addEventListener('blur', () => setTimeout(() => tmp.remove(), 200));
   });
   parentDropdown.appendChild(customItem);
+}
+
+// Replaces the parent dropdown with a list of available destination folders.
+// On selection: moves the email, removes the card (like _archiveCard), and
+// shows a toast with an Undo button that reverses the move.
+function _showLibMoveSubmenu(em, parentDropdown, anchor) {
+  const srcFolder = state._libFolder || 'INBOX';
+  const folders = _emailMoveFolders();
+
+  parentDropdown.innerHTML = '';
+  const header = document.createElement('div');
+  header.className = 'dropdown-item-compact';
+  header.style.cssText = 'opacity:0.5;font-size:10px;pointer-events:none;text-transform:uppercase;letter-spacing:0.5px;padding-top:6px;';
+  header.innerHTML = '<span>Move to…</span>';
+  parentDropdown.appendChild(header);
+
+  for (const dest of folders) {
+    const item = document.createElement('div');
+    item.className = 'dropdown-item-compact';
+    item.innerHTML = `<span>${dest}</span>`;
+    item.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      parentDropdown.remove();
+      if (anchor) anchor.classList.remove('reader-more-active');
+
+      const results = await _emailMove([em.uid], dest);
+      const result = results[0];
+      if (!result || !result.ok) {
+        showToast('Move failed: ' + (result ? result.error : 'unknown error'));
+        return;
+      }
+
+      // Remove card from view exactly like _archiveCard does.
+      await _animateEmailCardRemoval([em.uid]);
+      state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
+      _renderGrid();
+      _libCacheWriteBack();
+
+      // Toast with Undo — reverses the move and refreshes the list.
+      showToast(`Moved to ${dest}`, {
+        duration: 6000,
+        action: 'Undo',
+        onAction: async () => {
+          await _emailMove([em.uid], srcFolder);
+          _loadEmailsFresh();
+        },
+      });
+    });
+    parentDropdown.appendChild(item);
+  }
 }
 
 async function _createEmailReplyReminder(em, dueDate) {

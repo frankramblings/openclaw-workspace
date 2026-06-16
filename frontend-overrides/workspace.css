@@ -745,3 +745,9 @@ html { background-color: var(--bg); }
 #email-lib-grid .doclib-card.selected .email-card-check,
 #email-lib-modal.select-mode .doclib-card .email-card-check { opacity: 1; }
 @media (pointer: coarse) { #email-lib-grid .doclib-card:hover .email-card-check { opacity: 0; } }
+/* Email per-row hover quick-action buttons (Archive / Delete) */
+#email-lib-grid .doclib-card .email-quick-act { display: none; background: none; border: 0; color: var(--fg); opacity: 0.6; cursor: pointer; padding: 2px 4px; }
+#email-lib-grid .doclib-card:hover .email-quick-act { display: inline-flex; }
+#email-lib-grid .doclib-card .email-quick-act:hover { opacity: 1; }
+#email-lib-modal.select-mode .email-quick-act { display: none; }
+@media (pointer: coarse) { #email-lib-grid .doclib-card:hover .email-quick-act { display: none; } }

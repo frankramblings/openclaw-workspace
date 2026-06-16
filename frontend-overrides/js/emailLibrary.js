@@ -1826,6 +1826,24 @@ function _createCard(em) {
       _showCardMenu(em, menuBtn);
     });
     actionsWrap.appendChild(menuBtn);
+
+    // Quick-action buttons: Archive and Delete, shown on hover (CSS-gated).
+    const _qaArchBtn = document.createElement('button');
+    _qaArchBtn.className = 'email-quick-act';
+    _qaArchBtn.dataset.quick = 'archive';
+    _qaArchBtn.title = 'Archive';
+    _qaArchBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>';
+    _qaArchBtn.addEventListener('click', (e) => { e.stopPropagation(); _archiveCard(em); });
+    actionsWrap.appendChild(_qaArchBtn);
+
+    const _qaDelBtn = document.createElement('button');
+    _qaDelBtn.className = 'email-quick-act';
+    _qaDelBtn.dataset.quick = 'delete';
+    _qaDelBtn.title = 'Delete';
+    _qaDelBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
+    _qaDelBtn.addEventListener('click', (e) => { e.stopPropagation(); _deleteCard(em); });
+    actionsWrap.appendChild(_qaDelBtn);
+
     card.appendChild(actionsWrap);
 
     // Long-press anywhere on the row opens the same actions menu — matches
@@ -4405,6 +4423,25 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
   setTimeout(() => document.addEventListener('click', close, true), 10);
 }
 
+async function _archiveCard(em) {
+  await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+  await _animateEmailCardRemoval([em.uid]);
+  state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
+  _renderGrid();
+  _libCacheWriteBack();
+}
+
+async function _deleteCard(em) {
+  const subject = em.subject || '(no subject)';
+  const ok = await styledConfirm(`Delete "${subject}"?`, { confirmText: 'Delete', cancelText: 'Cancel', danger: true });
+  if (!ok) return;
+  await fetch(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
+  await _animateEmailCardRemoval([em.uid]);
+  state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
+  _renderGrid();
+  _libCacheWriteBack();
+}
+
 function _showCardMenu(em, anchor) {
   document.querySelectorAll('.email-card-dropdown').forEach(d => d.remove());
 
@@ -4476,25 +4513,13 @@ function _showCardMenu(em, anchor) {
     actions.push({
       label: 'Archive',
       icon: _archIcon,
-      action: async () => {
-        await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
-        await _animateEmailCardRemoval([em.uid]);
-        state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
-        _renderGrid();
-        _libCacheWriteBack();
-      },
+      action: () => _archiveCard(em),
     });
   } else {
     actions.push({
       label: 'Archive',
       icon: _archIcon,
-      action: async () => {
-        await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
-        await _animateEmailCardRemoval([em.uid]);
-        state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
-        _renderGrid();
-        _libCacheWriteBack();
-      },
+      action: () => _archiveCard(em),
     });
   }
 
@@ -4516,16 +4541,7 @@ function _showCardMenu(em, anchor) {
   });
 
   actions.push(
-    { label: 'Delete', icon: _delIcon, danger: true, action: async () => {
-      const subject = em.subject || '(no subject)';
-      const ok = await styledConfirm(`Delete "${subject}"?`, { confirmText: 'Delete', cancelText: 'Cancel', danger: true });
-      if (!ok) return;
-      await fetch(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
-      await _animateEmailCardRemoval([em.uid]);
-      state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
-      _renderGrid();
-      _libCacheWriteBack();
-    }},
+    { label: 'Delete', icon: _delIcon, danger: true, action: () => _deleteCard(em) },
   );
 
   for (const a of actions) {

@@ -254,3 +254,39 @@ def test_strip_capability_note_is_anchored_no_truncation():
     assert terminals.strip_capability_note(msg) == msg
     msg2 = f"line one\n\nsecond para mentioning {marker} here"
     assert terminals.strip_capability_note(msg2) == msg2
+
+
+def test_chat_stream_binds_gary_token_to_spa_id(monkeypatch):
+    """Regression guard for the load-bearing invariant: a turn's injected terminal
+    token must resolve to the chat's SPA id (rec['id']) — the SAME key the human
+    panel uses for its PTY — NOT the gateway sessionKey. If app.py ever reverts to
+    minting with sessionKey, Gary drives a different terminal than the user sees."""
+    import re
+
+    from backend import app as app_module
+    from backend import bridge
+
+    rec = sessions_store.create(name="bind-test")  # id != sessionKey (prefix-embedded)
+    sent = {}
+
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None, **kwargs):
+        sent["message"] = message
+        yield bridge._sse("[DONE]")
+
+    async def fake_extract(session_key):
+        return None
+
+    monkeypatch.setattr(bridge, "stream_turn", fake_stream_turn)
+    monkeypatch.setattr(app_module, "maybe_auto_extract", fake_extract)
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: True)
+    try:
+        res = TestClient(app).post("/api/chat_stream", data={"message": "hi", "session": rec["id"]})
+        assert res.status_code == 200
+        m = re.search(r"token=(\S+)", sent.get("message", ""))
+        assert m, f"no token injected: {sent.get('message')!r}"
+        resolved = terminals.resolve_terminal_token(m.group(1))
+        assert resolved == rec["id"]
+        assert resolved != rec["sessionKey"]
+    finally:
+        sessions_store.delete(rec["id"])
+        terminals.close_session(rec["id"])

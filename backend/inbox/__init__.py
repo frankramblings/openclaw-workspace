@@ -292,6 +292,13 @@ async def spinoff(payload: dict, request: Request = None):
             "I'll say what to do next."
         )
         sess_name = f"Emails: {len(items)} items — {titles[0][:32]}"
+        now_ms = int(_time.time() * 1000)
+        for existing in sessions_store.list_sessions():
+            if existing.get("name") == sess_name and not existing.get("archived") \
+                    and now_ms - (existing.get("created") or 0) < SPINOFF_DEDUPE_MS:
+                _log_spinoff(request, {"id": "bulk", "title": sess_name},
+                             existing["id"], deduped=True)
+                return {"session_id": existing["id"], "count": len(items), "deduped": True}
         sess = sessions_store.create(name=sess_name, origin="inbox")
         try:
             await asyncio.wait_for(_agent_turn(seed, sess["sessionKey"], None),

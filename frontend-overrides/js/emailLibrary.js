@@ -1896,6 +1896,7 @@ function _createCard(em) {
       card.classList.toggle('selected', state._selectedUids.has(em.uid));
       const cb = card.querySelector('.memory-select-cb');
       if (cb) cb.checked = state._selectedUids.has(em.uid);
+      state._selectMode = state._selectedUids.size > 0;
       _updateBulkBar();
       return;
     }
@@ -4508,7 +4509,9 @@ async function _archiveCard(em) {
   await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
   await _animateEmailCardRemoval([em.uid]);
   state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
+  state._selectedUids.delete(em.uid);
   _renderGrid();
+  _updateBulkBar();
   _libCacheWriteBack();
 }
 
@@ -4519,7 +4522,9 @@ async function _deleteCard(em) {
   await fetch(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
   await _animateEmailCardRemoval([em.uid]);
   state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
+  state._selectedUids.delete(em.uid);
   _renderGrid();
+  _updateBulkBar();
   _libCacheWriteBack();
 }
 
@@ -4832,30 +4837,47 @@ async function _bulkAction(action) {
       const em = state._libEmails.find(e => e.uid === uid);
       if (em) em.is_read = (action === 'read');
     }
-  } else {
-    for (const uid of uids) {
-      try {
-        if (action === 'archive') {
-          await fetch(`${API_BASE}/api/email/archive/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
-        } else if (action === 'delete') {
-          await fetch(`${API_BASE}/api/email/delete/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
-        }
-      } catch (e) { console.error(`Failed to ${action} ${uid}:`, e); }
+  } else if (action === 'archive') {
+    const res = await _runBulkEmail(uids, (uid) =>
+      fetch(`${API_BASE}/api/email/archive/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`,
+        { method: 'POST', credentials: 'same-origin' })
+        .then(r => ({ uid, ok: r.ok })).catch(() => ({ uid, ok: false })));
+    const { ok, failed } = summarizeBulk(res);
+    const okUids = res.filter(r => r.ok).map(r => r.uid);
+    if (okUids.length) {
+      await _animateEmailCardRemoval(okUids);
+      const removed = new Set(okUids.map(u => String(u)));
+      state._libEmails = state._libEmails.filter(e => !removed.has(String(e.uid)));
     }
-  }
-
-  if (action === 'archive' || action === 'delete') {
-    await _animateEmailCardRemoval(uids);
-    const removed = new Set(uids.map(uid => String(uid)));
-    state._libEmails = state._libEmails.filter(e => !removed.has(String(e.uid)));
-    if (action === 'archive') {
-      showToast(`Archived ${uids.length} email${uids.length === 1 ? '' : 's'}`, { duration: 4000 });
+    state._selectedUids.clear();
+    state._selectMode = false;
+    _updateBulkBar();
+    _renderGrid();
+    showToast(failed ? `Archived ${ok}, ${failed} failed` : `Archived ${ok} email${ok === 1 ? '' : 's'}`);
+  } else if (action === 'delete') {
+    const res = await _runBulkEmail(uids, (uid) =>
+      fetch(`${API_BASE}/api/email/delete/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`,
+        { method: 'DELETE', credentials: 'same-origin' })
+        .then(r => ({ uid, ok: r.ok })).catch(() => ({ uid, ok: false })));
+    const { ok, failed } = summarizeBulk(res);
+    const okUids = res.filter(r => r.ok).map(r => r.uid);
+    if (okUids.length) {
+      await _animateEmailCardRemoval(okUids);
+      const removed = new Set(okUids.map(u => String(u)));
+      state._libEmails = state._libEmails.filter(e => !removed.has(String(e.uid)));
     }
+    state._selectedUids.clear();
+    state._selectMode = false;
+    _updateBulkBar();
+    _renderGrid();
+    showToast(failed ? `Deleted ${ok}, ${failed} failed` : `Deleted ${ok} email${ok === 1 ? '' : 's'}`);
   }
-  state._selectedUids.clear();
-  state._selectMode = false;
-  _updateBulkBar();
-  _renderGrid();
+  if (action !== 'archive' && action !== 'delete') {
+    state._selectedUids.clear();
+    state._selectMode = false;
+    _updateBulkBar();
+    _renderGrid();
+  }
   // Sync the local mutation (delete/archive, or in-place read/unread
   // flag flips on email objects) into the SWR cache so reopen doesn't
   // briefly show the pre-bulk state.

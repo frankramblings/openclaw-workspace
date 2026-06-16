@@ -21,45 +21,7 @@ const _emailSetupHint = () => '<div style="margin-top:6px;opacity:0.72;font-size
 const _replyIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
 const _archiveIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>';
 const _deleteIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
-/* EMAIL-TRIAGE-MATH-BEGIN (pure — node-tested by scripts/test-email-triage-math.mjs) */
-const EMAIL_TRIAGE_SPLIT_MIN = 900;   // px — at/above this the reading pane shows
 
-function triageMode(width) {
-  return width >= EMAIL_TRIAGE_SPLIT_MIN ? 'split' : 'stack';
-}
-
-// Return a NEW Set with `uid` toggled — never mutate the input (callers swap
-// state._selectedUids to the result so renders see a fresh reference).
-function toggleInSet(set, uid) {
-  const next = new Set(set);
-  if (next.has(uid)) next.delete(uid); else next.add(uid);
-  return next;
-}
-
-function allSelected(visibleUids, selectedSet) {
-  return visibleUids.length > 0 && visibleUids.every((u) => selectedSet.has(u));
-}
-
-// Move the selection by `dir` (+1 next / -1 prev) with wraparound. `current`
-// may be -1 (nothing selected). Empty list returns -1.
-function nextIndex(current, len, dir) {
-  if (len <= 0) return -1;
-  if (current < 0) return dir > 0 ? 0 : len - 1;
-  return (current + dir + len) % len;
-}
-
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-// Aggregate per-item results ({uid, ok, error?}) into a tally.
-function summarizeBulk(results) {
-  const failedUids = results.filter((r) => !r.ok).map((r) => r.uid);
-  return { ok: results.length - failedUids.length, failed: failedUids.length, failedUids };
-}
-/* EMAIL-TRIAGE-MATH-END */
 const _unreadIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
 const _starIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
 const _starFilledIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';

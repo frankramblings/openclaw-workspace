@@ -14,6 +14,7 @@
   const panels = new Map();      // id -> Panel
   let pinOrder = loadPins();     // id[]; index 0 = rightmost (oldest pin), end = leftmost
   let followTimer = null;
+  let resizing = false;          // true during a width-drag — suppresses the per-render fit storm
 
   // ---- persistence ----
   function loadPins() {
@@ -34,6 +35,7 @@
         ? window.sessionModule.getCurrentSessionId() : null;
     } catch (e) { return null; }
   }
+  function activeKey() { return curSession() || 'global'; }
   function isNarrow() { return window.innerWidth <= NARROW; }
   function wsUrl(key) {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -139,6 +141,7 @@
   function disconnectPanel(p) { if (p.ws) { try { p.ws.onclose = null; p.ws.close(); } catch (e) {} p.ws = null; } }
   function connectPanel(p) {
     disconnectPanel(p);
+    if (p.term) p.term.reset();
     statusOf(p, '');
     refreshGary(p);
     try { p.ws = new WebSocket(wsUrl(p.id)); } catch (e) { statusOf(p, 'terminal unavailable'); return; }
@@ -200,6 +203,7 @@
     disconnectPanel(p);
     if (p.term) { try { p.term.dispose(); } catch (e) {} }
     p.el.remove();
+    p.term = null; p.fit = null;
     panels.delete(p.id);
     p.pinned = false; pinOrder = pinOrder.filter((x) => x !== p.id); savePins();
     render();
@@ -225,7 +229,7 @@
     return window.WTLayout.orderVisible(pins, activeUnpinned);
   }
   function render() {
-    const activeId = curSession();
+    const activeId = activeKey();
     const orderIds = isNarrow()
       ? (() => { const a = panels.get(activeId); return (a && (a.open || a.pinned)) ? [activeId] : []; })()
       : visibleOrder(activeId);
@@ -241,7 +245,7 @@
         p.el.style.right = (positions[id] || 0) + 'px';
         p.el.style.width = isNarrow() ? '100vw' : (p.width + 'px');
         if (!p.ws) connectPanel(p);
-        setTimeout(() => fitPanel(p), 30);
+        if (!resizing) setTimeout(() => fitPanel(p), 30);
       } else if (p.ws) {
         disconnectPanel(p);
       }
@@ -280,7 +284,7 @@
     if (!h) return;
     let startX = 0, startW = 0, dragging = false;
     h.addEventListener('mousedown', (e) => {
-      dragging = true; startX = e.clientX; startW = p.el.getBoundingClientRect().width;
+      dragging = true; resizing = true; startX = e.clientX; startW = p.el.getBoundingClientRect().width;
       e.preventDefault(); document.body.style.userSelect = 'none';
     });
     window.addEventListener('mousemove', (e) => {
@@ -290,7 +294,7 @@
     });
     window.addEventListener('mouseup', () => {
       if (!dragging) return;
-      dragging = false; document.body.style.userSelect = '';
+      dragging = false; resizing = false; document.body.style.userSelect = '';
       saveWidth(p.id, p.width); fitPanel(p);
     });
   }
@@ -300,19 +304,21 @@
   function startFollow() {
     if (followTimer) return;
     followTimer = setInterval(() => {
-      const id = curSession();
+      const id = activeKey();
       if (id !== lastActive) { lastActive = id; render(); }
     }, 800);
   }
 
   // ---- boot ----
-  function boot() {
+  async function boot() {
     buildPill();
-    // recreate pinned panels so they persist across reloads
-    for (const id of pinOrder.slice()) {
+    // Recreate pinned panels so they persist across reloads. Await term build
+    // BEFORE render()/connect, or the replayed scrollback arrives before the
+    // term exists and is dropped.
+    await Promise.all(pinOrder.slice().map(async (id) => {
       const p = createPanel(id);
-      ensureTermBuilt(p);
-    }
+      await ensureTermBuilt(p);
+    }));
     render();
     startFollow();
   }

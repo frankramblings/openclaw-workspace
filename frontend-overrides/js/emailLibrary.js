@@ -659,6 +659,7 @@ export function openEmailLibrary(opts = {}) {
             <label class="memory-bulk-check-all" style="position:relative;top:2px;"><input type="checkbox" id="email-lib-select-all"> All</label>
             <span id="email-lib-selected-count" style="position:relative;top:1px;">0 Selected</span>
             <button class="memory-toolbar-btn" id="email-lib-bulk-actions" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Actions <span style="opacity:0.55;font-size:9px;">▼</span></button>
+            <button class="memory-toolbar-btn" id="email-lib-bulk-archive" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>Archive</button>
             <button class="memory-toolbar-btn" id="email-lib-bulk-delete" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
             <button class="memory-toolbar-btn" id="email-lib-bulk-cancel" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
           </div>
@@ -1029,6 +1030,14 @@ export function openEmailLibrary(opts = {}) {
       return;
     }
     _showBulkActionsMenu(e.currentTarget);
+  });
+  document.getElementById('email-lib-bulk-archive')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (state._selectedUids.size === 0) {
+      showToast('Select emails first');
+      return;
+    }
+    _bulkAction('archive');
   });
   document.getElementById('email-lib-bulk-delete')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -4468,6 +4477,33 @@ async function _handEmailsToAgent(emails) {
   }
 }
 
+// Fan-out runner: processes uids in batches of 5 in parallel.
+async function _runBulkEmail(uids, perUid) {
+  const out = [];
+  for (const batch of chunk(uids, 5)) out.push(...await Promise.all(batch.map(perUid)));
+  return out;
+}
+
+// Fills `container` with one clickable folder item per _emailMoveFolders() entry.
+// `onPick(dest)` is called when the user clicks a folder. Optionally includes a
+// "Move to…" header. Used by _showLibMoveSubmenu (per-row) and bulk Move▾.
+function _renderFolderPicker(container, onPick, { showHeader = false } = {}) {
+  if (showHeader) {
+    const header = document.createElement('div');
+    header.className = 'dropdown-item-compact';
+    header.style.cssText = 'opacity:0.5;font-size:10px;pointer-events:none;text-transform:uppercase;letter-spacing:0.5px;padding-top:6px;';
+    header.innerHTML = '<span>Move to…</span>';
+    container.appendChild(header);
+  }
+  for (const dest of _emailMoveFolders()) {
+    const item = document.createElement('div');
+    item.className = 'dropdown-item-compact';
+    item.innerHTML = `<span>${dest}</span>`;
+    item.addEventListener('click', (e) => { e.stopPropagation(); onPick(dest); });
+    container.appendChild(item);
+  }
+}
+
 async function _archiveCard(em) {
   await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
   await _animateEmailCardRemoval([em.uid]);
@@ -4650,7 +4686,8 @@ function _showCardMenu(em, anchor) {
   setTimeout(() => document.addEventListener('click', close, true), 10);
 }
 
-// Bulk "Actions" dropdown for select mode — Delete is a separate visible button.
+// Bulk "Actions" dropdown for select mode — Archive + Delete are separate visible
+// buttons; Move▾ and Hand-to-agent live here to keep the bar compact.
 function _showBulkActionsMenu(anchor) {
   document.querySelectorAll('.email-card-dropdown').forEach(d => d.remove());
   const dropdown = document.createElement('div');
@@ -4659,15 +4696,64 @@ function _showBulkActionsMenu(anchor) {
   dropdown.style.cssText = `position:fixed;z-index:10001;min-width:160px;background:var(--panel,var(--bg));border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.3);padding:4px;font-size:12px;top:${rect.bottom + 4}px;left:${rect.left}px;`;
   const _readIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4 20-7z"/></svg>';
   const _unreadIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>';
+  const _moveIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+  const _agentIco = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
+
   const items = [
     { label: 'Mark Read', icon: _readIco, action: () => _bulkAction('read') },
     { label: 'Mark Unread', icon: _unreadIco, action: () => _bulkAction('unread') },
+    { label: 'Move to…', icon: _moveIco, submenu: 'move' },
+    { label: 'Hand to __AGENT_NAME__', icon: _agentIco, action: () => {
+      const selected = state._libEmails.filter((e) => state._selectedUids.has(e.uid));
+      if (selected.length === 0) { showToast('Select emails first'); return; }
+      _handEmailsToAgent(selected);
+    }},
   ];
   for (const a of items) {
     const it = document.createElement('div');
     it.className = 'dropdown-item-compact' + (a.danger ? ' dropdown-item-danger' : '');
-    it.innerHTML = `<span class="dropdown-icon">${a.icon}</span><span>${a.label}</span>`;
-    it.addEventListener('click', (e) => { e.stopPropagation(); dropdown.remove(); a.action(); });
+    const arrow = a.submenu ? '<span style="margin-left:auto;opacity:0.5;">›</span>' : '';
+    it.innerHTML = `<span class="dropdown-icon">${a.icon}</span><span>${a.label}</span>${arrow}`;
+    it.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (a.submenu === 'move') {
+        // Replace dropdown contents with folder picker
+        dropdown.innerHTML = '';
+        const backHdr = document.createElement('div');
+        backHdr.className = 'dropdown-item-compact';
+        backHdr.style.cssText = 'opacity:0.5;font-size:10px;pointer-events:none;text-transform:uppercase;letter-spacing:0.5px;padding-top:6px;';
+        backHdr.innerHTML = '<span>Move to…</span>';
+        dropdown.appendChild(backHdr);
+        _renderFolderPicker(dropdown, async (dest) => {
+          dropdown.remove();
+          document.removeEventListener('click', close, true);
+          const uids = Array.from(state._selectedUids);
+          const res = await _runBulkEmail(uids, (uid) => _emailMove([uid], dest).then(a => a[0]));
+          const { ok, failed } = summarizeBulk(res);
+          const okUids = res.filter(r => r.ok).map(r => r.uid);
+          if (okUids.length > 0) {
+            await _animateEmailCardRemoval(okUids);
+            const removed = new Set(okUids.map(u => String(u)));
+            state._libEmails = state._libEmails.filter(e => !removed.has(String(e.uid)));
+            _renderGrid();
+            _libCacheWriteBack();
+          }
+          state._selectedUids = new Set();
+          state._selectMode = false;
+          _updateBulkBar();
+          showToast(
+            failed ? `Moved ${ok}, ${failed} failed` : `Moved ${ok} to ${dest}`,
+            { duration: 6000, action: 'Undo', onAction: async () => {
+              await _runBulkEmail(uids, (uid) => _emailMove([uid], state._libFolder).then(a => a[0]));
+              _loadEmailsFresh();
+            }},
+          );
+        });
+        return;
+      }
+      dropdown.remove();
+      a.action();
+    });
     dropdown.appendChild(it);
   }
   // Mobile-only Cancel — matches the per-card and sidebar dropdowns.
@@ -4714,6 +4800,8 @@ function _updateBulkBar() {
   // the "N Selected" count (the button is a dimmer 60% --fg by default).
   const actions = document.getElementById('email-lib-bulk-actions');
   if (actions) actions.style.color = state._selectedUids.size > 0 ? 'var(--fg)' : '';
+  const archiveBtn = document.getElementById('email-lib-bulk-archive');
+  if (archiveBtn) archiveBtn.style.color = state._selectedUids.size > 0 ? 'var(--fg)' : '';
   const deleteBtn = document.getElementById('email-lib-bulk-delete');
   if (deleteBtn) deleteBtn.style.color = state._selectedUids.size > 0 ? 'var(--red)' : '';
 }
@@ -4729,24 +4817,37 @@ async function _bulkAction(action) {
     if (!ok) return;
   }
 
-  for (const uid of uids) {
-    try {
-      if (action === 'archive') {
-        await fetch(`${API_BASE}/api/email/archive/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
-      } else if (action === 'delete') {
-        await fetch(`${API_BASE}/api/email/delete/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
-      } else if (action === 'read' || action === 'unread') {
-        // Local toggle for now (no backend endpoint yet)
-        const em = state._libEmails.find(e => e.uid === uid);
-        if (em) em.is_read = (action === 'read');
-      }
-    } catch (e) { console.error(`Failed to ${action} ${uid}:`, e); }
+  if (action === 'read' || action === 'unread') {
+    // Fan out to the real mark-read / mark-unread endpoints.
+    await _runBulkEmail(uids, (uid) =>
+      fetch(`${API_BASE}/api/email/mark-${action}/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST', credentials: 'same-origin' })
+        .then(r => ({ uid, ok: r.ok }))
+        .catch(() => ({ uid, ok: false }))
+    );
+    // Keep local state in sync regardless of individual failures.
+    for (const uid of uids) {
+      const em = state._libEmails.find(e => e.uid === uid);
+      if (em) em.is_read = (action === 'read');
+    }
+  } else {
+    for (const uid of uids) {
+      try {
+        if (action === 'archive') {
+          await fetch(`${API_BASE}/api/email/archive/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+        } else if (action === 'delete') {
+          await fetch(`${API_BASE}/api/email/delete/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
+        }
+      } catch (e) { console.error(`Failed to ${action} ${uid}:`, e); }
+    }
   }
 
   if (action === 'archive' || action === 'delete') {
     await _animateEmailCardRemoval(uids);
     const removed = new Set(uids.map(uid => String(uid)));
     state._libEmails = state._libEmails.filter(e => !removed.has(String(e.uid)));
+    if (action === 'archive') {
+      showToast(`Archived ${uids.length} email${uids.length === 1 ? '' : 's'}`, { duration: 4000 });
+    }
   }
   state._selectedUids.clear();
   state._selectMode = false;
@@ -4931,49 +5032,34 @@ function _showLibRemindSubmenu(em, parentDropdown) {
 // shows a toast with an Undo button that reverses the move.
 function _showLibMoveSubmenu(em, parentDropdown, anchor) {
   const srcFolder = state._libFolder || 'INBOX';
-  const folders = _emailMoveFolders();
-
   parentDropdown.innerHTML = '';
-  const header = document.createElement('div');
-  header.className = 'dropdown-item-compact';
-  header.style.cssText = 'opacity:0.5;font-size:10px;pointer-events:none;text-transform:uppercase;letter-spacing:0.5px;padding-top:6px;';
-  header.innerHTML = '<span>Move to…</span>';
-  parentDropdown.appendChild(header);
+  _renderFolderPicker(parentDropdown, async (dest) => {
+    parentDropdown.remove();
+    if (anchor) anchor.classList.remove('reader-more-active');
 
-  for (const dest of folders) {
-    const item = document.createElement('div');
-    item.className = 'dropdown-item-compact';
-    item.innerHTML = `<span>${dest}</span>`;
-    item.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      parentDropdown.remove();
-      if (anchor) anchor.classList.remove('reader-more-active');
+    const results = await _emailMove([em.uid], dest);
+    const result = results[0];
+    if (!result || !result.ok) {
+      showToast('Move failed: ' + (result ? result.error : 'unknown error'));
+      return;
+    }
 
-      const results = await _emailMove([em.uid], dest);
-      const result = results[0];
-      if (!result || !result.ok) {
-        showToast('Move failed: ' + (result ? result.error : 'unknown error'));
-        return;
-      }
+    // Remove card from view exactly like _archiveCard does.
+    await _animateEmailCardRemoval([em.uid]);
+    state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
+    _renderGrid();
+    _libCacheWriteBack();
 
-      // Remove card from view exactly like _archiveCard does.
-      await _animateEmailCardRemoval([em.uid]);
-      state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
-      _renderGrid();
-      _libCacheWriteBack();
-
-      // Toast with Undo — reverses the move and refreshes the list.
-      showToast(`Moved to ${dest}`, {
-        duration: 6000,
-        action: 'Undo',
-        onAction: async () => {
-          await _emailMove([em.uid], srcFolder);
-          _loadEmailsFresh();
-        },
-      });
+    // Toast with Undo — reverses the move and refreshes the list.
+    showToast(`Moved to ${dest}`, {
+      duration: 6000,
+      action: 'Undo',
+      onAction: async () => {
+        await _emailMove([em.uid], srcFolder);
+        _loadEmailsFresh();
+      },
     });
-    parentDropdown.appendChild(item);
-  }
+  }, { showHeader: true });
 }
 
 async function _createEmailReplyReminder(em, dueDate) {

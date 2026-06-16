@@ -39,6 +39,7 @@ from .skills import router as skills_router
 from .uploads import ATTACH_DIR
 from .uploads import router as uploads_router
 from .workspace_files import router as workspace_files_router
+from .terminals import router as terminals_router
 from . import workspace_files
 
 @asynccontextmanager
@@ -72,6 +73,7 @@ app.include_router(uploads_router)
 app.include_router(research_router)
 app.include_router(emoji_router)
 app.include_router(workspace_files_router)
+app.include_router(terminals_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
 # server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop

@@ -233,3 +233,53 @@ def close_session(session_key: str) -> None:
     sess = _sessions.pop(session_key, None)
     if sess:
         sess.close()
+
+
+@router.websocket("/api/terminal/{session_key}/stream")
+async def terminal_stream(websocket: WebSocket, session_key: str):
+    client_host = websocket.client.host if websocket.client else None
+    if not terminal_access_allowed(client_host, websocket.headers):
+        await websocket.close(code=1008)  # refused at handshake -> HTTP 403
+        return
+    await websocket.accept()
+    loop = asyncio.get_running_loop()
+    sess = get_or_create(session_key)
+    sess.attach_reader(loop)
+    # Replay scrollback so a reopened panel is continuous.
+    if sess.buffer:
+        await websocket.send_json({"type": "output", "data": sess.buffer})
+    if sess.exited:
+        await websocket.send_json({"type": "exit", "code": sess.exit_code})
+    queue = sess.subscribe()
+
+    async def pump_out():
+        while True:
+            kind, payload = await queue.get()
+            if kind == "output":
+                await websocket.send_json({"type": "output", "data": payload})
+            elif kind == "exit":
+                await websocket.send_json({"type": "exit", "code": payload})
+
+    out_task = asyncio.create_task(pump_out())
+    try:
+        while True:
+            msg = await websocket.receive_json()
+            mtype = msg.get("type")
+            if mtype == "input":
+                sess.write(msg.get("data", ""))
+            elif mtype == "resize":
+                sess.resize(int(msg.get("cols", DEFAULT_COLS)), int(msg.get("rows", DEFAULT_ROWS)))
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        out_task.cancel()
+        sess.unsubscribe(queue)
+
+
+@router.post("/api/terminal/{session_key}/close")
+async def terminal_close(session_key: str, request: Request):
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    close_session(session_key)
+    return {"ok": True}

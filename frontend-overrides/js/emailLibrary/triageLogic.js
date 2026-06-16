@@ -24,3 +24,9 @@ export function summarizeBulk(results) {
   const failedUids = results.filter((r) => !r.ok).map((r) => r.uid);
   return { ok: results.length - failedUids.length, failed: failedUids.length, failedUids };
 }
+
+// At/above this viewport width the email modal shows the desktop two-pane reader.
+export const EMAIL_TWO_PANE_MIN = 1100;
+export function triageMode(width) {
+  return width >= EMAIL_TWO_PANE_MIN ? 'split' : 'stack';
+}

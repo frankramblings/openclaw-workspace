@@ -1,5 +1,5 @@
 // Pure triage logic for the email modal. Run: node scripts/test-email-triage-math.mjs
-import { toggleInSet, allSelected, chunk, summarizeBulk }
+import { toggleInSet, allSelected, chunk, summarizeBulk, triageMode }
   from '../frontend-overrides/js/emailLibrary/triageLogic.js';
 
 let failures = 0;
@@ -27,6 +27,11 @@ eq(chunk([], 3), [], 'chunk empty -> []');
   ]);
   eq(r, { ok: 2, failed: 1, failedUids: ['b'] }, 'summarizeBulk tallies');
 }
+
+assert(triageMode(1200) === 'split', 'triageMode wide -> split');
+assert(triageMode(1100) === 'split', 'triageMode 1100 -> split (>=)');
+assert(triageMode(1099) === 'stack', 'triageMode 1099 -> stack');
+assert(triageMode(375) === 'stack', 'triageMode phone -> stack');
 
 if (failures) { console.error(`\n${failures} failure(s)`); process.exit(1); }
 console.log('email-triage-logic: all assertions passed');

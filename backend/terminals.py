@@ -433,6 +433,28 @@ async def terminal_close(session_key: str, request: Request):
 
 
 # --- Gary-drive: loopback MCP-facing endpoints ------------------------------
+async def _await_shell_quiescent(sess, cap=6.0, settle=0.4):
+    """Wait until the shell has emitted output (its prompt) AND gone quiet, so a
+    command written next isn't sent to a not-yet-ready interactive shell. A
+    freshly spawned `zsh -i`/`bash -i` takes a beat to print its first prompt;
+    writing before then gets the command echoed-but-not-run (its output lost) and
+    can wedge the line editor for the next command. For an already-idle warm shell
+    this returns in ~`settle`s. Returns when settled or `cap` elapses."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + cap
+    while loop.time() < deadline and sess.total_written == 0:
+        await asyncio.sleep(0.05)  # wait for the first prompt to appear
+    last = sess.total_written
+    quiet_until = loop.time() + settle
+    while loop.time() < deadline:
+        await asyncio.sleep(0.05)
+        if sess.total_written != last:
+            last = sess.total_written
+            quiet_until = loop.time() + settle
+        elif loop.time() >= quiet_until:
+            break
+
+
 async def _await_settled_output(sess, cursor, settle=1.2, cap=20.0):
     """Poll until total_written stops growing for `settle`s or `cap` elapses;
     return the chars appended since `cursor` (a prior total_written value),
@@ -466,6 +488,10 @@ async def terminal_mcp_run(request: Request):
         raise HTTPException(status_code=403, detail="Gary terminal control is off for this chat")
     sess = get_or_create(session_key)
     sess.attach_reader(asyncio.get_running_loop())
+    # Wait for the shell to be ready & quiescent BEFORE writing, or a freshly
+    # spawned interactive shell echoes the command without running it (output
+    # lost) and wedges the next command. Cheap (~settle) for a warm shell.
+    await _await_shell_quiescent(sess)
     cursor = sess.total_written
     sess.write(str(body.get("command", "")) + "\n")
     output = await _await_settled_output(sess, cursor, cap=float(body.get("timeout", 20)))

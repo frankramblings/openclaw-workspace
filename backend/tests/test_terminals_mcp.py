@@ -292,3 +292,42 @@ def test_chat_stream_binds_gary_token_to_spa_id(monkeypatch):
     finally:
         sessions_store.delete(rec["id"])
         terminals.close_session(rec["id"])
+
+
+def test_mcp_run_sequential_captures_real_output(monkeypatch):
+    """Guards the shell-quiescent fix: a fresh (cold) shell, a warm shell, and a
+    multi-line command must each return their REAL output, not just the echoed
+    command. Uses httpx ASGITransport in ONE event loop (production-like); the
+    TestClient spins a fresh loop per request which strands the PTY reader and so
+    can't exercise sequential runs. A marker appearing >=2x means it's in both the
+    command echo AND the actual output (i.e. output was captured)."""
+    import asyncio
+
+    import httpx
+
+    from backend.app import app as asgi_app
+
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: True)
+    key = "seq-capture"
+    tok = terminals.mint_terminal_token(key)
+
+    async def main():
+        transport = httpx.ASGITransport(app=asgi_app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            async def run(cmd):
+                r = await client.post("/api/terminal/mcp/run", json={"token": tok, "command": cmd})
+                assert r.status_code == 200, r.text
+                return r.json()["output"]
+            return (
+                await run("echo COLD_111"),
+                await run("echo WARM_222"),
+                await run("printf 'A\\nB\\nC\\n' && echo MULTI_333"),
+            )
+
+    try:
+        cold, warm, multi = asyncio.run(main())
+        assert cold.count("COLD_111") >= 2, repr(cold)
+        assert warm.count("WARM_222") >= 2, repr(warm)
+        assert multi.count("MULTI_333") >= 2, repr(multi)
+    finally:
+        terminals.close_session(key)

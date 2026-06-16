@@ -116,3 +116,43 @@ def test_strip_handles_both_leading_blocks(monkeypatch):
     terminals.register_attachment("bothk", "jj.png", name="z.png", mime="image/png")
     att = terminals.terminal_attachment_note("bothk")
     assert terminals.strip_capability_note(cap + att + "BODY") == "BODY"
+
+
+# --- Fix 1: path-traversal validation ----------------------------------------
+
+def test_register_rejects_path_traversal():
+    """file_id with .. components must raise ValueError."""
+    with pytest.raises(ValueError, match="invalid file_id"):
+        terminals.register_attachment("sec1", "../../etc/passwd", name="x.png")
+
+
+def test_register_rejects_subdir_file_id():
+    """file_id with a subdirectory component must raise ValueError."""
+    with pytest.raises(ValueError, match="invalid file_id"):
+        terminals.register_attachment("sec2", "a/b.png", name="b.png")
+
+
+def test_register_rejects_dotdot_bare():
+    """'..' alone has Path.name == '' so must raise ValueError."""
+    with pytest.raises(ValueError, match="invalid file_id"):
+        terminals.register_attachment("sec3", "..", name="x.png")
+
+
+def test_register_accepts_bare_filename():
+    """Bare filenames (the happy path) must still work after the guard."""
+    tok = terminals.register_attachment("sec4", "ab12cd34.png", name="shot.png", mime="image/png")
+    assert tok == "[shot.png]"
+
+
+def test_attach_route_rejects_path_traversal(client):
+    """POST /attach with a traversal file_id must return 400."""
+    r = client.post("/api/terminal/secroute/attach",
+                    json={"file_id": "../../etc/passwd", "name": "x.png"})
+    assert r.status_code == 400
+
+
+def test_attach_route_rejects_subdir_file_id(client):
+    """POST /attach with a subdir file_id must return 400."""
+    r = client.post("/api/terminal/secroute/attach",
+                    json={"file_id": "a/b.png", "name": "b.png"})
+    assert r.status_code == 400

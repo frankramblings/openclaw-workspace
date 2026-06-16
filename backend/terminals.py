@@ -307,6 +307,8 @@ def _unique_token(reg: dict, base: str, ext: str) -> str:
 def register_attachment(session_key: str, file_id: str,
                         name: str | None = None, mime: str | None = None) -> str:
     """Register an uploaded image for a chat's terminal; return its [token]."""
+    if not file_id or file_id != Path(file_id).name or file_id in (".", ".."):
+        raise ValueError("invalid file_id")
     from .uploads import ATTACH_DIR
     reg = _load_attachments(session_key)
     ext = Path(file_id).suffix or (Path(name).suffix if name else "") or ""
@@ -565,8 +567,11 @@ async def terminal_attach(session_key: str, request: Request):
     file_id = str(body.get("file_id", ""))
     if not file_id:
         raise HTTPException(status_code=400, detail="file_id required")
-    token = register_attachment(session_key, file_id,
-                                name=body.get("name"), mime=body.get("mime"))
+    try:
+        token = register_attachment(session_key, file_id,
+                                    name=body.get("name"), mime=body.get("mime"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid file_id")
     return {"token": token}
 
 

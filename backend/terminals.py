@@ -300,23 +300,3 @@ async def terminal_close(session_key: str, request: Request):
         raise HTTPException(status_code=403, detail="forbidden")
     close_session(session_key)
     return {"ok": True}
-
-
-@router.get("/api/terminal/_debug/probe")
-async def terminal_debug_probe(request: Request):
-    """TEMPORARY diagnostic — reveal how requests reach the backend through
-    Tailscale Serve (client IP + identity/forwarding headers) so we can confirm
-    what the guard sees. Exposes only header metadata, no secrets. REMOVE after
-    debugging."""
-    h = request.headers
-    return {
-        "client_host": request.client.host if request.client else None,
-        "has_ts_login": bool(h.get("tailscale-user-login")),
-        "ts_login": h.get("tailscale-user-login"),
-        "x_forwarded_for": h.get("x-forwarded-for"),
-        "x_forwarded_proto": h.get("x-forwarded-proto"),
-        "tailscale_headers": sorted(k for k in h.keys() if k.lower().startswith("tailscale")),
-        "guard_would_allow": terminal_access_allowed(
-            request.client.host if request.client else None, h
-        ),
-    }

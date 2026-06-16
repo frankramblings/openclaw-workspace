@@ -291,6 +291,7 @@
     return window.WTLayout.orderVisible(pins, activeUnpinned);
   }
   function render() {
+    buildLaunchers();  // idempotent — ensures the top-bar buttons exist if the bar rendered late
     const activeId = activeKey();
     const orderIds = isNarrow()
       ? (() => { const a = panels.get(activeId); return (a && (a.open || a.pinned)) ? [activeId] : []; })()
@@ -318,16 +319,39 @@
     updatePill(visible, activeId);
   }
 
-  // ---- launcher pill ----
-  function buildPill() {
-    if (document.getElementById('wt-launch')) return;
-    const b = document.createElement('button');
-    b.id = 'wt-launch'; b.title = 'Terminal';
-    b.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-      + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/>'
-      + '<line x1="12" y1="19" x2="20" y2="19"/></svg><span>Terminal</span>';
-    b.addEventListener('click', togglePill);
-    document.body.appendChild(b);
+  // ---- launchers: in-flow buttons in the chat top-bar (NOT floating pills, which
+  // covered the UI). Present in every chat → switch chats, click Terminal to open
+  // THAT chat's terminal; Files toggles the workspace explorer.
+  const TERM_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/>'
+    + '<line x1="12" y1="19" x2="20" y2="19"/></svg>';
+  const FILES_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+  function buildLaunchers() {
+    const bar = document.querySelector('.chat-top-bar');
+    if (!bar || document.getElementById('wt-launchers')) return;
+    const wrap = document.createElement('span');
+    wrap.id = 'wt-launchers'; wrap.className = 'wt-launchers';
+    const t = document.createElement('button');
+    t.id = 'wt-launch'; t.type = 'button'; t.className = 'wt-toolbar-btn';
+    t.title = "Terminal — open this chat's terminal"; t.innerHTML = TERM_SVG;
+    t.addEventListener('click', togglePill);
+    const f = document.createElement('button');
+    f.id = 'wt-files'; f.type = 'button'; f.className = 'wt-toolbar-btn';
+    f.title = 'Files — toggle the workspace file explorer'; f.innerHTML = FILES_SVG;
+    f.addEventListener('click', toggleFiles);
+    wrap.appendChild(t); wrap.appendChild(f);
+    bar.appendChild(wrap);
+  }
+  function toggleFiles() {
+    // Drive the explorer via its own controls (no explorer code change): reopen
+    // if collapsed, collapse if shown.
+    const ex = document.getElementById('workspace-explorer');
+    const reopen = document.getElementById('we-reopen');
+    const collapse = document.getElementById('we-collapse');
+    if (!ex || ex.hidden) { if (reopen) reopen.click(); }
+    else if (collapse) { collapse.click(); }
   }
   function updatePill(visible, activeId) {
     const b = document.getElementById('wt-launch'); if (!b) return;
@@ -373,7 +397,7 @@
 
   // ---- boot ----
   async function boot() {
-    buildPill();
+    buildLaunchers();
     // Recreate pinned panels so they persist across reloads. Await term build
     // BEFORE render()/connect, or the replayed scrollback arrives before the
     // term exists and is dropped.

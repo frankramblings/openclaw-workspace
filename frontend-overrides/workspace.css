@@ -773,21 +773,17 @@ html { background-color: var(--bg); }
 .wt-panel .wt-screen { flex: 1; min-height: 0; padding: 4px 6px; }
 .wt-panel .wt-status { padding: 4px 10px; font-size: 12px; color: #f38ba8; }
 
-/* Floating launcher pill — stacked just above the Files pill (#we-reopen). */
-#wt-launch {
-  /* Above .wt-panel (210) so the pill stays clickable even when a terminal covers
-     the right edge — otherwise you can't open a second chat's terminal. */
-  position: fixed; right: 10px; top: 40px; z-index: 215;
-  border: 1px solid var(--border); border-radius: var(--hermes-pill, 999px);
-  background: var(--panel); color: var(--fg);
-  font-size: 11px; padding: 4px 10px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 5px;
+/* In-flow launchers in the chat top-bar (replaces the floating pills, which
+   covered the UI). Right-aligned; the chat-meta-overlay is absolutely positioned
+   so making the bar flex doesn't disturb it. */
+.chat-top-bar { display: flex; align-items: center; }
+.wt-launchers { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
+.chat-top-bar .wt-toolbar-btn {
+  background: none; border: none; color: var(--hermes-muted, var(--fg)); cursor: pointer;
+  padding: 3px 6px; border-radius: 5px; display: inline-flex; align-items: center; opacity: 0.7;
 }
-#wt-launch.active { border-color: #7ee787; color: #7ee787; }
-#wt-launch svg { display: block; }
-@media (max-width: 1100px) { #wt-launch { display: none; } }
-
-/* Stack the Files pill (#we-reopen) below the Terminal pill, and lift it above the
-   terminal panels so it stays clickable. `body #we-reopen` outranks hermes.css's
-   plain `#we-reopen { top:40px; z-index:50 }` (which loads later, same specificity). */
-body #we-reopen { top: 74px; z-index: 215; }
+.chat-top-bar .wt-toolbar-btn:hover { opacity: 1; background: rgba(255, 255, 255, 0.08); }
+.chat-top-bar #wt-launch.active { color: #7ee787; opacity: 1; }
+.chat-top-bar .wt-toolbar-btn svg { display: block; }
+/* The floating Files reopen pill is replaced by the in-flow Files button above. */
+#we-reopen { display: none !important; }

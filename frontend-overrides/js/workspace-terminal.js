@@ -134,8 +134,70 @@
       p.term.loadAddon(p.fit);
       p.term.open(p.screen);
       p.term.onData((d) => sendTo(p, { type: 'input', data: d }));
+      wireImageDrop(p);
     }
     setCwd(p);
+  }
+
+  // --- image drop / paste (per panel) ---------------------------------------
+  // Drop or paste an image onto a terminal: upload it (same store as chat
+  // attachments, inside Gary's vault), register a [name.ext] token for THIS
+  // chat's terminal, and type the token at the cursor. The image auto-rides the
+  // user's next chat turn; an in-terminal CLI resolves the token with `garyimg`.
+  // (Ported from the concurrent image-drop feature onto the per-panel manager.)
+  function isImageFile(f) {
+    return (f.type && f.type.indexOf('image/') === 0)
+      || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(f.name || '');
+  }
+  function imagesFrom(fileList) {
+    return Array.prototype.slice.call(fileList || []).filter(isImageFile);
+  }
+  function uploadImage(file) {
+    const fd = new FormData();
+    fd.append('files', file, file.name || 'pasted-image.png');
+    return fetch('/api/upload', { method: 'POST', body: fd })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('upload http ' + r.status))))
+      .then((d) => (d.files && d.files[0]) || Promise.reject(new Error('no file')));
+  }
+  function attachToken(p, file, up) {
+    return fetch('/api/terminal/' + encodeURIComponent(p.id) + '/attach', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: up.id, name: up.name || file.name || '', mime: file.type || '' }),
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('attach http ' + r.status))))
+      .then((d) => d.token);
+  }
+  async function processImages(p, imgs) {
+    if (!p.ws || p.ws.readyState !== 1) { statusOf(p, 'terminal not connected'); return; }
+    for (const f of imgs) {
+      statusOf(p, 'uploading image…');
+      try {
+        const up = await uploadImage(f);
+        const token = await attachToken(p, f, up);
+        sendTo(p, { type: 'input', data: token + ' ' });
+        statusOf(p, '');
+      } catch (e) { statusOf(p, 'image upload failed'); }
+    }
+  }
+  function wireImageDrop(p) {
+    const el = p.screen;
+    if (!el || el.__wtImageWired) return;
+    el.__wtImageWired = true;
+    el.addEventListener('dragover', (e) => {
+      const dt = e.dataTransfer;
+      if (dt && Array.prototype.some.call(dt.items || [], (i) => i.kind === 'file')) e.preventDefault();
+    });
+    el.addEventListener('drop', (e) => {
+      const imgs = imagesFrom(e.dataTransfer && e.dataTransfer.files);
+      if (imgs.length) { e.preventDefault(); processImages(p, imgs); }
+    });
+    el.addEventListener('paste', (e) => {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      const files = [];
+      for (const it of items) { if (it.kind === 'file') { const f = it.getAsFile(); if (f) files.push(f); } }
+      const imgs = files.filter(isImageFile);
+      if (imgs.length) { e.preventDefault(); processImages(p, imgs); }
+    });
   }
 
   function disconnectPanel(p) { if (p.ws) { try { p.ws.onclose = null; p.ws.close(); } catch (e) {} p.ws = null; } }

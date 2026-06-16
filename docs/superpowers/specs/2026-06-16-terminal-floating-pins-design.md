@@ -71,15 +71,26 @@ fit addon + status), bound to that chat's PTY (WS `/api/terminal/{sessionId}/str
 Reuse all the existing per-panel pieces (xterm, fit, reconnect+replay, gary toggle,
 restart, resize) — now per instance instead of singletons.
 
-Panel headers gain a **📌 pin toggle** (`.wt-pin`) alongside gary/restart/close.
+**Per-panel header controls (three distinct actions — the shell outlives the panel):**
+- **📌 Pin / unpin** (`.wt-pin`): pin = persist across chats/tabs (right stack);
+  unpin = return to "only its own chat thread" (shows only while you're in that chat).
+- **✕ Close** (`#wt-close`): **hide the panel but keep the shell alive** — disconnect
+  the WS, leave the backend PTY in `_sessions`, and unpin. Reopening that chat's
+  terminal (via the pill, or by pinning it again) reconnects and replays scrollback.
+  Close never kills the shell.
+- **🗑 End shell** (`#wt-kill`): the only destructive action — POST `/close` to
+  terminate the PTY, remove the panel and registry entry.
+- (Plus the existing **↻ restart** and **`#wt-gary`** Gary-mode toggle.)
 
-**Visible set** = all **pinned** panels + the **active chat's** panel (if open).
-- Opening the active chat's terminal (via pill) creates/show its panel.
+**Visible set** = all **pinned** panels + the **active chat's** panel (if open and not
+closed).
+- Opening the active chat's terminal (via pill) creates/shows its panel.
 - Switching chats: the previous active chat's panel — if **unpinned** — hides and
-  disconnects its WS (the backend PTY stays alive; reopening that chat replays
-  scrollback on reconnect). If **pinned**, it stays visible/connected.
-- Closing a panel (`#wt-close`) removes it from the visible set and disconnects; it
-  also unpins. (The backend session is closed via the existing POST `/close`.)
+  disconnects its WS (PTY stays alive; reopening that chat replays scrollback). If
+  **pinned**, it stays visible/connected.
+- A shell only ends on **🗑 End shell** or a backend restart (PTYs are ephemeral
+  across restarts by design); hidden-but-alive shells keep running (output into their
+  capped buffer) until then.
 
 **Pin state** persists in `localStorage` (`hermes-terminal-pins` = array of session
 ids). Restored on load; a pinned chat's panel is recreated/shown on boot.
@@ -142,11 +153,10 @@ Per the "no headless Chrome on this box" rule:
   Email → pinned floats over it; unpin/close behave; reopening a chat replays its
   scrollback.
 
-## Open questions for review
+## Resolved decisions
 
-1. **Explorer + terminal coexistence:** default is terminals sit *left* of an open
-   Files explorer (explorer stays rightmost). Acceptable, or should terminals be
-   rightmost even over the explorer?
-2. **Closing vs hiding:** `#wt-close` closes the backend PTY (kills the shell). Is
-   that the intent, or should close just hide/detach and keep the shell alive? (Pin
-   persists the shell regardless.)
+1. **Explorer + terminal coexistence:** terminals sit *left* of an open Files
+   explorer (the explorer stays rightmost). (Confirmed.)
+2. **Close vs end:** `✕ Close` hides the panel and **keeps the shell alive**;
+   `🗑 End shell` is the only thing that kills the PTY; `📌 unpin` returns a terminal
+   to its own chat thread. (Confirmed — see §B.)

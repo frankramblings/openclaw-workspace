@@ -538,6 +538,36 @@ async def terminal_close(session_key: str, request: Request):
     return {"ok": True}
 
 
+@router.post("/api/terminal/{session_key}/attach")
+async def terminal_attach(session_key: str, request: Request):
+    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    body = await request.json()
+    file_id = str(body.get("file_id", ""))
+    if not file_id:
+        raise HTTPException(status_code=400, detail="file_id required")
+    token = register_attachment(session_key, file_id,
+                                name=body.get("name"), mime=body.get("mime"))
+    return {"token": token}
+
+
+@router.get("/api/terminal/{session_key}/attachments")
+async def terminal_attachments(session_key: str, request: Request, pending: int = 0):
+    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return {"attachments": list_attachments(session_key, pending_only=bool(pending))}
+
+
+@router.get("/api/terminal/{session_key}/resolve")
+async def terminal_resolve(session_key: str, request: Request, token: str = ""):
+    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    path = resolve_attachment(session_key, token)
+    if not path:
+        raise HTTPException(status_code=404, detail="unknown token")
+    return {"path": path}
+
+
 # --- Gary-drive: loopback MCP-facing endpoints ------------------------------
 async def _await_shell_quiescent(sess, cap=6.0, settle=0.4):
     """Wait until the shell has emitted output (its prompt) AND gone quiet, so a

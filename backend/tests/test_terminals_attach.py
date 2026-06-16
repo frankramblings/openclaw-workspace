@@ -52,3 +52,46 @@ def test_close_session_clears_registry():
     assert terminals._attachments_path("k6").exists()
     terminals.close_session("k6")
     assert not terminals._attachments_path("k6").exists()
+
+
+# --- HTTP route tests ---------------------------------------------------------
+
+from fastapi.testclient import TestClient
+
+from backend.app import app
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setenv("OPENCLAW_TERMINAL_REQUIRE_TSHEADER", "0")
+    return TestClient(app)
+
+
+def test_attach_route_returns_token(client):
+    r = client.post("/api/terminal/routekey/attach",
+                    json={"file_id": "zz11.png", "name": "shot.png", "mime": "image/png"})
+    assert r.status_code == 200
+    assert r.json()["token"] == "[shot.png]"
+
+
+def test_attach_requires_file_id(client):
+    r = client.post("/api/terminal/routekey/attach", json={"name": "x.png"})
+    assert r.status_code == 400
+
+
+def test_attachments_list_pending_filter(client):
+    client.post("/api/terminal/listkey/attach", json={"file_id": "a1.png", "name": "a.png"})
+    terminals.mark_consumed("listkey", ["[a.png]"])
+    client.post("/api/terminal/listkey/attach", json={"file_id": "b1.png", "name": "b.png"})
+    all_ = client.get("/api/terminal/listkey/attachments").json()["attachments"]
+    pend = client.get("/api/terminal/listkey/attachments?pending=1").json()["attachments"]
+    assert len(all_) == 2
+    assert [it["token"] for it in pend] == ["[b.png]"]
+
+
+def test_resolve_route(client):
+    client.post("/api/terminal/reskey/attach", json={"file_id": "c1.png", "name": "c.png"})
+    ok = client.get("/api/terminal/reskey/resolve", params={"token": "[c.png]"})
+    assert ok.status_code == 200 and ok.json()["path"].endswith("/.attachments/c1.png")
+    miss = client.get("/api/terminal/reskey/resolve", params={"token": "[nope.png]"})
+    assert miss.status_code == 404

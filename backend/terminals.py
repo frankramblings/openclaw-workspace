@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import fcntl
+import json
 import os
 import pty
 import secrets
@@ -15,10 +16,12 @@ import signal
 import struct
 import termios
 import time
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from . import config
 from . import workspace_files
 
 router = APIRouter()
@@ -249,6 +252,109 @@ def close_session(session_key: str) -> None:
     sess = _sessions.pop(session_key, None)
     if sess:
         sess.close()
+    try:
+        _attachments_path(session_key).unlink()
+    except (FileNotFoundError, OSError):
+        pass
+
+
+# --- Terminal image attachments: per-session token → file registry ----------
+# Images dropped/pasted into a chat's terminal are uploaded via /api/upload
+# (bytes land in uploads.ATTACH_DIR, inside Gary's vault) and registered here.
+# A "[name.ext]" token is typed into the PTY; the registry maps it to the saved
+# path. `pending` is True until a chat turn consumes the image as a vision
+# attachment; the token→path mapping itself persists for the session lifetime so
+# an in-terminal CLI can resolve it any time.
+def _attachments_dir() -> Path:
+    return config.DATA_DIR / "terminal_attachments"
+
+
+def _sanitize_key(session_key: str) -> str:
+    safe = "".join(c for c in (session_key or "") if c.isalnum() or c in "-_")
+    return safe or "global"
+
+
+def _attachments_path(session_key: str) -> Path:
+    return _attachments_dir() / (_sanitize_key(session_key) + ".json")
+
+
+def _load_attachments(session_key: str) -> dict:
+    try:
+        return json.loads(_attachments_path(session_key).read_text())
+    except (FileNotFoundError, ValueError, OSError):
+        return {}
+
+
+def _save_attachments(session_key: str, data: dict) -> None:
+    p = _attachments_path(session_key)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data))
+    tmp.replace(p)
+
+
+def _unique_token(reg: dict, base: str, ext: str) -> str:
+    cand = f"[{base}{ext}]"
+    if cand not in reg:
+        return cand
+    n = 2
+    while f"[{base}-{n}{ext}]" in reg:
+        n += 1
+    return f"[{base}-{n}{ext}]"
+
+
+def register_attachment(session_key: str, file_id: str,
+                        name: str | None = None, mime: str | None = None) -> str:
+    """Register an uploaded image for a chat's terminal; return its [token]."""
+    from .uploads import ATTACH_DIR
+    reg = _load_attachments(session_key)
+    ext = Path(file_id).suffix or (Path(name).suffix if name else "") or ""
+    stem = Path(name).stem if name else ""
+    if stem:
+        base = stem
+    else:
+        n = sum(1 for t in reg if t.startswith("[pasted-")) + 1
+        base = f"pasted-{n}"
+    token = _unique_token(reg, base, ext)
+    reg[token] = {
+        "id": file_id,
+        "name": name or (base + ext),
+        "path": str(ATTACH_DIR / file_id),
+        "mime": mime or "",
+        "ts": int(time.time()),
+        "pending": True,
+    }
+    _save_attachments(session_key, reg)
+    return token
+
+
+def list_attachments(session_key: str, pending_only: bool = False) -> list[dict]:
+    reg = _load_attachments(session_key)
+    out = []
+    for token, e in reg.items():
+        if pending_only and not e.get("pending"):
+            continue
+        out.append({"token": token, **e})
+    return out
+
+
+def resolve_attachment(session_key: str, token: str) -> str | None:
+    reg = _load_attachments(session_key)
+    e = reg.get(token)
+    if e is None and token and not token.startswith("["):
+        e = reg.get(f"[{token}]")
+    return e.get("path") if e else None
+
+
+def mark_consumed(session_key: str, tokens: list[str]) -> None:
+    reg = _load_attachments(session_key)
+    changed = False
+    for t in tokens:
+        if t in reg and reg[t].get("pending"):
+            reg[t]["pending"] = False
+            changed = True
+    if changed:
+        _save_attachments(session_key, reg)
 
 
 # --- Gary-drive: per-turn token map -----------------------------------------

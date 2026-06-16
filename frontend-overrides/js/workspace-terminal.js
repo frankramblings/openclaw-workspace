@@ -1,23 +1,51 @@
-// HERMES: attached terminal panel — a right-side resizable pane (mirrors the
-// workspace-explorer pane) holding a real interactive PTY for the ACTIVE chat
-// session, streamed over a loopback + Serve-guarded WebSocket. cwd = workspace
-// root. Self-contained overlay: injects its own rail button + panel DOM and
-// lazily loads vendored xterm.js. Tolerant of a backend without /api/terminal
-// (the WS fails to open; the pane shows a notice). PR1 = human-interactive only.
-// Spec: docs/superpowers/specs/2026-06-16-attached-terminal-design.md
+// HERMES: attached terminal MANAGER — floating, pinnable, chat-reflowing terminals.
+// Each chat gets its own panel (xterm + PTY WS). Panels are position:fixed, stacked
+// on the right edge; the chat reflows via #chat-container margin-right. Pinned panels
+// persist across chats/tabs (hug right, stack rightward); the active chat's unpinned
+// panel shows only while you're in that chat. Pure stack math = window.WTLayout
+// (workspace-terminal-layout.js). Backend untouched.
+// Spec: docs/superpowers/specs/2026-06-16-terminal-floating-pins-design.md
 (function () {
-  const LS_WIDTH = 'hermes-terminal-width';
   const VENDOR = '/static/js/vendor/xterm/';
-  let term = null, fit = null, ws = null, sessionKey = null, followTimer = null;
-  let garyEffective = null;  // last-known effective gary-mode for the active key
+  const LS_PINS = 'hermes-terminal-pins';
+  const widthKey = (id) => 'hermes-terminal-width:' + id;
+  const DEFAULT_W = 560, MIN_W = 360, MAX_W = 1100, NARROW = 1100;
 
+  const panels = new Map();      // id -> Panel
+  let pinOrder = loadPins();     // id[]; index 0 = rightmost (oldest pin), end = leftmost
+  let followTimer = null;
+
+  // ---- persistence ----
+  function loadPins() {
+    try { const a = JSON.parse(localStorage.getItem(LS_PINS) || '[]'); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+  }
+  function savePins() { try { localStorage.setItem(LS_PINS, JSON.stringify(pinOrder)); } catch (e) {} }
+  function loadWidth(id) {
+    const w = parseInt(localStorage.getItem(widthKey(id)) || '', 10);
+    return (w >= MIN_W && w <= MAX_W) ? w : DEFAULT_W;
+  }
+  function saveWidth(id, w) { try { localStorage.setItem(widthKey(id), String(Math.round(w))); } catch (e) {} }
+
+  // ---- helpers ----
   function curSession() {
     try {
       return (window.sessionModule && window.sessionModule.getCurrentSessionId)
         ? window.sessionModule.getCurrentSessionId() : null;
     } catch (e) { return null; }
   }
+  function isNarrow() { return window.innerWidth <= NARROW; }
+  function wsUrl(key) {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    return proto + '://' + location.host + '/api/terminal/' + encodeURIComponent(key) + '/stream';
+  }
+  function explorerWidth() {
+    const ex = document.getElementById('workspace-explorer');
+    if (!ex || ex.hidden) return 0;
+    return ex.getBoundingClientRect().width || 0;
+  }
 
+  // ---- xterm vendor loading ----
   function injectCss(href) {
     if (document.querySelector('link[data-wt-css]')) return;
     const l = document.createElement('link');
@@ -37,218 +65,259 @@
     if (!window.FitAddon) await injectScript(VENDOR + 'addon-fit.js');
   }
 
-  function buildDom() {
-    if (document.getElementById('workspace-terminal')) return;
-    const rail = document.getElementById('icon-rail');
-    if (rail && !document.getElementById('rail-terminal')) {
-      const b = document.createElement('button');
-      b.className = 'icon-rail-btn'; b.id = 'rail-terminal'; b.title = 'Terminal';
-      b.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" '
-        + 'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
-        + 'stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/>'
-        + '<line x1="12" y1="19" x2="20" y2="19"/></svg>';
-      b.addEventListener('click', toggle);
-      rail.appendChild(b);
-    }
-    const aside = document.createElement('aside');
-    aside.id = 'workspace-terminal'; aside.hidden = true;
-    aside.setAttribute('aria-label', 'Attached terminal');
-    aside.innerHTML =
-      '<div class="wt-resize" id="wt-resize"></div>' +
+  // ---- Panel ----
+  function createPanel(id) {
+    const el = document.createElement('aside');
+    el.className = 'wt-panel'; el.hidden = true;
+    el.setAttribute('data-term-id', id);
+    el.setAttribute('aria-label', 'Attached terminal');
+    el.innerHTML =
+      '<div class="wt-resize"></div>' +
       '<header class="wt-head">' +
         '<span class="wt-title">Terminal</span>' +
-        '<span class="wt-cwd" id="wt-cwd"></span>' +
+        '<span class="wt-cwd"></span>' +
         '<span class="wt-spacer"></span>' +
-        '<button class="wt-btn" id="wt-gary" title="Gary terminal control">Gary: …</button>' +
-        '<button class="wt-btn" id="wt-restart" title="Restart shell">↻</button>' +
-        '<button class="wt-btn" id="wt-close" title="Close panel">✕</button>' +
+        '<button class="wt-btn wt-gary" title="Gary terminal control">Gary: …</button>' +
+        '<button class="wt-btn wt-pin" title="Pin — keep this terminal on screen everywhere">📌</button>' +
+        '<button class="wt-btn wt-restart" title="Restart shell">↻</button>' +
+        '<button class="wt-btn wt-close" title="Close panel (keeps the shell running)">✕</button>' +
+        '<button class="wt-btn wt-kill" title="End shell — terminate this terminal">🗑</button>' +
       '</header>' +
-      '<div class="wt-screen" id="wt-screen"></div>' +
-      '<div class="wt-status" id="wt-status" hidden></div>';
-    document.body.appendChild(aside);
-    const w = parseInt(localStorage.getItem(LS_WIDTH) || '', 10);
-    if (w > 360 && w < 1100) aside.style.width = w + 'px';
-    document.getElementById('wt-close').addEventListener('click', hide);
-    document.getElementById('wt-restart').addEventListener('click', restart);
-    document.getElementById('wt-gary').addEventListener('click', toggleGary);
-    wireResize(aside);
-  }
-
-  function wsUrl(key) {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    return proto + '://' + location.host + '/api/terminal/' + encodeURIComponent(key) + '/stream';
-  }
-  function status(msg) {
-    const s = document.getElementById('wt-status');
-    if (!s) return;
-    s.textContent = msg || ''; s.hidden = !msg;
-  }
-  function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
-
-  // --- Gary-mode toggle -----------------------------------------------------
-  // The button reflects the EFFECTIVE state (per-chat override else global
-  // default). It keys on the SAME value the WS uses (curSession() || 'global')
-  // so the toggle the user sets and the gate the MCP run path reads line up.
-  function renderGary() {
-    const b = document.getElementById('wt-gary');
-    if (!b) return;
-    if (garyEffective === null) {
-      b.textContent = 'Gary: …';
-      b.classList.remove('active');
-      b.title = 'Gary terminal control';
-      return;
-    }
-    b.textContent = 'Gary: ' + (garyEffective ? 'on' : 'off');
-    b.classList.toggle('active', !!garyEffective);
-    b.style.color = garyEffective ? '#7ee787' : '';
-    b.title = garyEffective
-      ? 'Gary can run commands in this terminal — click to turn off for this chat'
-      : 'Gary cannot run commands in this terminal — click to turn on for this chat';
-  }
-  function refreshGary(key) {
-    garyEffective = null;
-    renderGary();
-    fetch('/api/terminal/gary-mode?session_key=' + encodeURIComponent(key))
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
-      .then((d) => { if (sessionKey === key) { garyEffective = !!d.effective; renderGary(); } })
-      .catch(() => { /* leave indeterminate; not fatal to the terminal itself */ });
-  }
-  function toggleGary() {
-    const key = sessionKey || curSession() || 'global';
-    const next = !garyEffective;
-    fetch('/api/terminal/gary-mode', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope: 'session', session_key: key, enabled: next }),
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
-      .then((d) => { if (sessionKey === key) { garyEffective = !!d.effective; renderGary(); } })
-      .catch(() => status('could not change Gary terminal control'));
-  }
-
-  function disconnect() {
-    if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; }
-  }
-  function connect(key) {
-    disconnect();
-    sessionKey = key;
-    status('');
-    refreshGary(key);
-    try { ws = new WebSocket(wsUrl(key)); } catch (e) { status('terminal unavailable'); return; }
-    ws.onopen = () => { status(''); fitAndResize(); };
-    ws.onmessage = (ev) => {
-      if (!term) return;  // defense in depth: never write before the terminal is built
-      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-      if (m.type === 'output') term.write(m.data);
-      else if (m.type === 'exit') {
-        term.write('\r\n\x1b[2m[process exited'
-          + (m.code != null ? ' (' + m.code + ')' : '') + '] — press ↻ to restart\x1b[0m\r\n');
-      }
+      '<div class="wt-screen"></div>' +
+      '<div class="wt-status" hidden></div>';
+    document.body.appendChild(el);
+    const p = {
+      id, el,
+      screen: el.querySelector('.wt-screen'),
+      statusEl: el.querySelector('.wt-status'),
+      cwdEl: el.querySelector('.wt-cwd'),
+      garyBtn: el.querySelector('.wt-gary'),
+      pinBtn: el.querySelector('.wt-pin'),
+      term: null, fit: null, ws: null,
+      garyEffective: null,
+      width: loadWidth(id),
+      pinned: pinOrder.includes(id),
+      open: false,
     };
-    ws.onclose = () => { if (sessionKey === key) status('disconnected — reopen to reconnect'); };
-    ws.onerror = () => status('terminal backend unavailable');
+    el.style.width = p.width + 'px';
+    el.querySelector('.wt-close').addEventListener('click', () => closePanel(p));
+    el.querySelector('.wt-kill').addEventListener('click', () => killPanel(p));
+    el.querySelector('.wt-restart').addEventListener('click', () => restartPanel(p));
+    p.pinBtn.addEventListener('click', () => togglePin(p));
+    p.garyBtn.addEventListener('click', () => toggleGary(p));
+    wireResize(p);
+    panels.set(id, p);
+    return p;
   }
 
-  function fitAndResize() {
-    if (!fit || !term) return;
-    try { fit.fit(); } catch (e) {}
-    send({ type: 'resize', cols: term.cols, rows: term.rows });
+  function statusOf(p, msg) { if (p.statusEl) { p.statusEl.textContent = msg || ''; p.statusEl.hidden = !msg; } }
+  function sendTo(p, obj) { if (p.ws && p.ws.readyState === 1) p.ws.send(JSON.stringify(obj)); }
+  function fitPanel(p) {
+    if (!p.fit || !p.term) return;
+    try { p.fit.fit(); } catch (e) {}
+    sendTo(p, { type: 'resize', cols: p.term.cols, rows: p.term.rows });
   }
-
-  async function open() {
-    buildDom();
-    try { await ensureXterm(); } catch (e) { status('failed to load terminal assets'); show(); return; }
-    if (!term) {
-      term = new window.Terminal({
-        cursorBlink: true, fontSize: 13,
-        fontFamily: 'ui-monospace, Menlo, Monaco, monospace',
-        theme: { background: '#0b0e14' },
-      });
-      fit = new window.FitAddon.FitAddon();
-      term.loadAddon(fit);
-      term.open(document.getElementById('wt-screen'));
-      term.onData((d) => send({ type: 'input', data: d }));
+  function setCwd(p) {
+    if (window.__workspaceRoot) { p.cwdEl.textContent = window.__workspaceRoot; return; }
+    fetch('/api/config').then((r) => r.json()).then((c) => {
+      window.__workspaceRoot = c.workspace_root; p.cwdEl.textContent = c.workspace_root || '';
+    }).catch(() => {});
+  }
+  async function ensureTermBuilt(p) {
+    await ensureXterm();
+    if (!p.term) {
+      p.term = new window.Terminal({ cursorBlink: true, fontSize: 13,
+        fontFamily: 'ui-monospace, Menlo, Monaco, monospace', theme: { background: '#0b0e14' } });
+      p.fit = new window.FitAddon.FitAddon();
+      p.term.loadAddon(p.fit);
+      p.term.open(p.screen);
+      p.term.onData((d) => sendTo(p, { type: 'input', data: d }));
     }
-    if (!window.__workspaceRoot) {
-      fetch('/api/config').then((r) => r.json()).then((c) => {
-        window.__workspaceRoot = c.workspace_root;
-        const el = document.getElementById('wt-cwd');
-        if (el) el.textContent = c.workspace_root || '';
-      }).catch(() => {});
-    } else {
-      const el = document.getElementById('wt-cwd');
-      if (el) el.textContent = window.__workspaceRoot;
-    }
-    show();
-    connect(curSession() || 'global');
-    setTimeout(fitAndResize, 40);
-    startFollow();
+    setCwd(p);
   }
 
-  function show() {
-    const a = document.getElementById('workspace-terminal');
-    if (a) a.hidden = false;
-    document.getElementById('rail-terminal')?.classList.add('active');
+  function disconnectPanel(p) { if (p.ws) { try { p.ws.onclose = null; p.ws.close(); } catch (e) {} p.ws = null; } }
+  function connectPanel(p) {
+    disconnectPanel(p);
+    statusOf(p, '');
+    refreshGary(p);
+    try { p.ws = new WebSocket(wsUrl(p.id)); } catch (e) { statusOf(p, 'terminal unavailable'); return; }
+    p.ws.onopen = () => { statusOf(p, ''); fitPanel(p); };
+    p.ws.onmessage = (ev) => {
+      if (!p.term) return;
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === 'output') p.term.write(m.data);
+      else if (m.type === 'exit') p.term.write('\r\n\x1b[2m[process exited'
+        + (m.code != null ? ' (' + m.code + ')' : '') + '] — press ↻ to restart\x1b[0m\r\n');
+    };
+    p.ws.onclose = () => statusOf(p, 'disconnected — reopen to reconnect');
+    p.ws.onerror = () => statusOf(p, 'terminal backend unavailable');
   }
-  function hide() {
-    const a = document.getElementById('workspace-terminal');
-    if (a) a.hidden = true;
-    document.getElementById('rail-terminal')?.classList.remove('active');
-    stopFollow();
-    disconnect();
+
+  // ---- Gary toggle (per panel) ----
+  function renderGary(p) {
+    const b = p.garyBtn; if (!b) return;
+    if (p.garyEffective === null) { b.textContent = 'Gary: …'; b.classList.remove('active'); b.style.color = ''; return; }
+    b.textContent = 'Gary: ' + (p.garyEffective ? 'on' : 'off');
+    b.classList.toggle('active', !!p.garyEffective);
+    b.style.color = p.garyEffective ? '#7ee787' : '';
+    b.title = p.garyEffective ? 'Gary can run commands here — click to turn off for this chat'
+                              : 'Gary cannot run commands here — click to turn on for this chat';
   }
-  function toggle() {
-    const a = document.getElementById('workspace-terminal');
-    if (!a || a.hidden) open(); else hide();
+  function refreshGary(p) {
+    p.garyEffective = null; renderGary(p);
+    fetch('/api/terminal/gary-mode?session_key=' + encodeURIComponent(p.id))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
+      .then((d) => { p.garyEffective = !!d.effective; renderGary(p); })
+      .catch(() => {});
   }
-  function restart() {
-    if (!sessionKey) return;
-    const key = sessionKey;
-    fetch('/api/terminal/' + encodeURIComponent(key) + '/close', { method: 'POST' })
+  function toggleGary(p) {
+    const next = !p.garyEffective;
+    fetch('/api/terminal/gary-mode', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope: 'session', session_key: p.id, enabled: next }) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
+      .then((d) => { p.garyEffective = !!d.effective; renderGary(p); })
+      .catch(() => statusOf(p, 'could not change Gary terminal control'));
+  }
+  function renderPin(p) { p.pinBtn.classList.toggle('active', p.pinned); p.pinBtn.style.opacity = p.pinned ? '1' : '0.5'; }
+
+  // ---- actions ----
+  async function openActive() {
+    const id = curSession() || 'global';
+    let p = panels.get(id) || createPanel(id);
+    p.open = true;
+    await ensureTermBuilt(p);
+    render();
+  }
+  function closePanel(p) {           // hide, KEEP shell alive
+    p.open = false;
+    if (p.pinned) { p.pinned = false; pinOrder = pinOrder.filter((x) => x !== p.id); savePins(); }
+    disconnectPanel(p);
+    render();
+  }
+  function killPanel(p) {            // terminate the PTY
+    fetch('/api/terminal/' + encodeURIComponent(p.id) + '/close', { method: 'POST' }).catch(() => {});
+    disconnectPanel(p);
+    if (p.term) { try { p.term.dispose(); } catch (e) {} }
+    p.el.remove();
+    panels.delete(p.id);
+    p.pinned = false; pinOrder = pinOrder.filter((x) => x !== p.id); savePins();
+    render();
+  }
+  function restartPanel(p) {
+    fetch('/api/terminal/' + encodeURIComponent(p.id) + '/close', { method: 'POST' })
       .catch(() => {})
-      .finally(() => { if (term) term.reset(); connect(key); setTimeout(fitAndResize, 40); });
+      .finally(() => { if (p.term) p.term.reset(); connectPanel(p); setTimeout(() => fitPanel(p), 40); });
+  }
+  function togglePin(p) {
+    p.pinned = !p.pinned;
+    pinOrder = pinOrder.filter((x) => x !== p.id);
+    if (p.pinned) pinOrder.push(p.id);   // newest pin -> leftmost of the pins
+    savePins();
+    render();
   }
 
-  // Follow the active chat: while the panel is open, reconnect if the user
-  // switches chats (cheap 1.2s poll, only while visible).
-  function startFollow() {
-    stopFollow();
-    followTimer = setInterval(() => {
-      const a = document.getElementById('workspace-terminal');
-      if (!a || a.hidden) return;
-      const key = curSession() || 'global';
-      if (key !== sessionKey) { if (term) term.reset(); connect(key); setTimeout(fitAndResize, 40); }
-    }, 1200);
+  // ---- layout / render ----
+  function visibleOrder(activeId) {
+    const pins = pinOrder.filter((id) => panels.has(id));
+    const a = panels.get(activeId);
+    const activeUnpinned = (a && a.open && !a.pinned) ? activeId : null;
+    return window.WTLayout.orderVisible(pins, activeUnpinned);
   }
-  function stopFollow() { if (followTimer) { clearInterval(followTimer); followTimer = null; } }
+  function render() {
+    const activeId = curSession();
+    const orderIds = isNarrow()
+      ? (() => { const a = panels.get(activeId); return (a && (a.open || a.pinned)) ? [activeId] : []; })()
+      : visibleOrder(activeId);
+    const visible = new Set(orderIds);
+    const base = isNarrow() ? 0 : explorerWidth();
+    const items = orderIds.map((id) => ({ id, width: isNarrow() ? window.innerWidth : panels.get(id).width }));
+    const { positions, totalWidth } = window.WTLayout.computeStack(items, base);
+    for (const [id, p] of panels) {
+      const vis = visible.has(id);
+      p.el.hidden = !vis;
+      if (vis) {
+        p.el.classList.toggle('wt-narrow', isNarrow());
+        p.el.style.right = (positions[id] || 0) + 'px';
+        p.el.style.width = isNarrow() ? '100vw' : (p.width + 'px');
+        if (!p.ws) connectPanel(p);
+        setTimeout(() => fitPanel(p), 30);
+      } else if (p.ws) {
+        disconnectPanel(p);
+      }
+      renderPin(p);
+    }
+    const chat = document.getElementById('chat-container');
+    if (chat) chat.style.marginRight = (!isNarrow() && totalWidth) ? totalWidth + 'px' : '';
+    updatePill(visible, activeId);
+  }
 
-  function wireResize(aside) {
-    const h = aside.querySelector('#wt-resize');
+  // ---- launcher pill ----
+  function buildPill() {
+    if (document.getElementById('wt-launch')) return;
+    const b = document.createElement('button');
+    b.id = 'wt-launch'; b.title = 'Terminal';
+    b.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+      + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/>'
+      + '<line x1="12" y1="19" x2="20" y2="19"/></svg><span>Terminal</span>';
+    b.addEventListener('click', togglePill);
+    document.body.appendChild(b);
+  }
+  function updatePill(visible, activeId) {
+    const b = document.getElementById('wt-launch'); if (!b) return;
+    const a = panels.get(activeId);
+    b.classList.toggle('active', !!(a && a.open && visible.has(activeId)));
+  }
+  function togglePill() {
+    const id = curSession() || 'global';
+    const p = panels.get(id);
+    if (p && p.open) closePanel(p); else openActive();
+  }
+
+  // ---- resize (per panel) ----
+  function wireResize(p) {
+    const h = p.el.querySelector('.wt-resize');
     if (!h) return;
     let startX = 0, startW = 0, dragging = false;
     h.addEventListener('mousedown', (e) => {
-      dragging = true; startX = e.clientX;
-      startW = aside.getBoundingClientRect().width;
+      dragging = true; startX = e.clientX; startW = p.el.getBoundingClientRect().width;
       e.preventDefault(); document.body.style.userSelect = 'none';
     });
     window.addEventListener('mousemove', (e) => {
       if (!dragging) return;
-      let w = startW + (startX - e.clientX);
-      w = Math.max(360, Math.min(1100, w));
-      aside.style.width = w + 'px';
-      if (fit) { try { fit.fit(); } catch (_) {} }
+      p.width = Math.max(MIN_W, Math.min(MAX_W, startW + (startX - e.clientX)));
+      render();
     });
     window.addEventListener('mouseup', () => {
       if (!dragging) return;
       dragging = false; document.body.style.userSelect = '';
-      try { localStorage.setItem(LS_WIDTH, String(Math.round(aside.getBoundingClientRect().width))); } catch (_) {}
-      fitAndResize();
+      saveWidth(p.id, p.width); fitPanel(p);
     });
   }
 
-  window.workspaceTerminal = { open, hide, toggle };
-  // Inject the rail button early so the user can launch the panel without it
-  // having been opened first.
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildDom, { once: true });
-  else buildDom();
+  // ---- follow active chat (re-render on chat switch; pinned stay) ----
+  let lastActive = null;
+  function startFollow() {
+    if (followTimer) return;
+    followTimer = setInterval(() => {
+      const id = curSession();
+      if (id !== lastActive) { lastActive = id; render(); }
+    }, 800);
+  }
+
+  // ---- boot ----
+  function boot() {
+    buildPill();
+    // recreate pinned panels so they persist across reloads
+    for (const id of pinOrder.slice()) {
+      const p = createPanel(id);
+      ensureTermBuilt(p);
+    }
+    render();
+    startFollow();
+  }
+
+  window.workspaceTerminal = { openActive, togglePill };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
 })();

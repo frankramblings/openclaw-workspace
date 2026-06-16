@@ -744,7 +744,9 @@ html { background-color: var(--bg); }
   display: flex; flex-direction: column;
   background: #0b0e14; color: #cdd6f4;
   border-left: 1px solid var(--border, #2a2f3a);
-  z-index: 55; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+  /* Above the full-screen tabs (.hermes-panel z-index:200) so a PINNED terminal
+     floats over Email/Inbox/Calendar; below the gateway banner + dialogs (300/1001). */
+  z-index: 210; box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
 }
 .wt-panel[hidden] { display: none; }
 .wt-panel.wt-narrow { right: 0 !important; width: 100vw !important; }
@@ -773,7 +775,9 @@ html { background-color: var(--bg); }
 
 /* Floating launcher pill — stacked just above the Files pill (#we-reopen). */
 #wt-launch {
-  position: fixed; right: 10px; top: 40px; z-index: 50;
+  /* Above .wt-panel (210) so the pill stays clickable even when a terminal covers
+     the right edge — otherwise you can't open a second chat's terminal. */
+  position: fixed; right: 10px; top: 40px; z-index: 215;
   border: 1px solid var(--border); border-radius: var(--hermes-pill, 999px);
   background: var(--panel); color: var(--fg);
   font-size: 11px; padding: 4px 10px; cursor: pointer;
@@ -783,5 +787,7 @@ html { background-color: var(--bg); }
 #wt-launch svg { display: block; }
 @media (max-width: 1100px) { #wt-launch { display: none; } }
 
-/* Stack the Files pill (#we-reopen, hermes.css top:40px) below the Terminal pill. */
-#we-reopen { top: 74px; }
+/* Stack the Files pill (#we-reopen) below the Terminal pill, and lift it above the
+   terminal panels so it stays clickable. `body #we-reopen` outranks hermes.css's
+   plain `#we-reopen { top:40px; z-index:50 }` (which loads later, same specificity). */
+body #we-reopen { top: 74px; z-index: 215; }

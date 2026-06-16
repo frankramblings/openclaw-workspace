@@ -172,3 +172,14 @@ def test_await_settled_output_slice_matches_after_cap():
 
     out = asyncio.run(_run())
     assert out == "B" * 5000
+
+
+def test_capability_note_contains_token_and_tool():
+    note = terminals.gary_capability_note("agent:main:web-xyz")
+    assert "terminal.run_command" in note and "token=" in note
+
+
+def test_strip_capability_note_roundtrip():
+    note = terminals.gary_capability_note("agent:main:web-xyz")
+    assert terminals.strip_capability_note(note + "hello world") == "hello world"
+    assert terminals.strip_capability_note("no note here") == "no note here"

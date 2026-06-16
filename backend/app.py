@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, config, doctor, draft_mode, monitor, sessions_store, websearch
+from . import bridge, capabilities, config, doctor, draft_mode, monitor, sessions_store, terminals, websearch
 from .memory import maybe_auto_extract
 from .calendar_google import router as calendar_router
 from .cron import router as cron_router
@@ -420,6 +420,11 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                                            "exit_code": 1})
             if draft_doc is not None:
                 brain_message = draft_mode.wrap_message(brain_message, draft_doc)
+            # Gary-drive: when terminal control is on for this chat, prepend a
+            # per-turn capability hint + a freshly-minted token (stripped from
+            # the history view in the /api/history handler below).
+            if terminals.gary_mode_for_session(session_key):
+                brain_message = terminals.gary_capability_note(session_key) + brain_message
             _ACTIVE_RUNS[session_key] = run_info
             async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
                                                   model_ref=_model_ref(rec),
@@ -530,7 +535,8 @@ async def history(session_id: str):
     # user's text) in the transcript; show only what the user typed.
     for m in data.get("history", []):
         if m.get("role") == "user":
-            m["content"] = websearch.strip_context_block(m.get("content"))
+            content = websearch.strip_context_block(m.get("content"))
+            m["content"] = terminals.strip_capability_note(content)
     # Prefer the record's chosen model label; fall back to whatever the brain used.
     data["model"] = sess.get("model") or data.get("model")
     return data

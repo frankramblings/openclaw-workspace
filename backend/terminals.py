@@ -291,6 +291,42 @@ def gary_mode_for_session(session_key: str) -> bool:
     return override if isinstance(override, bool) else gary_mode_default()
 
 
+# --- Gary-drive: per-turn capability hint -----------------------------------
+# When Gary-mode is on, each brain turn is prefixed with a note telling the
+# agent it can drive THIS chat's attached terminal via the loopback MCP, plus a
+# freshly-minted single-chat token. The note is stripped from the history view
+# (strip_capability_note) so the user never sees it. The marker is led by an
+# invisible separator (U+2063) so it can't collide with normal message content.
+_GARY_NOTE_PREFIX = "⁣[terminal-control]"
+
+
+def gary_capability_note(session_key: str) -> str:
+    token = mint_terminal_token(session_key)
+    return (
+        f"{_GARY_NOTE_PREFIX} A shell terminal is attached to THIS chat "
+        "(cwd = workspace root); the user watches its output live in their terminal "
+        "panel. To run a command in it, shell out:\n"
+        f'  mcporter call terminal.run_command token={token} command="<cmd>"\n'
+        f"To read latest output:  mcporter call terminal.read_output token={token}\n"
+        "Prefer this over your own bash when the user refers to 'the terminal'. "
+        "If it returns 403, terminal control is off for this chat.\n\n"
+    )
+
+
+def strip_capability_note(text: str) -> str:
+    """Remove an injected gary_capability_note block from a stored message for
+    display. The block runs from the marker to the first blank line (\\n\\n)."""
+    if not isinstance(text, str):
+        return text
+    idx = text.find(_GARY_NOTE_PREFIX)
+    if idx == -1:
+        return text
+    end = text.find("\n\n", idx)
+    if end == -1:
+        return text[:idx].rstrip()
+    return (text[:idx] + text[end + 2:]).lstrip("\n")
+
+
 @router.websocket("/api/terminal/{session_key}/stream")
 async def terminal_stream(websocket: WebSocket, session_key: str):
     client_host = websocket.client.host if websocket.client else None

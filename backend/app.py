@@ -423,8 +423,14 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             # Gary-drive: when terminal control is on for this chat, prepend a
             # per-turn capability hint + a freshly-minted token (stripped from
             # the history view in the /api/history handler below).
-            if terminals.gary_mode_for_session(session_key):
-                brain_message = terminals.gary_capability_note(session_key) + brain_message
+            # CRITICAL: bind Gary to the SAME PTY key the human panel uses — the
+            # SPA chat id (rec["id"], == frontend getCurrentSessionId()), NOT the
+            # gateway sessionKey. Otherwise Gary drives a different terminal than
+            # the one the user sees. New/unsaved chats fall back to "global",
+            # which is what the panel sends (curSession() || "global").
+            terminal_key = rec["id"] if rec else "global"
+            if terminals.gary_mode_for_session(terminal_key):
+                brain_message = terminals.gary_capability_note(terminal_key) + brain_message
             _ACTIVE_RUNS[session_key] = run_info
             async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
                                                   model_ref=_model_ref(rec),

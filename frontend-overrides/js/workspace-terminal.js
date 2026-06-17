@@ -49,9 +49,9 @@
 
   // ---- xterm vendor loading ----
   function injectCss(href) {
-    if (document.querySelector('link[data-wt-css]')) return;
+    if (document.querySelector('link[data-wt-css="' + href + '"]')) return;
     const l = document.createElement('link');
-    l.rel = 'stylesheet'; l.href = href; l.setAttribute('data-wt-css', '1');
+    l.rel = 'stylesheet'; l.href = href; l.setAttribute('data-wt-css', href);
     document.head.appendChild(l);
   }
   function injectScript(src) {
@@ -63,8 +63,14 @@
   }
   async function ensureXterm() {
     injectCss(VENDOR + 'xterm.css');
+    injectCss(VENDOR + 'wt-fonts.css');
     if (!window.Terminal) await injectScript(VENDOR + 'xterm.js');
     if (!window.FitAddon) await injectScript(VENDOR + 'addon-fit.js');
+    if (!window.WebglAddon) await injectScript(VENDOR + 'addon-webgl.js');
+    if (!window.SearchAddon) await injectScript(VENDOR + 'addon-search.js');
+    if (!window.WebLinksAddon) await injectScript(VENDOR + 'addon-web-links.js');
+    if (!window.Unicode11Addon) await injectScript(VENDOR + 'addon-unicode11.js');
+    if (!window.WTTermConfig) await injectScript('/static/js/workspace-terminal-config.js');
   }
 
   // ---- Panel ----
@@ -86,11 +92,14 @@
         '<button class="wt-btn wt-kill" title="End shell — terminate this terminal">🗑</button>' +
       '</header>' +
       '<div class="wt-screen"></div>' +
+      '<div class="wt-find" hidden><input class="wt-find-input" type="text" placeholder="find" aria-label="Search terminal"><span class="wt-find-hint">↵ next · ⇧↵ prev · esc</span></div>' +
       '<div class="wt-status" hidden></div>';
     document.body.appendChild(el);
     const p = {
       id, el,
       screen: el.querySelector('.wt-screen'),
+      findBar: el.querySelector('.wt-find'),
+      findInput: el.querySelector('.wt-find-input'),
       statusEl: el.querySelector('.wt-status'),
       cwdEl: el.querySelector('.wt-cwd'),
       garyBtn: el.querySelector('.wt-gary'),
@@ -128,11 +137,54 @@
   async function ensureTermBuilt(p) {
     await ensureXterm();
     if (!p.term) {
-      p.term = new window.Terminal({ cursorBlink: true, fontSize: 13,
-        fontFamily: 'ui-monospace, Menlo, Monaco, monospace', theme: { background: '#0b0e14' } });
+      const opts = window.WTTermConfig.buildTermOptions(function (name) {
+        return getComputedStyle(document.documentElement).getPropertyValue(name);
+      });
+      p.term = new window.Terminal(opts);
+
       p.fit = new window.FitAddon.FitAddon();
       p.term.loadAddon(p.fit);
+
+      // Correct emoji/CJK cell width (requires allowProposedApi:true).
+      p.term.loadAddon(new window.Unicode11Addon.Unicode11Addon());
+      p.term.unicode.activeVersion = '11';
+
+      // Clickable URLs + in-scrollback search (search box wired in Task 5).
+      p.term.loadAddon(new window.WebLinksAddon.WebLinksAddon());
+      p.search = new window.SearchAddon.SearchAddon();
+      p.term.loadAddon(p.search);
+
       p.term.open(p.screen);
+
+      p.term.attachCustomKeyEventHandler(function (ev) {
+        if (ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'f') {
+          ev.preventDefault();
+          p.findBar.hidden = false;
+          p.findInput.focus();
+          p.findInput.select();
+          return false; // don't pass Ctrl/Cmd+F to the shell
+        }
+        return true;
+      });
+      p.findInput.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          const q = p.findInput.value;
+          if (q) { ev.shiftKey ? p.search.findPrevious(q) : p.search.findNext(q); }
+        } else if (ev.key === 'Escape') {
+          p.findBar.hidden = true;
+          p.term.focus();
+        }
+      });
+
+      // GPU renderer — must load AFTER open(). Dispose on context loss so the
+      // terminal silently falls back to the canvas/DOM renderer instead of dying.
+      try {
+        const webgl = new window.WebglAddon.WebglAddon();
+        webgl.onContextLoss(function () { webgl.dispose(); });
+        p.term.loadAddon(webgl);
+      } catch (e) { /* webgl unavailable -> default renderer */ }
+
       p.term.onData((d) => sendTo(p, { type: 'input', data: d }));
       wireImageDrop(p);
     }

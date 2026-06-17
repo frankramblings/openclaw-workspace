@@ -1,7 +1,8 @@
 import SwiftUI
 
-// Single source of truth for the PWA origin (Tailscale must be connected).
-let BASE = "https://bespin.bicolor-triceratops.ts.net:8443"
+// ⚠️  Set this to your own workspace host (e.g. your Tailscale MagicDNS name or
+//     local IP).  Tailscale must be connected on the device for .ts.net addresses.
+let BASE = "https://YOUR-WORKSPACE-HOST"
 
 /// Holds the URL the WebView should show. Deep links mutate this.
 final class Nav: ObservableObject {

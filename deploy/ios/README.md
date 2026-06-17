@@ -1,7 +1,11 @@
-# Gary iOS launch widgets
+# iOS launch widgets for your workspace
 
-Base URL (Tailscale must be connected on the iPhone):
-`https://bespin.bicolor-triceratops.ts.net:8443`
+> **Before you start:** replace `YOUR-WORKSPACE-HOST` throughout with your own
+> workspace host (e.g. your Tailscale MagicDNS name + port, or a local IP).
+> Tailscale must be connected on the iPhone for `.ts.net` addresses.
+
+Base URL (example — replace with your own):
+`https://YOUR-WORKSPACE-HOST`
 
 The PWA reads `?action=` at boot and opens into a mode, then strips the param:
 
@@ -24,21 +28,23 @@ Make four shortcuts. For each: Shortcuts app -> **+** -> **Add Action** ->
 
 | Shortcut name | URL |
 |---|---|
-| Ask Gary      | `https://bespin.bicolor-triceratops.ts.net:8443/?action=new`   |
-| Photo to Gary | `https://bespin.bicolor-triceratops.ts.net:8443/?action=photo` |
-| Voice to Gary | `https://bespin.bicolor-triceratops.ts.net:8443/?action=voice` |
-| Gary Inbox    | `https://bespin.bicolor-triceratops.ts.net:8443/?action=inbox` |
+| Ask           | `https://YOUR-WORKSPACE-HOST/?action=new`   |
+| Photo         | `https://YOUR-WORKSPACE-HOST/?action=photo` |
+| Voice         | `https://YOUR-WORKSPACE-HOST/?action=voice` |
+| Inbox         | `https://YOUR-WORKSPACE-HOST/?action=inbox` |
 
 **Home Screen:** long-press the home screen -> **+** -> **Shortcuts** -> add the
-Shortcuts widget -> pick *Ask Gary* (or a medium widget to show several).
+Shortcuts widget -> pick *Ask* (or a medium widget to show several).
 
 **Lock Screen:** long-press the Lock Screen -> **Customize** -> **Lock Screen** ->
-tap the widget row -> **Shortcuts** -> add *Ask Gary* (and *Photo to Gary*).
+tap the widget row -> **Shortcuts** -> add *Ask* (and *Photo*).
 
 ## Phase 2 — Scriptable (prettier, free app)
 
 1. Install **Scriptable** from the App Store.
-2. New script -> paste the contents of `gary-widget.scriptable.js` -> name it "Gary".
-3. Home Screen: add a **Scriptable** widget (medium = Ask/Photo/Inbox buttons;
-   small = Ask). Long-press it -> **Edit Widget** -> Script: "Gary".
-4. Lock Screen: add a **Scriptable** circular widget -> Script: "Gary".
+2. New script -> paste the contents of `gary-widget.scriptable.js` -> name it
+   anything you like (e.g. "Workspace").
+3. Edit `const BASE` at the top of the script to your workspace host URL.
+4. Home Screen: add a **Scriptable** widget (medium = Ask/Photo/Inbox buttons;
+   small = Ask). Long-press it -> **Edit Widget** -> Script: your script name.
+5. Lock Screen: add a **Scriptable** circular widget -> Script: your script name.

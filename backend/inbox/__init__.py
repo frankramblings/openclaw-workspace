@@ -270,7 +270,47 @@ def _log_spinoff(request, item, session_id, deduped):
 async def spinoff(payload: dict, request: Request = None):
     """'Hand to Gary': mint a chat session seeded with the item (the client
     sends the rendered card fields). Same awaited-seed pattern as
-    research.spinoff."""
+    research.spinoff.
+
+    Bulk path: when payload has ``items`` (a non-empty list), one session is
+    created and seeded with the whole list; returns {session_id, count}.
+    Single-item path is unchanged."""
+    items = payload.get("items")
+    if isinstance(items, list) and items:
+        titles = [(it.get("title") or "").strip() for it in items
+                  if (it.get("title") or "").strip()]
+        if not titles:
+            return _bad("items require titles")
+        lines = "\n".join(
+            f"- {it.get('title', '(no subject)')} — {it.get('subtitle', '')}"
+            for it in items
+        )
+        seed = (
+            "Context — a batch of emails I handed you from my inbox. Help me work "
+            "through them (summaries, drafts, or actions as I ask):\n\n"
+            f"{lines}\n\nReply with one short sentence confirming you have the list; "
+            "I'll say what to do next."
+        )
+        sess_name = f"Emails: {len(items)} items — {titles[0][:32]}"
+        now_ms = int(_time.time() * 1000)
+        for existing in sessions_store.list_sessions():
+            if existing.get("name") == sess_name and not existing.get("archived") \
+                    and now_ms - (existing.get("created") or 0) < SPINOFF_DEDUPE_MS:
+                _log_spinoff(request, {"id": "bulk", "title": sess_name},
+                             existing["id"], deduped=True)
+                return {"session_id": existing["id"], "count": len(items), "deduped": True}
+        sess = sessions_store.create(name=sess_name, origin="inbox")
+        try:
+            await asyncio.wait_for(_agent_turn(seed, sess["sessionKey"], None),
+                                   timeout=120)
+        except Exception as exc:  # noqa: BLE001
+            sessions_store.delete(sess["id"])
+            return JSONResponse(status_code=502,
+                                content={"detail": f"could not seed the chat: {exc}"})
+        _log_spinoff(request, {"id": "bulk", "title": sess_name}, sess["id"],
+                     deduped=False)
+        return {"session_id": sess["id"], "count": len(items)}
+
     item = payload.get("item") or {}
     title = (item.get("title") or "").strip()
     if not title:

@@ -11,6 +11,21 @@
   const widthKey = (id) => 'hermes-terminal-width:' + id;
   const DEFAULT_W = 560, MIN_W = 360, MAX_W = 1100, NARROW = 1100;
 
+  // Inline Lucide/Feather-style icons (stroke=currentColor, 24 viewBox) to match
+  // the rest of the Hermes UI (chat.js/cron.js/emailInbox.js use the same style)
+  // instead of emoji. Each reads as the action it performs.
+  const _svg = (body, sz) => '<svg viewBox="0 0 24 24" width="' + (sz || 14) + '" height="' + (sz || 14) +
+    '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
+  const IC = {
+    pin: _svg('<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>'),
+    save: _svg('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'),
+    eyeOff: _svg('<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>'),
+    restart: _svg('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+    collapse: _svg('<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>'),
+    kill: _svg('<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>'),
+    x: _svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', 13),
+  };
+
   const panels = new Map();      // id -> Panel
   let pinOrder = loadPins();     // id[]; index 0 = rightmost (oldest pin), end = leftmost
   let followTimer = null;
@@ -86,14 +101,14 @@
         '<span class="wt-cwd"></span>' +
         '<span class="wt-spacer"></span>' +
         '<button class="wt-btn wt-gary" title="__AGENT_NAME__ terminal control">__AGENT_NAME__: …</button>' +
-        '<button class="wt-btn wt-pin" title="Pin — keep this terminal on screen everywhere">📌</button>' +
-        '<button class="wt-btn wt-persist" title="Saved history">💾</button>' +
-        '<button class="wt-btn wt-restart" title="Restart shell">↻</button>' +
-        '<button class="wt-btn wt-close" title="Close panel (keeps the shell running)">✕</button>' +
-        '<button class="wt-btn wt-kill" title="End shell — terminate this terminal">🗑</button>' +
+        '<button class="wt-btn wt-pin" title="Pin — keep this terminal on screen everywhere">' + IC.pin + '</button>' +
+        '<button class="wt-btn wt-persist" title="Saved history">' + IC.save + '</button>' +
+        '<button class="wt-btn wt-restart" title="Restart shell">' + IC.restart + '</button>' +
+        '<button class="wt-btn wt-close" title="Collapse panel (keeps the shell running)">' + IC.collapse + '</button>' +
+        '<button class="wt-btn wt-kill" title="End shell + erase saved history">' + IC.kill + '</button>' +
       '</header>' +
       '<div class="wt-screen"></div>' +
-      '<div class="wt-find" hidden><input class="wt-find-input" type="text" placeholder="find" aria-label="Search terminal"><span class="wt-find-hint">↵ next · ⇧↵ prev · esc</span></div>' +
+      '<div class="wt-find" hidden><input class="wt-find-input" type="text" placeholder="find" aria-label="Search terminal"><span class="wt-find-hint">↵ next · ⇧↵ prev · esc</span><button class="wt-find-close" title="Close search (Esc)" aria-label="Close search">' + IC.x + '</button></div>' +
       '<div class="wt-status" hidden></div>';
     document.body.appendChild(el);
     const p = {
@@ -180,6 +195,10 @@
           p.findBar.hidden = true;
           p.term.focus();
         }
+      });
+      p.findBar.querySelector('.wt-find-close').addEventListener('click', function () {
+        p.findBar.hidden = true;
+        p.term.focus();
       });
 
       // GPU renderer — must load AFTER open(). Dispose on context loss so the
@@ -270,7 +289,7 @@
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.type === 'output') p.term.write(m.data);
       else if (m.type === 'exit') p.term.write('\r\n\x1b[2m[process exited'
-        + (m.code != null ? ' (' + m.code + ')' : '') + '] — press ↻ to restart\x1b[0m\r\n');
+        + (m.code != null ? ' (' + m.code + ')' : '') + '] — click the restart button to relaunch\x1b[0m\r\n');
     };
     p.ws.onclose = () => statusOf(p, 'disconnected — reopen to reconnect');
     p.ws.onerror = () => statusOf(p, 'terminal backend unavailable');
@@ -303,9 +322,10 @@
   }
   function renderPersist(p) {
     const b = p.persistBtn; if (!b) return;
-    if (p.persistEnabled === null) { b.textContent = '💾'; b.classList.remove('active'); b.title = 'Saved history'; return; }
-    b.textContent = p.persistEnabled ? '💾' : '🚫';
+    if (p.persistEnabled === null) { b.innerHTML = IC.save; b.classList.remove('active', 'wt-incognito'); b.title = 'Saved history'; return; }
+    b.innerHTML = p.persistEnabled ? IC.save : IC.eyeOff;
     b.classList.toggle('active', !!p.persistEnabled);
+    b.classList.toggle('wt-incognito', !p.persistEnabled);
     b.title = p.persistEnabled
       ? 'Saved history ON — contents persist across reboots. Click to go incognito (stop saving + wipe).'
       : 'Incognito — this terminal is NOT being saved. Click to start saving.';

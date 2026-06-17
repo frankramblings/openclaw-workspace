@@ -109,6 +109,11 @@ username, and an app password (stored mode-600, never in the repo). **Google**
 (the default) uses OAuth tokens at `GOOGLE_OAUTH_KEYS` / `GOOGLE_CAL_TOKENS`.
 Restart the workspace afterward.
 
+> **CalDAV limitations:** Tested against single-collection setups. Multi-calendar
+> selection on create works (pass `calendar_href`), but drag-move and quick edits
+> land in your default collection. Foreign event resources not named `<uid>.ics`
+> may not update or delete correctly via URL reconstruction.
+
 ### Inbox
 
 ```bash

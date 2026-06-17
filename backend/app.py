@@ -26,7 +26,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import bridge, capabilities, config, doctor, draft_mode, monitor, sessions_store, terminals, websearch
 from .memory import maybe_auto_extract
-from .calendar_google import router as calendar_router
+from .calendar import router as calendar_router
 from .cron import router as cron_router
 from .documents import router as documents_router
 from .email_himalaya import router as email_router

@@ -79,3 +79,18 @@ def test_read_cwd_seam(monkeypatch):
     assert terminals.read_cwd(None) is None
     # nonexistent pid -> None (no /proc entry / not linux)
     assert terminals.read_cwd(2_000_000_000) is None
+
+
+def test_scrub_left_boundary_prevents_false_positives():
+    """Regression: negative lookbehind ensures we don't redact 'task-12345...' or
+    '/dev/disk-0123...' that merely contain 'sk-' or 'AKIA' as a substring."""
+    # These should NOT be redacted (no boundary match):
+    assert terminals.scrub("task-12345678901234567890") == "task-12345678901234567890"
+    assert terminals.scrub("/dev/disk-0123456789abcdefghij") == "/dev/disk-0123456789abcdefghij"
+
+    # These SHOULD be redacted (real secrets with proper boundary):
+    secret_sk = "export KEY=sk-" + "B" * 40
+    assert "***REDACTED***" in terminals.scrub(secret_sk)
+
+    secret_ghp = "token ghp_" + "a" * 36
+    assert "***REDACTED***" in terminals.scrub(secret_ghp)

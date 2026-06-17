@@ -377,11 +377,11 @@ def mark_consumed(session_key: str, tokens: list[str]) -> None:
 # guarantee; full-disk encryption is the primary at-rest control.
 
 _SECRET_PATTERNS = [
-    re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
-    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
-    re.compile(r"sk-[A-Za-z0-9]{20,}"),
-    re.compile(r"AKIA[0-9A-Z]{16}"),
-    re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+    re.compile(r"(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]{20,}"),
+    re.compile(r"(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}"),
+    re.compile(r"(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
     re.compile(
         r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----.*?"
         r"-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
@@ -458,13 +458,13 @@ def write_meta(session_key: str, **fields) -> dict:
     meta = read_meta(session_key)
     meta.update(fields)
     d = persist_dir(session_key)
-    d.mkdir(parents=True, exist_ok=True)
     try:
-        os.chmod(d, 0o700)
-    except OSError:
-        pass
-    p = persist_meta_path(session_key)
-    try:
+        d.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(d, 0o700)
+        except OSError:
+            pass
+        p = persist_meta_path(session_key)
         tmp = p.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(meta))
         os.chmod(tmp, 0o600)

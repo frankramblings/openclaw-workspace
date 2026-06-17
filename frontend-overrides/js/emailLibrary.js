@@ -28,6 +28,7 @@ const API_BASE = window.location.origin;
 let _emailUnreadChipClickWired = false;
 let _emailTwoPaneResizeWired = false;
 let _emailReaderUid = null;
+let _lastReaderIdx = 0;
 let _libLoadSeq = 0;
 let _libFolderSeq = 0;
 
@@ -1118,7 +1119,13 @@ export function openEmailLibrary(opts = {}) {
         const card = grid?.querySelector(`.doclib-card[data-uid="${CSS.escape(String(_emailReaderUid))}"]`);
         if (em) {
           e.preventDefault();
-          _deleteEmailAndAdvance(em, card);
+          const removedUid = em.uid;
+          (async () => {
+            await _deleteEmailAndAdvance(em, card);
+            // _deleteEmailAndAdvance only advances inline (expanded) cards;
+            // in two-pane mode the pane needs explicit advancement.
+            _advanceReaderPaneAfterRemoval(removedUid);
+          })();
         }
         return;
       }
@@ -1974,6 +1981,7 @@ function _createCard(em) {
 }
 
 function _findSiblingEmailCard(card, dir) {
+  if (!card) return null;
   const grid = card.closest('.doclib-grid');
   if (!grid) return null;
   const cards = [...grid.querySelectorAll('.doclib-card[data-uid]')];
@@ -1987,6 +1995,29 @@ function _syncCardNavArrows(card) {
   const next = card.querySelector('.email-card-nav-btn[data-nav-dir="1"]');
   if (prev) prev.disabled = !_findSiblingEmailCard(card, -1);
   if (next) next.disabled = !_findSiblingEmailCard(card, 1);
+}
+
+/**
+ * After a destructive action removes an email in two-pane mode, advance the
+ * reader pane to a sensible neighbour (or show empty-state if none remain).
+ * No-op in narrow/inline mode or when the removed email is not currently shown.
+ */
+function _advanceReaderPaneAfterRemoval(removedUid) {
+  const modal = document.getElementById('email-lib-modal');
+  if (!modal || !modal.classList.contains('email-two-pane')) return;
+  if (String(removedUid) !== String(_emailReaderUid)) return;
+  const list = state._libEmails || [];
+  const pane = document.getElementById('email-lib-reader-pane');
+  if (!list.length) {
+    _emailReaderUid = null;
+    if (pane) pane.innerHTML = '<div class="email-reader-empty">Select an email to read</div>';
+    return;
+  }
+  // Pick the email now occupying the nearest position to where we were.
+  const next = list[Math.min(_lastReaderIdx, list.length - 1)] || list[0];
+  const nextCard = document.getElementById('email-lib-grid')
+    ?.querySelector(`.doclib-card[data-uid="${CSS.escape(String(next.uid))}"]`);
+  _openInReaderPane(next, nextCard || null);
 }
 
 const _emailReadPrefetching = new Set();
@@ -2374,7 +2405,7 @@ async function _buildReaderInto(container, em) {
   container.appendChild(reader);
 
   try {
-    const res = await fetch(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(folderAtStart)}${_acct()}`);
+    const res = await fetch(`${API_BASE}/api/email/read/${encodeURIComponent(em.uid)}?folder=${encodeURIComponent(folderAtStart)}${_acct()}`);
     const data = await res.json();
 
     // Bail if the pane has been navigated away (different uid in state)
@@ -2540,6 +2571,7 @@ async function _openInReaderPane(em, card) {
   grid?.querySelectorAll('.doclib-card.email-row-active').forEach((c) => c.classList.remove('email-row-active'));
   if (card) card.classList.add('email-row-active');
   _emailReaderUid = String(em.uid);
+  _lastReaderIdx = Math.max(0, (state._libEmails || []).findIndex(e => String(e.uid) === String(em.uid)));
   pane.innerHTML = '<div class="email-reader-empty">Loading…</div>';
   await _buildReaderInto(pane, em);
 }
@@ -4527,12 +4559,15 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
     // Pick the next neighbour BEFORE we re-render so we know which email to
     // jump to. Prefer the next card; fall back to the previous one if this
     // was the last card.
+    // card may be null in two-pane mode — _findSiblingEmailCard null-guards.
     const sibling = _findSiblingEmailCard(card, +1) || _findSiblingEmailCard(card, -1);
     const nextUid = sibling ? sibling.dataset.uid : null;
     await _animateEmailCardRemoval([em.uid]);
     state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
     _renderGrid();
     _libCacheWriteBack();
+    // Advance the two-pane reader when the removed email was being shown.
+    _advanceReaderPaneAfterRemoval(em.uid);
     if (!nextUid) return;
     // After _renderGrid, the card nodes are fresh — re-resolve and expand.
     const grid = document.getElementById('email-lib-grid');

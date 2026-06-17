@@ -223,7 +223,7 @@ def _handle_map() -> dict:
 
 
 # --- usergroups (C2): which @-groups am I a member of ------------------------
-MY_SLACK_UID = os.environ.get("SLACK_USER_ID", "U01GEK1BJ8K")
+MY_SLACK_UID = os.environ.get("SLACK_USER_ID", "")
 USERGROUPS_TTL = 3600           # membership changes rarely
 _USERGROUPS_CACHE: tuple[float, set[str]] | None = None
 
@@ -268,7 +268,7 @@ THREAD_RECENT_HOURS = int(os.environ.get("SLACK_THREAD_RECENT_HOURS", "4"))
 THREAD_SEARCH_LIMIT = 20      # my recent messages to scan for threads
 THREAD_CHECK_CAP = 12         # threads to actually fetch replies for
 THREAD_RESULT_CAP = 8         # max thread items surfaced
-MY_HANDLE = os.environ.get("SLACK_HANDLE", "femanuele")
+MY_HANDLE = os.environ.get("SLACK_HANDLE", "")
 _UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15")
 
 
@@ -336,6 +336,8 @@ async def fetch_my_threads(user_map: dict, now_ms: int,
         return []
     headers = {"Cookie": f"d={xoxd}", "User-Agent": _UA}
     cutoff = now_ms - (recent_hours or THREAD_RECENT_HOURS) * 3600_000
+    if not MY_HANDLE:
+        return []   # no Slack handle configured — skip thread-search
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             sr = await client.post(

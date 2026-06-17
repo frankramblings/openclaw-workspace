@@ -18,6 +18,7 @@
     '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
   const IC = {
     pin: _svg('<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>'),
+    bot: _svg('<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>'),
     // Match Odysseus's "Nobody" control: eye-open = saving (recorded),
     // eye-blinded (eye with an X) = incognito = not saved. Same paths as
     // #incognito-btn .eye-open / .eye-blinded in index.html.
@@ -102,7 +103,7 @@
         '<span class="wt-title">Terminal</span>' +
         '<span class="wt-cwd"></span>' +
         '<span class="wt-spacer"></span>' +
-        '<button class="wt-btn wt-gary" title="__AGENT_NAME__ terminal control">__AGENT_NAME__: …</button>' +
+        '<button class="wt-btn wt-gary" title="__AGENT_NAME__ terminal control">' + IC.bot + '</button>' +
         '<button class="wt-btn wt-pin" title="Pin — keep this terminal on screen everywhere">' + IC.pin + '</button>' +
         '<button class="wt-btn wt-persist" title="Saved history">' + IC.eyeOpen + '</button>' +
         '<button class="wt-btn wt-close" title="Collapse panel (keeps the shell running)">' + IC.collapse + '</button>' +
@@ -298,10 +299,10 @@
   // ---- Gary toggle (per panel) ----
   function renderGary(p) {
     const b = p.garyBtn; if (!b) return;
-    if (p.garyEffective === null) { b.textContent = '__AGENT_NAME__: …'; b.classList.remove('active'); b.style.color = ''; return; }
-    b.textContent = '__AGENT_NAME__: ' + (p.garyEffective ? 'on' : 'off');
+    b.innerHTML = IC.bot;
+    if (p.garyEffective === null) { b.classList.remove('active'); b.style.color = '#8b949e'; b.title = '__AGENT_NAME__ terminal control'; return; }
     b.classList.toggle('active', !!p.garyEffective);
-    b.style.color = p.garyEffective ? '#7ee787' : '';
+    b.style.color = p.garyEffective ? '#7ee787' : '#8b949e';
     b.title = p.garyEffective ? '__AGENT_NAME__ can run commands here — click to turn off for this chat'
                               : '__AGENT_NAME__ cannot run commands here — click to turn on for this chat';
   }

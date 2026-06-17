@@ -39,9 +39,10 @@ tooling is present and enabled, so a fresh install only shows what you can use.
 | Surface | Wired to |
 |---|---|
 | **Chat** | The OpenClaw agent, with live tool-call cards and a model picker reading the real gateway catalog |
+| **Terminal** | A real attached shell (PTY) per chat — you or the agent can run commands, drop/paste images |
 | **Inbox** | A scored, sorted triage feed (Gmail + Slack + Asana + meeting notes) with dismiss/review |
-| **Email** | A real Gmail mailbox via `himalaya` — read, search, send, threaded reply, AI summarize/draft/reply in your learned writing style |
-| **Calendar** | Real Google Calendar (read/create/update/delete), including natural-language quick-add ("lunch with Sam Tue 1pm") |
+| **Email** | A real mailbox via `himalaya` (Gmail or any IMAP provider) — read, search, send, threaded reply, AI summarize/draft/reply |
+| **Calendar** | Real calendar (Google or CalDAV — read/create/update/delete), including natural-language quick-add ("lunch with Sam Tue 1pm") |
 | **Notes & Documents** | Markdown-with-frontmatter files in the agent's own workspace vault — UI edits are agent-visible and vice-versa, with versioning + restore |
 | **Memories** | The agent's curated long-term memory (`MEMORY.md`), editable, with auto-extraction of facts from web-search turns |
 | **Skills** | The live skill catalog, each `SKILL.md` viewable, with enable/disable toggles |
@@ -142,7 +143,7 @@ git clone <this-repo> openclaw-workspace && cd openclaw-workspace
 
 # 1. Name your agent + prepare the frontend
 scripts/setup.sh                      # interactive — asks for the name
-#   or: scripts/setup.sh --name Gary --yes
+#   or: scripts/setup.sh --name Aria --yes
 
 # 2. Install deps
 python3 -m venv .venv && . .venv/bin/activate
@@ -190,7 +191,7 @@ Set `WORKSPACE_AGENT_NAME` in `.env`. The entrypoint detects a name change and
 re-bakes the frontend before starting uvicorn, so the new name shows in the UI:
 
 ```
-WORKSPACE_AGENT_NAME=Gary
+WORKSPACE_AGENT_NAME=Aria
 ```
 
 ### Persisting state

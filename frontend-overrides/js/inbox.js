@@ -884,9 +884,9 @@
 
   // Open a deep-link in a new tab. NOTE: a web app cannot choose which browser
   // / profile / window a link lands in — that's the user's browser's decision.
-  // The backend-`open` approach was reverted: the backend runs on the server
-  // (bespin), so it could only ever open tabs on the server, never on a remote
-  // client. Reaching a specific client browser window is a browser-level setting
+  // The backend-`open` approach was reverted: the backend runs on the server,
+  // so it could only ever open tabs on the server, never on a remote client.
+  // Reaching a specific client browser window is a browser-level setting
   // (or running the workspace un-installed as a normal tab), not something the
   // page can force. See the slice-A spec's "open behavior" section.
   function openExternal(url) {

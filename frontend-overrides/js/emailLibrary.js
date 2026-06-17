@@ -22,10 +22,12 @@ import {
   _tryFoldHintSig, _foldSignature, _SIG_ICON, _QUOTE_ICON,
 } from './emailLibrary/signatureFold.js';
 import { state } from './emailLibrary/state.js';
-import { toggleInSet, allSelected, chunk, summarizeBulk } from './emailLibrary/triageLogic.js';
+import { toggleInSet, allSelected, chunk, summarizeBulk, triageMode } from './emailLibrary/triageLogic.js';
 
 const API_BASE = window.location.origin;
 let _emailUnreadChipClickWired = false;
+let _emailTwoPaneResizeWired = false;
+let _emailReaderUid = null;
 let _libLoadSeq = 0;
 let _libFolderSeq = 0;
 
@@ -293,6 +295,22 @@ function _prepareEmailWindowForDocument(modal) {
   // minimizing so the document/compose pane can open beside it.
   _snapEmailModalToLeftSidebar(modal);
   return false;
+}
+
+function _applyEmailTwoPane() {
+  const modal = document.getElementById('email-lib-modal');
+  if (!modal) return;
+  const coarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const on = !coarse && triageMode(window.innerWidth) === 'split';
+  modal.classList.toggle('email-two-pane', on);
+  const pane = document.getElementById('email-lib-reader-pane');
+  if (!on) {
+    if (pane) { pane.hidden = true; pane.innerHTML = ''; }
+    _emailReaderUid = null;
+  } else if (pane && !_emailReaderUid) {
+    pane.hidden = false;
+    pane.innerHTML = '<div class="email-reader-empty">Select an email to read</div>';
+  }
 }
 
 function _wireUnreadTabClick() {
@@ -663,7 +681,10 @@ export function openEmailLibrary(opts = {}) {
             <button class="memory-toolbar-btn" id="email-lib-bulk-delete" style="position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>Delete</button>
             <button class="memory-toolbar-btn" id="email-lib-bulk-cancel" title="Cancel (Esc)" style="margin-left:4px;padding:3px 6px;position:relative;top:-2px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
           </div>
-          <div id="email-lib-grid" class="doclib-grid"></div>
+          <div id="email-lib-listpane-wrap">
+            <div id="email-lib-grid" class="doclib-grid"></div>
+            <div id="email-lib-reader-pane" class="email-lib-reader-pane" hidden></div>
+          </div>
           <button class="email-lib-fab" id="email-lib-fab" type="button" aria-label="New email">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M3 6.5l9 6 9-6"/></svg>
             <span class="email-lib-fab-label">New</span>
@@ -1096,6 +1117,13 @@ export function openEmailLibrary(opts = {}) {
   _loadFolders();
   _loadEmailReminderBellVisibility();
   _loadEmails();
+
+  // Two-pane reader scaffold: apply on open + keep in sync with window width.
+  _applyEmailTwoPane();
+  if (!_emailTwoPaneResizeWired) {
+    _emailTwoPaneResizeWired = true;
+    window.addEventListener('resize', _applyEmailTwoPane);
+  }
 }
 
 async function _loadAccounts() {

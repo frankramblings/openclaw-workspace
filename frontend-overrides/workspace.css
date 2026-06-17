@@ -751,3 +751,12 @@ html { background-color: var(--bg); }
 #email-lib-grid .doclib-card .email-quick-act:hover { opacity: 1; }
 #email-lib-modal.select-mode .email-quick-act { display: none; }
 @media (pointer: coarse) { #email-lib-grid .doclib-card:hover .email-quick-act { display: none; } }
+
+/* Email modal: desktop two-pane reader ------------------------------------ */
+#email-lib-modal.email-two-pane .doclib-modal-content { width: min(1200px, 95vw); }
+#email-lib-modal.email-two-pane #email-lib-listpane-wrap { display: flex; gap: 0; min-height: 0; flex: 1; }
+#email-lib-modal.email-two-pane #email-lib-grid { flex: 0 0 38%; max-width: 420px; overflow-y: auto; border-right: 1px solid var(--border, rgba(127,127,127,0.2)); }
+#email-lib-modal.email-two-pane #email-lib-reader-pane { flex: 1 1 auto; overflow-y: auto; min-width: 0; }
+#email-lib-modal.email-two-pane #email-lib-grid .doclib-card.email-row-active { background: var(--hover, rgba(127,127,127,0.14)); }
+.email-lib-reader-pane { padding: 0 4px; }
+.email-lib-reader-pane .email-reader-empty { opacity: 0.5; text-align: center; padding: 40px 12px; font-size: 13px; }

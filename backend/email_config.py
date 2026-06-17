@@ -20,9 +20,15 @@ def _s(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _shq(value: str) -> str:
+    """POSIX single-quote a value for safe embedding in a shell command (so a
+    secret path containing e.g. a quote can't break/inject the `auth.cmd`)."""
+    return "'" + str(value).replace("'", "'\\''") + "'"
+
+
 def _render(*, account_id, email, display_name, secret_path, imap_host, imap_port,
             smtp_host, smtp_port, is_default, save_copy) -> str:
-    cat = f"cat '{secret_path}'"
+    cat = f"cat {_shq(secret_path)}"
     lines = [f"[accounts.{account_id}]"]
     if is_default:
         lines.append("default = true")
@@ -92,11 +98,16 @@ def add_account(*, provider, email, display_name, password, config_path,
         raise ValueError("imap provider requires imap_host and smtp_host")
 
     # 1. secret file: strip ALL whitespace (Gmail app-passwords show with spaces),
-    #    no trailing newline, mode 600.
+    #    no trailing newline. Create mode-600 ATOMICALLY (O_CREAT|O_EXCL-free but
+    #    opened with 0o600 so the password is never briefly world/group-readable).
     secret_path.parent.mkdir(parents=True, exist_ok=True)
     secret_clean = "".join(password.split())
-    secret_path.write_text(secret_clean)
-    os.chmod(secret_path, 0o600)
+    fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, secret_clean.encode())
+    finally:
+        os.close(fd)
+    os.chmod(secret_path, 0o600)  # enforce 600 even if the file pre-existed
 
     # 2. decide default + render block
     existing = config_path.read_text() if config_path.exists() else ""

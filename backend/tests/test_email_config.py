@@ -89,3 +89,23 @@ def test_add_account_imap_requires_hosts(tmp_path):
         ec.add_account(provider="imap", email="u@x.example", display_name="U",
                        password="pw", config_path=tmp_path / "c.toml",
                        secret_path=tmp_path / ".pw")  # no imap_host
+
+
+def test_secret_path_with_quote_is_shell_safe():
+    # A secret path containing a single quote must not break/inject auth.cmd.
+    toml = ec.render_gmail_account(
+        email="m@gmail.com", display_name="M",
+        secret_path="/home/o'reilly/.pw", is_default=True)
+    d = tomllib.loads(toml)  # still valid TOML
+    # the parsed auth.cmd is a valid POSIX command that cats the exact path
+    cmd = d["accounts"]["gmail"]["backend"]["auth"]["cmd"]
+    assert cmd == "cat '/home/o'\\''reilly/.pw'"
+
+
+def test_add_account_secret_is_600_atomic(tmp_path):
+    import os as _os, stat as _stat
+    secret = tmp_path / ".pw"
+    ec.add_account(provider="gmail", email="me@gmail.com", display_name="Me",
+                   password="p w", config_path=tmp_path / "c.toml", secret_path=secret)
+    assert _stat.S_IMODE(_os.stat(secret).st_mode) == 0o600
+    assert secret.read_text() == "pw"

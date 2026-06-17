@@ -1096,6 +1096,34 @@ export function openEmailLibrary(opts = {}) {
       _bulkAction('delete');
       return;
     }
+    // Two-pane keyboard nav: ArrowLeft/Right moves between emails in the pane.
+    if (modal?.classList.contains('email-two-pane') && _emailReaderUid) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const dir = e.key === 'ArrowLeft' ? -1 : 1;
+        const curIdx = state._libEmails.findIndex(x => String(x.uid) === String(_emailReaderUid));
+        if (curIdx !== -1) {
+          const nextEm = state._libEmails[curIdx + dir];
+          if (nextEm) {
+            e.preventDefault();
+            const grid = document.getElementById('email-lib-grid');
+            const nextCard = grid?.querySelector(`.doclib-card[data-uid="${CSS.escape(String(nextEm.uid))}"]`);
+            _openInReaderPane(nextEm, nextCard || null);
+            nextCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+        return;
+      } else if (isDeleteKey && _emailReaderUid) {
+        const em = state._libEmails.find(x => String(x.uid) === String(_emailReaderUid));
+        const grid = document.getElementById('email-lib-grid');
+        const card = grid?.querySelector(`.doclib-card[data-uid="${CSS.escape(String(_emailReaderUid))}"]`);
+        if (em) {
+          e.preventDefault();
+          _deleteEmailAndAdvance(em, card);
+        }
+        return;
+      }
+    }
+
     const expanded = document.querySelector('#email-lib-modal .doclib-card.doclib-card-expanded');
     if (!expanded) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
@@ -1659,6 +1687,13 @@ function _renderGrid() {
       }
     }
   }
+
+  // Two-pane: re-apply the active-row highlight after a re-render so the
+  // selection survives filter/sort/reload. Does NOT re-fetch the body pane.
+  if (_emailReaderUid && document.getElementById('email-lib-modal')?.classList.contains('email-two-pane')) {
+    const activeCard = grid.querySelector(`.doclib-card[data-uid="${CSS.escape(String(_emailReaderUid))}"]`);
+    if (activeCard) activeCard.classList.add('email-row-active');
+  }
 }
 
 function _createCard(em) {
@@ -1928,7 +1963,11 @@ function _createCard(em) {
       _updateBulkBar();
       return;
     }
-    await _toggleCardPreview(card, em);
+    if (document.getElementById('email-lib-modal')?.classList.contains('email-two-pane')) {
+      _openInReaderPane(em, card);
+    } else {
+      await _toggleCardPreview(card, em);
+    }
   });
 
   return card;
@@ -2303,6 +2342,206 @@ async function _toggleCardPreview(card, em) {
   } catch (e) {
     reader.innerHTML = `<div style="padding:20px;color:var(--red,#e55)">Failed to load email</div>`;
   }
+}
+
+/**
+ * Render a full email reader into an arbitrary container element.
+ * Used by the desktop two-pane reader pane. Reuses all the same fetch,
+ * body renderer, and action-button handlers as _toggleCardPreview but
+ * skips card-specific concerns (inline height, modal email-reading class,
+ * swipe nav, nav-arrow buttons).
+ */
+async function _buildReaderInto(container, em) {
+  const folderAtStart = state._libFolder || 'INBOX';
+  const accountAtStart = state._libAccountId || '';
+  const uidAtStart = String(em?.uid ?? '');
+
+  if (!em.is_read) {
+    _syncEmailReadState(em.uid, true);
+    fetch(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(folderAtStart)}${_acct()}`, { method: 'POST' })
+      .catch(err => console.error('Failed to mark email read:', err));
+  }
+
+  // Show loading spinner
+  const reader = document.createElement('div');
+  reader.className = 'email-card-reader email-card-reader-loading';
+  const loadingWrap = document.createElement('div');
+  loadingWrap.style.cssText = 'padding:20px;display:flex;justify-content:center;align-items:center;flex:1;min-height:180px;';
+  const sp = spinnerModule.createWhirlpool(28);
+  loadingWrap.appendChild(sp.element);
+  reader.appendChild(loadingWrap);
+  container.innerHTML = '';
+  container.appendChild(reader);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(folderAtStart)}${_acct()}`);
+    const data = await res.json();
+
+    // Bail if the pane has been navigated away (different uid in state)
+    if (
+      accountAtStart !== (state._libAccountId || '') ||
+      folderAtStart !== (state._libFolder || 'INBOX') ||
+      uidAtStart !== String(_emailReaderUid || '') ||
+      !container.isConnected
+    ) {
+      return;
+    }
+
+    if (data.error) {
+      reader.innerHTML = `<div style="padding:20px;color:var(--red,#e55)">Error: ${_esc(data.error)}</div>`;
+      return;
+    }
+
+    _syncEmailReadState(em.uid, true);
+
+    const attsHtml = _buildAttsHtmlFor(em.uid, data);
+
+    let dateDisplay = data.date || '';
+    try {
+      if (data.date) {
+        const d = new Date(data.date);
+        if (!isNaN(d.getTime())) {
+          dateDisplay = d.toLocaleString([], {
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          });
+        }
+      }
+    } catch (_) {}
+
+    const buildRecipients = (str) => {
+      if (!str) return '';
+      const addrs = str.split(',').map(s => s.trim()).filter(Boolean);
+      if (addrs.length === 0) return '';
+      return addrs.map(a => {
+        const name = _extractName(a);
+        return `<span class="recipient-chip" data-full="${_esc(a)}" title="Click for details">${_esc(name)}</span>`;
+      }).join('');
+    };
+
+    const fromChip = `<span class="recipient-chip from-chip" data-full="${_esc(data.from_name)} &lt;${_esc(data.from_address)}&gt;" title="Click for details">${_esc(data.from_name || data.from_address)}</span>`;
+
+    reader.innerHTML = `
+      <div class="email-reader-header">
+        <div class="email-reader-meta">
+          <div class="email-reader-meta-row"><strong>From:</strong><span class="recipient-chips">${fromChip}</span></div>
+          ${data.to ? `<div class="email-reader-meta-row"><strong>To:</strong><span class="recipient-chips">${buildRecipients(data.to)}</span></div>` : ''}
+          ${data.cc ? `<div class="email-reader-meta-row"><strong>Cc:</strong><span class="recipient-chips">${buildRecipients(data.cc)}</span></div>` : ''}
+        </div>
+        <div class="email-reader-actions">
+          <div class="email-reader-actions-row email-reader-actions-row-primary">
+            <button class="memory-toolbar-btn reader-icon-btn" data-act="reply" title="Reply"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg><span class="reader-btn-label">Reply</span></button>
+            ${_hasMultipleRecipients(data) ? `<button class="memory-toolbar-btn reader-icon-btn" data-act="reply-all" title="Reply All"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="7 17 2 12 7 7"/><polyline points="12 17 7 12 12 7"/><path d="M22 18v-2a4 4 0 0 0-4-4H7"/></svg><span class="reader-btn-label">Reply all</span></button>` : ''}
+            <button class="memory-toolbar-btn reader-icon-btn" data-act="forward" title="Forward"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 1 1 4-4h12"/></svg><span class="reader-btn-label">Forward</span></button>
+          </div>
+          <div class="email-reader-actions-row email-reader-actions-row-secondary">
+            <button class="memory-toolbar-btn reader-icon-btn" data-act="ai-reply" title="${data.cached_ai_reply ? 'AI Reply (cached draft ready)' : 'AI Reply (suggest a draft)'}">${_aiReplyIcon(data)}<span class="reader-btn-label">AI reply</span></button>
+            <button class="memory-toolbar-btn reader-icon-btn" data-act="summarize" title="Summarize">${_summaryIcon(data)}<span class="reader-btn-label">Summary</span></button>
+            <div class="email-reader-more-wrap" style="position:relative">
+              <button class="memory-toolbar-btn reader-icon-btn" data-act="more" title="More actions"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg><span class="reader-btn-label">More</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+      ${attsHtml}
+      <div class="email-reader-body${data.body_html ? ' html-body' : ''}">${_safeRenderEmailBody(data)}</div>
+    `;
+    reader.classList.remove('email-card-reader-loading');
+
+    // Attachment fold toggle
+    const attsWrap = reader.querySelector('.email-reader-atts-wrap');
+    if (attsWrap) {
+      const attsToggle = attsWrap.querySelector('.email-reader-atts-header');
+      if (attsToggle) {
+        attsToggle.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          attsWrap.classList.toggle('collapsed');
+        });
+        attsToggle.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            attsWrap.classList.toggle('collapsed');
+          }
+        });
+      }
+    }
+
+    _wireAttachmentHandlers(reader, state._libFolder);
+
+    reader.querySelector('[data-act="reply"]')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      _snapEmailModalToLeftSidebar(ev.currentTarget.closest('.modal'));
+      if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'reply' });
+    });
+    reader.querySelector('[data-act="reply-all"]')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      _snapEmailModalToLeftSidebar(ev.currentTarget.closest('.modal'));
+      if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'reply-all' });
+    });
+    reader.querySelector('[data-act="ai-reply"]')?.addEventListener('click', (ev) => _handleAiReplyButton(ev, em, data));
+    reader.querySelector('[data-act="forward"]')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      if (state._onEmailClick) await state._onEmailClick({ email: em, emailData: data, mode: 'forward' });
+    });
+    reader.querySelector('[data-act="more"]')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      // Pass null for card since we're in the pane; _showReaderMoreMenu only
+      // uses card for inline-expand collapse, which doesn't apply here.
+      _showReaderMoreMenu(em, null, reader, ev.currentTarget);
+    });
+    reader.querySelector('[data-act="summarize"]')?.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      await _summarizeEmail(reader, data, ev.currentTarget);
+    });
+
+    if (data.cached_summary) {
+      const sumBtn = reader.querySelector('[data-act="summarize"]');
+      _showCachedSummary(reader, data.cached_summary, sumBtn);
+    }
+
+    // Recipient chip click delegation
+    reader.addEventListener('click', (ev) => {
+      const chip = ev.target.closest('.recipient-chip');
+      if (chip && reader.contains(chip)) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        const full = chip.getAttribute('data-full') || '';
+        if (chip.classList.contains('expanded')) {
+          chip.classList.remove('expanded');
+          const name = chip.getAttribute('data-name');
+          if (name != null) chip.textContent = name;
+        } else {
+          if (!chip.hasAttribute('data-name')) {
+            chip.setAttribute('data-name', chip.textContent.trim());
+          }
+          chip.classList.add('expanded');
+          const tmp = document.createElement('textarea');
+          tmp.innerHTML = full;
+          chip.textContent = tmp.value;
+        }
+        return;
+      }
+      ev.stopPropagation();
+    });
+  } catch (e) {
+    reader.innerHTML = `<div style="padding:20px;color:var(--red,#e55)">Failed to load email</div>`;
+  }
+}
+
+/**
+ * Open an email in the two-pane reader pane (desktop ≥1100px, non-touch).
+ * Highlights the row, sets _emailReaderUid, and populates the pane.
+ */
+async function _openInReaderPane(em, card) {
+  const pane = document.getElementById('email-lib-reader-pane');
+  if (!pane) return;
+  pane.hidden = false;
+  const grid = document.getElementById('email-lib-grid');
+  grid?.querySelectorAll('.doclib-card.email-row-active').forEach((c) => c.classList.remove('email-row-active'));
+  if (card) card.classList.add('email-row-active');
+  _emailReaderUid = String(em.uid);
+  pane.innerHTML = '<div class="email-reader-empty">Loading…</div>';
+  await _buildReaderInto(pane, em);
 }
 
 /**

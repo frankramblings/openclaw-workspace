@@ -94,3 +94,34 @@ def test_scrub_left_boundary_prevents_false_positives():
 
     secret_ghp = "token ghp_" + "a" * 36
     assert "***REDACTED***" in terminals.scrub(secret_ghp)
+
+
+def test_flush_persists_pending_output_and_meta():
+    sess = terminals.PtySession("flush-key")
+    sess.pid = None  # no real /proc; read_cwd -> None
+    sess._persist_pending = "line1\n"
+    sess.flush_persist(force=True)
+    assert "line1" in terminals.load_tail("flush-key")
+    meta = terminals.read_meta("flush-key")
+    assert "last_active" in meta and meta["persist"] is True
+    assert sess._persist_pending == ""
+
+
+def test_flush_is_gated_when_not_forced():
+    sess = terminals.PtySession("gate-key")
+    sess.pid = None
+    sess._persist_last_flush = terminals.time.monotonic()  # just flushed
+    sess._persist_pending = "tiny"
+    sess.flush_persist(force=False)  # under interval + under byte threshold
+    assert terminals.load_tail("gate-key") == ""  # nothing written yet
+    assert sess._persist_pending == "tiny"        # still pending
+
+
+def test_incognito_session_never_writes():
+    terminals.set_persist("incog-key", False)
+    sess = terminals.PtySession("incog-key")
+    assert sess.persist is False
+    sess._persist_pending = "should not persist"
+    sess.flush_persist(force=True)
+    assert terminals.load_tail("incog-key") == ""
+    assert sess._persist_pending == ""

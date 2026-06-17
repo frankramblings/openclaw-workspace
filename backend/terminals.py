@@ -82,6 +82,9 @@ class PtySession:
         self.exit_code: int | None = None
         self._subscribers: set[asyncio.Queue] = set()
         self._reader_loop: asyncio.AbstractEventLoop | None = None
+        self.persist = is_persist_enabled(session_key)
+        self._persist_pending = ""
+        self._persist_last_flush = 0.0
 
     def start(self) -> None:
         # Precompute everything BEFORE the fork: building dicts/lists in the child
@@ -113,6 +116,26 @@ class PtySession:
         self.buffer += text
         if len(self.buffer) > MAX_BUFFER:
             self.buffer = self.buffer[-MAX_BUFFER:]
+
+    def flush_persist(self, force: bool = False) -> None:
+        """Append batched output to the on-disk log and refresh meta. Gated to
+        avoid per-keystroke writes; force=True on close/exit. No-op when the
+        session is incognito (persist disabled)."""
+        if not self.persist:
+            self._persist_pending = ""
+            return
+        now = time.monotonic()
+        ready = (now - self._persist_last_flush >= PERSIST_FLUSH_INTERVAL
+                 or len(self._persist_pending) >= PERSIST_FLUSH_BYTES)
+        if not force and not ready:
+            return
+        if self._persist_pending:
+            append_output(self.session_key, self._persist_pending)
+            self._persist_pending = ""
+        last_cwd = read_cwd(self.pid) or read_meta(self.session_key).get("last_cwd")
+        write_meta(self.session_key, last_active=time.time(), last_cwd=last_cwd,
+                   cols=self.cols, rows=self.rows, persist=self.persist)
+        self._persist_last_flush = now
 
     def drain_once(self) -> str:
         """Read whatever is available without blocking; append to the scrollback
@@ -179,6 +202,8 @@ class PtySession:
             pass
 
     def close(self) -> None:
+        # Persist any pending output before tearing the shell down.
+        self.flush_persist(force=True)
         # Idempotent: safe to call twice, and safe if start() never set a pid.
         if self.pid is not None:
             try:
@@ -219,9 +244,13 @@ class PtySession:
         if text:
             for q in list(self._subscribers):
                 q.put_nowait(("output", text))
+            if self.persist:
+                self._persist_pending += text
+                self.flush_persist()
         if self.exited:
             for q in list(self._subscribers):
                 q.put_nowait(("exit", self.exit_code))
+            self.flush_persist(force=True)
             self._detach_reader()
 
     def _detach_reader(self) -> None:

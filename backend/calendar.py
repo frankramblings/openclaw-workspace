@@ -65,7 +65,9 @@ async def update_event(uid: str, payload: dict = Body(...)):
 
 @router.delete("/api/calendar/events/{uid}")
 async def delete_event(uid: str, request: Request):
-    cal = request.query_params.get("calendar") or "primary"
+    # Bug 2 fix: pass raw param (may be None/empty); each provider applies its
+    # own default. Do NOT hardcode "primary" here — that would break CalDAV.
+    cal = request.query_params.get("calendar") or None
     try:
         return await _provider().delete_event(uid, cal)
     except Exception as exc:  # noqa: BLE001

@@ -80,6 +80,22 @@ and are optional — chat works with just OpenClaw.
 Run `scripts/doctor.sh` any time to verify the connection (reachability, auth,
 agent id, the gateway method contract).
 
+## Optional integrations
+
+Tabs that need your own accounts are off until you configure them; until then
+they're hidden (the backend reports them via `/api/capabilities`).
+
+### Email
+
+```bash
+scripts/setup.sh --add-email          # interactive (Gmail app-password or IMAP)
+```
+
+For Gmail, create an **App Password** (Google Account → Security → App passwords)
+and paste it when prompted — it's stored in a mode-600 file next to your himalaya
+config, never in this repo. For other providers choose `imap` and enter your
+IMAP/SMTP hosts. Restart the workspace afterward to pick up the account.
+
 ## Quickstart
 
 ```bash

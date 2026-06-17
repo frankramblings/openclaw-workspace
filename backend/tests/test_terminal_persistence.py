@@ -153,3 +153,27 @@ def test_get_or_create_seeds_buffer_from_log():
         assert "restored" in sess.buffer  # separator present
     finally:
         terminals.close_session(key)
+
+
+def _client():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(terminals.router)
+    return TestClient(app)
+
+
+def test_persist_endpoints_roundtrip():
+    c = _client()
+    key = "ep-key"
+    assert c.get(f"/api/terminal/{key}/persist").json() == {"enabled": True}
+    assert c.post(f"/api/terminal/{key}/persist", json={"enabled": False}).json() == {"enabled": False}
+    assert terminals.is_persist_enabled(key) is False
+
+
+def test_clear_history_endpoint_wipes_log():
+    c = _client()
+    key = "ep-clear"
+    terminals.append_output(key, "stuff")
+    assert c.post(f"/api/terminal/{key}/clear-history").json() == {"ok": True}
+    assert terminals.load_tail(key) == ""

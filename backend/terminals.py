@@ -781,6 +781,32 @@ async def terminal_gary_mode_set(request: Request):
     }
 
 
+@router.get("/api/terminal/{session_key}/persist")
+async def terminal_persist_get(session_key: str):
+    return {"enabled": is_persist_enabled(session_key)}
+
+
+@router.post("/api/terminal/{session_key}/persist")
+async def terminal_persist_set(session_key: str, request: Request):
+    body = await request.json()
+    enabled = bool(body.get("enabled", True))
+    set_persist(session_key, enabled)
+    s = _sessions.get(session_key)
+    if s is not None:
+        s.persist = enabled
+    return {"enabled": enabled}
+
+
+@router.post("/api/terminal/{session_key}/clear-history")
+async def terminal_clear_history(session_key: str):
+    clear_persist(session_key)
+    s = _sessions.get(session_key)
+    if s is not None:
+        s.buffer = ""
+        s._persist_pending = ""
+    return {"ok": True}
+
+
 @router.post("/api/terminal/{session_key}/close")
 async def terminal_close(session_key: str, request: Request):
     client_host = request.client.host if request.client else None

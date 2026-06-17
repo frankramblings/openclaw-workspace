@@ -92,11 +92,14 @@
         '<button class="wt-btn wt-kill" title="End shell — terminate this terminal">🗑</button>' +
       '</header>' +
       '<div class="wt-screen"></div>' +
+      '<div class="wt-find" hidden><input class="wt-find-input" type="text" placeholder="find" aria-label="Search terminal"><span class="wt-find-hint">↵ next · ⇧↵ prev · esc</span></div>' +
       '<div class="wt-status" hidden></div>';
     document.body.appendChild(el);
     const p = {
       id, el,
       screen: el.querySelector('.wt-screen'),
+      findBar: el.querySelector('.wt-find'),
+      findInput: el.querySelector('.wt-find-input'),
       statusEl: el.querySelector('.wt-status'),
       cwdEl: el.querySelector('.wt-cwd'),
       garyBtn: el.querySelector('.wt-gary'),
@@ -152,6 +155,27 @@
       p.term.loadAddon(p.search);
 
       p.term.open(p.screen);
+
+      p.term.attachCustomKeyEventHandler(function (ev) {
+        if (ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'f') {
+          ev.preventDefault();
+          p.findBar.hidden = false;
+          p.findInput.focus();
+          p.findInput.select();
+          return false; // don't pass Ctrl/Cmd+F to the shell
+        }
+        return true;
+      });
+      p.findInput.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter') {
+          ev.preventDefault();
+          const q = p.findInput.value;
+          if (q) { ev.shiftKey ? p.search.findPrevious(q) : p.search.findNext(q); }
+        } else if (ev.key === 'Escape') {
+          p.findBar.hidden = true;
+          p.term.focus();
+        }
+      });
 
       // GPU renderer — must load AFTER open(). Dispose on context loss so the
       // terminal silently falls back to the canvas/DOM renderer instead of dying.

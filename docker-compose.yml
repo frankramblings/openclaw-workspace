@@ -1,0 +1,46 @@
+# OpenClaw Workspace — Docker Compose
+#
+# Quick start:
+#   cp .env.example .env        # then fill in OPENCLAW_GATEWAY_WS + credentials
+#   docker compose up
+#   open http://127.0.0.1:8800
+#
+# Security: port is bound to 127.0.0.1 by default — it is NOT exposed on the
+# LAN. To expose it beyond localhost you MUST set WORKSPACE_AUTH_TOKEN in .env
+# and also change the port binding below (e.g. remove the "127.0.0.1:" prefix).
+# Without a token an open port gives unauthenticated access to the agent.
+#
+# Recommended public-access path: Tailscale Serve in front of 127.0.0.1:8800
+# with WORKSPACE_AUTH_TOKEN set, rather than binding 0.0.0.0 directly.
+
+services:
+  workspace:
+    build: .
+    restart: unless-stopped
+    # localhost-only by default. Change to "0.0.0.0:8800:8800" only after
+    # setting WORKSPACE_AUTH_TOKEN in .env (or risk unauthenticated access).
+    ports:
+      - "127.0.0.1:8800:8800"
+    env_file:
+      - .env
+    environment:
+      # Core gateway connection — required for chat to work.
+      # Values in .env override these; they're listed here for documentation.
+      - OPENCLAW_GATEWAY_WS
+      - OPENCLAW_GATEWAY_PASSWORD
+      - OPENCLAW_AGENT_ID
+      # Branding: set to rebrand at runtime (re-bakes the frontend on start).
+      - WORKSPACE_AGENT_NAME
+      # Optional auth gate (REQUIRED before exposing beyond localhost).
+      - WORKSPACE_AUTH_TOKEN
+      # Human user display name (shown by /api/auth/status).
+      - WORKSPACE_USER
+    volumes:
+      # Persist per-install state: branding, sessions, connection config.
+      # Survives container rebuilds and image updates.
+      - ./.data:/app/.data
+
+      # Same-host option: if OpenClaw runs on the same machine, mount its
+      # config directory so the workspace can read the gateway password and
+      # agent config without needing env vars. Uncomment to enable:
+      # - ~/.openclaw:/root/.openclaw:ro

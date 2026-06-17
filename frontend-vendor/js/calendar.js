@@ -296,11 +296,12 @@ async function _updateEvent(uid, data) {
   return { ok: true };
 }
 
-async function _deleteEvent(uid) {
+async function _deleteEvent(uid, calendarHref) {
   const backup = _allEvents[uid];
   delete _allEvents[uid];
   const isRecurring = uid.includes('::');
-  fetch(`${API_BASE}/api/calendar/events/${encodeURIComponent(uid)}`, {
+  const calParam = calendarHref ? `?calendar=${encodeURIComponent(calendarHref)}` : '';
+  fetch(`${API_BASE}/api/calendar/events/${encodeURIComponent(uid)}${calParam}`, {
     method: 'DELETE', credentials: 'same-origin',
   }).then(r => {
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -452,7 +453,7 @@ function _showEventMoreMenu(ev, anchor) {
     const name = ev.summary ? `"${ev.summary}"` : 'this event';
     const ok = await uiModule.styledConfirm(`Delete ${name}?`, { confirmText: 'Delete', danger: true });
     if (!ok) return;
-    try { await _deleteEvent(ev.uid); setTimeout(() => _render(), 100); } catch (_) {}
+    try { await _deleteEvent(ev.uid, ev.calendar_href); setTimeout(() => _render(), 100); } catch (_) {}
   }, true));
 
   document.body.appendChild(dropdown);
@@ -2944,7 +2945,7 @@ function _showEventForm(existing, defaultDate, defaultEndDate) {
     const name = existing && existing.summary ? `"${existing.summary}"` : 'this event';
     const ok = await uiModule.styledConfirm(`Delete ${name}?`, { confirmText: 'Delete', danger: true });
     if (!ok) return;
-    try { await _deleteEvent(existing.uid); _render(); }
+    try { await _deleteEvent(existing.uid, existing.calendar_href); _render(); }
     catch (e) { uiModule.showToast('Failed to delete'); }
   });
   // ── Bespoke-form behavior ──────────────────────────────────────────

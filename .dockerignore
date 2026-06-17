@@ -1,0 +1,43 @@
+# Git history — not needed in the image
+.git
+.gitignore
+
+# Python virtualenv — rebuilt inside the image
+.venv
+
+# Git worktrees — the active build worktree must not include sibling worktrees
+.worktrees
+
+# Per-install state — persisted via a Docker volume (see docker-compose.yml)
+.data
+
+# Generated frontend build — rebuilt inside the image by scripts/setup.sh
+frontend
+
+# Temp / scratch
+tmp
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+
+# Node (not used here, but guard against accidental inclusion)
+node_modules
+
+# Screenshots / large assets
+*.png
+*.jpg
+*.jpeg
+*.gif
+screenshots
+
+# Editor artefacts
+.DS_Store
+*.swp
+*.swo
+
+# Secrets that must never land in the image
+.env
+*.env

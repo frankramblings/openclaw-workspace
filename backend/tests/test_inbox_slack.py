@@ -132,9 +132,9 @@ def test_resolve_refs_leaves_unknown_ids_untouched():
 
 def test_resolve_refs_glued_id_then_name():
     # The Slack MCP renders mentions as <id><DisplayName> glued together with no
-    # delimiter (e.g. "U01GEK1BJ8KFrank"). Strip the id, keep the name -> "@Frank".
-    m = {"U01GEK1BJ8K": "Frank"}
-    assert slack.resolve_slack_refs("FYI U01GEK1BJ8KFrank ok", m) == "FYI @Frank ok"
+    # delimiter (e.g. "U0EXAMPLEIDFrank"). Strip the id, keep the name -> "@Frank".
+    m = {"U0EXAMPLEID": "Frank"}
+    assert slack.resolve_slack_refs("FYI U0EXAMPLEIDFrank ok", m) == "FYI @Frank ok"
 
 
 def test_resolve_refs_glued_multiword_name():
@@ -236,3 +236,24 @@ def test_map_items_resolves_names_in_title():
     items = slack.map_items([], mentions, handle_map={}, now_ms=NOW,
                             user_map={"U3B6KNK8B": "Chris B"})
     assert items[0]["title"] == "hi @Chris B can you check?"
+
+
+# --- genericization defaults ---------------------------------------------------
+
+def test_my_handle_default_is_empty():
+    """MY_HANDLE must not ship with a personal default; empty = feature off."""
+    import os
+    # Only meaningful when SLACK_HANDLE is not set in the test environment.
+    if "SLACK_HANDLE" not in os.environ:
+        assert slack.MY_HANDLE == "", (
+            "MY_HANDLE has a personal default — set SLACK_HANDLE env instead"
+        )
+
+
+def test_my_slack_uid_default_is_empty():
+    """MY_SLACK_UID must not ship with a personal UID default; set SLACK_USER_ID."""
+    import os
+    if "SLACK_USER_ID" not in os.environ:
+        assert slack.MY_SLACK_UID == "", (
+            "MY_SLACK_UID has a personal default — set SLACK_USER_ID env instead"
+        )

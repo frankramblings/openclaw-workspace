@@ -1,9 +1,10 @@
-// Gary launcher widget for Scriptable. Paste into a new Scriptable script named
-// "Gary", then add a Scriptable Home/Lock-screen widget pointing at it.
+// Workspace launcher widget for Scriptable. Paste into a new Scriptable script,
+// then add a Scriptable Home/Lock-screen widget pointing at it.
 // Per-element tap URLs (medium/large) deep-link into the PWA's ?action= modes.
-// Requires Tailscale connected on the device.
-
-const BASE = "https://bespin.bicolor-triceratops.ts.net:8443";
+// Requires Tailscale connected on the device (for .ts.net addresses).
+//
+// ⚠️  Replace YOUR-WORKSPACE-HOST with your own host before running.
+const BASE = "https://YOUR-WORKSPACE-HOST";
 const url = (a) => `${BASE}/?action=${a}`;
 
 const BG = new Color("#1e1f22");
@@ -28,7 +29,7 @@ function button(row, glyph, label, action) {
 function buildMedium() {
   const w = new ListWidget();
   w.backgroundColor = BG;
-  const header = w.addText("Gary");
+  const header = w.addText("Workspace");
   header.font = Font.boldSystemFont(15);
   header.textColor = FG;
   w.addSpacer(8);
@@ -53,7 +54,7 @@ function buildSmall() {
   g.font = Font.systemFont(26);
   g.centerAlignText();
   w.addSpacer(4);
-  const t = w.addText("Ask Gary");
+  const t = w.addText("Ask");
   t.font = Font.mediumSystemFont(12);
   t.textColor = FG;
   t.centerAlignText();

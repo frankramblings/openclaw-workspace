@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 
 from .. import bridge, config, email_himalaya, sessions_store
 from ..research import _agent_turn
-from . import recommend, state
+from . import recommend, settings, state
 from .sources import asana, documents_stale, gmail, obsidian, slack
 
 router = APIRouter()
@@ -69,8 +69,9 @@ async def asana_task(gid: str):
 
 @router.get("/api/items")
 async def items(sources: str = "", limit: int = 200):
+    enabled = settings.enabled_collectors()
     wanted = [s for s in (sources.split(",") if sources else list(SOURCES))
-              if s in SOURCES]
+              if s in SOURCES and s in enabled]
     # Slack staleness guard: kick the refresh job, then serve what we have.
     if "slack" in wanted and slack.signals_stale():
         await slack.kick_refresh()

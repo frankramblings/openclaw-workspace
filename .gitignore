@@ -31,3 +31,5 @@ node_modules/
 # Git worktrees for isolated feature work
 /.worktrees/
 .superpowers/
+/tmp/
+OVERNIGHT-REPORT.md

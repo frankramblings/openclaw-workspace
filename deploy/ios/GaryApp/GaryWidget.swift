@@ -63,8 +63,8 @@ struct GaryWidget: Widget {
         StaticConfiguration(kind: "GaryWidget", provider: GaryProvider()) { _ in
             GaryWidgetView()
         }
-        .configurationDisplayName("Gary")
-        .description("Launch Gary into a chat, photo, or inbox.")
+        .configurationDisplayName("Workspace")
+        .description("Launch your workspace agent into a chat, photo, or inbox.")
         .supportedFamilies([.systemMedium, .accessoryCircular])
     }
 }

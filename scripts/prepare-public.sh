@@ -27,15 +27,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -d .git ]] || { echo "not a git repo" >&2; exit 1; }
+[[ -e .git ]] || { echo "not a git repo" >&2; exit 1; }
 
 echo "── pre-publish checks ───────────────────────────────────"
 
 # 1. No private identifiers in the tracked tree. Extend this list as needed.
 PATTERNS='femanuele|wistia|bespin|bicolor-triceratops|skinny-cloths|/Users/[a-z]'
-# (allow /Users/ only inside docs as examples is risky — so we scan everything but
-#  whitelist nothing; fix any hit before publishing.)
-if hits="$(git grep -nIE "$PATTERNS" -- . ':!docs/SHIPPING.md' ':!scripts/prepare-public.sh' 2>/dev/null)"; then
+# docs/superpowers/ is excluded: it contains dev-planning artifacts (paths,
+# tailnet names) that are internal only — they are dropped from the public
+# branch below (step 3a), so they don't need to pass this scan.
+if hits="$(git grep -nIE "$PATTERNS" -- . \
+    ':!docs/superpowers/' \
+    ':!docs/SHIPPING.md' \
+    ':!scripts/prepare-public.sh' 2>/dev/null)"; then
   echo "✗ tracked files still contain private identifiers:" >&2
   echo "$hits" | head -40 >&2
   echo "   fix these (or update the scrub) before publishing." >&2
@@ -69,6 +73,14 @@ fi
 SRC_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 git checkout --orphan "__public_tmp" >/dev/null 2>&1
 git add -A
+# 3a. Drop internal dev-planning docs from the public snapshot.
+#     docs/superpowers/ contains planning/spec files with maintainer paths and
+#     tailnet names. The curated public docs (README, LICENSE, docs/ARCHITECTURE.md,
+#     etc.) are kept; only the internal working-docs subtree is removed.
+if [[ -d docs/superpowers ]]; then
+  git rm -r --cached docs/superpowers >/dev/null 2>&1 || true
+  rm -rf docs/superpowers
+fi
 git commit -q -m "OpenClaw Workspace — initial public release"
 git branch -D "$BRANCH" >/dev/null 2>&1 || true
 git branch -m "$BRANCH"

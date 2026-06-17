@@ -5,19 +5,16 @@ Port of triage-dashboard api/asana.js. The PAT lives in
 user's workspace/board and are stable — env-overridable for safety."""
 from __future__ import annotations
 
-import os
 import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 
-from ... import config
+from .. import settings as _inbox_settings
 
-ENV_PATH = Path(os.environ.get(
-    "INBOX_ASANA_ENV", str(config.OPENCLAW_HOME / "workspace/secrets/asana.env")))
-PROJECT_GID = os.environ.get("ASANA_PROJECT_GID", "1206273954893328")
+# The Asana PAT file path and project GID are config-driven (env > inbox.json >
+# default) via backend.inbox.settings — see asana_pat_path()/asana_project_gid().
 ACTIVE_SECTIONS = {"Backlog", "In Progress", "Review"}
 BASE = "https://app.asana.com/api/1.0"
 _FIELDS = ("name,memberships.section.name,memberships.section.gid,due_on,"
@@ -45,7 +42,8 @@ def _pat() -> str:
     global _token
     if _token:
         return _token
-    m = re.search(r'ASANA_PAT="?([^"\n]+)"?', ENV_PATH.read_text())
+    pat_path = _inbox_settings.asana_pat_path()
+    m = re.search(r'ASANA_PAT="?([^"\n]+)"?', pat_path.read_text())
     if not m:
         raise RuntimeError("ASANA_PAT not found in asana.env")
     _token = m.group(1).strip()
@@ -105,7 +103,10 @@ def map_items(tasks: list[dict], now_ms: int) -> list[dict]:
 
 
 async def fetch() -> list[dict]:
-    data = await _api("GET", f"/projects/{PROJECT_GID}/tasks"
+    gid = _inbox_settings.asana_project_gid()
+    if not gid or not _inbox_settings.asana_pat_path().exists():
+        return []
+    data = await _api("GET", f"/projects/{gid}/tasks"
                              f"?completed_since=now&limit=100&opt_fields={_FIELDS}")
     return map_items(data.get("data") or [], now_ms=int(time.time() * 1000))
 

@@ -75,3 +75,15 @@ def test_http_client_is_shared_and_recreated_when_closed():
         await c3.aclose()
 
     asyncio.run(main())
+
+
+def test_list_calendars_maps_canonical(monkeypatch):
+    import asyncio
+    from backend import calendar_google as cg
+    async def fake_get(path, params=None):
+        return {"items": [{"id": "primary", "summary": "Me", "primary": True,
+                           "backgroundColor": "#123456"}]}
+    monkeypatch.setattr(cg, "_get", fake_get)
+    cals = asyncio.run(cg.list_calendars())
+    assert cals == [{"href": "primary", "name": "Me", "color": "#123456",
+                     "hex": "#123456", "primary": True}]

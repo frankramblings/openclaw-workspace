@@ -9,10 +9,10 @@ REQUEST = (
     "DTSTART;TZID=America/New_York:20260610T130000\r\n"
     "DTEND;TZID=America/New_York:20260610T133000\r\n"
     "DTSTAMP:20260608T120000Z\r\n"
-    "ORGANIZER;CN=Shaunna Campbell:mailto:scampbell@wistia.com\r\n"
-    "ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;CN=Frank:"
-    "mailto:femanuele@wistia.com\r\n"
-    "ATTENDEE;CN=Shaunna Campbell;PARTSTAT=ACCEPTED:mailto:scampbell@wistia.com\r\n"
+    "ORGANIZER;CN=Alex Doe:mailto:adoe@example.com\r\n"
+    "ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;CN=You:"
+    "mailto:you@example.com\r\n"
+    "ATTENDEE;CN=Alex Doe;PARTSTAT=ACCEPTED:mailto:adoe@example.com\r\n"
     "SUMMARY:Webflow Social Announcement - Brainstorm\r\n"
     " /chat\r\n"                                   # folded continuation line
     "LOCATION:Google Meet\r\n"
@@ -38,12 +38,12 @@ def test_description_is_unescaped():
 
 def test_organizer_and_attendees():
     cal = parse_ics_calendar(REQUEST)
-    assert cal["organizer"] == {"name": "Shaunna Campbell",
-                                "email": "scampbell@wistia.com"}
+    assert cal["organizer"] == {"name": "Alex Doe",
+                                "email": "adoe@example.com"}
     assert len(cal["attendees"]) == 2
     me = cal["attendees"][0]
-    assert me["email"] == "femanuele@wistia.com"
-    assert me["name"] == "Frank"
+    assert me["email"] == "you@example.com"
+    assert me["name"] == "You"
     assert me["partstat"] == "NEEDS-ACTION"
 
 

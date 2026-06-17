@@ -91,3 +91,43 @@ to avoid a cold-start stall, behavior preserved via the pinned plist env.)
 ## Progress log (newest first)
 - 2026-06-07: **Tier 1 COMPLETE** (items 1-7). Agent-name feature shipped; setup wizard; README/LICENSE/.env.example; LaunchAgent template + installer; personal-data scrub with live deploy preserved via plist env. Full suite 161 green. Moving to Tier 2.
 - 2026-06-07: Plan created. Verified no committed secrets; OpenClaw agent has no name field (brand is ours). Starting Tier 1 item 1.
+
+## v2 — installable on any OpenClaw (2026-06-17)
+
+**Phase 1 (merged to main):** all Tier 1 + Tier 2 items above — agent-name
+branding, setup wizard, frontend vendor + override/bake pipeline, README/LICENSE,
+LaunchAgent template, personal-data scrub, ARCHITECTURE.md, smoke/CI scripts,
+Docker + optional auth gate. Verified: clean clone → setup → fully-branded UI.
+
+**Phase 2a — email config:** `email_config.py` renders a himalaya account block
+and writes the mode-600 password file; `setup.sh --add-email` interactive. Supports
+Gmail app-password and generic IMAP/SMTP. Secrets in mode-600 files, never in JSON.
+
+**Phase 2b — calendar CalDAV:** `calendar_caldav.py` (CalDAV client) + `ical.py`
+(dependency-free VEVENT (de)serializer) + `calendar_config.py` (provider selector,
+default google) + `calendar.py` (provider-selecting router). `setup.sh --add-calendar`
+supports both `caldav` (universal: Google, iCloud, Fastmail, Nextcloud) and `google`
+(OAuth). Existing Google Calendar path refactored to plain provider functions.
+
+**Phase 2c — inbox config-driven:** `inbox/settings.py` + `.data/inbox.json` let
+each collector (Gmail, Slack, Asana, Obsidian) be enabled/disabled and tuned per
+install. Default: all on (existing installs unchanged). Env vars override JSON.
+`auth_gate.py` optional pure-ASGI token gate added (`WORKSPACE_AUTH_TOKEN`, off by
+default, SSE-safe).
+
+**Phase 3 — Docker + optional auth:** `Dockerfile` + `docker-compose.yml` +
+`.env.example` expanded; `WORKSPACE_AUTH_TOKEN` wired end-to-end; streaming
+regression test added.
+
+**Installability genericization pass:** `config.agent_id()` / `load_connection()`
+precedence chain (env > `.data/connection.json` > `~/.openclaw/openclaw.json`);
+`doctor.py` + `/api/doctor` + `scripts/doctor.sh` read-only preflight; config-driven
+Slack keychain account + obsidian owner name (no more hardcoded identifiers);
+`capabilities.py` + `/api/capabilities` data-driven tab gating.
+
+**Test suite:** full suite green at ~473 tests. Publish path validated (see below).
+
+**Publish path:** `scripts/prepare-public.sh --yes` builds a clean orphan `public`
+branch (single commit, no history, private identifiers and `docs/superpowers/`
+internal planning docs stripped). Identifier scan must be empty before the script
+proceeds. Push `public:main` to a public remote.

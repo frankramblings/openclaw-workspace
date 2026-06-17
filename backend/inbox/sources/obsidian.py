@@ -15,6 +15,9 @@ import time
 import urllib.parse
 from pathlib import Path
 
+from .. import settings as _inbox_settings
+
+# VAULT and WINDOW_DAYS resolved via inbox.settings at call time (env still wins).
 VAULT = Path(os.environ.get(
     "INBOX_MEETINGS_DIR", str(Path.home() / ".openclaw/workspace/Meetings"))).expanduser()
 WINDOW_DAYS = int(os.environ.get("OBSIDIAN_WINDOW_DAYS", "120"))
@@ -33,7 +36,7 @@ _ACTION_PATTERNS = [
     (re.compile(r"^\s*[-*]?\s*follow[-\s]?up[:\-]\s*(.+)$", re.I), "follow-up"),
     (re.compile(r"^\s*[-*]?\s*(?:todo|to[-\s]?do)[:\-]\s*(.+)$", re.I), "todo"),
 ]
-_KIND_SCORE = {"unchecked-todo": 2, "action": 3, "action-frank": 4,
+_KIND_SCORE = {"unchecked-todo": 2, "action": 3, "action-mine": 4,
                "action-other": 1, "follow-up": 2, "todo": 0}
 
 
@@ -66,9 +69,11 @@ def extract_actions(raw: str) -> list[dict]:
             if am:
                 assignee, text = am.group(1).strip(), am.group(2).strip()
                 if _real_action(text):
-                    frank = re.match(r"^frank\b", assignee, re.I) or \
-                        re.search(r"\bteam\b", assignee, re.I)
-                    out.append({"kind": "action-frank" if frank else "action-other",
+                    owner = _inbox_settings.obsidian_owner_name()
+                    mine = bool(re.search(r"\bteam\b", assignee, re.I)) or (
+                        bool(owner) and bool(
+                            re.match(rf"^{re.escape(owner)}\b", assignee, re.I)))
+                    out.append({"kind": "action-mine" if mine else "action-other",
                                 "text": text, "line": i + 1, "assignee": assignee})
                 continue
             bullet = _BULLET_RE.match(line)
@@ -124,11 +129,13 @@ async def fetch() -> list[dict]:
     """All recent meeting-note actions, score-sorted. Sync FS work is fast
     (one folder, ~120-day window) — fine on the event loop."""
     now_ms = int(time.time() * 1000)
-    cutoff = now_ms - WINDOW_DAYS * 24 * 3600_000
+    vault = _inbox_settings.obsidian_vault()
+    window_days = _inbox_settings.obsidian_window_days()
+    cutoff = now_ms - window_days * 24 * 3600_000
     items: list[dict] = []
-    if not VAULT.is_dir():
+    if not vault.is_dir():
         return items
-    for p in sorted(VAULT.iterdir()):
+    for p in sorted(vault.iterdir()):
         if not (p.is_file() and p.name.endswith(".md")):
             continue
         try:

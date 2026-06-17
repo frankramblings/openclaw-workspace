@@ -12,7 +12,9 @@ import time
 from datetime import datetime, timezone
 
 from ... import himalaya_cli
+from .. import settings as _inbox_settings
 
+# INTERNAL_DOMAIN is now resolved via inbox.settings at call time (env still wins).
 INTERNAL_DOMAIN = os.environ.get("INBOX_INTERNAL_DOMAIN", "example.com")
 LIST_SIZE = int(os.environ.get("INBOX_GMAIL_LIST", "50"))
 
@@ -50,7 +52,7 @@ def map_items(envelopes: list[dict], now_ms: int) -> list[dict]:
             score += 2
         elif age_h < 24:
             score += 1
-        if addr and not addr.lower().endswith(f"@{INTERNAL_DOMAIN}"):
+        if addr and not addr.lower().endswith(f"@{_inbox_settings.gmail_internal_domain()}"):
             score += 1
         items.append({
             "id": str(env.get("id", "")), "source": "gmail",

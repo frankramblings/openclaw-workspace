@@ -85,7 +85,7 @@
         '<span class="wt-title">Terminal</span>' +
         '<span class="wt-cwd"></span>' +
         '<span class="wt-spacer"></span>' +
-        '<button class="wt-btn wt-gary" title="Gary terminal control">Gary: …</button>' +
+        '<button class="wt-btn wt-gary" title="__AGENT_NAME__ terminal control">__AGENT_NAME__: …</button>' +
         '<button class="wt-btn wt-pin" title="Pin — keep this terminal on screen everywhere">📌</button>' +
         '<button class="wt-btn wt-persist" title="Saved history">💾</button>' +
         '<button class="wt-btn wt-restart" title="Restart shell">↻</button>' +
@@ -198,7 +198,7 @@
 
   // --- image drop / paste (per panel) ---------------------------------------
   // Drop or paste an image onto a terminal: upload it (same store as chat
-  // attachments, inside Gary's vault), register a [name.ext] token for THIS
+  // attachments, inside the agent's vault), register a [name.ext] token for THIS
   // chat's terminal, and type the token at the cursor. The image auto-rides the
   // user's next chat turn; an in-terminal CLI resolves the token with `garyimg`.
   // (Ported from the concurrent image-drop feature onto the per-panel manager.)
@@ -279,12 +279,12 @@
   // ---- Gary toggle (per panel) ----
   function renderGary(p) {
     const b = p.garyBtn; if (!b) return;
-    if (p.garyEffective === null) { b.textContent = 'Gary: …'; b.classList.remove('active'); b.style.color = ''; return; }
-    b.textContent = 'Gary: ' + (p.garyEffective ? 'on' : 'off');
+    if (p.garyEffective === null) { b.textContent = '__AGENT_NAME__: …'; b.classList.remove('active'); b.style.color = ''; return; }
+    b.textContent = '__AGENT_NAME__: ' + (p.garyEffective ? 'on' : 'off');
     b.classList.toggle('active', !!p.garyEffective);
     b.style.color = p.garyEffective ? '#7ee787' : '';
-    b.title = p.garyEffective ? 'Gary can run commands here — click to turn off for this chat'
-                              : 'Gary cannot run commands here — click to turn on for this chat';
+    b.title = p.garyEffective ? '__AGENT_NAME__ can run commands here — click to turn off for this chat'
+                              : '__AGENT_NAME__ cannot run commands here — click to turn on for this chat';
   }
   function refreshGary(p) {
     p.garyEffective = null; renderGary(p);
@@ -299,7 +299,7 @@
       body: JSON.stringify({ scope: 'session', session_key: p.id, enabled: next }) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
       .then((d) => { p.garyEffective = !!d.effective; renderGary(p); })
-      .catch(() => statusOf(p, 'could not change Gary terminal control'));
+      .catch(() => statusOf(p, 'could not change __AGENT_NAME__ terminal control'));
   }
   function renderPersist(p) {
     const b = p.persistBtn; if (!b) return;

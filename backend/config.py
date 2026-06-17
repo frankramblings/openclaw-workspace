@@ -210,7 +210,7 @@ def auth_token() -> str | None:
 
 # --- Workspace user (human, not the agent) ------------------------------------
 # Used by /api/auth/status.  Env > "admin" (the default neutral value).
-# Set WORKSPACE_USER to your chosen display name (e.g. "frank") if you wish.
+# Set WORKSPACE_USER to your chosen display name (e.g. "alex") if you wish.
 
 def workspace_user() -> str:
     """The human user's display name for /api/auth/status."""

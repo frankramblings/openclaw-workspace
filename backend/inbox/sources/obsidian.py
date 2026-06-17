@@ -36,7 +36,7 @@ _ACTION_PATTERNS = [
     (re.compile(r"^\s*[-*]?\s*follow[-\s]?up[:\-]\s*(.+)$", re.I), "follow-up"),
     (re.compile(r"^\s*[-*]?\s*(?:todo|to[-\s]?do)[:\-]\s*(.+)$", re.I), "todo"),
 ]
-_KIND_SCORE = {"unchecked-todo": 2, "action": 3, "action-frank": 4,
+_KIND_SCORE = {"unchecked-todo": 2, "action": 3, "action-mine": 4,
                "action-other": 1, "follow-up": 2, "todo": 0}
 
 
@@ -69,9 +69,11 @@ def extract_actions(raw: str) -> list[dict]:
             if am:
                 assignee, text = am.group(1).strip(), am.group(2).strip()
                 if _real_action(text):
-                    frank = re.match(r"^frank\b", assignee, re.I) or \
-                        re.search(r"\bteam\b", assignee, re.I)
-                    out.append({"kind": "action-frank" if frank else "action-other",
+                    owner = _inbox_settings.obsidian_owner_name()
+                    mine = bool(re.search(r"\bteam\b", assignee, re.I)) or (
+                        bool(owner) and bool(
+                            re.match(rf"^{re.escape(owner)}\b", assignee, re.I)))
+                    out.append({"kind": "action-mine" if mine else "action-other",
                                 "text": text, "line": i + 1, "assignee": assignee})
                 continue
             bullet = _BULLET_RE.match(line)

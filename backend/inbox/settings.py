@@ -177,6 +177,16 @@ def obsidian_vault() -> Path:
     return Path(raw).expanduser()
 
 
+def obsidian_owner_name() -> str:
+    """Your first name as it appears assigned to action items in meeting notes
+    (e.g. "Alex: send the deck"). Action items assigned to this name (or to
+    "team") are scored as yours. Env INBOX_OWNER_NAME > inbox.json owner_name >
+    "" (empty → no name-based "mine" boost; only "team" matches)."""
+    return (os.environ.get("INBOX_OWNER_NAME")
+            or _coll("obsidian").get("owner_name")
+            or "").strip()
+
+
 def obsidian_window_days() -> int:
     """Lookback window for meeting notes. Env OBSIDIAN_WINDOW_DAYS > inbox.json > 120."""
     env = os.environ.get("OBSIDIAN_WINDOW_DAYS")

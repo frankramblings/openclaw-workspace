@@ -9,6 +9,7 @@ browser-session tokens in the login keychain (xoxc token + xoxd cookie)."""
 from __future__ import annotations
 
 import asyncio
+import getpass
 import json
 import os
 import re
@@ -472,10 +473,24 @@ async def fetch_thread(channel_id: str, thread_ts: str, limit: int = 50) -> list
     return map_thread_messages(data.get("messages") or [], _user_map())
 
 
+# macOS keychain account holding the Slack browser-session tokens. Defaults to
+# the current OS user (the maintainer's was their login name); override with
+# SLACK_KEYCHAIN_ACCOUNT for a different keychain account name.
+def _keychain_account() -> str:
+    return os.environ.get("SLACK_KEYCHAIN_ACCOUNT") or _os_user()
+
+
+def _os_user() -> str:
+    try:
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001 - getuser can raise if no passwd entry
+        return os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+
+
 def _keychain(service: str) -> str | None:
     try:
         out = subprocess.run(
-            ["security", "find-generic-password", "-a", "frank",
+            ["security", "find-generic-password", "-a", _keychain_account(),
              "-s", service, "-w"],
             capture_output=True, text=True, timeout=5)
         return out.stdout.strip() or None

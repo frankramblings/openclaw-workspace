@@ -123,7 +123,7 @@ optional `.data/inbox.json` (gitignored):
     "gmail":    { "enabled": true, "internal_domain": "example.com" },
     "slack":    { "enabled": true, "domain": "example.slack.com" },
     "asana":    { "enabled": true, "project_gid": "", "pat_path": "~/.openclaw/workspace/secrets/asana.env" },
-    "obsidian": { "enabled": true, "vault": "~/.openclaw/workspace/Meetings", "window_days": 120 }
+    "obsidian": { "enabled": true, "vault": "~/.openclaw/workspace/Meetings", "window_days": 120, "owner_name": "" }
 } }
 ```
 

@@ -57,5 +57,7 @@ not just the original maintainer's setup.
 - `/api/auth/status` username default changed from a hardcoded name to
   `WORKSPACE_USER` env var (else `"admin"`).
 - `backend/config.py`: `auth_token()` and `workspace_user()` accessors added.
-- `backend/auth_gate.py`: `AuthGateMiddleware` (Starlette `BaseHTTPMiddleware`).
-- 18 new tests in `backend/tests/test_auth_gate.py`.
+- `backend/auth_gate.py`: `AuthGateMiddleware`, a pure-ASGI middleware (not
+  `BaseHTTPMiddleware`) so the chat SSE stream is never buffered; it is a complete
+  no-op unless `WORKSPACE_AUTH_TOKEN` is set.
+- 19 new tests in `backend/tests/test_auth_gate.py` (incl. an SSE-not-buffered guard).

@@ -6,6 +6,7 @@ Network-free in tests: `_request` is the single HTTP seam to monkeypatch."""
 from __future__ import annotations
 
 import urllib.parse
+from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -69,6 +70,33 @@ def _ical_compact(iso: str) -> str:
     return iso.replace("-", "").replace(":", "")
 
 
+def _ical_range(iso: str, *, is_end: bool = False) -> str:  # noqa: ARG001
+    """Convert a frontend ISO string to an RFC 4791 UTC date-time string.
+
+    RFC 4791 §9.9 requires YYYYMMDDTHHMMSSZ for time-range start/end.
+    The frontend always passes YYYY-MM-DD (bare date) or a full ISO datetime.
+    - bare date → YYYYMMDDT000000Z
+    - datetime with Z or offset → normalize to UTC → YYYYMMDDTHHMMSSZ
+    - naive datetime (no tz) → assume UTC → YYYYMMDDTHHMMSSZ
+    """
+    iso = (iso or "").strip()
+    if not iso:
+        return iso
+    # Bare date: len==10 and no "T"
+    if len(iso) == 10 and "T" not in iso:
+        compact = iso.replace("-", "")
+        return f"{compact}T000000Z"
+    # Has time component — normalize to UTC
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    except ValueError:
+        # Fallback: best-effort compact strip
+        return _ical_compact(iso)
+
+
 async def list_calendars() -> list[dict]:
     base = calendar_config.caldav_settings()["url"]
     if not base:
@@ -85,6 +113,16 @@ async def list_calendars() -> list[dict]:
     return _parse_calendars(text)
 
 
+def _collection_href(resource_href: str) -> str:
+    """Given an event resource href (e.g. /cal/personal/ev1.ics), return the
+    parent collection href (e.g. https://dav.example/cal/personal/)."""
+    abs_href = _abs(resource_href)
+    # Strip the last path segment (the filename) to get the collection
+    parsed = urllib.parse.urlparse(abs_href)
+    parent_path = parsed.path.rsplit("/", 1)[0] + "/"
+    return urllib.parse.urlunparse(parsed._replace(path=parent_path))
+
+
 async def list_events(time_min: str, time_max: str) -> list[dict]:
     """REPORT against the calendar home (Depth:1 covers all calendars under it).
     Many CalDAV servers (iCloud, Fastmail, Nextcloud, Google) support a
@@ -94,7 +132,8 @@ async def list_events(time_min: str, time_max: str) -> list[dict]:
     base = calendar_config.caldav_settings()["url"]
     if not base:
         return []
-    start, end = _ical_compact(time_min), _ical_compact(time_max)
+    # Bug 1 fix: use RFC 4791-compliant UTC date-time strings
+    start, end = _ical_range(time_min), _ical_range(time_max)
     status, text = await _request(
         "REPORT", base, depth=1, content_type="application/xml",
         body=_calendar_query_body(start, end))
@@ -108,10 +147,14 @@ async def list_events(time_min: str, time_max: str) -> list[dict]:
     for resp in root.findall("d:response", _NS):
         ev_href = (resp.findtext("d:href", default="", namespaces=_NS) or "").strip()
         data = resp.findtext(".//c:calendar-data", default="", namespaces=_NS)
+        resource_url = _abs(ev_href)
+        # Bug 3 fix: set calendar_href = COLLECTION href (parent of resource href)
+        cal_href = _collection_href(ev_href)
         for e in ical.parse_events(data or ""):
             e["color"] = _DEFAULT_COLOR
             e["event_type"] = "default"
-            e["calendar"] = _abs(ev_href)  # event href = its CalDAV resource URL
+            e["calendar"] = resource_url  # event resource URL (backward compat)
+            e["calendar_href"] = cal_href  # COLLECTION href for grouping/color
             out.append(e)
     return out
 
@@ -126,34 +169,60 @@ def _event_url(payload_calendar: str, uid: str) -> str:
 async def create_event(payload: dict) -> dict:
     import uuid
     uid = payload.get("uid") or uuid.uuid4().hex
-    cal = payload.get("calendar") or calendar_config.caldav_settings()["url"]
+    # Bug 3 fix: prefer calendar_href (collection), then calendar, then base
+    base = calendar_config.caldav_settings()["url"]
+    collection = (payload.get("calendar_href") or payload.get("calendar") or base)
     ev = {**payload, "uid": uid}
-    url = _event_url(cal, uid)
+    url = _event_url(collection, uid)
     status, _ = await _request("PUT", url, body=ical.build_vcalendar(ev),
                                content_type="text/calendar")
     if status >= 300:
         raise RuntimeError(f"CalDAV PUT failed ({status})")
     return {**ev, "color": payload.get("color") or _DEFAULT_COLOR,
-            "event_type": "default", "calendar": url,
+            "event_type": "default",
+            "calendar": url,             # resource URL
+            "calendar_href": collection,  # collection URL
             "all_day": bool(payload.get("all_day"))}
 
 
 async def update_event(uid: str, payload: dict) -> dict:
-    # The frontend sends the event's CalDAV href back as `calendar`; PUT to it.
-    url = payload.get("calendar") or _event_url(
-        calendar_config.caldav_settings()["url"], uid)
+    # Bug 3 fix: use calendar_href (collection) to reconstruct resource URL;
+    # fall back to base for drag-resize (which sends no calendar_href).
+    base = calendar_config.caldav_settings()["url"]
+    collection = payload.get("calendar_href") or base
+    url = _event_url(collection, uid)
     ev = {**payload, "uid": uid}
     status, _ = await _request("PUT", url, body=ical.build_vcalendar(ev),
                                content_type="text/calendar")
     if status >= 300:
         raise RuntimeError(f"CalDAV PUT failed ({status})")
     return {**ev, "color": payload.get("color") or _DEFAULT_COLOR,
-            "event_type": "default", "calendar": url,
+            "event_type": "default",
+            "calendar": url,             # resource URL
+            "calendar_href": collection,  # collection URL
             "all_day": bool(payload.get("all_day"))}
 
 
-async def delete_event(uid: str, calendar: str) -> dict:
-    url = calendar or _event_url(calendar_config.caldav_settings()["url"], uid)
+async def delete_event(uid: str, calendar: str | None) -> dict:
+    """Delete an event by uid. calendar may be:
+    - None / empty / "primary" → reconstruct from base URL
+    - a resource href ending in .ics → use directly
+    - a collection href (http/https URL) → append <uid>.ics
+    Never passes a non-URL string to httpx.
+    """
+    base = calendar_config.caldav_settings()["url"]
+    if not calendar or calendar == "primary":
+        # Bug 2 fix: default path → reconstruct from base
+        url = _event_url(base, uid)
+    elif calendar.endswith(".ics"):
+        # Already a resource href
+        url = calendar if "://" in calendar else _abs(calendar)
+    elif calendar.startswith(("http://", "https://")):
+        # Collection href → append uid.ics
+        url = _event_url(calendar, uid)
+    else:
+        # Unknown form → reconstruct from base (safe fallback)
+        url = _event_url(base, uid)
     status, _ = await _request("DELETE", url)
     if status not in (200, 204, 404):
         raise RuntimeError(f"CalDAV DELETE failed ({status})")

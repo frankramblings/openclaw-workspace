@@ -11,7 +11,9 @@ import fcntl
 import json
 import os
 import pty
+import re
 import secrets
+import shutil
 import signal
 import struct
 import termios
@@ -27,6 +29,14 @@ from . import workspace_files
 router = APIRouter()
 
 MAX_BUFFER = 120_000
+
+# --- Scrollback persistence (Tier A) tunables ---
+PERSIST_DIRNAME = "terminals"
+PERSIST_CAP = 1_000_000          # rolling per-session scrollback.log byte cap
+PERSIST_FLUSH_INTERVAL = 1.0     # seconds; batched flush, never per-keystroke
+PERSIST_FLUSH_BYTES = 65536      # or flush once this many bytes pend
+PERSIST_PRUNE_IDLE_DAYS = 30
+
 DEFAULT_COLS = 96
 DEFAULT_ROWS = 28
 
@@ -72,12 +82,15 @@ class PtySession:
         self.exit_code: int | None = None
         self._subscribers: set[asyncio.Queue] = set()
         self._reader_loop: asyncio.AbstractEventLoop | None = None
+        self.persist = is_persist_enabled(session_key)
+        self._persist_pending = ""
+        self._persist_last_flush = 0.0
 
     def start(self) -> None:
         # Precompute everything BEFORE the fork: building dicts/lists in the child
         # of a (previously) multithreaded process is unsafe; the child only
         # chdir+execs precomputed values.
-        cwd = str(workspace_files.workspace_root())
+        cwd = _restore_cwd(self.session_key) or str(workspace_files.workspace_root())
         shell = _shell()
         argv = [shell, "-i"]
         env = dict(os.environ)
@@ -103,6 +116,26 @@ class PtySession:
         self.buffer += text
         if len(self.buffer) > MAX_BUFFER:
             self.buffer = self.buffer[-MAX_BUFFER:]
+
+    def flush_persist(self, force: bool = False) -> None:
+        """Append batched output to the on-disk log and refresh meta. Gated to
+        avoid per-keystroke writes; force=True on close/exit. No-op when the
+        session is incognito (persist disabled)."""
+        if not self.persist:
+            self._persist_pending = ""
+            return
+        now = time.monotonic()
+        ready = (now - self._persist_last_flush >= PERSIST_FLUSH_INTERVAL
+                 or len(self._persist_pending) >= PERSIST_FLUSH_BYTES)
+        if not force and not ready:
+            return
+        if self._persist_pending:
+            append_output(self.session_key, self._persist_pending)
+            self._persist_pending = ""
+        last_cwd = read_cwd(self.pid) or read_meta(self.session_key).get("last_cwd")
+        write_meta(self.session_key, last_active=time.time(), last_cwd=last_cwd,
+                   cols=self.cols, rows=self.rows, persist=self.persist)
+        self._persist_last_flush = now
 
     def drain_once(self) -> str:
         """Read whatever is available without blocking; append to the scrollback
@@ -169,6 +202,8 @@ class PtySession:
             pass
 
     def close(self) -> None:
+        # Persist any pending output before tearing the shell down.
+        self.flush_persist(force=True)
         # Idempotent: safe to call twice, and safe if start() never set a pid.
         if self.pid is not None:
             try:
@@ -209,9 +244,13 @@ class PtySession:
         if text:
             for q in list(self._subscribers):
                 q.put_nowait(("output", text))
+            if self.persist:
+                self._persist_pending += text
+                self.flush_persist()
         if self.exited:
             for q in list(self._subscribers):
                 q.put_nowait(("exit", self.exit_code))
+            self.flush_persist(force=True)
             self._detach_reader()
 
     def _detach_reader(self) -> None:
@@ -233,12 +272,47 @@ class PtySession:
 
 _sessions: dict[str, PtySession] = {}
 
+_last_prune = 0.0
+
+
+def _restore_cwd(session_key: str) -> str | None:
+    if not is_persist_enabled(session_key):
+        return None
+    c = read_meta(session_key).get("last_cwd")
+    if c and os.path.isdir(c):
+        return c
+    return None
+
+
+def _restore_separator(cwd: str | None) -> str:
+    when = time.strftime("%Y-%m-%d %H:%M")
+    where = cwd or "~"
+    return f"\r\n\x1b[2m──── restored {when} · {where} ────\x1b[0m\r\n"
+
+
+def _maybe_prune() -> None:
+    """Prune idle sessions on startup and at most once per 24h per process."""
+    global _last_prune
+    now = time.time()
+    if now - _last_prune < 86400:
+        return
+    _last_prune = now
+    try:
+        prune_persist()
+    except OSError:
+        pass
+
 
 def get_or_create(session_key: str, *, cols: int = DEFAULT_COLS, rows: int = DEFAULT_ROWS) -> PtySession:
+    _maybe_prune()
     sess = _sessions.get(session_key)
     if sess is None or sess.exited:
+        restored = load_tail(session_key) if is_persist_enabled(session_key) else ""
         sess = PtySession(session_key, cols=cols, rows=rows)
         sess.start()
+        if restored:
+            sep = _restore_separator(read_meta(session_key).get("last_cwd"))
+            sess.buffer = (restored + sep)[-MAX_BUFFER:]
         _sessions[session_key] = sess
     # Always-on reader: keep `buffer` current even with no WebSocket attached, so
     # Gary's MCP read/run see live output. attach_reader is idempotent.
@@ -358,6 +432,163 @@ def mark_consumed(session_key: str, tokens: list[str]) -> None:
             changed = True
     if changed:
         _save_attachments(session_key, reg)
+
+
+# --- Scrollback persistence (Tier A): per-session on-disk contents + cwd -----
+# Persists terminal OUTPUT (never keystrokes) so a chat's terminal contents and
+# working directory survive reboots. Files are 0o600 under a 0o700 dir. A
+# best-effort scrubber masks well-known secret shapes before writing — NOT a
+# guarantee; full-disk encryption is the primary at-rest control.
+
+_SECRET_PATTERNS = [
+    re.compile(r"(?<![A-Za-z0-9])gh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"(?<![A-Za-z0-9])sk-[A-Za-z0-9]{20,}"),
+    re.compile(r"(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}"),
+    re.compile(r"(?<![A-Za-z0-9])eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+    re.compile(
+        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----.*?"
+        r"-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+        re.DOTALL,
+    ),
+]
+
+
+def scrub(text: str) -> str:
+    """Mask well-known secret token shapes. Defense-in-depth, not a guarantee."""
+    for pat in _SECRET_PATTERNS:
+        text = pat.sub("***REDACTED***", text)
+    return text
+
+
+def _persist_base() -> Path:
+    return config.DATA_DIR / PERSIST_DIRNAME
+
+
+def persist_dir(session_key: str) -> Path:
+    return _persist_base() / _sanitize_key(session_key)
+
+
+def persist_log_path(session_key: str) -> Path:
+    return persist_dir(session_key) / "scrollback.log"
+
+
+def persist_meta_path(session_key: str) -> Path:
+    return persist_dir(session_key) / "meta.json"
+
+
+def append_output(session_key: str, text: str) -> None:
+    """Scrub then append OUTPUT to the rolling log (0o600), capped at PERSIST_CAP."""
+    if not text:
+        return
+    text = scrub(text)
+    d = persist_dir(session_key)
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    p = persist_log_path(session_key)
+    try:
+        with open(p, "a", encoding="utf-8", errors="replace") as f:
+            f.write(text)
+        os.chmod(p, 0o600)
+        if p.stat().st_size > PERSIST_CAP:
+            tail = p.read_bytes()[-PERSIST_CAP:]
+            tmp = p.with_suffix(".log.tmp")
+            tmp.write_bytes(tail)
+            os.chmod(tmp, 0o600)
+            tmp.replace(p)
+    except OSError:
+        pass  # persistence is best-effort; never break the live PTY
+
+
+def load_tail(session_key: str, limit: int = MAX_BUFFER) -> str:
+    try:
+        data = persist_log_path(session_key).read_bytes()
+    except (FileNotFoundError, OSError):
+        return ""
+    return data[-limit:].decode("utf-8", "replace")
+
+
+def read_meta(session_key: str) -> dict:
+    try:
+        return json.loads(persist_meta_path(session_key).read_text())
+    except (FileNotFoundError, ValueError, OSError):
+        return {}
+
+
+def write_meta(session_key: str, **fields) -> dict:
+    meta = read_meta(session_key)
+    meta.update(fields)
+    d = persist_dir(session_key)
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(d, 0o700)
+        except OSError:
+            pass
+        p = persist_meta_path(session_key)
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(meta))
+        os.chmod(tmp, 0o600)
+        tmp.replace(p)
+    except OSError:
+        pass
+    return meta
+
+
+def is_persist_enabled(session_key: str) -> bool:
+    return bool(read_meta(session_key).get("persist", True))
+
+
+def set_persist(session_key: str, enabled: bool) -> None:
+    write_meta(session_key, persist=bool(enabled))
+    if not enabled:
+        try:
+            persist_log_path(session_key).unlink()
+        except (FileNotFoundError, OSError):
+            pass
+
+
+def clear_persist(session_key: str) -> None:
+    shutil.rmtree(persist_dir(session_key), ignore_errors=True)
+
+
+def read_cwd(pid: int | None) -> str | None:
+    """Linux: the live cwd of the shell via /proc; None elsewhere/on error."""
+    if pid is None:
+        return None
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except (OSError, FileNotFoundError):
+        return None
+
+
+def prune_persist(max_idle_days: int = PERSIST_PRUNE_IDLE_DAYS,
+                  now: float | None = None) -> int:
+    base = _persist_base()
+    if not base.exists():
+        return 0
+    now = now if now is not None else time.time()
+    cutoff = now - max_idle_days * 86400
+    removed = 0
+    for d in base.iterdir():
+        if not d.is_dir():
+            continue
+        try:
+            la = json.loads((d / "meta.json").read_text()).get("last_active")
+        except (FileNotFoundError, ValueError, OSError):
+            la = None
+        if la is None:
+            try:
+                la = d.stat().st_mtime
+            except OSError:
+                continue
+        if la < cutoff:
+            shutil.rmtree(d, ignore_errors=True)
+            removed += 1
+    return removed
 
 
 # --- Gary-drive: per-turn token map -----------------------------------------
@@ -548,6 +779,41 @@ async def terminal_gary_mode_set(request: Request):
         "override": (sessions_store.gary_terminal_override(session_key) if session_key else None),
         "effective": gary_mode_for_session(session_key) if session_key else gary_mode_default(),
     }
+
+
+@router.get("/api/terminal/{session_key}/persist")
+async def terminal_persist_get(session_key: str, request: Request):
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return {"enabled": is_persist_enabled(session_key)}
+
+
+@router.post("/api/terminal/{session_key}/persist")
+async def terminal_persist_set(session_key: str, request: Request):
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    body = await request.json()
+    enabled = bool(body.get("enabled", True))
+    set_persist(session_key, enabled)
+    s = _sessions.get(session_key)
+    if s is not None:
+        s.persist = enabled
+    return {"enabled": enabled}
+
+
+@router.post("/api/terminal/{session_key}/clear-history")
+async def terminal_clear_history(session_key: str, request: Request):
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
+    clear_persist(session_key)
+    s = _sessions.get(session_key)
+    if s is not None:
+        s.buffer = ""
+        s._persist_pending = ""
+    return {"ok": True}
 
 
 @router.post("/api/terminal/{session_key}/close")

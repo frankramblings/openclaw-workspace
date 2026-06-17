@@ -87,6 +87,7 @@
         '<span class="wt-spacer"></span>' +
         '<button class="wt-btn wt-gary" title="__AGENT_NAME__ terminal control">__AGENT_NAME__: …</button>' +
         '<button class="wt-btn wt-pin" title="Pin — keep this terminal on screen everywhere">📌</button>' +
+        '<button class="wt-btn wt-persist" title="Saved history">💾</button>' +
         '<button class="wt-btn wt-restart" title="Restart shell">↻</button>' +
         '<button class="wt-btn wt-close" title="Close panel (keeps the shell running)">✕</button>' +
         '<button class="wt-btn wt-kill" title="End shell — terminate this terminal">🗑</button>' +
@@ -104,6 +105,8 @@
       cwdEl: el.querySelector('.wt-cwd'),
       garyBtn: el.querySelector('.wt-gary'),
       pinBtn: el.querySelector('.wt-pin'),
+      persistBtn: el.querySelector('.wt-persist'),
+      persistEnabled: null,
       term: null, fit: null, ws: null,
       garyEffective: null,
       width: loadWidth(id),
@@ -115,6 +118,8 @@
     el.querySelector('.wt-kill').addEventListener('click', () => killPanel(p));
     el.querySelector('.wt-restart').addEventListener('click', () => restartPanel(p));
     p.pinBtn.addEventListener('click', () => togglePin(p));
+    p.persistBtn.addEventListener('click', () => togglePersist(p));
+    refreshPersist(p);
     p.garyBtn.addEventListener('click', () => toggleGary(p));
     wireResize(p);
     panels.set(id, p);
@@ -296,6 +301,30 @@
       .then((d) => { p.garyEffective = !!d.effective; renderGary(p); })
       .catch(() => statusOf(p, 'could not change __AGENT_NAME__ terminal control'));
   }
+  function renderPersist(p) {
+    const b = p.persistBtn; if (!b) return;
+    if (p.persistEnabled === null) { b.textContent = '💾'; b.classList.remove('active'); b.title = 'Saved history'; return; }
+    b.textContent = p.persistEnabled ? '💾' : '🚫';
+    b.classList.toggle('active', !!p.persistEnabled);
+    b.title = p.persistEnabled
+      ? 'Saved history ON — contents persist across reboots. Click to go incognito (stop saving + wipe).'
+      : 'Incognito — this terminal is NOT being saved. Click to start saving.';
+  }
+  function refreshPersist(p) {
+    fetch('/api/terminal/' + encodeURIComponent(p.id) + '/persist')
+      .then((r) => r.json())
+      .then((d) => { p.persistEnabled = !!d.enabled; renderPersist(p); })
+      .catch(() => {});
+  }
+  function togglePersist(p) {
+    const next = !p.persistEnabled;
+    fetch('/api/terminal/' + encodeURIComponent(p.id) + '/persist', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: next }),
+    }).then((r) => r.json())
+      .then((d) => { p.persistEnabled = !!d.enabled; renderPersist(p); })
+      .catch(() => {});
+  }
   function renderPin(p) { p.pinBtn.classList.toggle('active', p.pinned); p.pinBtn.style.opacity = p.pinned ? '1' : '0.5'; }
 
   // ---- actions ----
@@ -313,6 +342,8 @@
     render();
   }
   function killPanel(p) {            // terminate the PTY
+    if (!confirm('End this terminal and erase its saved history?')) return;
+    fetch('/api/terminal/' + encodeURIComponent(p.id) + '/clear-history', { method: 'POST' }).catch(() => {});
     fetch('/api/terminal/' + encodeURIComponent(p.id) + '/close', { method: 'POST' }).catch(() => {});
     disconnectPanel(p);
     if (p.term) { try { p.term.dispose(); } catch (e) {} }

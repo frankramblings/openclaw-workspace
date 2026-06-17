@@ -15,6 +15,9 @@ import time
 import urllib.parse
 from pathlib import Path
 
+from .. import settings as _inbox_settings
+
+# VAULT and WINDOW_DAYS resolved via inbox.settings at call time (env still wins).
 VAULT = Path(os.environ.get(
     "INBOX_MEETINGS_DIR", str(Path.home() / ".openclaw/workspace/Meetings"))).expanduser()
 WINDOW_DAYS = int(os.environ.get("OBSIDIAN_WINDOW_DAYS", "120"))
@@ -124,11 +127,13 @@ async def fetch() -> list[dict]:
     """All recent meeting-note actions, score-sorted. Sync FS work is fast
     (one folder, ~120-day window) — fine on the event loop."""
     now_ms = int(time.time() * 1000)
-    cutoff = now_ms - WINDOW_DAYS * 24 * 3600_000
+    vault = _inbox_settings.obsidian_vault()
+    window_days = _inbox_settings.obsidian_window_days()
+    cutoff = now_ms - window_days * 24 * 3600_000
     items: list[dict] = []
-    if not VAULT.is_dir():
+    if not vault.is_dir():
         return items
-    for p in sorted(VAULT.iterdir()):
+    for p in sorted(vault.iterdir()):
         if not (p.is_file() and p.name.endswith(".md")):
             continue
         try:

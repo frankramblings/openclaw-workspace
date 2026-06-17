@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 from . import calendar_config, config
+from .inbox import settings as _inbox_settings
 
 CORE_TABS = ["chat", "memory", "skills", "cron", "sessions", "notes", "documents", "models"]
 
@@ -64,6 +65,9 @@ def _calendar() -> dict:
 def _inbox() -> dict:
     if not _enabled("inbox"):
         return _avail(False, "not enabled", "enable with: setup.sh --enable inbox")
+    if not _inbox_settings.enabled_collectors():
+        return _avail(False, "no collectors configured",
+                      "configure .data/inbox.json to enable at least one collector")
     return _avail(True)
 
 

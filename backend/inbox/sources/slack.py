@@ -19,6 +19,7 @@ from pathlib import Path
 import httpx
 
 from ... import config
+from .. import settings as _inbox_settings
 
 SIGNALS_PATH = Path(os.environ.get(
     "INBOX_SLACK_SIGNALS",
@@ -29,7 +30,14 @@ CHANNELS_CACHE = Path(os.environ.get(
 USERS_CACHE = Path(os.environ.get(
     "INBOX_SLACK_USERS",
     str(config.OPENCLAW_HOME / "workspace/var/slack-users.cache.json")))
+# SLACK_DOMAIN resolved via settings at call time (env SLACK_DOMAIN still wins).
+# The module-level constant is kept for backward-compat with tests that mock it;
+# code that produces URLs calls _slack_domain() so inbox.json takes effect.
 SLACK_DOMAIN = os.environ.get("SLACK_DOMAIN", "example.slack.com")
+
+
+def _slack_domain() -> str:
+    return _inbox_settings.slack_domain()
 STALE_MIN = int(os.environ.get("SLACK_STALE_MIN", str(24 * 60)))
 REFRESH_JOB = "ai.openclaw.slack-refresh"
 
@@ -187,7 +195,7 @@ def map_items(unreads: list[dict], mentions: list[dict],
             score += 1
         cid = handle_map.get(m["channel"])
         ts_compact = m["msgId"].replace(".", "")
-        url = (f"https://{SLACK_DOMAIN}/archives/{cid}/p{ts_compact}"
+        url = (f"https://{_slack_domain()}/archives/{cid}/p{ts_compact}"
                + (f"?thread_ts={m['threadTs']}&cid={cid}" if m["threadTs"] else "")
                ) if cid else None
         label = {"mention": " · @mention", "usergroup": " · @group"}.get(kind, "")
@@ -243,7 +251,7 @@ async def fetch_my_usergroups() -> set[str]:
         try:
             async with httpx.AsyncClient(timeout=20) as client:
                 r = await client.post(
-                    f"https://{SLACK_DOMAIN}/api/usergroups.list",
+                    f"https://{_slack_domain()}/api/usergroups.list",
                     headers={"Cookie": f"d={xoxd}",
                              "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac "
                                            "OS X 14_0) AppleWebKit/605.1.15"},
@@ -312,7 +320,7 @@ def map_thread_item(channel_id: str, thread_ts: str, reply: dict,
     t = _ts_ms(ts) or now_ms
     author = user_map.get(reply.get("user") or "") or reply.get("user") or "?"
     ts_compact = ts.replace(".", "")
-    url = (f"https://{SLACK_DOMAIN}/archives/{channel_id}/p{ts_compact}"
+    url = (f"https://{_slack_domain()}/archives/{channel_id}/p{ts_compact}"
            f"?thread_ts={thread_ts}&cid={channel_id}")
     return {
         "id": ts, "source": "slack",
@@ -341,7 +349,7 @@ async def fetch_my_threads(user_map: dict, now_ms: int,
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             sr = await client.post(
-                f"https://{SLACK_DOMAIN}/api/search.messages", headers=headers,
+                f"https://{_slack_domain()}/api/search.messages", headers=headers,
                 data={"token": xoxc, "query": f"from:@{MY_HANDLE}",
                       "count": THREAD_SEARCH_LIMIT, "sort": "timestamp"})
             sdata = sr.json()
@@ -358,7 +366,7 @@ async def fetch_my_threads(user_map: dict, now_ms: int,
             async def _check(cid: str, tts: str):
                 try:
                     rr = await client.post(
-                        f"https://{SLACK_DOMAIN}/api/conversations.replies",
+                        f"https://{_slack_domain()}/api/conversations.replies",
                         headers=headers,
                         data={"token": xoxc, "channel": cid, "ts": tts, "limit": 50})
                     rd = rr.json()
@@ -452,7 +460,7 @@ async def fetch_thread(channel_id: str, thread_ts: str, limit: int = 50) -> list
         raise RuntimeError("slack tokens unavailable (keychain locked?)")
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.post(
-            f"https://{SLACK_DOMAIN}/api/conversations.replies",
+            f"https://{_slack_domain()}/api/conversations.replies",
             headers={"Cookie": f"d={xoxd}",
                      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) "
                                    "AppleWebKit/605.1.15"},
@@ -486,7 +494,7 @@ async def mark_read(msg_id: str, channel_handle: str) -> None:
         raise RuntimeError("slack tokens unavailable (keychain)")
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(
-            f"https://{SLACK_DOMAIN}/api/conversations.mark",
+            f"https://{_slack_domain()}/api/conversations.mark",
             headers={"Cookie": f"d={xoxd}",
                      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) "
                                    "AppleWebKit/605.1.15"},

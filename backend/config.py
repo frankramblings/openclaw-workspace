@@ -195,3 +195,23 @@ def save_connection(**fields) -> dict:
     tmp.write_text(json.dumps(current, indent=2) + "\n")
     tmp.replace(CONNECTION_PATH)
     return current
+
+
+# --- Optional auth gate -------------------------------------------------------
+# WORKSPACE_AUTH_TOKEN gates every non-allowlisted request when set. Unset
+# (the default) means zero behavior change — the auth gate is not loaded at all.
+# Single source of truth: call auth_token() everywhere (reads env at call time
+# so tests can monkeypatch between cases).
+
+def auth_token() -> str | None:
+    """Return the configured auth token, or None when unset (auth gate off)."""
+    return os.environ.get("WORKSPACE_AUTH_TOKEN") or None
+
+
+# --- Workspace user (human, not the agent) ------------------------------------
+# Used by /api/auth/status.  Env > "admin" (the default neutral value).
+# Set WORKSPACE_USER to your chosen display name (e.g. "frank") if you wish.
+
+def workspace_user() -> str:
+    """The human user's display name for /api/auth/status."""
+    return os.environ.get("WORKSPACE_USER") or "admin"

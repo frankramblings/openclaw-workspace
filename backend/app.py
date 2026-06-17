@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import bridge, capabilities, config, doctor, draft_mode, monitor, sessions_store, terminals, websearch
+from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
 from .cron import router as cron_router
@@ -60,6 +61,12 @@ app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)
 # raw / 227KB gzipped. Streaming responses (SSE) are flushed per-chunk by
 # Starlette's GZipResponder, so /api/chat/stream keeps streaming.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+# Optional auth gate: a complete no-op when WORKSPACE_AUTH_TOKEN is unset
+# (the middleware reads the token at request time and short-circuits immediately
+# when it's None, so zero overhead or behavior change for the default no-token
+# case). Added AFTER GZip so auth runs in the outer layer (before compression).
+app.add_middleware(AuthGateMiddleware)
 
 app.include_router(inbox_router)
 app.include_router(memory_router)
@@ -713,7 +720,8 @@ async def default_chat():
 @app.get("/api/auth/status")
 async def auth_status():
     return {
-        "authenticated": True, "is_admin": True, "username": "frank",
+        "authenticated": True, "is_admin": True,
+        "username": config.workspace_user(),
         "privileges": {
             "can_use_agent": True, "can_use_bash": True, "can_use_documents": True,
             "can_use_research": True,
@@ -725,7 +733,7 @@ async def auth_status():
 
 @app.get("/api/auth/features")
 async def auth_features():
-    return {"auth_required": False, "features": {}}
+    return {"auth_required": bool(config.auth_token()), "features": {}}
 
 
 @app.get("/api/auth/settings")

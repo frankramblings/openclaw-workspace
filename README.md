@@ -168,16 +168,86 @@ Rename your agent any time with `scripts/setup.sh --name <NewName>` (re-bakes th
 scripts/install-launchagent.sh        # 127.0.0.1:8800, restarts on crash
 ```
 
+## Running with Docker
+
+```bash
+# 1. Copy and edit the config template
+cp .env.example .env
+# Edit .env: set OPENCLAW_GATEWAY_WS, OPENCLAW_GATEWAY_PASSWORD, etc.
+
+# 2. Build and start
+docker compose up --build
+# → http://127.0.0.1:8800
+```
+
+The port is bound to **`127.0.0.1:8800`** by default — it is NOT exposed on the
+LAN. This matches the bare-metal security model: reach it remotely over Tailscale
+or an SSH tunnel.
+
+### Customizing the agent name
+
+Set `WORKSPACE_AGENT_NAME` in `.env`. The entrypoint detects a name change and
+re-bakes the frontend before starting uvicorn, so the new name shows in the UI:
+
+```
+WORKSPACE_AGENT_NAME=Gary
+```
+
+### Persisting state
+
+`./.data` is mounted into `/app/.data` as a Docker volume so branding, session
+metadata, and connection config survive container rebuilds. Back this directory
+up if it matters.
+
+### Same-host OpenClaw mount
+
+If OpenClaw runs on the same machine you can mount its config directory so the
+workspace reads the gateway password and agent config automatically (no env vars
+needed). Uncomment this line in `docker-compose.yml`:
+
+```yaml
+      - ~/.openclaw:/root/.openclaw:ro
+```
+
+### Exposing beyond localhost
+
+To expose beyond `127.0.0.1` (e.g. on a LAN or via a reverse proxy) you MUST
+first set `WORKSPACE_AUTH_TOKEN` — see the Security model section below.
+
 ## Security model
 
-There is **no app-level authentication** by design — it's built for a single
-user, and the network is the boundary. So:
+By default there is **no app-level authentication** — the network is the
+boundary. The defaults are safe:
 
-- Bind to **`127.0.0.1`** (the default) and reach it remotely over a private
-  network. The recommended path is Tailscale:
-  `tailscale serve --bg --https=8443 127.0.0.1:8800`.
+- Port is bound to **`127.0.0.1`** (bare-metal) / `127.0.0.1:8800` (Docker),
+  so it is not reachable from the LAN without deliberate change.
+- Recommended remote-access path: Tailscale Serve in front of `127.0.0.1:8800`
+  (`tailscale serve --bg --https=8443 127.0.0.1:8800`).
 - **Do not** bind `0.0.0.0` on an untrusted LAN. The agent has shell access, so
   an open port is effectively root on your box.
+
+### Optional token auth (`WORKSPACE_AUTH_TOKEN`)
+
+Set this env var to require a secret token on every request — **required** if
+you expose the port beyond localhost:
+
+```
+WORKSPACE_AUTH_TOKEN=your-long-random-secret
+```
+
+When set, every request must include the token via one of:
+- `Authorization: Bearer <token>` header
+- `X-Workspace-Token: <token>` header
+- `?token=<token>` query parameter
+- `workspace_auth` cookie (set automatically after a successful `?token=` request)
+
+The `/api/health` endpoint is always open (used by Docker health checks).
+
+**Browser convenience:** visit `http://host:8800/?token=<token>` once; the server
+sets an HttpOnly cookie so subsequent page loads work without repeating the token.
+
+When unset (the default) the auth gate is a complete no-op — existing deploys are
+unaffected.
 
 ## Configuration
 

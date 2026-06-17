@@ -18,8 +18,11 @@
     '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
   const IC = {
     pin: _svg('<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>'),
-    save: _svg('<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'),
-    eyeOff: _svg('<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/>'),
+    // Match Odysseus's "Nobody" control: eye-open = saving (recorded),
+    // eye-blinded (eye with an X) = incognito = not saved. Same paths as
+    // #incognito-btn .eye-open / .eye-blinded in index.html.
+    eyeOpen: _svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'),
+    eyeBlinded: _svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/>'),
     collapse: _svg('<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>'),
     kill: _svg('<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>'),
     x: _svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', 13),
@@ -101,7 +104,7 @@
         '<span class="wt-spacer"></span>' +
         '<button class="wt-btn wt-gary" title="__AGENT_NAME__ terminal control">__AGENT_NAME__: …</button>' +
         '<button class="wt-btn wt-pin" title="Pin — keep this terminal on screen everywhere">' + IC.pin + '</button>' +
-        '<button class="wt-btn wt-persist" title="Saved history">' + IC.save + '</button>' +
+        '<button class="wt-btn wt-persist" title="Saved history">' + IC.eyeOpen + '</button>' +
         '<button class="wt-btn wt-close" title="Collapse panel (keeps the shell running)">' + IC.collapse + '</button>' +
         '<button class="wt-btn wt-kill" title="End shell + erase saved history">' + IC.kill + '</button>' +
       '</header>' +
@@ -319,8 +322,8 @@
   }
   function renderPersist(p) {
     const b = p.persistBtn; if (!b) return;
-    if (p.persistEnabled === null) { b.innerHTML = IC.save; b.classList.remove('active', 'wt-incognito'); b.title = 'Saved history'; return; }
-    b.innerHTML = p.persistEnabled ? IC.save : IC.eyeOff;
+    if (p.persistEnabled === null) { b.innerHTML = IC.eyeOpen; b.classList.remove('active', 'wt-incognito'); b.title = 'Saved history'; return; }
+    b.innerHTML = p.persistEnabled ? IC.eyeOpen : IC.eyeBlinded;
     b.classList.toggle('active', !!p.persistEnabled);
     b.classList.toggle('wt-incognito', !p.persistEnabled);
     b.title = p.persistEnabled

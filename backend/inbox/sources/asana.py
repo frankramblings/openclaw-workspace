@@ -5,22 +5,16 @@ Port of triage-dashboard api/asana.js. The PAT lives in
 user's workspace/board and are stable — env-overridable for safety."""
 from __future__ import annotations
 
-import os
 import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 import httpx
 
-from ... import config
-
 from .. import settings as _inbox_settings
 
-ENV_PATH = Path(os.environ.get(
-    "INBOX_ASANA_ENV", str(config.OPENCLAW_HOME / "workspace/secrets/asana.env")))
-# Genericized default: empty string. A real GID must come from env or inbox.json.
-PROJECT_GID = os.environ.get("ASANA_PROJECT_GID", "")
+# The Asana PAT file path and project GID are config-driven (env > inbox.json >
+# default) via backend.inbox.settings — see asana_pat_path()/asana_project_gid().
 ACTIVE_SECTIONS = {"Backlog", "In Progress", "Review"}
 BASE = "https://app.asana.com/api/1.0"
 _FIELDS = ("name,memberships.section.name,memberships.section.gid,due_on,"

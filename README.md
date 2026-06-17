@@ -108,6 +108,33 @@ username, and an app password (stored mode-600, never in the repo). **Google**
 (the default) uses OAuth tokens at `GOOGLE_OAUTH_KEYS` / `GOOGLE_CAL_TOKENS`.
 Restart the workspace afterward.
 
+### Inbox
+
+```bash
+scripts/setup.sh --enable inbox       # turn the unified Inbox tab on
+```
+
+The Inbox merges several collectors (Gmail, Slack, Asana, Obsidian meeting
+notes, and stale workspace documents). Which ones run is config-driven via an
+optional `.data/inbox.json` (gitignored):
+
+```json
+{ "collectors": {
+    "gmail":    { "enabled": true, "internal_domain": "example.com" },
+    "slack":    { "enabled": true, "domain": "example.slack.com" },
+    "asana":    { "enabled": true, "project_gid": "", "pat_path": "~/.openclaw/workspace/secrets/asana.env" },
+    "obsidian": { "enabled": true, "vault": "~/.openclaw/workspace/Meetings", "window_days": 120 }
+} }
+```
+
+**Default (no file): all collectors are on**, so existing installs are
+unchanged — disable the ones you don't use by setting `"enabled": false`. A
+collector that isn't configured simply doesn't run (e.g. Asana stays off until
+it has both a `project_gid` and a PAT file). Each setting can also be overridden
+by its env var (which wins over `inbox.json`); see `.env.example`. Secrets
+(like the Asana PAT) live in their own files referenced by path — never in
+`inbox.json`.
+
 ## Quickstart
 
 ```bash

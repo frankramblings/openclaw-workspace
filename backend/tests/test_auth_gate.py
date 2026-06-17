@@ -159,3 +159,48 @@ class TestAuthFeatures:
         r = authed_client.get("/api/auth/features",
                               headers={"Authorization": "Bearer secret-token"})
         assert r.json()["auth_required"] is True
+
+
+def test_streaming_response_not_buffered_through_gate(monkeypatch):
+    """The gate must not buffer streaming bodies (chat SSE is load-bearing).
+    Drive a multi-chunk StreamingResponse through the ASGI middleware and assert
+    each chunk arrives as its own http.response.body message."""
+    import anyio
+    from starlette.applications import Starlette
+    from starlette.responses import StreamingResponse
+    from starlette.routing import Route
+    from starlette.middleware import Middleware
+    from backend import auth_gate, config
+
+    monkeypatch.setattr(config, "auth_token", lambda: None)  # passthrough mode
+
+    async def stream(_request):
+        async def gen():
+            for i in range(3):
+                yield f"data: {i}\n\n".encode()
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
+    app = Starlette(routes=[Route("/s", stream)],
+                    middleware=[Middleware(auth_gate.AuthGateMiddleware)])
+
+    bodies = []
+
+    async def main():
+        scope = {"type": "http", "method": "GET", "path": "/s",
+                 "headers": [], "query_string": b""}
+        ev = anyio.Event()
+
+        async def receive():
+            await ev.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(m):
+            if m["type"] == "http.response.body" and m.get("body"):
+                bodies.append(m["body"])
+                if len(bodies) >= 3:
+                    ev.set()
+        with anyio.move_on_after(3):
+            await app(scope, receive, send)
+
+    anyio.run(main)
+    assert bodies == [b"data: 0\n\n", b"data: 1\n\n", b"data: 2\n\n"]

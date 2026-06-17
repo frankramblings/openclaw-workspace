@@ -11,7 +11,9 @@ import fcntl
 import json
 import os
 import pty
+import re
 import secrets
+import shutil
 import signal
 import struct
 import termios
@@ -27,6 +29,14 @@ from . import workspace_files
 router = APIRouter()
 
 MAX_BUFFER = 120_000
+
+# --- Scrollback persistence (Tier A) tunables ---
+PERSIST_DIRNAME = "terminals"
+PERSIST_CAP = 1_000_000          # rolling per-session scrollback.log byte cap
+PERSIST_FLUSH_INTERVAL = 1.0     # seconds; batched flush, never per-keystroke
+PERSIST_FLUSH_BYTES = 65536      # or flush once this many bytes pend
+PERSIST_PRUNE_IDLE_DAYS = 30
+
 DEFAULT_COLS = 96
 DEFAULT_ROWS = 28
 
@@ -358,6 +368,163 @@ def mark_consumed(session_key: str, tokens: list[str]) -> None:
             changed = True
     if changed:
         _save_attachments(session_key, reg)
+
+
+# --- Scrollback persistence (Tier A): per-session on-disk contents + cwd -----
+# Persists terminal OUTPUT (never keystrokes) so a chat's terminal contents and
+# working directory survive reboots. Files are 0o600 under a 0o700 dir. A
+# best-effort scrubber masks well-known secret shapes before writing — NOT a
+# guarantee; full-disk encryption is the primary at-rest control.
+
+_SECRET_PATTERNS = [
+    re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9]{20,}"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),
+    re.compile(
+        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----.*?"
+        r"-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+        re.DOTALL,
+    ),
+]
+
+
+def scrub(text: str) -> str:
+    """Mask well-known secret token shapes. Defense-in-depth, not a guarantee."""
+    for pat in _SECRET_PATTERNS:
+        text = pat.sub("***REDACTED***", text)
+    return text
+
+
+def _persist_base() -> Path:
+    return config.DATA_DIR / PERSIST_DIRNAME
+
+
+def persist_dir(session_key: str) -> Path:
+    return _persist_base() / _sanitize_key(session_key)
+
+
+def persist_log_path(session_key: str) -> Path:
+    return persist_dir(session_key) / "scrollback.log"
+
+
+def persist_meta_path(session_key: str) -> Path:
+    return persist_dir(session_key) / "meta.json"
+
+
+def append_output(session_key: str, text: str) -> None:
+    """Scrub then append OUTPUT to the rolling log (0o600), capped at PERSIST_CAP."""
+    if not text:
+        return
+    text = scrub(text)
+    d = persist_dir(session_key)
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    p = persist_log_path(session_key)
+    try:
+        with open(p, "a", encoding="utf-8", errors="replace") as f:
+            f.write(text)
+        os.chmod(p, 0o600)
+        if p.stat().st_size > PERSIST_CAP:
+            tail = p.read_bytes()[-PERSIST_CAP:]
+            tmp = p.with_suffix(".log.tmp")
+            tmp.write_bytes(tail)
+            os.chmod(tmp, 0o600)
+            tmp.replace(p)
+    except OSError:
+        pass  # persistence is best-effort; never break the live PTY
+
+
+def load_tail(session_key: str, limit: int = MAX_BUFFER) -> str:
+    try:
+        data = persist_log_path(session_key).read_bytes()
+    except (FileNotFoundError, OSError):
+        return ""
+    return data[-limit:].decode("utf-8", "replace")
+
+
+def read_meta(session_key: str) -> dict:
+    try:
+        return json.loads(persist_meta_path(session_key).read_text())
+    except (FileNotFoundError, ValueError, OSError):
+        return {}
+
+
+def write_meta(session_key: str, **fields) -> dict:
+    meta = read_meta(session_key)
+    meta.update(fields)
+    d = persist_dir(session_key)
+    d.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    p = persist_meta_path(session_key)
+    try:
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(meta))
+        os.chmod(tmp, 0o600)
+        tmp.replace(p)
+    except OSError:
+        pass
+    return meta
+
+
+def is_persist_enabled(session_key: str) -> bool:
+    return bool(read_meta(session_key).get("persist", True))
+
+
+def set_persist(session_key: str, enabled: bool) -> None:
+    write_meta(session_key, persist=bool(enabled))
+    if not enabled:
+        try:
+            persist_log_path(session_key).unlink()
+        except (FileNotFoundError, OSError):
+            pass
+
+
+def clear_persist(session_key: str) -> None:
+    shutil.rmtree(persist_dir(session_key), ignore_errors=True)
+
+
+def read_cwd(pid: int | None) -> str | None:
+    """Linux: the live cwd of the shell via /proc; None elsewhere/on error."""
+    if pid is None:
+        return None
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except (OSError, FileNotFoundError):
+        return None
+
+
+def prune_persist(max_idle_days: int = PERSIST_PRUNE_IDLE_DAYS,
+                  now: float | None = None) -> int:
+    base = _persist_base()
+    if not base.exists():
+        return 0
+    now = now if now is not None else time.time()
+    cutoff = now - max_idle_days * 86400
+    removed = 0
+    for d in base.iterdir():
+        if not d.is_dir():
+            continue
+        try:
+            la = json.loads((d / "meta.json").read_text()).get("last_active")
+        except (FileNotFoundError, ValueError, OSError):
+            la = None
+        if la is None:
+            try:
+                la = d.stat().st_mtime
+            except OSError:
+                continue
+        if la < cutoff:
+            shutil.rmtree(d, ignore_errors=True)
+            removed += 1
+    return removed
 
 
 # --- Gary-drive: per-turn token map -----------------------------------------

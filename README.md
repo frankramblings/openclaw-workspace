@@ -96,6 +96,18 @@ and paste it when prompted — it's stored in a mode-600 file next to your himal
 config, never in this repo. For other providers choose `imap` and enter your
 IMAP/SMTP hosts. Restart the workspace afterward to pick up the account.
 
+### Calendar
+
+```bash
+scripts/setup.sh --add-calendar       # choose 'caldav' (universal) or 'google'
+```
+
+**CalDAV** works with Google, iCloud, Fastmail, Nextcloud, etc. — give your
+calendar home URL (e.g. `https://caldav.fastmail.com/dav/calendars/user/you/`),
+username, and an app password (stored mode-600, never in the repo). **Google**
+(the default) uses OAuth tokens at `GOOGLE_OAUTH_KEYS` / `GOOGLE_CAL_TOKENS`.
+Restart the workspace afterward.
+
 ## Quickstart
 
 ```bash

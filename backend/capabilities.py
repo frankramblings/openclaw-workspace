@@ -8,7 +8,7 @@ import os
 import shutil
 from pathlib import Path
 
-from . import config
+from . import calendar_config, config
 
 CORE_TABS = ["chat", "memory", "skills", "cron", "sessions", "notes", "documents", "models"]
 
@@ -40,15 +40,24 @@ def _email() -> dict:
 
 
 def _calendar() -> dict:
+    if calendar_config.provider() == "caldav":
+        s = calendar_config.caldav_settings()
+        if not (s["url"] and s["username"] and s["password"]):
+            return _avail(False, "CalDAV not configured",
+                          "run: setup.sh --add-calendar")
+        if not _enabled("calendar"):
+            return _avail(False, "not enabled", "enable with: setup.sh --add-calendar")
+        return _avail(True)
+    # google (default): existing token-file checks
     keys = Path(os.environ.get("GOOGLE_OAUTH_KEYS")
                 or Path.home() / ".gmail-mcp/gcp-oauth.keys.json").expanduser()
     toks = Path(os.environ.get("GOOGLE_CAL_TOKENS")
                 or Path.home() / ".config/google-calendar-mcp/tokens.json").expanduser()
     if not (keys.exists() and toks.exists()):
         return _avail(False, "no Google OAuth creds/tokens",
-                      "provide Google OAuth creds, then: setup.sh --enable calendar")
+                      "provide Google OAuth creds, then: setup.sh --add-calendar")
     if not _enabled("calendar"):
-        return _avail(False, "not enabled", "enable with: setup.sh --enable calendar")
+        return _avail(False, "not enabled", "enable with: setup.sh --add-calendar")
     return _avail(True)
 
 

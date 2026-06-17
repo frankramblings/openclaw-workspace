@@ -40,3 +40,12 @@ def test_email_available_when_enabled_and_present(env):
                 lambda: {"integrations": {"email": True}})
     m = caps.snapshot()
     assert m["email"]["available"] is True
+
+
+def test_calendar_available_via_caldav(env, monkeypatch):
+    monkeypatch.setattr(caps.calendar_config, "caldav_settings",
+                        lambda: {"url": "https://d/cal/", "username": "u", "password": "p"})
+    monkeypatch.setattr(caps.calendar_config, "provider", lambda: "caldav")
+    monkeypatch.setattr(caps.config, "load_connection",
+                        lambda: {"integrations": {"calendar": True}})
+    assert caps.snapshot()["calendar"]["available"] is True

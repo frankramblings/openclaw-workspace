@@ -29,6 +29,13 @@
 #   --smtp-host             SMTP server host (imap only)
 #   --smtp-port             SMTP port (default 465)
 #   EMAIL_PW=<pw>           app password (env var, not flag; prompted if omitted)
+#
+# Calendar setup (standalone; exits after configuration):
+#   --add-calendar          configure the calendar provider
+#   --calendar-provider     google or caldav
+#   --caldav-url            CalDAV home URL (e.g. https://caldav.fastmail.com/dav/calendars/user/you/)
+#   --caldav-username       CalDAV username
+#   CALDAV_PW=<pw>          CalDAV app password (env var, not flag; prompted if omitted)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -50,6 +57,10 @@ IMAP_HOST=""
 IMAP_PORT="993"
 SMTP_HOST=""
 SMTP_PORT="465"
+ADD_CAL=0
+CAL_PROVIDER=""
+CALDAV_URL=""
+CALDAV_USER=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -68,6 +79,10 @@ while [[ $# -gt 0 ]]; do
     --imap-port)       IMAP_PORT="${2:-}"; shift 2 ;;
     --smtp-host)       SMTP_HOST="${2:-}"; shift 2 ;;
     --smtp-port)       SMTP_PORT="${2:-}"; shift 2 ;;
+    --add-calendar)       ADD_CAL=1; shift ;;
+    --calendar-provider)  CAL_PROVIDER="${2:-}"; shift 2 ;;
+    --caldav-url)         CALDAV_URL="${2:-}"; shift 2 ;;
+    --caldav-username)    CALDAV_USER="${2:-}"; shift 2 ;;
     -h|--help)      awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next} {exit}' "$0"; exit 0 ;;
     *) echo "unknown flag: $1 (try --help)" >&2; exit 1 ;;
   esac
@@ -120,6 +135,40 @@ import os; os.makedirs(os.path.dirname(path), exist_ok=True)
 json.dump(data, open(path, "w"), indent=2); open(path, "a").write("\n")
 PY
   echo "  ✓ email enabled. Restart the workspace to pick up the new account."
+  exit 0
+fi
+
+if [[ "$ADD_CAL" == 1 ]]; then
+  [[ -z "$CAL_PROVIDER" ]] && { printf "  Calendar provider [google/caldav]: "; read -r CAL_PROVIDER || true; }
+  [[ "$CAL_PROVIDER" == "google" || "$CAL_PROVIDER" == "caldav" ]] || { echo "provider must be google or caldav" >&2; exit 1; }
+  if [[ "$CAL_PROVIDER" == "caldav" ]]; then
+    [[ -n "$CALDAV_URL" ]]  || { printf "  CalDAV URL (calendar home, e.g. https://caldav.fastmail.com/dav/calendars/user/you/): "; read -r CALDAV_URL || true; }
+    [[ -n "$CALDAV_USER" ]] || { printf "  CalDAV username: "; read -r CALDAV_USER || true; }
+    [[ -n "$CALDAV_URL" && -n "$CALDAV_USER" ]] || { echo "CalDAV url + username required" >&2; exit 1; }
+    [[ -n "${CALDAV_PW:-}" ]] || { printf "  CalDAV app password (hidden): "; read -rs CALDAV_PW || true; echo; }
+  fi
+  CALDAV_PW="${CALDAV_PW:-}" python3 - "$DATA_DIR" "$CAL_PROVIDER" "$CALDAV_URL" "$CALDAV_USER" <<'PY'
+import json, os, sys
+data_dir, prov, url, user = sys.argv[1:5]
+cal = {"provider": prov}
+if prov == "caldav":
+    cal["caldav"] = {"url": url, "username": user}
+    sdir = os.path.join(data_dir, "secrets"); os.makedirs(sdir, mode=0o700, exist_ok=True)
+    sp = os.path.join(sdir, "caldav-password")
+    fd = os.open(sp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try: os.write(fd, "".join(os.environ.get("CALDAV_PW","").split()).encode())
+    finally: os.close(fd)
+os.makedirs(data_dir, exist_ok=True)
+json.dump(cal, open(os.path.join(data_dir, "calendar.json"), "w"), indent=2)
+open(os.path.join(data_dir, "calendar.json"), "a").write("\n")
+conn = os.path.join(data_dir, "connection.json")
+try: c = json.load(open(conn))
+except Exception: c = {}
+c.setdefault("integrations", {})["calendar"] = True
+json.dump(c, open(conn, "w"), indent=2); open(conn, "a").write("\n")
+print(f"  ✓ calendar provider '{prov}' configured + enabled")
+PY
+  echo "  Restart the workspace to pick up the calendar."
   exit 0
 fi
 

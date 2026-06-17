@@ -125,3 +125,31 @@ def test_incognito_session_never_writes():
     sess.flush_persist(force=True)
     assert terminals.load_tail("incog-key") == ""
     assert sess._persist_pending == ""
+
+
+def test_restore_cwd_prefers_existing_saved_dir(tmp_path):
+    key = "restore-cwd"
+    terminals.set_persist(key, True)
+    terminals.write_meta(key, last_cwd=str(tmp_path))      # exists
+    assert terminals._restore_cwd(key) == str(tmp_path)
+    terminals.write_meta(key, last_cwd=str(tmp_path / "gone"))  # missing
+    assert terminals._restore_cwd(key) is None
+    terminals.set_persist(key, False)
+    terminals.write_meta(key, last_cwd=str(tmp_path), persist=False)
+    assert terminals._restore_cwd(key) is None             # incognito -> no restore
+
+
+def test_restore_separator_contains_marker_and_cwd():
+    sep = terminals._restore_separator("/home/admin/project")
+    assert "restored" in sep and "/home/admin/project" in sep
+
+
+def test_get_or_create_seeds_buffer_from_log():
+    key = "restore-seed"
+    terminals.append_output(key, "yesterday output\n")
+    sess = terminals.get_or_create(key)
+    try:
+        assert "yesterday output" in sess.buffer
+        assert "restored" in sess.buffer  # separator present
+    finally:
+        terminals.close_session(key)

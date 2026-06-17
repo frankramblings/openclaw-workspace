@@ -90,7 +90,7 @@ class PtySession:
         # Precompute everything BEFORE the fork: building dicts/lists in the child
         # of a (previously) multithreaded process is unsafe; the child only
         # chdir+execs precomputed values.
-        cwd = str(workspace_files.workspace_root())
+        cwd = _restore_cwd(self.session_key) or str(workspace_files.workspace_root())
         shell = _shell()
         argv = [shell, "-i"]
         env = dict(os.environ)
@@ -272,12 +272,47 @@ class PtySession:
 
 _sessions: dict[str, PtySession] = {}
 
+_last_prune = 0.0
+
+
+def _restore_cwd(session_key: str) -> str | None:
+    if not is_persist_enabled(session_key):
+        return None
+    c = read_meta(session_key).get("last_cwd")
+    if c and os.path.isdir(c):
+        return c
+    return None
+
+
+def _restore_separator(cwd: str | None) -> str:
+    when = time.strftime("%Y-%m-%d %H:%M")
+    where = cwd or "~"
+    return f"\r\n\x1b[2m──── restored {when} · {where} ────\x1b[0m\r\n"
+
+
+def _maybe_prune() -> None:
+    """Prune idle sessions on startup and at most once per 24h per process."""
+    global _last_prune
+    now = time.time()
+    if now - _last_prune < 86400:
+        return
+    _last_prune = now
+    try:
+        prune_persist()
+    except OSError:
+        pass
+
 
 def get_or_create(session_key: str, *, cols: int = DEFAULT_COLS, rows: int = DEFAULT_ROWS) -> PtySession:
+    _maybe_prune()
     sess = _sessions.get(session_key)
     if sess is None or sess.exited:
+        restored = load_tail(session_key) if is_persist_enabled(session_key) else ""
         sess = PtySession(session_key, cols=cols, rows=rows)
         sess.start()
+        if restored:
+            sep = _restore_separator(read_meta(session_key).get("last_cwd"))
+            sess.buffer = (restored + sep)[-MAX_BUFFER:]
         _sessions[session_key] = sess
     # Always-on reader: keep `buffer` current even with no WebSocket attached, so
     # Gary's MCP read/run see live output. attach_reader is idempotent.

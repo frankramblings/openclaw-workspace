@@ -1,0 +1,14 @@
+/* Vendored JetBrainsMono Nerd Font for the attached terminal. Full (non-subset)
+   so Nerd-Font PUA glyphs (powerline, dev icons) are preserved. */
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  src: url("/static/js/vendor/xterm/JetBrainsMonoNF-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrainsMono Nerd Font";
+  src: url("/static/js/vendor/xterm/JetBrainsMonoNF-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}

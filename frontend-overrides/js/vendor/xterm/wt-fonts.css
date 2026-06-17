@@ -19,8 +19,18 @@
   background: #161b22; border: 1px solid #30363d; border-radius: 6px;
   padding: 4px 8px;
 }
+/* Author display:flex above outranks the UA [hidden]{display:none}, so the bar
+   would float permanently and Esc/✕ couldn't hide it. Restore the hidden
+   semantics — same gotcha handled for .wt-panel (workspace.css) and #we-reopen
+   (hermes.css, "inline-flex would defeat the hidden attr"). */
+.wt-find[hidden] { display: none; }
 .wt-find-input {
   background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
   border-radius: 4px; padding: 2px 6px; font: inherit; width: 160px;
 }
 .wt-find-hint { color: #8b949e; font-size: 11px; }
+.wt-find-close {
+  background: none; border: none; color: #8b949e; cursor: pointer;
+  display: inline-flex; align-items: center; padding: 2px; border-radius: 4px;
+}
+.wt-find-close:hover { color: #c9d1d9; background: rgba(255, 255, 255, 0.08); }

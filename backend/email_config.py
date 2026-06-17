@@ -6,6 +6,8 @@ itself never lands in config.toml, and we avoid the `tr -d ' \\n'` / TOML escape
 fragility by stripping whitespace at write time."""
 from __future__ import annotations
 
+import os
+import re
 import tomllib
 from pathlib import Path
 
@@ -70,3 +72,49 @@ def has_default_account(config_text: str) -> bool:
     except (tomllib.TOMLDecodeError, ValueError):
         return False
     return any(a.get("default") for a in (cfg.get("accounts") or {}).values())
+
+
+def _slug(email: str) -> str:
+    local = email.split("@", 1)[0]
+    s = re.sub(r"[^a-z0-9]+", "", local.lower())
+    return s or "mail"
+
+
+def add_account(*, provider, email, display_name, password, config_path,
+                secret_path, imap_host=None, imap_port=993, smtp_host=None,
+                smtp_port=465):
+    """Write the password to a 600 secret file and append a himalaya account
+    block to config_path. Returns {account_id, is_default, address}. Never steals
+    `default` from an existing account. provider is 'gmail' or 'imap'."""
+    config_path = Path(config_path)
+    secret_path = Path(secret_path)
+    if provider == "imap" and not (imap_host and smtp_host):
+        raise ValueError("imap provider requires imap_host and smtp_host")
+
+    # 1. secret file: strip ALL whitespace (Gmail app-passwords show with spaces),
+    #    no trailing newline, mode 600.
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    secret_clean = "".join(password.split())
+    secret_path.write_text(secret_clean)
+    os.chmod(secret_path, 0o600)
+
+    # 2. decide default + render block
+    existing = config_path.read_text() if config_path.exists() else ""
+    is_default = not has_default_account(existing)
+    if provider == "gmail":
+        account_id = "gmail"
+        block = render_gmail_account(email=email, display_name=display_name,
+                                     secret_path=str(secret_path), is_default=is_default)
+    else:
+        account_id = _slug(email)
+        block = render_imap_account(account_id=account_id, email=email,
+                                    display_name=display_name,
+                                    secret_path=str(secret_path), imap_host=imap_host,
+                                    imap_port=imap_port, smtp_host=smtp_host,
+                                    smtp_port=smtp_port, is_default=is_default)
+
+    # 3. append (one blank line between blocks)
+    sep = "" if not existing else ("\n" if existing.endswith("\n") else "\n\n")
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(existing + sep + block)
+    return {"account_id": account_id, "is_default": is_default, "address": email}

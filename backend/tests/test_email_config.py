@@ -48,3 +48,44 @@ def test_has_default_account():
     assert ec.has_default_account(nodef) is False
     assert ec.has_default_account("") is False
     assert ec.has_default_account("not valid toml {{{") is False
+
+
+import os
+import stat
+
+
+def test_add_account_fresh_is_default(tmp_path):
+    cfg = tmp_path / "config.toml"
+    secret = tmp_path / ".pw"
+    out = ec.add_account(provider="gmail", email="me@gmail.com", display_name="Me",
+                         password="abcd efgh ijkl mnop", config_path=cfg,
+                         secret_path=secret)
+    assert out["is_default"] is True and out["account_id"] == "gmail"
+    text = cfg.read_text()
+    assert ec.has_default_account(text) is True
+    # secret stripped of whitespace, no trailing newline, mode 600
+    assert secret.read_text() == "abcdefghijklmnop"
+    assert stat.S_IMODE(os.stat(secret).st_mode) == 0o600
+
+
+def test_add_account_second_does_not_steal_default(tmp_path):
+    cfg = tmp_path / "config.toml"
+    secret = tmp_path / ".pw"
+    ec.add_account(provider="gmail", email="me@gmail.com", display_name="Me",
+                   password="pw1", config_path=cfg, secret_path=secret)
+    out2 = ec.add_account(provider="imap", email="u@corp.example", display_name="U",
+                          password="pw2", config_path=cfg, secret_path=tmp_path / ".pw2",
+                          imap_host="imap.corp.example", smtp_host="smtp.corp.example")
+    assert out2["is_default"] is False
+    cfg_d = tomllib.loads(cfg.read_text())
+    # original gmail account still the default; both accounts present
+    assert cfg_d["accounts"]["gmail"]["default"] is True
+    assert "u@corp.example" in cfg.read_text()
+
+
+def test_add_account_imap_requires_hosts(tmp_path):
+    import pytest
+    with pytest.raises(ValueError):
+        ec.add_account(provider="imap", email="u@x.example", display_name="U",
+                       password="pw", config_path=tmp_path / "c.toml",
+                       secret_path=tmp_path / ".pw")  # no imap_host

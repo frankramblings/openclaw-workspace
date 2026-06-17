@@ -132,9 +132,9 @@ def test_resolve_refs_leaves_unknown_ids_untouched():
 
 def test_resolve_refs_glued_id_then_name():
     # The Slack MCP renders mentions as <id><DisplayName> glued together with no
-    # delimiter (e.g. "U01GEK1BJ8KFrank"). Strip the id, keep the name -> "@Frank".
-    m = {"U01GEK1BJ8K": "Frank"}
-    assert slack.resolve_slack_refs("FYI U01GEK1BJ8KFrank ok", m) == "FYI @Frank ok"
+    # delimiter (e.g. "U0EXAMPLEIDFrank"). Strip the id, keep the name -> "@Frank".
+    m = {"U0EXAMPLEID": "Frank"}
+    assert slack.resolve_slack_refs("FYI U0EXAMPLEIDFrank ok", m) == "FYI @Frank ok"
 
 
 def test_resolve_refs_glued_multiword_name():

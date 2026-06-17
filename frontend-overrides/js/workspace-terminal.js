@@ -242,7 +242,7 @@
       body: JSON.stringify({ scope: 'session', session_key: p.id, enabled: next }) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
       .then((d) => { p.garyEffective = !!d.effective; renderGary(p); })
-      .catch(() => statusOf(p, 'could not change Gary terminal control'));
+      .catch(() => statusOf(p, 'could not change __AGENT_NAME__ terminal control'));
   }
   function renderPin(p) { p.pinBtn.classList.toggle('active', p.pinned); p.pinBtn.style.opacity = p.pinned ? '1' : '0.5'; }
 

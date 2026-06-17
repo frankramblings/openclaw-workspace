@@ -5,6 +5,7 @@ time forms we support: UTC instants (…Z) and all-day (VALUE=DATE)."""
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 _DT_UTC = re.compile(r"^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$")
 _DT_DATE = re.compile(r"^(\d{4})(\d{2})(\d{2})$")
@@ -95,13 +96,24 @@ def parse_events(calendar_text: str) -> list[dict]:
 
 
 def _to_ical_dt(iso: str, all_day: bool) -> tuple[str, str]:
-    """canonical ISO → (param_suffix, ical_value)."""
+    """canonical ISO → (param_suffix, ical_value).
+
+    Timed datetimes are normalized to a UTC instant (…Z): an ISO value carrying
+    a numeric offset (e.g. 2026-06-10T18:00:00-04:00, which `quick-parse`
+    emits) is converted to UTC, NOT naively stripped — a bare replace() would
+    mangle the offset into the time and produce an invalid RFC-5545 value. A
+    naive datetime (no tz) becomes a valid floating-local time (no Z)."""
     if all_day:
         d = iso[:10].replace("-", "")
         return ";VALUE=DATE", d
-    # 2026-06-10T18:00:00Z → 20260610T180000Z
-    s = iso.replace("-", "").replace(":", "")
-    return "", s
+    try:
+        dt = datetime.fromisoformat(iso.strip().replace("Z", "+00:00"))
+    except ValueError:
+        # Unparseable: fall back to the legacy compact strip (best effort).
+        return "", iso.replace("-", "").replace(":", "")
+    if dt.tzinfo is not None:                      # offset-aware → UTC instant
+        return "", dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return "", dt.strftime("%Y%m%dT%H%M%S")        # naive → floating local time
 
 
 def build_vcalendar(event: dict) -> str:

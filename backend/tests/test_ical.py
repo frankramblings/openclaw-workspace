@@ -63,3 +63,32 @@ def test_build_all_day():
                                 "dtend": "2026-06-13", "all_day": True})
     assert "DTSTART;VALUE=DATE:20260612" in out
     assert "DTEND;VALUE=DATE:20260613" in out
+
+
+def test_build_vcalendar_offset_datetime_normalized_to_utc():
+    """A dtstart with a numeric TZ offset (what quick-parse emits) must become a
+    valid UTC instant, not a mangled '...0400' string."""
+    from backend import ical
+    vcal = ical.build_vcalendar({
+        "uid": "x@example.com", "summary": "Sync",
+        "dtstart": "2026-06-10T18:00:00-04:00",
+        "dtend": "2026-06-10T18:30:00-04:00",
+    })
+    assert "DTSTART:20260610T220000Z" in vcal   # 18:00 -04:00 == 22:00 UTC
+    assert "DTEND:20260610T223000Z" in vcal
+    assert "0400" not in vcal                    # no mangled offset
+
+
+def test_build_vcalendar_utc_and_naive_and_allday():
+    from backend import ical
+    z = ical.build_vcalendar({"uid": "a", "summary": "s",
+                              "dtstart": "2026-06-10T18:00:00Z",
+                              "dtend": "2026-06-10T19:00:00Z"})
+    assert "DTSTART:20260610T180000Z" in z
+    naive = ical.build_vcalendar({"uid": "a", "summary": "s",
+                                  "dtstart": "2026-06-10T18:00:00",
+                                  "dtend": "2026-06-10T19:00:00"})
+    assert "DTSTART:20260610T180000" in naive and "DTSTART:20260610T180000Z" not in naive
+    allday = ical.build_vcalendar({"uid": "a", "summary": "s", "all_day": True,
+                                   "dtstart": "2026-06-10", "dtend": "2026-06-11"})
+    assert "DTSTART;VALUE=DATE:20260610" in allday

@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -d .git ]] || { echo "not a git repo" >&2; exit 1; }
+[[ -e .git ]] || { echo "not a git repo" >&2; exit 1; }
 
 echo "── pre-publish checks ───────────────────────────────────"
 

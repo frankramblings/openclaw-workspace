@@ -166,14 +166,27 @@ def _client():
 def test_persist_endpoints_roundtrip():
     c = _client()
     key = "ep-key"
-    assert c.get(f"/api/terminal/{key}/persist").json() == {"enabled": True}
-    assert c.post(f"/api/terminal/{key}/persist", json={"enabled": False}).json() == {"enabled": False}
+    headers = {"tailscale-user-login": "tester@example.com"}
+    assert c.get(f"/api/terminal/{key}/persist", headers=headers).json() == {"enabled": True}
+    assert c.post(f"/api/terminal/{key}/persist", json={"enabled": False}, headers=headers).json() == {"enabled": False}
     assert terminals.is_persist_enabled(key) is False
 
 
 def test_clear_history_endpoint_wipes_log():
     c = _client()
     key = "ep-clear"
+    headers = {"tailscale-user-login": "tester@example.com"}
     terminals.append_output(key, "stuff")
-    assert c.post(f"/api/terminal/{key}/clear-history").json() == {"ok": True}
+    assert c.post(f"/api/terminal/{key}/clear-history", headers=headers).json() == {"ok": True}
     assert terminals.load_tail(key) == ""
+
+
+def test_persist_endpoints_require_auth():
+    """Verify that GET/POST /persist and POST /clear-history return 403 without auth header."""
+    c = _client()
+    key = "ep-auth"
+    # No tailscale-user-login header; TestClient default host is "testclient" (not loopback)
+    # so terminal_access_allowed() should reject the request.
+    assert c.get(f"/api/terminal/{key}/persist").status_code == 403
+    assert c.post(f"/api/terminal/{key}/persist", json={"enabled": False}).status_code == 403
+    assert c.post(f"/api/terminal/{key}/clear-history").status_code == 403

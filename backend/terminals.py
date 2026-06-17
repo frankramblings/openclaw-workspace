@@ -782,12 +782,18 @@ async def terminal_gary_mode_set(request: Request):
 
 
 @router.get("/api/terminal/{session_key}/persist")
-async def terminal_persist_get(session_key: str):
+async def terminal_persist_get(session_key: str, request: Request):
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
     return {"enabled": is_persist_enabled(session_key)}
 
 
 @router.post("/api/terminal/{session_key}/persist")
 async def terminal_persist_set(session_key: str, request: Request):
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
     body = await request.json()
     enabled = bool(body.get("enabled", True))
     set_persist(session_key, enabled)
@@ -798,7 +804,10 @@ async def terminal_persist_set(session_key: str, request: Request):
 
 
 @router.post("/api/terminal/{session_key}/clear-history")
-async def terminal_clear_history(session_key: str):
+async def terminal_clear_history(session_key: str, request: Request):
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers):
+        raise HTTPException(status_code=403, detail="forbidden")
     clear_persist(session_key)
     s = _sessions.get(session_key)
     if s is not None:

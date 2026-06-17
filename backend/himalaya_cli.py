@@ -49,6 +49,13 @@ async def run_raw(args: list[str], *, stdin: bytes | None = None,
             proc.kill()
         except ProcessLookupError:
             pass  # already exited — killing it would mask the timeout as a 500
+        # Reap the (now-killed or already-exited) process so its stdout/stderr
+        # pipe fds are released. Without this, every timeout leaks descriptors
+        # and a long-running server eventually hits EMFILE (too many open files).
+        try:
+            await proc.wait()
+        except Exception:  # noqa: BLE001 - cleanup must never mask the timeout
+            pass
         raise HimalayaError(f"himalaya {args[:2]} timed out after {timeout}s") from exc
     if proc.returncode != 0:
         tail = (err or b"").decode(errors="replace").strip()[-400:]

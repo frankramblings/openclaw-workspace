@@ -41,7 +41,12 @@ _client: httpx.AsyncClient | None = None
 def _http() -> httpx.AsyncClient:
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=30)
+        # Bound the keep-alive pool and expire idle connections quickly so
+        # Google-closed keep-alives don't pile up in CLOSE_WAIT and leak fds.
+        _client = httpx.AsyncClient(
+            timeout=30,
+            limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=30),
+        )
     return _client
 
 

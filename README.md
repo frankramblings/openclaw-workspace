@@ -255,6 +255,15 @@ sets an HttpOnly cookie so subsequent page loads work without repeating the toke
 When unset (the default) the auth gate is a complete no-op — existing deploys are
 unaffected.
 
+> **⚠️ The token gate covers HTTP requests only — not the attached-terminal
+> WebSocket.** `WORKSPACE_AUTH_TOKEN` does not currently apply to the terminal
+> PTY WebSocket, which is gated separately by your reverse proxy's identity (e.g.
+> Tailscale Serve passing the tailnet user). The terminal is a real shell, so do
+> **not** expose the workspace to an untrusted network on the strength of
+> `WORKSPACE_AUTH_TOKEN` alone — keep it behind Tailscale (or an authenticating
+> proxy) where the network is the real boundary. (Closing this gap — token-gating
+> the WS too — is a tracked follow-up.)
+
 ## Configuration
 
 Everything has a sensible default. Override via environment variables — see

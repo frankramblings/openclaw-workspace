@@ -48,9 +48,12 @@ def gateway_password() -> str | None:
 def default_model() -> tuple[str, str]:
     """The primary agent's configured model as (provider, model_id).
 
-    Read from openclaw.json `agents.list[0].model`, formatted "provider/model"
-    (e.g. "openai/gpt-5.5"). This is the model a fresh web chat lands on. Falls
-    back to the known codex primary if the config can't be read.
+    Read from openclaw.json `agents.list[0].model`. That field is either a
+    "provider/model" string (e.g. "openai/gpt-5.5") or a dict of the form
+    {"primary": "provider/model", "fallbacks": [...]} — newer configs use the
+    dict. Either way we resolve to the primary "provider/model" string. This is
+    the model a fresh web chat lands on. Falls back to the known codex primary
+    if the config can't be read.
     """
     raw = os.environ.get("OPENCLAW_DEFAULT_MODEL")
     if not raw:
@@ -58,6 +61,8 @@ def default_model() -> tuple[str, str]:
             raw = _openclaw_json()["agents"]["list"][0]["model"]
         except (KeyError, IndexError, TypeError):
             raw = "openai/gpt-5.5"
+    if isinstance(raw, dict):  # {"primary": "...", "fallbacks": [...]}
+        raw = raw.get("primary") or "openai/gpt-5.5"
     provider, _, model = raw.partition("/")
     if not model:  # no provider prefix
         provider, model = "openai", provider

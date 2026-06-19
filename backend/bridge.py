@@ -17,7 +17,7 @@ import uuid
 
 import websockets
 
-from . import config
+from . import config, sessions_store
 
 
 def _sse(payload: dict | str) -> str:
@@ -634,6 +634,149 @@ async def fetch_models() -> dict:
     if not models_res.get("ok"):
         raise RuntimeError(f"models.list failed: {models_res}")
     return _build_model_items(models_res.get("payload") or {}, auth_payload)
+
+
+# --- Per-session usage relay -------------------------------------------------
+# The gateway's `sessions.usage` RPC already computes per-session token usage +
+# (with includeContextWeight) a contextWeight carrying the system-prompt char
+# breakdown. There is no token accounting to build here — only a relay + a
+# projection down to the small footer contract (tmp/openclaw-usage-contract.md).
+
+# Context-window size by model family. The gateway usage row does NOT carry the
+# window, so we map it (contract: context.contextWindowSource = "map"). Matched
+# against a lowercased model id; first hit wins; everything else falls back.
+_CONTEXT_WINDOWS = (
+    ("opus", 200000),
+    ("sonnet", 200000),
+    ("haiku", 200000),
+    ("gpt-5", 400000),
+)
+_DEFAULT_CONTEXT_WINDOW = 200000
+
+
+def _context_window_for(model_id: str | None) -> int:
+    if not model_id:
+        return _DEFAULT_CONTEXT_WINDOW
+    mid = model_id.lower()
+    for needle, window in _CONTEXT_WINDOWS:
+        if needle in mid:
+            return window
+    return _DEFAULT_CONTEXT_WINDOW
+
+
+def _infer_provider(model_id: str | None) -> str | None:
+    """Best-effort provider from a bare model id when the row didn't carry one."""
+    if not model_id:
+        return None
+    mid = model_id.lower()
+    if any(t in mid for t in ("claude", "opus", "sonnet", "haiku")):
+        return "anthropic"
+    if "gpt" in mid:
+        return "openai"
+    return None
+
+
+def _match_usage_row(sessions: list, session_key: str) -> dict | None:
+    """Pick the row for our session. We request with key+limit:1, so there's
+    normally one row — but prefer an exact key match, then a sessionId that's
+    the suffix of the gateway key, then fall back to the only/first row."""
+    if not sessions:
+        return None
+    for row in sessions:
+        if isinstance(row, dict) and row.get("key") == session_key:
+            return row
+    for row in sessions:
+        sid = isinstance(row, dict) and row.get("sessionId")
+        if sid and isinstance(sid, str) and session_key.endswith(sid):
+            return row
+    return sessions[0] if isinstance(sessions[0], dict) else None
+
+
+def _project_session_usage(spa_session_id: str, session_key: str,
+                           payload: dict) -> dict:
+    """Project one SessionsUsageResult row down to the footer wire contract."""
+    row = _match_usage_row(payload.get("sessions") or [], session_key)
+    if row is None:
+        return {"ok": False, "sessionId": spa_session_id,
+                "reason": "no usage row for session"}
+
+    usage = row.get("usage") or {}
+    msgs = usage.get("messageCounts") or {}
+    cw = row.get("contextWeight") or {}
+
+    # Effective model/provider: a per-session override wins over the base model;
+    # the contextWeight report and our local record are last-resort fallbacks.
+    rec = sessions_store.get(spa_session_id) or {}
+    rec_model = rec.get("model") if rec.get("model") not in (None, "openclaw") else None
+    raw_model = (row.get("modelOverride") or row.get("model")
+                 or cw.get("model") or rec_model)
+    provider = (row.get("providerOverride") or row.get("modelProvider")
+                or cw.get("provider"))
+    # Normalize a "provider/model" ref into its parts (the picker stores some
+    # session models provider-prefixed, e.g. "openai/gpt-5.5").
+    model = raw_model
+    if isinstance(raw_model, str) and "/" in raw_model:
+        prov, _, name = raw_model.partition("/")
+        model, provider = name, (provider or prov)
+    provider = provider or _infer_provider(model)
+
+    window = _context_window_for(model)
+    total_tokens = int(usage.get("totalTokens") or 0)
+    used_pct = round(total_tokens / window * 100, 1) if window else None
+
+    context = {
+        "usedTokens": total_tokens,
+        "windowTokens": window,
+        "usedPct": used_pct,
+        # The gateway row carries no window, so it's always our map here.
+        "contextWindowSource": "map",
+    }
+    sys_chars = (cw.get("systemPrompt") or {}).get("chars")
+    if isinstance(sys_chars, (int, float)):
+        context["systemPromptChars"] = int(sys_chars)
+        # Same chars/4 heuristic as OpenClaw's charsToTokens — flag the estimate.
+        context["systemPromptTokens"] = round(sys_chars / 4)
+        context["tokenEstimate"] = True
+
+    return {
+        "ok": True,
+        "sessionId": spa_session_id,
+        "model": model,
+        "modelProvider": provider,
+        "usage": {
+            "totalTokens": total_tokens,
+            "totalCost": round(float(usage.get("totalCost") or 0), 6),
+            "inputTokens": int(usage.get("input") or 0),
+            "outputTokens": int(usage.get("output") or 0),
+            "messages": int(msgs.get("total") or 0),
+            "toolCalls": int(msgs.get("toolCalls") or 0),
+            "errors": int(msgs.get("errors") or 0),
+        },
+        "context": context,
+        "updatedAt": payload.get("updatedAt") or row.get("updatedAt"),
+    }
+
+
+async def fetch_session_usage(spa_session_id: str) -> dict:
+    """One chat session's token usage + context-window weight, projected to the
+    footer contract. Resolves the gateway key via sessions_store, does the
+    one-shot `sessions.usage` RPC (COPY of fetch_models's connect→auth→call
+    pattern, via gateway_call), and trims the big SessionsUsageResult to the
+    small response. Returns {ok: False, reason} on ANY gateway trouble or an
+    unknown session — the route must never 500 the page."""
+    session_key = sessions_store.session_key_for(spa_session_id)
+    params = {
+        "key": session_key,
+        "includeContextWeight": True,
+        "range": "all",
+        "limit": 1,
+    }
+    try:
+        payload = await gateway_call("sessions.usage", params, timeout=20)
+    except Exception as exc:  # noqa: BLE001 - any failure → hidden widget, not a 500
+        return {"ok": False, "sessionId": spa_session_id,
+                "reason": f"gateway error: {exc!r}"[:200]}
+    return _project_session_usage(spa_session_id, session_key, payload)
 
 
 async def _wait_for_challenge(ws) -> None:

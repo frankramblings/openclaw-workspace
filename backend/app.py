@@ -650,6 +650,16 @@ async def unarchive_session(session_id: str):
     return {"ok": True}
 
 
+@app.get("/api/sessions/{session_id}/usage")
+async def session_usage(session_id: str):
+    """Per-session token usage + context-window weight for the footer widget.
+    Thin relay over bridge.fetch_session_usage (which talks to the gateway's
+    sessions.usage RPC and projects the result to the wire contract). Always
+    200: on any gateway error / unknown session the body is {ok: false, reason}
+    and the widget hides itself — never 500 the page."""
+    return await bridge.fetch_session_usage(session_id)
+
+
 @app.get("/api/chat/resume/{session_id}")
 async def resume(session_id: str):
     return {"id": session_id, "messages": []}

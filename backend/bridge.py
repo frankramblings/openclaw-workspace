@@ -17,7 +17,7 @@ import uuid
 
 import websockets
 
-from . import config, sessions_store
+from . import config, session_context, sessions_store
 
 
 def _sse(payload: dict | str) -> str:
@@ -693,22 +693,28 @@ def _match_usage_row(sessions: list, session_key: str) -> dict | None:
 
 
 def _project_session_usage(spa_session_id: str, session_key: str,
-                           payload: dict) -> dict:
-    """Project one SessionsUsageResult row down to the footer wire contract."""
-    row = _match_usage_row(payload.get("sessions") or [], session_key)
-    if row is None:
+                           payload: dict | None, live: dict | None) -> dict:
+    """Project a session's usage down to the footer wire contract, preferring
+    the LIVE `sessions.changed` snapshot (`live`) for context occupancy + the
+    real model window, and using the `sessions.usage` RPC row (`payload`) for
+    the message/tool/system-prompt breakdown. Either source alone is enough;
+    with neither we report {ok: False}."""
+    row = _match_usage_row((payload or {}).get("sessions") or [], session_key)
+    if row is None and not live:
         return {"ok": False, "sessionId": spa_session_id,
                 "reason": "no usage row for session"}
+    row = row or {}
+    live = live or {}
 
     usage = row.get("usage") or {}
     msgs = usage.get("messageCounts") or {}
     cw = row.get("contextWeight") or {}
 
-    # Effective model/provider: a per-session override wins over the base model;
-    # the contextWeight report and our local record are last-resort fallbacks.
+    # Effective model/provider: live snapshot first, then a per-session override,
+    # the base model, the contextWeight report, and our local record.
     rec = sessions_store.get(spa_session_id) or {}
     rec_model = rec.get("model") if rec.get("model") not in (None, "openclaw") else None
-    raw_model = (row.get("modelOverride") or row.get("model")
+    raw_model = (live.get("model") or row.get("modelOverride") or row.get("model")
                  or cw.get("model") or rec_model)
     provider = (row.get("providerOverride") or row.get("modelProvider")
                 or cw.get("provider"))
@@ -720,16 +726,29 @@ def _project_session_usage(spa_session_id: str, session_key: str,
         model, provider = name, (provider or prov)
     provider = provider or _infer_provider(model)
 
-    window = _context_window_for(model)
-    total_tokens = int(usage.get("totalTokens") or 0)
+    # Occupancy + window: trust the live gateway row (the true numbers the
+    # Control UI shows). Fall back to the usage aggregate + model→window map
+    # only when no live snapshot has arrived yet for this session.
+    live_total = live.get("totalTokens")
+    live_window = live.get("contextTokens")
+    if isinstance(live_total, (int, float)):
+        total_tokens = int(live_total)
+    else:
+        total_tokens = int(usage.get("totalTokens") or 0)
+    if isinstance(live_window, (int, float)) and live_window > 0:
+        window = int(live_window)
+        window_source = "gateway"
+    else:
+        window = _context_window_for(model)
+        window_source = "map"
     used_pct = round(total_tokens / window * 100, 1) if window else None
 
     context = {
         "usedTokens": total_tokens,
         "windowTokens": window,
         "usedPct": used_pct,
-        # The gateway row carries no window, so it's always our map here.
-        "contextWindowSource": "map",
+        "contextWindowSource": window_source,
+        "live": bool(live),
     }
     sys_chars = (cw.get("systemPrompt") or {}).get("chars")
     if isinstance(sys_chars, (int, float)):
@@ -738,6 +757,18 @@ def _project_session_usage(spa_session_id: str, session_key: str,
         context["systemPromptTokens"] = round(sys_chars / 4)
         context["tokenEstimate"] = True
 
+    # Cost / input / output: usage RPC is authoritative; the live snapshot is a
+    # fallback (it carries estimatedCostUsd + per-turn io on the end event).
+    total_cost = usage.get("totalCost")
+    if total_cost is None:
+        total_cost = live.get("estimatedCostUsd")
+    input_tokens = usage.get("input")
+    if input_tokens is None:
+        input_tokens = live.get("inputTokens")
+    output_tokens = usage.get("output")
+    if output_tokens is None:
+        output_tokens = live.get("outputTokens")
+
     return {
         "ok": True,
         "sessionId": spa_session_id,
@@ -745,38 +776,43 @@ def _project_session_usage(spa_session_id: str, session_key: str,
         "modelProvider": provider,
         "usage": {
             "totalTokens": total_tokens,
-            "totalCost": round(float(usage.get("totalCost") or 0), 6),
-            "inputTokens": int(usage.get("input") or 0),
-            "outputTokens": int(usage.get("output") or 0),
+            "totalCost": round(float(total_cost or 0), 6),
+            "inputTokens": int(input_tokens or 0),
+            "outputTokens": int(output_tokens or 0),
             "messages": int(msgs.get("total") or 0),
             "toolCalls": int(msgs.get("toolCalls") or 0),
             "errors": int(msgs.get("errors") or 0),
         },
         "context": context,
-        "updatedAt": payload.get("updatedAt") or row.get("updatedAt"),
+        "updatedAt": (live.get("updatedAt") or (payload or {}).get("updatedAt")
+                      or row.get("updatedAt")),
     }
 
 
 async def fetch_session_usage(spa_session_id: str) -> dict:
-    """One chat session's token usage + context-window weight, projected to the
-    footer contract. Resolves the gateway key via sessions_store, does the
-    one-shot `sessions.usage` RPC (COPY of fetch_models's connect→auth→call
-    pattern, via gateway_call), and trims the big SessionsUsageResult to the
-    small response. Returns {ok: False, reason} on ANY gateway trouble or an
-    unknown session — the route must never 500 the page."""
+    """One chat session's context occupancy + token usage, projected to the
+    footer contract. Prefers the LIVE `sessions.changed` snapshot cached by the
+    monitor (real occupancy + real model window — the same source the Control UI
+    uses); enriches with the `sessions.usage` RPC (messages/tools/system-prompt).
+    Either source alone suffices. Never 500s the page — {ok: False} on trouble."""
     session_key = sessions_store.session_key_for(spa_session_id)
-    params = {
-        "key": session_key,
-        "includeContextWeight": True,
-        "range": "all",
-        "limit": 1,
-    }
+    live = session_context.get(session_key)
+
+    payload: dict | None = None
     try:
-        payload = await gateway_call("sessions.usage", params, timeout=20)
-    except Exception as exc:  # noqa: BLE001 - any failure → hidden widget, not a 500
+        payload = await gateway_call("sessions.usage", {
+            "key": session_key,
+            "includeContextWeight": True,
+            "range": "all",
+            "limit": 1,
+        }, timeout=20)
+    except Exception:  # noqa: BLE001 - usage RPC is best-effort enrichment now
+        payload = None
+
+    if payload is None and not live:
         return {"ok": False, "sessionId": spa_session_id,
-                "reason": f"gateway error: {exc!r}"[:200]}
-    return _project_session_usage(spa_session_id, session_key, payload)
+                "reason": "no live snapshot and usage RPC unavailable"}
+    return _project_session_usage(spa_session_id, session_key, payload, live)
 
 
 async def _wait_for_challenge(ws) -> None:

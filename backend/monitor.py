@@ -24,7 +24,7 @@ import time
 
 import websockets
 
-from . import config
+from . import config, session_context
 from .bridge import _connect_params, _request, _wait_for_challenge, gateway_call
 
 # state: ok | restarting | down. "restarting" means we saw a shutdown event
@@ -86,11 +86,26 @@ async def run() -> None:
                     raise RuntimeError(f"monitor connect failed: {hello}")
                 handle_connected()
                 backoff = 1.0
+                # Subscribe to session-change events so the gateway broadcasts
+                # `sessions.changed` (carrying live totalTokens/contextTokens) to
+                # THIS conn — it only sends to subscribers (server-chat.ts:678,
+                # size===0 → no broadcast). Best-effort: a failure here must not
+                # break the state monitor, so we ignore it and keep listening.
+                try:
+                    await _request(ws, "sessions.subscribe")
+                except Exception:  # noqa: BLE001
+                    pass
+                # A reconnect means a possibly-new gateway process; drop stale
+                # occupancy so we don't serve numbers from a prior run.
+                session_context.clear()
                 while True:
                     frame = json.loads(await ws.recv())
                     if frame.get("type") == "event":
-                        handle_event(frame.get("event") or "",
-                                     frame.get("payload") or {})
+                        ev = frame.get("event") or ""
+                        payload = frame.get("payload") or {}
+                        handle_event(ev, payload)
+                        if ev == "sessions.changed":
+                            session_context.update_from_event(payload)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - any failure → reconnect loop

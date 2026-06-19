@@ -8,7 +8,17 @@ async tests exercise `fetch_session_usage` with a monkeypatched gateway_call
 autouse _isolated_data_dir fixture, so model/provider come from the row only."""
 import asyncio
 
-from backend import bridge
+import pytest
+
+from backend import bridge, session_context
+
+
+@pytest.fixture(autouse=True)
+def _clear_live_cache():
+    """The live-snapshot cache is process-global; isolate every test."""
+    session_context.clear()
+    yield
+    session_context.clear()
 
 
 def _full_opus_row():
@@ -42,7 +52,7 @@ def test_projection_trims_to_contract_and_drops_extras():
     out = bridge._project_session_usage("1fe81698ef72", "web:abc", {
         "sessions": [_full_opus_row()],
         "updatedAt": "2026-06-18T12:00:00Z",
-    })
+    }, None)
 
     # (1) Exactly the expected top-level keys/values.
     assert set(out.keys()) == {
@@ -68,7 +78,9 @@ def test_projection_trims_to_contract_and_drops_extras():
     assert out["context"]["windowTokens"] == 200000
     assert out["context"]["usedTokens"] == 20000
     assert out["context"]["usedPct"] == 10.0
+    # No live snapshot → window comes from the model→window map, live flag off.
     assert out["context"]["contextWindowSource"] == "map"
+    assert out["context"]["live"] is False
 
     # (5) systemPromptChars from contextWeight; tokens = chars/4; tokenEstimate.
     assert out["context"]["systemPromptChars"] == 8000
@@ -76,7 +88,7 @@ def test_projection_trims_to_contract_and_drops_extras():
     assert out["context"]["tokenEstimate"] is True
 
     assert set(out["context"].keys()) == {
-        "usedTokens", "windowTokens", "usedPct", "contextWindowSource",
+        "usedTokens", "windowTokens", "usedPct", "contextWindowSource", "live",
         "systemPromptChars", "systemPromptTokens", "tokenEstimate",
     }
 
@@ -98,7 +110,7 @@ def test_projection_gpt5_window_and_pct():
         },
     }
     out = bridge._project_session_usage("sid", "web:abc",
-                                        {"sessions": [row], "updatedAt": None})
+                                        {"sessions": [row], "updatedAt": None}, None)
     # (3) gpt-5 → 400000; (4) usedPct = 40000/400000*100 = 10.0.
     assert out["context"]["windowTokens"] == 400000
     assert out["context"]["usedPct"] == 10.0
@@ -107,9 +119,49 @@ def test_projection_gpt5_window_and_pct():
     assert "tokenEstimate" not in out["context"]
 
 
+def test_projection_prefers_live_snapshot():
+    """A live `sessions.changed` snapshot overrides the usage aggregate for
+    occupancy + window (the real numbers the Control UI shows)."""
+    live = {
+        "totalTokens": 138000,
+        "contextTokens": 1048576,   # real Opus-1M window
+        "totalTokensFresh": True,
+        "model": "claude-opus-4-8",
+        "estimatedCostUsd": 0,
+        "updatedAt": 1781838500000,
+    }
+    # Usage row disagrees (cost-aggregate undercount + no window) — live wins.
+    out = bridge._project_session_usage("sid", "web:abc", {
+        "sessions": [{"key": "web:abc", "usage": {
+            "totalTokens": 4039, "input": 4032, "output": 7,
+            "messageCounts": {"total": 10, "toolCalls": 2, "errors": 0},
+        }}],
+    }, live)
+    assert out["context"]["usedTokens"] == 138000
+    assert out["context"]["windowTokens"] == 1048576
+    assert out["context"]["usedPct"] == round(138000 / 1048576 * 100, 1)
+    assert out["context"]["contextWindowSource"] == "gateway"
+    assert out["context"]["live"] is True
+    # Breakdown still comes from the usage RPC row.
+    assert out["usage"]["messages"] == 10
+    assert out["usage"]["toolCalls"] == 2
+    assert out["model"] == "claude-opus-4-8"
+
+
+def test_projection_live_only_no_usage_row():
+    """Live snapshot with NO usage row still yields ok:true (bar can render)."""
+    live = {"totalTokens": 50000, "contextTokens": 272000,
+            "totalTokensFresh": True, "model": "gpt-5.5"}
+    out = bridge._project_session_usage("sid", "web:abc", None, live)
+    assert out["ok"] is True
+    assert out["context"]["usedTokens"] == 50000
+    assert out["context"]["windowTokens"] == 272000
+    assert out["context"]["live"] is True
+
+
 def test_projection_empty_sessions_returns_not_ok():
     out = bridge._project_session_usage("sid", "web:abc",
-                                        {"sessions": [], "updatedAt": None})
+                                        {"sessions": []}, None)
     assert out["ok"] is False
     assert out["sessionId"] == "sid"
     assert "reason" in out
@@ -131,8 +183,8 @@ def test_fetch_session_usage_ok(monkeypatch):
     assert out["context"]["windowTokens"] == 200000
 
 
-def test_fetch_session_usage_gateway_error_returns_not_ok(monkeypatch):
-    """Any gateway failure → {"ok": False, "reason": ...} (never a 500)."""
+def test_fetch_session_usage_gateway_error_and_no_live_returns_not_ok(monkeypatch):
+    """Usage RPC down AND no live snapshot → {"ok": False} (never a 500)."""
     async def boom(method, params=None, timeout=None):
         raise RuntimeError("gateway down")
 
@@ -140,4 +192,24 @@ def test_fetch_session_usage_gateway_error_returns_not_ok(monkeypatch):
     out = asyncio.run(bridge.fetch_session_usage("someid"))
     assert out["ok"] is False
     assert out["sessionId"] == "someid"
-    assert "reason" in out and "gateway down" in out["reason"]
+    assert "reason" in out
+
+
+def test_fetch_session_usage_live_only_when_usage_rpc_down(monkeypatch):
+    """Usage RPC down but a live snapshot exists → ok:true from the live cache."""
+    async def boom(method, params=None, timeout=None):
+        raise RuntimeError("gateway down")
+
+    monkeypatch.setattr(bridge, "gateway_call", boom)
+    # Seed the live cache for the resolved gateway key (unknown SPA id → web key).
+    key = bridge.sessions_store.session_key_for("someid")
+    session_context.update_from_event({
+        "sessionKey": key, "phase": "end", "totalTokens": 99000,
+        "contextTokens": 1048576, "totalTokensFresh": True,
+        "model": "claude-opus-4-8",
+    })
+    out = asyncio.run(bridge.fetch_session_usage("someid"))
+    assert out["ok"] is True
+    assert out["context"]["usedTokens"] == 99000
+    assert out["context"]["windowTokens"] == 1048576
+    assert out["context"]["contextWindowSource"] == "gateway"

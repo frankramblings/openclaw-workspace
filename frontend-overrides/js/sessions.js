@@ -17,6 +17,85 @@ let currentSessionId = null;
 let _sessionNavToken = 0;
 let _skipAutoSelect = false;
 
+// --- Older-message pagination (lazy "load older" on scroll-to-top) ----------
+// /api/history returns the newest page plus {hasMore, nextCursor}; we walk
+// backwards by passing nextCursor. State is keyed to the session it describes
+// so a fetch that lands after the user switched chats is ignored.
+const _HIST_PAGE_SIZE = 100;
+let _histPage = { sessionId: null, cursor: null, hasMore: false, loading: false };
+let _histScrollBound = false;
+
+// Render one saved history message into #chat-history (appends at the bottom).
+// Shared by the initial load and the prepend-older path so both apply the same
+// user-bubble hiding and doc-edit reformatting.
+function _appendHistoryMessage(msg, modelName) {
+  const meta = msg.metadata ? { ...msg.metadata, _fromHistory: true } : null;
+  let displayContent = typeof msg.content === 'string' ? msg.content : (msg.content ? String(msg.content) : '');
+  if (msg.role === 'user') {
+    if (displayContent.trim() === 'Continue where you left off' || displayContent.trim().startsWith('Your message was cut off.') || displayContent.trim().startsWith('Your previous response was interrupted.') || displayContent.includes('[Instruction: Rewrite') || displayContent.includes('[Instruction: Explain')) return;
+    const docEditMatch = displayContent.match(/^In the document, edit this specific text \((lines? [\d-]+)\):\n```\n([\s\S]*?)\n```\n\nInstruction: ([\s\S]*)$/);
+    if (docEditMatch) {
+      displayContent = `[Doc edit: ${docEditMatch[1]}] ${docEditMatch[3]}`;
+    }
+  }
+  window.chatModule.addMessage(msg.role, markdownModule.renderContent(displayContent), modelName, meta);
+}
+
+// Fetch the next-older page and prepend it above the current messages while
+// holding the viewport on whatever the user was reading.
+async function _loadOlderHistory() {
+  const id = currentSessionId;
+  const p = _histPage;
+  if (!id || p.sessionId !== id || p.loading || !p.hasMore || !p.cursor) return;
+  const box = uiModule.el('chat-history');
+  if (!box) return;
+  p.loading = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/history/${id}?cursor=${encodeURIComponent(p.cursor)}&limit=${_HIST_PAGE_SIZE}`);
+    const data = await res.json();
+    // Bail if the user navigated away while the page was in flight.
+    if (currentSessionId !== id || _histPage.sessionId !== id) return;
+    const older = data.history || [];
+    const prevHeight = box.scrollHeight;
+    const prevTop = box.scrollTop;
+    const firstBefore = box.firstChild;
+    const lastBefore = box.lastChild;
+    box.classList.add('no-animate');
+    for (const msg of older) _appendHistoryMessage(msg, data.model || null);
+    // _appendHistoryMessage appends at the bottom; relocate the just-added block
+    // (everything after lastBefore) to the top, preserving its order.
+    const moved = [];
+    let n = lastBefore ? lastBefore.nextSibling : box.firstChild;
+    while (n) { moved.push(n); n = n.nextSibling; }
+    for (const node of moved) box.insertBefore(node, firstBefore);
+    box.classList.remove('no-animate');
+    // Added height lands above the viewport, so shift scrollTop by the delta to
+    // keep the same message under the user's eye (no jump).
+    box.scrollTop = box.scrollHeight - prevHeight + prevTop;
+    _histPage.cursor = data.nextCursor || null;
+    _histPage.hasMore = !!data.hasMore && !!_histPage.cursor;
+  } catch (e) {
+    console.error('load older history failed', e);
+  } finally {
+    _histPage.loading = false;
+  }
+}
+
+// Bind the scroll-to-top trigger once; the #chat-history element is reused
+// across session switches, so a single listener covers every chat.
+function _ensureHistoryScrollListener() {
+  if (_histScrollBound) return;
+  const box = uiModule.el('chat-history');
+  if (!box) return;
+  box.addEventListener('scroll', () => {
+    if (box.scrollTop <= 160 && _histPage.hasMore && !_histPage.loading
+        && _histPage.sessionId === currentSessionId) {
+      _loadOlderHistory();
+    }
+  }, { passive: true });
+  _histScrollBound = true;
+}
+
 const SIDEBAR_MAX_VISIBLE = 10;
 const FOLDER_MAX_VISIBLE = 5;
 let _showAllSessions = false;
@@ -1685,12 +1764,16 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     // place, producing a ReferenceError every selectSession.)
     const isOC = meta && (meta.is_openclaw || id === 'openclaw');
     let msgHistory = [], modelName = null;
+    // Reset pagination for this session; the fetch below fills in real cursor
+    // state. OC/empty sessions keep hasMore=false so no older-load is attempted.
+    _histPage = { sessionId: id, cursor: null, hasMore: false, loading: false };
     if (!isOC) {
-      const res = await fetch(`${API_BASE}/api/history/${id}`);
+      const res = await fetch(`${API_BASE}/api/history/${id}?limit=${_HIST_PAGE_SIZE}`);
       const data = await res.json();
       if (navToken !== _sessionNavToken || currentSessionId !== id) return;
       msgHistory = data.history || [];
       modelName = data.model || null;
+      _histPage = { sessionId: id, cursor: data.nextCursor || null, hasMore: !!data.hasMore, loading: false };
       // The model returned by /api/history is the authoritative one the
       // backend will use for this session. Write it back into the cached
       // session meta and refresh the picker so the displayed model can
@@ -1740,26 +1823,14 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
          <p>Messages will be routed through your OpenClaw agent. The agent has access to tools, memory, and skills configured in your OpenClaw workspace.</p>`,
         'OpenClaw');
     } else if (msgHistory.length) {
-      for (const msg of msgHistory) {
-        const meta = msg.metadata ? { ...msg.metadata, _fromHistory: true } : null;
-        let displayContent = typeof msg.content === 'string' ? msg.content : (msg.content ? String(msg.content) : '');
-        // Clean up doc selection context for display
-        if (msg.role === 'user') {
-          // Hide "Continue where you left off" bubbles
-          if (displayContent.trim() === 'Continue where you left off' || displayContent.trim().startsWith('Your message was cut off.') || displayContent.trim().startsWith('Your previous response was interrupted.') || displayContent.includes('[Instruction: Rewrite') || displayContent.includes('[Instruction: Explain')) continue;
-          const docEditMatch = displayContent.match(/^In the document, edit this specific text \((lines? [\d-]+)\):\n```\n([\s\S]*?)\n```\n\nInstruction: ([\s\S]*)$/);
-          if (docEditMatch) {
-            displayContent = `[Doc edit: ${docEditMatch[1]}] ${docEditMatch[3]}`;
-          }
-        }
-        window.chatModule.addMessage(msg.role, markdownModule.renderContent(displayContent), modelName, meta);
-      }
+      for (const msg of msgHistory) _appendHistoryMessage(msg, modelName);
     } else {
       if (window.chatModule && window.chatModule.showWelcomeScreen) window.chatModule.showWelcomeScreen();
       // Don't highlight empty sessions — feels like nothing is selected
       document.querySelectorAll('.list-item.active-session').forEach(el => el.classList.remove('active-session'));
     }
     uiModule.scrollHistoryInstant();
+    _ensureHistoryScrollListener();
 
     // Fade in and re-enable message animations
     if (chatHistory) {

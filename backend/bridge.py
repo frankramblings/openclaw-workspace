@@ -13,8 +13,10 @@ import asyncio
 import contextlib
 import json
 import time
+import urllib.parse
 import uuid
 
+import httpx
 import websockets
 
 from . import config, session_context, sessions_store
@@ -295,7 +297,8 @@ async def stream_turn(message: str, session_key: str | None = None,
         while True:
             stalled = False
             try:
-                async for chunk in _relay_events(ws, run_id, run_info=run_info):
+                async for chunk in _relay_events(ws, run_id, run_info=run_info,
+                                                 session_key=session_key):
                     yield chunk
             except _RunStalled:
                 stalled = True
@@ -484,6 +487,53 @@ def _content_text(content) -> str:
                  if isinstance(b, dict) and b.get("type") == "text"]
         return "".join(parts)
     return ""
+
+
+def _gateway_http_base() -> str:
+    """HTTP origin of the gateway, derived from the configured WS url so remote
+    installs (gateway_ws override) keep working: ws://→http://, wss://→https://."""
+    ws = config.gateway_ws_url()
+    if ws.startswith("wss://"):
+        return "https://" + ws[len("wss://"):]
+    if ws.startswith("ws://"):
+        return "http://" + ws[len("ws://"):]
+    return ws
+
+
+async def fetch_history_page(session_key: str, limit: int = 200,
+                             cursor: str | None = None) -> dict:
+    """One page of a session transcript via the gateway HTTP history endpoint
+    (`GET /sessions/:key/history?limit=&cursor=`), which supports older-than-cursor
+    pagination — unlike the tail-only WS `chat.history`. `cursor` is a transcript
+    seq watermark; the returned page is the window strictly OLDER than it, so
+    passing back `nextCursor` walks backwards with no overlap.
+
+    Returns the SPA history shape plus pagination state:
+    {"history": [{role, content, metadata}], "model": str|None,
+     "hasMore": bool, "nextCursor": str|None}."""
+    base = _gateway_http_base()
+    enc = urllib.parse.quote(session_key, safe="")
+    params = {"limit": str(max(1, min(limit, 1000)))}
+    if cursor:
+        params["cursor"] = cursor
+    pw = config.gateway_password()
+    headers = {"Authorization": f"Bearer {pw}"} if pw else {}
+    empty = {"history": [], "model": None, "hasMore": False, "nextCursor": None}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.get(f"{base}/sessions/{enc}/history",
+                                   params=params, headers=headers)
+        if res.status_code != 200:
+            return empty
+        body = res.json()
+    except Exception:  # noqa: BLE001 - transient HTTP trouble → empty page
+        return empty
+    # The endpoint already display-projects (drops tool messages); _map_history
+    # reuses the WS path's role/text mapping so both history loaders agree.
+    mapped = _map_history(body.get("messages") or [])
+    mapped["hasMore"] = bool(body.get("hasMore"))
+    mapped["nextCursor"] = body.get("nextCursor")
+    return mapped
 
 
 async def _request(ws, method: str, params: dict | None = None) -> dict:
@@ -780,7 +830,10 @@ def _project_session_usage(spa_session_id: str, session_key: str,
             "inputTokens": int(input_tokens or 0),
             "outputTokens": int(output_tokens or 0),
             "messages": int(msgs.get("total") or 0),
-            "toolCalls": int(msgs.get("toolCalls") or 0),
+            # The gateway under-counts tool calls for bridge/web sessions (often
+            # 0); prefer our own live tally when it's higher.
+            "toolCalls": max(int(msgs.get("toolCalls") or 0),
+                             int(live.get("liveToolCalls") or 0)),
             "errors": int(msgs.get("errors") or 0),
         },
         "context": context,
@@ -836,7 +889,8 @@ async def _await_response(ws, req_id: str) -> dict:
 _TOOL_ITEM_KINDS = {"command", "tool"}
 
 
-async def _relay_events(ws, run_id, run_info: dict | None = None):
+async def _relay_events(ws, run_id, run_info: dict | None = None,
+                        session_key: str | None = None):
     """Translate gateway events for `run_id` into Odysseus SSE chunks.
 
     Live v4 mapping (verified 2026-06-03 against gpt-5.5):
@@ -970,6 +1024,14 @@ async def _relay_events(ws, run_id, run_info: dict | None = None):
             tool_id = data.get("itemId")
             if data.get("phase") == "start":
                 tool_since_text = True
+                # Count this tool call ourselves — the gateway's usage RPC
+                # doesn't track tool calls for these sessions. Guarded: a
+                # counter must never interrupt the relay.
+                if session_key:
+                    try:
+                        session_context.bump_tool_calls(session_key)
+                    except Exception:  # noqa: BLE001
+                        pass
                 yield _sse({"type": "tool_start", "tool": label,
                             "tool_id": tool_id, "command": detail, "round": 1})
             elif data.get("phase") == "end":

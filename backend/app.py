@@ -575,12 +575,16 @@ async def create_session(name: str = Form(default=""), model: str = Form(default
 
 
 @app.get("/api/history/{session_id}")
-async def history(session_id: str):
-    """The session's saved transcript, read live from the brain via chat.history."""
+async def history(session_id: str, limit: int = 200, cursor: str | None = None):
+    """The session's saved transcript, read live from the brain. Paginated:
+    the no-cursor call returns the newest `limit` messages; the frontend lazy-
+    loads older windows by passing the returned `nextCursor` (see bridge
+    fetch_history_page). Older pages are fetched on scroll-to-top, so no single
+    response has to carry the whole transcript."""
     sess = sessions_store.get(session_id)
     if not sess:
-        return {"history": [], "model": None}
-    data = await bridge.fetch_history(sess["sessionKey"])
+        return {"history": [], "model": None, "hasMore": False, "nextCursor": None}
+    data = await bridge.fetch_history_page(sess["sessionKey"], limit=limit, cursor=cursor)
     # use_web turns store the augmented brain message (search block + the
     # user's text) in the transcript; show only what the user typed.
     for m in data.get("history", []):

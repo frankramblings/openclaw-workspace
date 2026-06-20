@@ -1848,24 +1848,102 @@ async function _resumeActiveTurn(sessionId) {
   const box = document.getElementById('chat-history');
   if (!box) return;
 
-  const holder = document.createElement('div');
-  holder.className = 'msg msg-ai openclaw-resumed-stream';
-  holder.innerHTML = '<div class="body"><div class="stream-content">' +
-                     '<span class="resumed-stream-wait" aria-live="polite">…</span></div></div>';
-  const contentEl = holder.querySelector('.stream-content');
-  box.appendChild(holder);
-  uiModule.scrollHistory();
-
-  let accumulated = '';
+  // Mirror the POST renderer's layout: text bubbles (.msg.msg-ai) interleaved
+  // with .agent-thread tool-card groups, split into rounds by agent_step. Every
+  // node we add is tagged .openclaw-resumed-stream so finish() can clear the
+  // lot before the canonical repaint. Tool cards reuse the exact .agent-thread
+  // markup, so the global delegated fold/expand handler and openclaw-inspector
+  // augment them for free.
   let done = false;
   let pollId = null;
+  let textHolder = null;     // current text bubble
+  let textContentEl = null;  // its .stream-content
+  let textBuf = '';          // current round's accumulated reply text
+  let thread = null;         // current .agent-thread wrapper
+  const toolNodes = {};      // tool_id -> running node (for interleaved outputs)
 
-  function render() {
-    let txt = accumulated;
-    try { if (chatRenderer && chatRenderer.stripToolBlocks) txt = chatRenderer.stripToolBlocks(txt); } catch (_e) {}
-    contentEl.innerHTML = markdownModule.processWithThinking(markdownModule.squashOutsideCode(txt));
-    if (window.hljs) contentEl.querySelectorAll('pre code').forEach((b) => window.hljs.highlightElement(b));
+  function _esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
+  function _newTextHolder() {
+    const h = document.createElement('div');
+    h.className = 'msg msg-ai openclaw-resumed-stream';
+    h.innerHTML = '<div class="body"><div class="stream-content"></div></div>';
+    box.appendChild(h);
+    textHolder = h;
+    textContentEl = h.querySelector('.stream-content');
+    textBuf = '';
+  }
+
+  function _renderText() {
+    if (!textContentEl) return;
+    let t = textBuf;
+    try { if (chatRenderer && chatRenderer.stripToolBlocks) t = chatRenderer.stripToolBlocks(t); } catch (_e) {}
+    textContentEl.innerHTML = markdownModule.processWithThinking(markdownModule.squashOutsideCode(t));
+    if (window.hljs) textContentEl.querySelectorAll('pre code').forEach((b) => window.hljs.highlightElement(b));
     uiModule.scrollHistory();
+  }
+
+  function _ensureThread() {
+    if (thread && thread.parentNode) return thread;
+    thread = document.createElement('div');
+    thread.className = 'agent-thread openclaw-resumed-stream streaming';
+    if (box.lastElementChild) thread.classList.add('has-top');  // connect to content above
+    box.appendChild(thread);
+    return thread;
+  }
+
+  function _toolStart(o) {
+    // Drop an empty leading text bubble so tools don't sit under a blank one;
+    // a fresh bubble opens for any reply text that follows the tool.
+    if (textHolder && !textBuf.trim()) textHolder.remove();
+    textHolder = null; textContentEl = null; textBuf = '';
+    const t = _ensureThread();
+    const cmd = o.command || '';
+    const cmdHtml = cmd ? `<pre class="agent-thread-cmd">${_esc(cmd)}</pre>` : '';
+    const node = document.createElement('div');
+    node.className = 'agent-thread-node running';
+    node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header">` +
+      `<span class="agent-thread-icon">▶</span>` +
+      `<span class="agent-thread-tool">${_esc(o.tool || 'tool')}</span>` +
+      `<span class="agent-thread-wave">▁▂▃</span></div>` +
+      `<div class="agent-thread-content">${cmdHtml}</div>`;
+    t.appendChild(node);
+    if (o.tool_id) toolNodes[o.tool_id] = node;
+    uiModule.scrollHistory();
+  }
+
+  function _toolOutput(o) {
+    const node = (o.tool_id && toolNodes[o.tool_id]) || null;
+    if (o.tool_id) delete toolNodes[o.tool_id];
+    if (!node) return;
+    const ok = (o.exit_code === 0 || o.exit_code == null);
+    const cmd = o.command || '';
+    const cmdHtml = cmd ? `<pre class="agent-thread-cmd">${_esc(cmd)}</pre>` : '';
+    let outHtml = '';
+    if (o.output && String(o.output).trim()) {
+      outHtml = `<details class="agent-tool-output"><summary>Output</summary><pre>${_esc(o.output)}</pre></details>`;
+    }
+    const wasOpen = node.classList.contains('open');
+    node.className = 'agent-thread-node' + (ok ? '' : ' error') + (wasOpen ? ' open' : '');
+    node.innerHTML = `<div class="agent-thread-dot"></div><div class="agent-thread-header">` +
+      `<span class="agent-thread-icon">${ok ? '✓' : '✗'}</span>` +
+      `<span class="agent-thread-tool">${_esc(o.tool || 'tool')}</span>` +
+      `<span class="agent-thread-status">${ok ? 'done' : 'failed'}</span>` +
+      `<span class="agent-thread-chevron">▶</span></div>` +
+      `<div class="agent-thread-content">${cmdHtml}${outHtml}</div>`;
+    uiModule.scrollHistory();
+  }
+
+  function _agentStep() {
+    if (thread) thread.classList.add('has-bottom');  // connect thread down to next bubble
+    textHolder = null; textContentEl = null; textBuf = '';  // next delta opens a fresh round
+  }
+
+  function _removeResumedNodes() {
+    box.querySelectorAll('.openclaw-resumed-stream').forEach((n) => n.remove());
   }
 
   function finish() {
@@ -1873,7 +1951,7 @@ async function _resumeActiveTurn(sessionId) {
     done = true;
     if (pollId) { clearInterval(pollId); pollId = null; }
     if (_resumeES) { try { _resumeES.close(); } catch (_e) {} _resumeES = null; }
-    if (holder.parentNode) holder.remove();
+    _removeResumedNodes();
     // Repaint from the (now-complete) transcript — the same handoff the
     // background and legacy poll paths use. Guard against yanking the user off
     // a new chat they may have opened in the meantime.
@@ -1886,17 +1964,29 @@ async function _resumeActiveTurn(sessionId) {
     done = true;
     if (pollId) { clearInterval(pollId); pollId = null; }
     if (_resumeES) { try { _resumeES.close(); } catch (_e) {} _resumeES = null; }
-    if (holder.parentNode) holder.remove();
+    _removeResumedNodes();
   }
 
   function applyEvent(rawData) {
     const obj = _parseTailData(rawData);
     if (!obj) return;
-    if (obj.type === 'metrics') { finish(); return; }   // metrics = end-of-turn marker
-    if (obj.delta && !obj.thinking) { accumulated += obj.delta; render(); }
-    // thinking deltas, tool cards, agent_step: omitted from the lightweight live
-    // view; finish()'s canonical repaint restores them in full.
+    if (obj.type === 'metrics') { finish(); return; }       // end-of-turn marker
+    if (obj.type === 'tool_start') { _toolStart(obj); return; }
+    if (obj.type === 'tool_output') { _toolOutput(obj); return; }
+    if (obj.type === 'agent_step') { _agentStep(); return; }
+    if (obj.delta && !obj.thinking) {
+      if (!textHolder) _newTextHolder();
+      textBuf += obj.delta;
+      _renderText();
+      return;
+    }
+    // thinking deltas + other frame types: omitted from the live view; the
+    // canonical repaint on finish() restores thinking sections in full.
   }
+
+  // Immediate feedback while the first real frame is still in flight.
+  _newTextHolder();
+  textContentEl.innerHTML = '<span class="resumed-stream-wait" aria-live="polite">…</span>';
 
   // 1) Replay the turn so far, from its first event.
   for (const ev of (turn.events || [])) {

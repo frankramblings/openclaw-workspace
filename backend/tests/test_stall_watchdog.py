@@ -173,7 +173,7 @@ def _wire_stall(monkeypatch, relay_factory):
 
 
 def test_double_stall_aborts_twice_then_errors(monkeypatch):
-    async def always_stall(ws, run_id, run_info=None):
+    async def always_stall(ws, run_id, run_info=None, session_key=None):
         raise bridge._RunStalled(240)
         yield  # pragma: no cover — makes this an async generator
 
@@ -197,7 +197,7 @@ def test_double_stall_aborts_twice_then_errors(monkeypatch):
 def test_stall_then_success_recovers(monkeypatch):
     calls = {"n": 0}
 
-    async def stall_once(ws, run_id, run_info=None):
+    async def stall_once(ws, run_id, run_info=None, session_key=None):
         calls["n"] += 1
         if calls["n"] == 1:
             raise bridge._RunStalled(240)
@@ -216,7 +216,7 @@ def test_stall_then_success_recovers(monkeypatch):
 
 
 def test_no_stall_no_abort(monkeypatch):
-    async def clean(ws, run_id, run_info=None):
+    async def clean(ws, run_id, run_info=None, session_key=None):
         yield bridge._sse({"delta": "hi"})
 
     opens, aborts = _wire_stall(monkeypatch, clean)
@@ -252,7 +252,7 @@ def test_warm_lock_released_when_retry_holds_it(monkeypatch):
         aborts.append((method, params))
         return {"ok": True, "payload": {}}
 
-    async def always_stall(ws, run_id, run_info=None):
+    async def always_stall(ws, run_id, run_info=None, session_key=None):
         raise bridge._RunStalled(240)
         yield  # pragma: no cover
 
@@ -271,7 +271,7 @@ def test_warm_lock_released_when_retry_holds_it(monkeypatch):
 def test_retry_after_streamed_text_opens_fresh_bubble_and_resets_first_stamps(monkeypatch):
     calls = {"n": 0}
 
-    async def stall_after_text(ws, run_id, run_info=None):
+    async def stall_after_text(ws, run_id, run_info=None, session_key=None):
         calls["n"] += 1
         if calls["n"] == 1:
             if run_info is not None:
@@ -295,7 +295,7 @@ def test_retry_after_streamed_text_opens_fresh_bubble_and_resets_first_stamps(mo
 
 
 def test_terminal_stall_card_carries_stall_tool_id(monkeypatch):
-    async def always_stall(ws, run_id, run_info=None):
+    async def always_stall(ws, run_id, run_info=None, session_key=None):
         raise bridge._RunStalled(240)
         yield  # pragma: no cover
 

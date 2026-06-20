@@ -158,7 +158,7 @@ def test_stall_retry_preserves_thinking(monkeypatch):
 
     calls = {"n": 0}
 
-    async def stall_once(ws, run_id, run_info=None):
+    async def stall_once(ws, run_id, run_info=None, session_key=None):
         calls["n"] += 1
         if calls["n"] == 1:
             raise bridge._RunStalled(240)

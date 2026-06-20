@@ -148,6 +148,37 @@ def test_projection_prefers_live_snapshot():
     assert out["model"] == "claude-opus-4-8"
 
 
+def test_projection_tool_calls_prefers_live_tally():
+    """The gateway reports toolCalls:0 for bridge sessions; our live tally wins."""
+    live = {"totalTokens": 50000, "contextTokens": 1048576,
+            "totalTokensFresh": True, "model": "claude-opus-4-8",
+            "liveToolCalls": 7}
+    out = bridge._project_session_usage("sid", "web:abc", {
+        "sessions": [{"key": "web:abc", "usage": {
+            "totalTokens": 4000,
+            "messageCounts": {"total": 9, "toolCalls": 0, "errors": 0},
+        }}],
+    }, live)
+    assert out["usage"]["toolCalls"] == 7   # max(gateway 0, live 7)
+    assert out["usage"]["messages"] == 9
+
+
+def test_bump_tool_calls_accumulates_and_survives_snapshot():
+    """bump_tool_calls accumulates and the monitor's snapshot update preserves it."""
+    key = "agent:main:web-xyz"
+    session_context.bump_tool_calls(key)
+    session_context.bump_tool_calls(key, 2)
+    assert session_context.get(key)["liveToolCalls"] == 3
+    # A subsequent sessions.changed update must not wipe the tally.
+    session_context.update_from_event({
+        "sessionKey": key, "phase": "end", "totalTokens": 123,
+        "contextTokens": 1048576, "totalTokensFresh": True,
+    })
+    snap = session_context.get(key)
+    assert snap["liveToolCalls"] == 3
+    assert snap["totalTokens"] == 123
+
+
 def test_projection_live_only_no_usage_row():
     """Live snapshot with NO usage row still yields ok:true (bar can render)."""
     live = {"totalTokens": 50000, "contextTokens": 272000,

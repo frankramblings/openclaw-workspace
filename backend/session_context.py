@@ -59,6 +59,22 @@ def update_from_event(payload: dict) -> None:
         _CACHE[key] = cur
 
 
+def bump_tool_calls(session_key: str, n: int = 1) -> None:
+    """Increment the live tool-call tally for a session. The gateway's
+    `sessions.usage` does NOT count tool calls for bridge/web sessions (their
+    transcript is sparse — verified 2026-06-19: a tool-heavy session reports
+    toolCalls:0), so the bridge counts the tool cards it relays and we surface
+    the larger of the two. Process-local, so it counts turns seen since the last
+    monitor (re)connect — same liveness contract as the occupancy cache."""
+    if not session_key or n <= 0:
+        return
+    with _LOCK:
+        cur = dict(_CACHE.get(session_key) or {})
+        cur["liveToolCalls"] = int(cur.get("liveToolCalls") or 0) + int(n)
+        cur["updatedAt"] = int(time.time() * 1000)
+        _CACHE[session_key] = cur
+
+
 def get(session_key: str) -> dict | None:
     """The latest cached snapshot for a gateway session key, or None."""
     if not session_key:

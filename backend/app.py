@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, config, doctor, draft_mode, monitor, sessions_store, terminals, websearch
+from . import bridge, capabilities, config, doctor, draft_mode, event_store, monitor, sessions_store, terminals, websearch
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -42,6 +42,7 @@ from .uploads import ATTACH_DIR
 from .uploads import router as uploads_router
 from .workspace_files import router as workspace_files_router
 from .terminals import router as terminals_router
+from .resume_route import router as resume_router
 from . import workspace_files
 
 @asynccontextmanager
@@ -82,6 +83,7 @@ app.include_router(research_router)
 app.include_router(emoji_router)
 app.include_router(workspace_files_router)
 app.include_router(terminals_router)
+app.include_router(resume_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
 # server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop
@@ -476,6 +478,21 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             if terminals.gary_mode_for_session(terminal_key):
                 brain_message = terminals.gary_capability_note(terminal_key) + brain_message
             _ACTIVE_RUNS[session_key] = run_info
+            # Mark the turn boundary in the resumable event log so a client that
+            # reloads mid-turn can replay just THIS answer from its start.
+            event_store.begin_turn(session_key)
+
+            def _teed(chunk: str) -> str:
+                """Append a frame to the per-session event log and id-tag it for
+                resume/tail, falling back to the bare frame if the store errors.
+                Mirrors the in-loop chokepoint so post-loop content (late reply,
+                metrics) is also recoverable. Never used for [DONE]."""
+                try:
+                    eid = event_store.append(session_key, chunk)
+                    return f"id: {eid}\n{chunk}"
+                except Exception:  # noqa: BLE001 - log issue can't break chat
+                    return chunk
+
             async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
                                                   model_ref=_model_ref(rec),
                                                   attachments=turn_attachments,
@@ -496,7 +513,17 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                             and frame.get("tool_id") != "stall") \
                             or frame.get("tool_id") == "abort":
                         failed = True
-                yield chunk
+                # Resumable streaming: tee every chunk into the per-session
+                # event log and tag the SSE record with its id so a dropped
+                # client can resume/tail via /api/chat/{events/resume,stream}.
+                # `chunk` already ends with "\n\n", so the record is a valid SSE
+                # frame ("id: <n>\ndata: ...\n\n"); the POST reader ignores the
+                # id: line. append failing must NEVER break the live turn.
+                try:
+                    eid = event_store.append(session_key, chunk)
+                    yield f"id: {eid}\n{chunk}"
+                except Exception:  # noqa: BLE001 - event log issue can't break chat
+                    yield chunk
             # Late delivery: the agent often replies via its `message` tool,
             # whose text lands in the transcript seconds AFTER the run's
             # lifecycle end — the live stream then carries no text at all and
@@ -507,8 +534,8 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                 if late:
                     run_info.setdefault("timing", {})["t_late"] = time.monotonic()
                     if tools_seen:
-                        yield bridge._sse({"type": "agent_step"})  # fresh bubble
-                    yield bridge._sse({"delta": late})
+                        yield _teed(bridge._sse({"type": "agent_step"}))  # fresh bubble
+                    yield _teed(bridge._sse({"delta": late}))
             # Final turn metrics: the vendor SPA renders a footer time from a
             # {type:"metrics"} frame (chatRenderer.displayMetrics) that its
             # original backends sent and we never did. response_time prefers
@@ -524,9 +551,10 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                         timing["t_first_text"] - timing["t_send"], 1)
                 if _model_ref(rec):
                     data["model"] = _model_ref(rec)
-                yield bridge._sse({"type": "metrics", "data": data})
+                yield _teed(bridge._sse({"type": "metrics", "data": data}))
         finally:
             _ACTIVE_RUNS.pop(session_key, None)
+            event_store.end_turn(session_key)
             _log_turn_timing(_turn_timing_record(
                 run_info, session_key, _model_ref(rec),
                 text_seen=text_seen, failed=failed,

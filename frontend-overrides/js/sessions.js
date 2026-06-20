@@ -9,6 +9,105 @@ import { providerLogo } from './providers.js';
 import { initModelPicker, updateModelPicker } from './modelPicker.js';
 import themeModule from './theme.js';
 import spinnerModule from './spinner.js';
+// Dual-session split view (Slice B). Importing this module also runs its
+// side-effect self-init (keybindings + reload-restore) when the feature flag
+// is on. With the flag off, every entry point here short-circuits, so this
+// import is inert and the sidebar behaves byte-for-byte as before.
+import { dualSessionEnabled, openChatWindow } from './chatWindow.js';
+
+const _DUAL_MIME = 'application/x-openclaw-session';
+let _dualDropStripsWired = false;
+
+// Lazily create the two fixed edge drop strips. They mirror the native
+// modal-snap-hint-left/right look and only become visible while a session row
+// is being dragged with our custom MIME. Created once, reused across drags.
+function _ensureDualDropStrips() {
+  if (_dualDropStripsWired) return;
+  _dualDropStripsWired = true;
+
+  const mkStrip = (side) => {
+    const strip = document.createElement('div');
+    strip.className = 'chat-dock-drop-strip chat-dock-drop-' + side;
+    const edge = side === 'left' ? 'left:0' : 'right:0';
+    const border = side === 'left' ? 'border-right' : 'border-left';
+    strip.style.cssText = `position:fixed;${edge};top:0;bottom:0;width:60px;`
+      + `background:color-mix(in srgb, var(--accent-primary, #60a5fa) 14%, transparent);`
+      + `${border}:2px dashed color-mix(in srgb, var(--accent-primary, #60a5fa) 60%, transparent);`
+      + `z-index:9997;display:none;`;
+    strip.dataset.dockSide = side;
+
+    strip.addEventListener('dragover', (e) => {
+      if (!Array.from(e.dataTransfer.types || []).includes(_DUAL_MIME)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      strip.style.background = 'color-mix(in srgb, var(--accent-primary, #60a5fa) 26%, transparent)';
+    });
+    strip.addEventListener('dragleave', () => {
+      strip.style.background = 'color-mix(in srgb, var(--accent-primary, #60a5fa) 14%, transparent)';
+    });
+    strip.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const sid = e.dataTransfer.getData(_DUAL_MIME) || e.dataTransfer.getData('text/plain');
+      _hideDualDropStrips();
+      if (sid) openChatWindow(sid, { startDocked: side });
+    });
+    document.body.appendChild(strip);
+    return strip;
+  };
+  mkStrip('left');
+  mkStrip('right');
+}
+
+function _showDualDropStrips() {
+  _ensureDualDropStrips();
+  document.querySelectorAll('.chat-dock-drop-strip').forEach(s => { s.style.display = 'block'; });
+}
+function _hideDualDropStrips() {
+  document.querySelectorAll('.chat-dock-drop-strip').forEach(s => {
+    s.style.display = 'none';
+    s.style.background = 'color-mix(in srgb, var(--accent-primary, #60a5fa) 14%, transparent)';
+  });
+}
+
+// Make a session row draggable to dock it as a split chat. Gated on the flag
+// and desktop only. Coexists with the existing reorder drag: reorder is bound
+// to the .item-drag-handle, so we suppress our drag when it starts on the
+// handle (the handle keeps doing reorder), and only carry the dock MIME for
+// drags that begin on the row body.
+function _wireDualDragForRow(row, sessionId) {
+  if (!dualSessionEnabled() || window.innerWidth <= 768) return;
+  if (row._dualDragWired) return;
+  row._dualDragWired = true;
+  row.setAttribute('draggable', 'true');
+
+  row.addEventListener('dragstart', (e) => {
+    if (!dualSessionEnabled() || window.innerWidth <= 768) return;
+    // Let the reorder system own drags that start on its handle.
+    if (e.target.closest('.item-drag-handle')) return;
+    e.dataTransfer.setData(_DUAL_MIME, sessionId);
+    e.dataTransfer.setData('text/plain', sessionId);
+    e.dataTransfer.effectAllowed = 'copy';
+    try {
+      const ghost = row.cloneNode(true);
+      ghost.style.cssText = 'position:absolute;top:-9999px;left:-9999px;opacity:0.7;width:'
+        + row.offsetWidth + 'px;background:var(--bg);';
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 20, 16);
+      setTimeout(() => ghost.remove(), 0);
+    } catch (_) {}
+    _showDualDropStrips();
+  });
+  row.addEventListener('dragend', () => _hideDualDropStrips());
+}
+
+// Attach dock-drag to every rendered session row. Called from
+// _postRenderSessionList so it re-binds after each list re-render.
+function _wireDualDragForList(list) {
+  if (!dualSessionEnabled() || window.innerWidth <= 768) return;
+  list.querySelectorAll('.list-item[data-session-id]').forEach(row => {
+    _wireDualDragForRow(row, row.getAttribute('data-session-id'));
+  });
+}
 
 const API_BASE = window.location.origin;
 
@@ -1247,6 +1346,7 @@ function _postRenderSessionList(list) {
   _initKeyboardNav(list);
   _initSwipeToDelete(list);
   initDragSort();
+  _wireDualDragForList(list);
   _showSwipeHint(list);
 }
 
@@ -1652,6 +1752,185 @@ export async function loadSessions() {
   }
 }
 
+// ── Resumable streaming + collapsible activity tree (flag-gated) ──────────
+// Lazily-mounted ActivityTree instance for the center view (one per page).
+let _activityTree = null;
+
+/** Resolve the feature flag through the global helper installed by
+ *  stream-manager.js. Returns false if the script hasn't loaded or the flag
+ *  is off — keeping default behavior byte-for-byte unchanged. */
+function _streamResumeOn() {
+  return typeof window.streamResumeEnabled === 'function' && window.streamResumeEnabled();
+}
+
+/** Ensure an #activity-pane exists and an ActivityTree is mounted on it.
+ *  Only runs under the flag, so the default layout is never disturbed. */
+function _ensureActivityTree() {
+  if (!window.ActivityTree) return null;
+  let pane = document.getElementById('activity-pane');
+  if (!pane) {
+    // No host element in the template — create a collapsible container at the
+    // bottom of the chat layout (flag-gated; absent with the flag off).
+    const container = document.getElementById('chat-container') || document.body;
+    pane = document.createElement('details');
+    pane.id = 'activity-pane';
+    pane.className = 'activity-pane';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Activity';
+    const mount = document.createElement('div');
+    mount.className = 'activity-tree-mount';
+    pane.appendChild(summary);
+    pane.appendChild(mount);
+    container.appendChild(pane);
+    pane._mount = mount;
+  }
+  const mountEl = pane._mount || pane.querySelector('.activity-tree-mount') || pane;
+  if (!_activityTree) _activityTree = new window.ActivityTree(mountEl);
+  return _activityTree;
+}
+
+/** Thread-switch hook: (re)point the single live GET tail at the active
+ *  session and pipe each SSE `data:` record into the ActivityTree. The normal
+ *  POST-based renderer is untouched — this tail is purely observe/resume. */
+function _activateStreamResume(id) {
+  if (!_streamResumeOn() || !window.StreamManager || !id) return;
+  const tree = _ensureActivityTree();
+  if (tree && tree.reset) tree.reset();
+  const badge = document.getElementById('stream-status-badge');
+  const dispatchToUI = (rawData) => {
+    // 1) observation surface — the collapsible activity tree
+    if (tree && tree.handleEvent) {
+      try { tree.handleEvent(rawData); } catch (e) { console.warn('tree.handleEvent error:', e); }
+    }
+    // 2) optional external subscribers (no default chat-history double-render)
+    try { window.dispatchEvent(new CustomEvent('openclaw:stream-tail', { detail: { id, data: rawData } })); } catch (_e) {}
+  };
+  window.StreamManager.activate(id, dispatchToUI, badge);
+}
+
+// Live resume of an in-flight answer after a reload (single connection at a time).
+let _resumeES = null;
+
+/** Parse one tail payload into its inner event object. Handles both the raw
+ *  stored frame from /api/chat/turn ("data: {…}\n\n") and the already-stripped
+ *  EventSource `e.data` ("{…}"). Returns null for [DONE]/keepalive/garbage. */
+function _parseTailData(raw) {
+  if (raw == null) return null;
+  let s = String(raw).trim();
+  if (s.startsWith('data:')) s = s.slice(5).trim();
+  if (!s || s === '[DONE]') return null;
+  try { return JSON.parse(s); } catch (_e) { return null; }
+}
+
+/** Reload-resume: if an answer is still streaming server-side for `sessionId`
+ *  (the caller already verified no live LOCAL reader owns it), rebuild it live
+ *  from the resumable event log and tail it to completion, then repaint the
+ *  canonical history. This is the main chat bubble surviving a browser reload /
+ *  mid-turn navigation — flag-gated, replacing the old dead spinner-poll. */
+async function _resumeActiveTurn(sessionId) {
+  // One live resume at a time — close any prior (e.g. a fast session switch).
+  if (_resumeES) { try { _resumeES.close(); } catch (_e) {} _resumeES = null; }
+  if (!sessionId) return;
+
+  let turn;
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/turn?session=${encodeURIComponent(sessionId)}`,
+                            { credentials: 'same-origin' });
+    if (!res.ok) return;
+    turn = await res.json();
+  } catch (_e) { return; }
+  if (!turn || !turn.active) return;            // nothing in flight; history is canonical
+  // Re-check after the await: a local stream may have started, or user moved on.
+  if (window.chatModule && window.chatModule.hasActiveStream &&
+      window.chatModule.hasActiveStream(sessionId)) return;
+  if (getCurrentSessionId() !== sessionId) return;
+
+  const box = document.getElementById('chat-history');
+  if (!box) return;
+
+  const holder = document.createElement('div');
+  holder.className = 'msg msg-ai openclaw-resumed-stream';
+  holder.innerHTML = '<div class="body"><div class="stream-content">' +
+                     '<span class="resumed-stream-wait" aria-live="polite">…</span></div></div>';
+  const contentEl = holder.querySelector('.stream-content');
+  box.appendChild(holder);
+  uiModule.scrollHistory();
+
+  let accumulated = '';
+  let done = false;
+  let pollId = null;
+
+  function render() {
+    let txt = accumulated;
+    try { if (chatRenderer && chatRenderer.stripToolBlocks) txt = chatRenderer.stripToolBlocks(txt); } catch (_e) {}
+    contentEl.innerHTML = markdownModule.processWithThinking(markdownModule.squashOutsideCode(txt));
+    if (window.hljs) contentEl.querySelectorAll('pre code').forEach((b) => window.hljs.highlightElement(b));
+    uiModule.scrollHistory();
+  }
+
+  function finish() {
+    if (done) return;
+    done = true;
+    if (pollId) { clearInterval(pollId); pollId = null; }
+    if (_resumeES) { try { _resumeES.close(); } catch (_e) {} _resumeES = null; }
+    if (holder.parentNode) holder.remove();
+    // Repaint from the (now-complete) transcript — the same handoff the
+    // background and legacy poll paths use. Guard against yanking the user off
+    // a new chat they may have opened in the meantime.
+    if (getCurrentSessionId() === sessionId) {
+      setTimeout(() => { if (getCurrentSessionId() === sessionId) selectSession(sessionId); }, 250);
+    }
+  }
+
+  function teardownNavAway() {
+    done = true;
+    if (pollId) { clearInterval(pollId); pollId = null; }
+    if (_resumeES) { try { _resumeES.close(); } catch (_e) {} _resumeES = null; }
+    if (holder.parentNode) holder.remove();
+  }
+
+  function applyEvent(rawData) {
+    const obj = _parseTailData(rawData);
+    if (!obj) return;
+    if (obj.type === 'metrics') { finish(); return; }   // metrics = end-of-turn marker
+    if (obj.delta && !obj.thinking) { accumulated += obj.delta; render(); }
+    // thinking deltas, tool cards, agent_step: omitted from the lightweight live
+    // view; finish()'s canonical repaint restores them in full.
+  }
+
+  // 1) Replay the turn so far, from its first event.
+  for (const ev of (turn.events || [])) {
+    if (ev && ev.data !== undefined) applyEvent(ev.data);
+    if (done) return;   // turn already ended between status check and replay
+  }
+
+  // 2) Tail the remainder from the last replayed id (exclusive — no dup, no gap).
+  let es = null;
+  try {
+    es = new EventSource(`${API_BASE}/api/chat/stream?session=${encodeURIComponent(sessionId)}` +
+                         `&last_event_id=${encodeURIComponent(turn.last_event_id || '')}`);
+  } catch (_e) { es = null; }
+  if (!es) { finish(); return; }
+  _resumeES = es;
+  es.onmessage = (e) => {
+    if (done) return;
+    if (getCurrentSessionId() !== sessionId) { teardownNavAway(); return; }
+    applyEvent(e.data);
+  };
+
+  // 3) Backstop: if the metrics frame is ever missed, poll the turn flag and
+  //    finish when the server reports the turn is no longer active.
+  pollId = setInterval(async () => {
+    if (done) { clearInterval(pollId); pollId = null; return; }
+    if (getCurrentSessionId() !== sessionId) return;  // onmessage handles cleanup
+    try {
+      const r = await fetch(`${API_BASE}/api/chat/turn?session=${encodeURIComponent(sessionId)}`,
+                            { credentials: 'same-origin' });
+      if (r.ok) { const t = await r.json(); if (t && !t.active) finish(); }
+    } catch (_e) {}
+  }, 3000);
+}
+
 export async function selectSession(id, { keepSidebar = false } = {}) {
   try { window.dispatchEvent(new CustomEvent('workspace:session-switch')); } catch (_we) {}
   // Exit compare mode cleanly if active
@@ -1878,6 +2157,10 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     }
     // Check server for active stream (survives page refresh)
     _checkServerStream(id);
+    // Resumable streaming + activity tree (flag-gated, fully reversible).
+    // With localStorage.openclaw_stream_resume !== '1' this is a no-op and the
+    // POST-based send/stream path above is byte-for-byte unchanged.
+    try { _activateStreamResume(id); } catch (e) { console.warn('stream-resume activate error:', e); }
     // Document panel: keep open if next session also wants it, otherwise close
     if (window.documentModule) {
       const docBtn = document.getElementById('overflow-doc-btn');
@@ -2368,6 +2651,14 @@ async function _checkServerStream(sessionId) {
 
     // Skip if the SSE reader is still actively connected — it handles rendering
     if (window.chatModule && window.chatModule.hasActiveStream && window.chatModule.hasActiveStream(sessionId)) return;
+
+    // Resumable streaming (flag-gated): rebuild an in-flight answer live from the
+    // server event log — the main chat bubble surviving a reload / mid-turn nav.
+    // Reversible: with the flag off we fall through to the legacy path below
+    // (a no-op while /api/chat/stream_status is stubbed to {active:false}).
+    if (typeof window.streamResumeEnabled === 'function' && window.streamResumeEnabled()) {
+      return _resumeActiveTurn(sessionId);
+    }
 
     const res = await fetch(`${API_BASE}/api/chat/stream_status/${sessionId}`);
     if (!res.ok) return; // 404 = no active stream

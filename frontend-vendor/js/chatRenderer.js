@@ -761,6 +761,72 @@ export function roleTimestamp(when) {
   return ts;
 }
 
+/* Compact token count formatter (e.g. 128000 → "128k").
+ * Ported from OpenClaw Control UI ui/src/ui/chat/grouped-render.ts (fmtTokens),
+ * MIT © 2026 OpenClaw Foundation. See frontend-overrides/THIRD-PARTY.md. */
+function fmtMetaTokens(n) {
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(n);
+}
+
+/* Per-message metadata drawer: ↑in ↓out · cache R/W · $cost · ctx% · model.
+ * Vanilla-JS port of grouped-render.ts renderMessageMeta (MIT © 2026 OpenClaw
+ * Foundation). Reads the live context window from window.__openclawCtxWindow
+ * (set by usage-footer.js) for the ctx% denominator — same source as the footer
+ * pill. Returns a <details> node, or null when the turn carries no usage/model
+ * (e.g. plan-billed turns still show ↑/↓/model; cost stays hidden when absent). */
+export function roleMsgMeta(metadata) {
+  const u = (metadata && metadata.usage) || null;
+  const model = metadata && metadata.model;
+  if (!u && !model) return null;
+
+  const input = (u && u.input) || 0;
+  const output = (u && u.output) || 0;
+  const cacheRead = (u && u.cacheRead) || 0;
+  const cacheWrite = (u && u.cacheWrite) || 0;
+  const cost = (metadata && typeof metadata.cost === 'number') ? metadata.cost : 0;
+  const win = window.__openclawCtxWindow || 0;
+  const promptTokens = input + cacheRead + cacheWrite;
+  const ctxPct = (win && promptTokens > 0)
+    ? Math.min(Math.round((promptTokens / win) * 100), 100) : null;
+
+  const mk = (cls, text) => {
+    const s = document.createElement('span');
+    s.className = cls;
+    s.textContent = text;
+    return s;
+  };
+  const parts = [];
+  if (input) parts.push(mk('msg-meta__tokens', '↑' + fmtMetaTokens(input)));
+  if (output) parts.push(mk('msg-meta__tokens', '↓' + fmtMetaTokens(output)));
+  if (cacheRead) parts.push(mk('msg-meta__cache', 'R' + fmtMetaTokens(cacheRead)));
+  if (cacheWrite) parts.push(mk('msg-meta__cache', 'W' + fmtMetaTokens(cacheWrite)));
+  if (cost > 0) parts.push(mk('msg-meta__cost', '$' + cost.toFixed(4)));
+  if (ctxPct !== null) {
+    const cls = ctxPct >= 90 ? 'msg-meta__ctx msg-meta__ctx--danger'
+      : ctxPct >= 75 ? 'msg-meta__ctx msg-meta__ctx--warn' : 'msg-meta__ctx';
+    parts.push(mk(cls, ctxPct + '% ctx'));
+  }
+  if (model) {
+    parts.push(mk('msg-meta__model', model.includes('/') ? model.split('/').pop() : model));
+  }
+  if (!parts.length) return null;
+
+  const details = document.createElement('details');
+  details.className = 'msg-meta';
+  const summary = document.createElement('summary');
+  summary.className = 'msg-meta__summary';
+  summary.title = 'Show message context details';
+  summary.appendChild(mk('msg-meta__summary-label', 'Context'));
+  details.appendChild(summary);
+  const wrap = document.createElement('span');
+  wrap.className = 'msg-meta__details';
+  parts.forEach((p) => wrap.appendChild(p));
+  details.appendChild(wrap);
+  return details;
+}
+
 /**
  * Strip tool invocation blocks from text before rendering.
  */
@@ -1905,6 +1971,12 @@ export function addMessage(role, content, modelName, metadata) {
           roleEl.textContent = shortModel(contModel);
           applyModelColor(roleEl, contModel);
           if (r === 0) roleEl.appendChild(roleTimestamp(metadata?.timestamp));
+          // Per-message meta drawer on the first round only (the round that
+          // carries the turn's usage metadata); parity with Control UI.
+          if (r === 0) {
+            const _msgMeta = roleMsgMeta(metadata);
+            if (_msgMeta) roleEl.appendChild(_msgMeta);
+          }
           wrap.appendChild(roleEl);
           const body = document.createElement('div');
           body.className = 'body';
@@ -2017,6 +2089,10 @@ export function addMessage(role, content, modelName, metadata) {
     if (role !== 'user') {
       if (!isSlash && !isCompacted) applyModelColor(r, resolvedModel);
       r.appendChild(roleTimestamp(metadata?.timestamp));
+      // Per-message data-rich drawer (↑in ↓out · cache · ctx% · model), parity
+      // with OpenClaw Control UI. Null for turns with no usage/model metadata.
+      const _msgMeta = roleMsgMeta(metadata);
+      if (_msgMeta) r.appendChild(_msgMeta);
     }
 
     const b = document.createElement('div');

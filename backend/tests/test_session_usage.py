@@ -179,6 +179,54 @@ def test_bump_tool_calls_accumulates_and_survives_snapshot():
     assert snap["totalTokens"] == 123
 
 
+def test_update_compaction_state_machine_and_projection():
+    """start→active, end+completed→complete, end-without-completed→cleared; and
+    the projection surfaces an active compaction in context for the badge."""
+    key = "agent:main:web-comp"
+    session_context.update_compaction({
+        "sessionKey": key, "operation": "compact", "phase": "start"})
+    assert session_context.get(key)["compaction"]["phase"] == "active"
+
+    out = bridge._project_session_usage("sid", key, None, session_context.get(key))
+    assert out["context"]["compaction"]["phase"] == "active"
+
+    session_context.update_compaction({
+        "sessionKey": key, "operation": "compact", "phase": "end", "completed": True})
+    assert session_context.get(key)["compaction"]["phase"] == "complete"
+
+    session_context.update_compaction({
+        "sessionKey": key, "operation": "compact", "phase": "end", "completed": False})
+    assert "compaction" not in session_context.get(key)
+
+
+def test_update_compaction_ignores_non_compact_operations():
+    key = "agent:main:web-other"
+    session_context.update_compaction({
+        "sessionKey": key, "operation": "summarize", "phase": "start"})
+    assert session_context.get(key) is None
+
+
+def test_fallback_sse_reuses_existing_model_fallback_frame():
+    """_fallback_sse feeds the SPA's already-wired `model_fallback` handler,
+    carrying the richer Control-UI fields (reason/attempts/phase)."""
+    import json
+    raw = bridge._fallback_sse(
+        {"selected": "anthropic/claude-opus-4-8", "active": "openai/gpt-5.5",
+         "previous": "anthropic/claude-opus-4-8", "reason": "rate_limited",
+         "attempts": ["anthropic"]},
+        "fallback")
+    payload = json.loads(raw[len("data: "):].strip())  # _sse → "data: {json}\n\n"
+    assert payload["type"] == "model_fallback"
+    d = payload["data"]
+    assert d["phase"] == "active"
+    assert d["old_model"] == "anthropic/claude-opus-4-8"
+    assert d["new_model"] == "openai/gpt-5.5"
+    assert d["reason"] == "rate_limited"
+    assert d["attempts"] == ["anthropic"]
+    cleared = json.loads(bridge._fallback_sse({}, "fallback_cleared")[len("data: "):].strip())
+    assert cleared["data"]["phase"] == "cleared"
+
+
 def test_projection_live_only_no_usage_row():
     """Live snapshot with NO usage row still yields ok:true (bar can render)."""
     live = {"totalTokens": 50000, "contextTokens": 272000,

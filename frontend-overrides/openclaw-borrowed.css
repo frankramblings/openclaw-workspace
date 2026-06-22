@@ -273,3 +273,84 @@
   #openclaw-inspector-drawer,
   #openclaw-inspector-backdrop { transition: none; }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Per-message metadata drawer (.msg-meta) — data-rich chat parity.
+ * Ported from OpenClaw Control UI ui/src/styles/chat/grouped.css (.msg-meta*),
+ * MIT © 2026 OpenClaw Foundation. Adapted to this app's CSS variables; the
+ * chevron icon is replaced by a pure-CSS caret. See THIRD-PARTY.md.
+ * Rendered by chatRenderer.roleMsgMeta into each assistant message header.
+ * ────────────────────────────────────────────────────────────────────────── */
+.msg-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted, #6b7280);
+  flex-wrap: wrap;
+  margin-left: 8px;
+}
+.msg-meta__summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  padding: 1px 8px 1px 6px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-hover, rgba(255, 255, 255, 0.06)) 65%, transparent);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 120ms ease-out, background 120ms ease-out, color 120ms ease-out;
+}
+.msg-meta__summary::-webkit-details-marker { display: none; }
+/* Pure-CSS caret in place of Control UI's chevron icon. */
+.msg-meta__summary::before {
+  content: '';
+  width: 0; height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  transition: transform 120ms ease-out;
+}
+.msg-meta[open] .msg-meta__summary::before { transform: rotate(90deg); }
+.msg-meta__summary:hover,
+.msg-meta__summary:focus-visible {
+  border-color: color-mix(in srgb, var(--accent, #60a5fa) 40%, var(--border, rgba(255,255,255,0.12)));
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--fg, #fff);
+}
+.msg-meta__summary:focus-visible { outline: 2px solid var(--accent, #60a5fa); outline-offset: 2px; }
+details.msg-meta:not([open]) .msg-meta__details { display: none; }
+.msg-meta__details {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 3px 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.msg-meta__tokens,
+.msg-meta__cache,
+.msg-meta__cost,
+.msg-meta__ctx,
+.msg-meta__model {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+.msg-meta__cache { opacity: 0.85; }
+.msg-meta__cost { color: var(--ok, #4ade80); }
+.msg-meta__ctx--warn { color: var(--warn, #fbbf24); }
+.msg-meta__ctx--danger { color: var(--danger, #ef4444); }
+.msg-meta__model {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.06));
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}

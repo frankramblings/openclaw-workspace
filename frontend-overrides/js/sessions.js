@@ -1789,14 +1789,29 @@ function _ensureActivityTree() {
   return _activityTree;
 }
 
+/** Toggle the header "Catching up…" pill. Owned solely by the turn-resume path
+ *  (`_resumeActiveTurn`), which knows authoritatively when a server-side answer
+ *  is mid-flight: shown while we reattach to a streaming turn, cleared the
+ *  instant it finishes. (It used to be driven by the Activity-pane live tail,
+ *  which left it stuck on forever for idle threads — that socket only emits
+ *  keepalive comments, so the "hide on first event" never fired.) */
+function _setCatchupBadge(on) {
+  const b = document.getElementById('stream-status-badge');
+  if (!b) return;
+  if (on) b.removeAttribute('hidden');
+  else b.setAttribute('hidden', '');
+}
+
 /** Thread-switch hook: (re)point the single live GET tail at the active
  *  session and pipe each SSE `data:` record into the ActivityTree. The normal
- *  POST-based renderer is untouched — this tail is purely observe/resume. */
+ *  POST-based renderer is untouched — this tail is purely observe/resume.
+ *  Note: the live tail no longer drives the "Catching up…" badge (it would get
+ *  stuck on for idle threads — see _setCatchupBadge); the badge is owned by
+ *  _resumeActiveTurn, so we pass `null` here. */
 function _activateStreamResume(id) {
   if (!_streamResumeOn() || !window.StreamManager || !id) return;
   const tree = _ensureActivityTree();
   if (tree && tree.reset) tree.reset();
-  const badge = document.getElementById('stream-status-badge');
   const dispatchToUI = (rawData) => {
     // 1) observation surface — the collapsible activity tree
     if (tree && tree.handleEvent) {
@@ -1805,7 +1820,7 @@ function _activateStreamResume(id) {
     // 2) optional external subscribers (no default chat-history double-render)
     try { window.dispatchEvent(new CustomEvent('openclaw:stream-tail', { detail: { id, data: rawData } })); } catch (_e) {}
   };
-  window.StreamManager.activate(id, dispatchToUI, badge);
+  window.StreamManager.activate(id, dispatchToUI, null);
 }
 
 // Live resume of an in-flight answer after a reload (single connection at a time).
@@ -1949,6 +1964,7 @@ async function _resumeActiveTurn(sessionId) {
   function finish() {
     if (done) return;
     done = true;
+    _setCatchupBadge(false);   // turn is over — drop the pill
     if (pollId) { clearInterval(pollId); pollId = null; }
     if (_resumeES) { try { _resumeES.close(); } catch (_e) {} _resumeES = null; }
     _removeResumedNodes();
@@ -1962,6 +1978,7 @@ async function _resumeActiveTurn(sessionId) {
 
   function teardownNavAway() {
     done = true;
+    _setCatchupBadge(false);   // left this thread — drop the pill
     if (pollId) { clearInterval(pollId); pollId = null; }
     if (_resumeES) { try { _resumeES.close(); } catch (_e) {} _resumeES = null; }
     _removeResumedNodes();
@@ -1983,6 +2000,10 @@ async function _resumeActiveTurn(sessionId) {
     // thinking deltas + other frame types: omitted from the live view; the
     // canonical repaint on finish() restores thinking sections in full.
   }
+
+  // An answer is genuinely mid-flight on the server and no local reader owns it
+  // — reattaching. Show the pill now; finish()/teardownNavAway() clear it.
+  _setCatchupBadge(true);
 
   // Immediate feedback while the first real frame is still in flight.
   _newTextHolder();
@@ -2245,6 +2266,9 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     } catch (e) {
       console.warn('checkBackgroundStream error:', e);
     }
+    // Clear any leftover "Catching up…" pill from the previous thread; the
+    // resume check below re-shows it only if THIS thread has a live turn.
+    _setCatchupBadge(false);
     // Check server for active stream (survives page refresh)
     _checkServerStream(id);
     // Resumable streaming + activity tree (flag-gated, fully reversible).

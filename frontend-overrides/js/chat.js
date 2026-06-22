@@ -1821,12 +1821,20 @@ import createResearchSynapse from './researchSynapse.js';
                   _sourcesHtml = _buildSourcesBox(json.data, 'web');
                 }
               } else if (json.type === 'model_fallback') {
-                // Model went offline — switched to fallback
+                // Provider fallback (primary unavailable → backup), or recovery.
+                // Backend feeds this from the gateway run stream; data carries
+                // OpenClaw Control UI's FallbackStatus fields (reason/phase).
                 var _fbData = json.data || {};
-                uiModule.showToast(
-                  `Model ${_fbData.old_model || '?'} offline — switched to ${_fbData.new_model || '?'}`,
-                  5000
-                );
+                var _fbReason = _fbData.reason ? ` (${_fbData.reason})` : '';
+                if (_fbData.phase === 'cleared') {
+                  uiModule.showToast(
+                    `Recovered — back on ${_fbData.new_model || 'primary'}`, 5000);
+                } else {
+                  uiModule.showToast(
+                    `Model ${_fbData.old_model || '?'} unavailable${_fbReason} — switched to ${_fbData.new_model || '?'}`,
+                    5000
+                  );
+                }
                 // Update the model picker to reflect the new model
                 if (sessionModule && sessionModule.updateModelPicker) {
                   sessionModule.updateModelPicker();

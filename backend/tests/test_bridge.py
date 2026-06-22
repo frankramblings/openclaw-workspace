@@ -24,6 +24,34 @@ def test_map_history_tolerates_missing_timestamp():
     assert out["history"][0]["metadata"]["timestamp"] is None
 
 
+def test_map_history_propagates_per_message_usage_metadata():
+    # Data-rich chat parity: the gateway stamps each assistant turn with usage/
+    # model/provider; the mapper must surface them on metadata for the drawer.
+    msgs = [{
+        "role": "assistant",
+        "content": [{"type": "text", "text": "done"}],
+        "model": "claude-opus-4-8",
+        "provider": "claude-cli",
+        "stopReason": "end_turn",
+        "usage": {"input": 2, "output": 75, "cacheRead": 69469, "cacheWrite": 282},
+    }]
+    meta = _map_history(msgs)["history"][0]["metadata"]
+    assert meta["usage"] == {"input": 2, "output": 75,
+                             "cacheRead": 69469, "cacheWrite": 282}
+    assert meta["model"] == "claude-opus-4-8"
+    assert meta["provider"] == "claude-cli"
+    assert meta["stopReason"] == "end_turn"
+    assert "cost" not in meta  # plan-billed: no cost record
+
+
+def test_map_history_usage_metadata_is_optional():
+    # A turn with no usage/cost (e.g. plan-billed or partial) still maps cleanly,
+    # carrying only what's present — no empty/None keys for absent fields.
+    msgs = [{"role": "assistant", "content": [{"type": "text", "text": "hi"}]}]
+    meta = _map_history(msgs)["history"][0]["metadata"]
+    assert "usage" not in meta and "cost" not in meta and "provider" not in meta
+
+
 def test_default_model_floats_to_front_of_its_provider(monkeypatch):
     """The SPA picker auto-defaults new chats to models[0] — that slot must be
     the configured primary, not whatever sorts first in the gateway catalog

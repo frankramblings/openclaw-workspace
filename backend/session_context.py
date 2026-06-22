@@ -75,6 +75,33 @@ def bump_tool_calls(session_key: str, n: int = 1) -> None:
         _CACHE[session_key] = cur
 
 
+def update_compaction(payload: dict) -> None:
+    """Fold a `session.operation` (operation=="compact") event into the cache so
+    the footer poll can surface a compaction badge — parity with OpenClaw Control
+    UI's compaction indicator. Compaction reaches us on the monitor's broadcast
+    connection (NOT the per-turn run stream), so it is captured here, not in the
+    bridge. `phase:"start"` → active; `phase:"end"` clears it (keeping a short
+    "complete" marker only when `completed` is true, for the toast)."""
+    if not isinstance(payload, dict) or payload.get("operation") != "compact":
+        return
+    key = payload.get("sessionKey")
+    if not key or not isinstance(key, str):
+        return
+    phase = payload.get("phase")
+    now = int(time.time() * 1000)
+    with _LOCK:
+        cur = dict(_CACHE.get(key) or {})
+        if phase == "start":
+            cur["compaction"] = {"phase": "active", "startedAt": now}
+        elif phase == "end":
+            if payload.get("completed") is True:
+                cur["compaction"] = {"phase": "complete", "completedAt": now}
+            else:
+                cur.pop("compaction", None)
+        cur["updatedAt"] = now
+        _CACHE[key] = cur
+
+
 def get(session_key: str) -> dict | None:
     """The latest cached snapshot for a gateway session key, or None."""
     if not session_key:

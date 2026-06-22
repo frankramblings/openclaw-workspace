@@ -470,6 +470,22 @@ def _map_history(messages: list) -> dict:
         elif role == "assistant":
             if msg.get("model"):
                 model = msg["model"]  # last assistant model wins → picker label
+            # Per-message metadata for the data-rich chat drawer (parity with
+            # OpenClaw Control UI's `.msg-meta` row). The gateway stamps each
+            # assistant turn with these; we surface only the present ones so the
+            # frontend can render ↑in/↓out, cache R/W, model, provider, ctx%.
+            # `cost` is usually absent on plan-billed (Claude-Max) sessions.
+            _u = msg.get("usage")
+            if isinstance(_u, dict):
+                meta["usage"] = {k: _u[k] for k in
+                                 ("input", "output", "cacheRead", "cacheWrite")
+                                 if isinstance(_u.get(k), (int, float))}
+            for _f in ("model", "provider", "stopReason"):
+                if msg.get(_f) is not None:
+                    meta[_f] = msg[_f]
+            _c = msg.get("cost")
+            if isinstance(_c, dict) and isinstance(_c.get("total"), (int, float)):
+                meta["cost"] = _c["total"]
             text = _content_text(msg.get("content"))  # text blocks only
             if text.strip():
                 history.append({"role": "assistant", "content": text, "metadata": meta})
@@ -800,6 +816,10 @@ def _project_session_usage(spa_session_id: str, session_key: str,
         "contextWindowSource": window_source,
         "live": bool(live),
     }
+    # Compaction status (context auto-trim), captured by the monitor from the
+    # gateway's session.operation broadcast — drives the footer compaction badge.
+    if live.get("compaction"):
+        context["compaction"] = live["compaction"]
     sys_chars = (cw.get("systemPrompt") or {}).get("chars")
     if isinstance(sys_chars, (int, float)):
         context["systemPromptChars"] = int(sys_chars)
@@ -1040,14 +1060,45 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                             "tool_id": tool_id, "output": detail,
                             "exit_code": 0 if data.get("status") == "completed" else 1})
 
+        elif stream == "fallback":
+            # Provider fallback on this run's own stream (primary unavailable →
+            # backup). Parity with OpenClaw Control UI's fallback indicator.
+            yield _fallback_sse(data, "fallback")
+
         elif stream == "lifecycle":
             phase = data.get("phase")
+            # Fallback can also arrive as a lifecycle phase; surface it the same
+            # way (a transient badge, NOT a turn end).
+            if phase in ("fallback", "fallback_cleared"):
+                yield _fallback_sse(data, phase)
+                continue
             if phase == "error":
                 yield _sse({"type": "tool_output", "tool": "agent",
                             "output": _error_text(data.get("error")), "exit_code": 1})
                 return
             if phase == "end":
                 return
+
+
+def _fallback_sse(data: dict, phase: str) -> str:
+    """Project a gateway fallback frame to the `model_fallback` SSE the SPA chat
+    loop ALREADY handles (chat.js → toast) — the handler was vendored but never
+    fed, so we wire it here rather than invent a new frame. Carries the richer
+    OpenClaw Control UI FallbackStatus fields (reason/attempts/phase) for an
+    enriched toast. `phase` is "fallback" (active) or "fallback_cleared"."""
+    data = data or {}
+    attempts = data.get("attempts")
+    return _sse({
+        "type": "model_fallback",
+        "data": {
+            "old_model": data.get("previous") or data.get("selected"),
+            "new_model": (data.get("active") or data.get("model")
+                          or data.get("provider")),
+            "reason": data.get("reason"),
+            "attempts": attempts if isinstance(attempts, list) else [],
+            "phase": "cleared" if phase == "fallback_cleared" else "active",
+        },
+    })
 
 
 def _disconnect_message(monitor_state: str) -> str:

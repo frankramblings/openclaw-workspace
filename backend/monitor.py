@@ -106,6 +106,10 @@ async def run() -> None:
                         handle_event(ev, payload)
                         if ev == "sessions.changed":
                             session_context.update_from_event(payload)
+                        elif ev == "session.operation":
+                            # Compaction (context auto-trim) — broadcast here, not
+                            # on the run stream; surfaced via the usage endpoint.
+                            session_context.update_compaction(payload)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - any failure → reconnect loop

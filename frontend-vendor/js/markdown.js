@@ -361,6 +361,38 @@ export function mdToHtml(src) {
     '$1[#$2](#$2)',
   );
 
+  // Protect fenced code before linkifying/HTML extraction. URLs inside code
+  // must remain literal code, not temporary allowed-HTML placeholders.
+  const codeBlocks = [];
+  const mermaidBlocks = [];
+  s = s.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
+    const cleaned = code
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+$/gm, '')
+      .replace(/^\s*\n+/, '')
+      .replace(/\n+\s*$/g, '');
+
+    // Mermaid diagrams: render as diagram instead of code block
+    if (lang && lang.toLowerCase() === 'mermaid') {
+      const mermaidId = 'mermaid-' + Date.now() + '-' + mermaidBlocks.length;
+      const placeholder = `___MERMAID_BLOCK_${mermaidBlocks.length}___`;
+      mermaidBlocks.push(`<div class="mermaid-container"><pre class="mermaid" id="${mermaidId}">${escapeHtml(cleaned)}</pre></div>`);
+      return placeholder;
+    }
+
+    const placeholder = `___CODE_BLOCK_${codeBlocks.length}___`;
+
+    const langClass = lang ? ` class="language-${lang}"` : '';
+    const runnableLangs = ['python','py','javascript','js','html','bash','sh','shell','zsh'];
+    const runBtn = (lang && runnableLangs.includes(lang.toLowerCase()))
+      ? `<button type="button" class="run-code" data-code="${escapeHtml(cleaned)}" data-lang="${lang}" title="Run code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>`
+      : '';
+    const editBtn = `<button type="button" class="edit-code" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`;
+    codeBlocks.push(`<pre><code${langClass} data-lang="${lang || ''}">${escapeHtml(cleaned)}</code>${runBtn}${editBtn}<button type="button" class="copy-code" data-code="${escapeHtml(cleaned)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></pre>`);
+
+    return placeholder;
+  });
+
   // Convert markdown links [text](url) to clickable links
   // Internal #hash links navigate in-page; external links open in new tab
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
@@ -408,39 +440,6 @@ export function mdToHtml(src) {
   s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   s = s.replace(/\n{3,}/g, '\n\n');
-
-  // CRITICAL: Extract code blocks and replace with placeholders
-  const codeBlocks = [];
-  const mermaidBlocks = [];
-  s = s.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
-    const cleaned = code
-      .replace(/\r\n/g, '\n')
-      .replace(/[ \t]+$/gm, '')
-      .replace(/^\s*\n+/, '')
-      .replace(/\n+\s*$/g, '');
-
-    // Mermaid diagrams: render as diagram instead of code block
-    if (lang && lang.toLowerCase() === 'mermaid') {
-      const mermaidId = 'mermaid-' + Date.now() + '-' + mermaidBlocks.length;
-      const raw = cleaned.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-      const placeholder = `___MERMAID_BLOCK_${mermaidBlocks.length}___`;
-      mermaidBlocks.push(`<div class="mermaid-container"><pre class="mermaid" id="${mermaidId}">${escapeHtml(raw)}</pre></div>`);
-      return placeholder;
-    }
-
-    const escaped = cleaned.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-    const placeholder = `___CODE_BLOCK_${codeBlocks.length}___`;
-
-    const langClass = lang ? ` class="language-${lang}"` : '';
-    const runnableLangs = ['python','py','javascript','js','html','bash','sh','shell','zsh'];
-    const runBtn = (lang && runnableLangs.includes(lang.toLowerCase()))
-      ? `<button type="button" class="run-code" data-code="${escapeHtml(escaped)}" data-lang="${lang}" title="Run code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>`
-      : '';
-    const editBtn = `<button type="button" class="edit-code" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`;
-    codeBlocks.push(`<pre><code${langClass} data-lang="${lang || ''}">${escapeHtml(escaped)}</code>${runBtn}${editBtn}<button type="button" class="copy-code" data-code="${escapeHtml(escaped)}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></pre>`);
-
-    return placeholder;
-  });
 
   // KaTeX math rendering (after code blocks are extracted, so math in code is safe)
   const mathBlocks = [];

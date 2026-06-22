@@ -149,6 +149,10 @@
 #usage-footer-detail .uf-row span:last-child{color:var(--text,#e8e8e8);}
 #usage-footer-detail .uf-est{opacity:.7;font-style:italic;}
 @media (max-width:560px){#usage-footer-bar .uf-costwrap{display:none;}}
+#usage-footer-bar .uf-compact{margin-left:6px;padding:0 6px;border-radius:999px;font-size:10px;line-height:16px;white-space:nowrap;background:color-mix(in srgb, var(--accent,#60a5fa) 16%, transparent);color:var(--accent,#60a5fa);}
+#usage-footer-bar .uf-compact--active{animation:uf-compact-pulse 1.2s ease-in-out infinite;}
+@keyframes uf-compact-pulse{50%{opacity:.45;}}
+@media (prefers-reduced-motion:reduce){#usage-footer-bar .uf-compact--active{animation:none;}}
 `;
     const style = document.createElement('style');
     style.id = 'usage-footer-style';
@@ -191,6 +195,7 @@
       '<span class="uf-tok">—</span>' +
       '<span class="uf-costwrap"><span class="uf-sep">·</span>' +
       '<span class="uf-cost">—</span></span>' +
+      '<span class="uf-compact" hidden title="Context is being compacted (auto-trimmed)">⟳ compacting</span>' +
       '<span class="uf-caret">▾</span>';
 
     const detail = document.createElement('div');
@@ -227,6 +232,7 @@
       pct: bar.querySelector('.uf-pct'),
       tok: bar.querySelector('.uf-tok'),
       cost: bar.querySelector('.uf-cost'),
+      compact: bar.querySelector('.uf-compact'),
     };
     return _els;
   }
@@ -243,6 +249,21 @@
     if (!els) return;
     const u = data.usage || {};
     const ctx = data.context || {};
+    // Expose the live context window so the per-message meta drawer
+    // (chatRenderer.roleMsgMeta) can compute each message's ctx% against the
+    // same denominator the footer pill uses. Borrowed from OpenClaw Control UI.
+    if (ctx.windowTokens) window.__openclawCtxWindow = ctx.windowTokens;
+    // Compaction badge (parity with Control UI): show while active; show a
+    // brief "compacted" pip if it completed within the last ~8s, else hide.
+    if (els.compact) {
+      const comp = ctx.compaction || null;
+      const fresh = comp && comp.phase === 'complete' && comp.completedAt
+        && (Date.now() - comp.completedAt < 8000);
+      const active = comp && comp.phase === 'active';
+      els.compact.hidden = !(active || fresh);
+      if (active) { els.compact.textContent = '⟳ compacting'; els.compact.classList.add('uf-compact--active'); }
+      else if (fresh) { els.compact.textContent = '✓ compacted'; els.compact.classList.remove('uf-compact--active'); }
+    }
     const pct = (ctx.usedPct != null) ? ctx.usedPct : null;
     const usedTok = (ctx.usedTokens != null) ? ctx.usedTokens : u.totalTokens;
 

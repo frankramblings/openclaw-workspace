@@ -434,10 +434,9 @@ async def fetch_history(session_key: str, limit: int = 200) -> dict:
     the SPA's history shape: {"history": [{role, content}], "model": str|None}.
 
     The brain stores rich messages — user (content is a plain string), assistant
-    (content is a block list: text OR toolCall), and toolResult. The Library's
-    history view renders conversation TEXT only, so we keep user strings and
-    assistant text blocks and drop toolCall/toolResult messages (live tool cards
-    are a streaming concern, not part of the saved transcript view).
+    (content is a block list: text OR toolCall), and toolResult. `_map_history`
+    keeps user/assistant text AND rebuilds tool cards (tool_events/round_texts)
+    so a reloaded tool-using turn matches what the user saw stream live.
 
     Routed through the warm socket when it's free (so the late-reply poll and
     chat-open history loads stop opening a fresh socket each time).
@@ -453,44 +452,146 @@ async def fetch_history(session_key: str, limit: int = 200) -> dict:
 
 
 def _map_history(messages: list) -> dict:
+    """Project the brain's flat transcript into the SPA's history shape.
+
+    The brain stores an agentic turn as a run of messages: assistant turns whose
+    content is EITHER text blocks OR toolCall blocks (never both), interleaved
+    with `toolResult` messages keyed by toolCallId. User messages delimit turns.
+
+    Pure-text turns are emitted one entry per assistant message (legacy parity —
+    the chat drawer/metrics key off per-message metadata). A turn that used ANY
+    tools is collapsed into a single assistant entry carrying `tool_events` +
+    `round_texts` metadata, which chatRenderer.addMessage replays into the same
+    multi-bubble text+tool-card view the user saw live. (Previously every
+    toolCall/toolResult was dropped, so reloading a tool-using turn showed only
+    the user's message — Gary's work vanished.)
+    """
     history = []
     model = None
+    pending: list = []  # assistant + toolResult messages of the current turn
+
+    def _emit_turn():
+        nonlocal model
+        if not pending:
+            return
+        has_tools = any(
+            isinstance(m, dict) and (
+                m.get("role") == "toolResult"
+                or (isinstance(m.get("content"), list)
+                    and any(isinstance(b, dict) and b.get("type") == "toolCall"
+                            for b in m["content"])))
+            for m in pending)
+        if not has_tools:
+            # Plain Q&A turn: one history entry per assistant message, exactly as
+            # before — preserves per-message timestamps/usage the drawer expects.
+            for m in pending:
+                if not isinstance(m, dict) or m.get("role") != "assistant":
+                    continue
+                if m.get("model"):
+                    model = m["model"]  # last assistant model wins → picker label
+                text = _content_text(m.get("content"))
+                if text.strip():
+                    history.append({"role": "assistant", "content": text,
+                                    "metadata": _assistant_meta(m)})
+            return
+        # Tool-using turn: rebuild rounds (text bubble → tool thread → text → …).
+        round_texts = [""]
+        tool_events: list = []
+        calls: dict = {}                # toolCallId → its tool_event
+        cur_round_has_tools = False
+        meta: dict = {"timestamp": None}
+        for m in pending:
+            if not isinstance(m, dict):
+                continue
+            if m.get("role") == "assistant":
+                if m.get("model"):
+                    model = m["model"]
+                _merge_assistant_meta(meta, m)
+                blocks = m.get("content")
+                text = _content_text(blocks)
+                if text.strip():
+                    # Text after a tool group starts the next round; otherwise it
+                    # extends the current round's (possibly empty) text bubble.
+                    if cur_round_has_tools:
+                        round_texts.append(text)
+                        cur_round_has_tools = False
+                    elif round_texts[-1]:
+                        round_texts[-1] += "\n\n" + text
+                    else:
+                        round_texts[-1] = text
+                if isinstance(blocks, list):
+                    for b in blocks:
+                        if not isinstance(b, dict) or b.get("type") != "toolCall":
+                            continue
+                        ev = {"round": len(round_texts),  # 1-indexed for renderer
+                              "tool": b.get("name") or "tool",
+                              "command": _tool_command(b),
+                              "exit_code": None}            # None until result lands
+                        cid = b.get("id")
+                        if cid is not None:
+                            calls[cid] = ev
+                        tool_events.append(ev)
+                        cur_round_has_tools = True
+            elif m.get("role") == "toolResult":
+                cid = m.get("toolCallId") or m.get("id")
+                ev = calls.get(cid)
+                if ev is not None:
+                    ev["output"] = _tool_output(m)
+                    ev["exit_code"] = 1 if m.get("isError") else 0
+        meta["tool_events"] = tool_events
+        meta["round_texts"] = round_texts
+        content = next((t for t in round_texts if t.strip()), "")
+        history.append({"role": "assistant", "content": content, "metadata": meta})
+
     for msg in messages:
         if not isinstance(msg, dict):
             continue
         role = msg.get("role")
-        # The brain stamps every message with an epoch-ms `timestamp`. The SPA
-        # renders it via msg.metadata.timestamp and falls back to now() when it's
-        # absent — which made every loaded message show the page-reload time.
-        meta = {"timestamp": msg.get("timestamp")}
         if role == "user":
+            _emit_turn()
+            pending.clear()
             text = _content_text(msg.get("content"))
             if text.strip():
-                history.append({"role": "user", "content": text, "metadata": meta})
-        elif role == "assistant":
-            if msg.get("model"):
-                model = msg["model"]  # last assistant model wins → picker label
-            # Per-message metadata for the data-rich chat drawer (parity with
-            # OpenClaw Control UI's `.msg-meta` row). The gateway stamps each
-            # assistant turn with these; we surface only the present ones so the
-            # frontend can render ↑in/↓out, cache R/W, model, provider, ctx%.
-            # `cost` is usually absent on plan-billed (Claude-Max) sessions.
-            _u = msg.get("usage")
-            if isinstance(_u, dict):
-                meta["usage"] = {k: _u[k] for k in
-                                 ("input", "output", "cacheRead", "cacheWrite")
-                                 if isinstance(_u.get(k), (int, float))}
-            for _f in ("model", "provider", "stopReason"):
-                if msg.get(_f) is not None:
-                    meta[_f] = msg[_f]
-            _c = msg.get("cost")
-            if isinstance(_c, dict) and isinstance(_c.get("total"), (int, float)):
-                meta["cost"] = _c["total"]
-            text = _content_text(msg.get("content"))  # text blocks only
-            if text.strip():
-                history.append({"role": "assistant", "content": text, "metadata": meta})
-        # toolResult and toolCall-only assistant turns are intentionally skipped.
+                # The brain stamps an epoch-ms `timestamp`; the SPA renders it via
+                # metadata.timestamp and falls back to now() when it's absent.
+                history.append({"role": "user", "content": text,
+                                "metadata": {"timestamp": msg.get("timestamp")}})
+        elif role in ("assistant", "toolResult"):
+            pending.append(msg)
+        # other roles are ignored
+    _emit_turn()
     return {"history": history, "model": model}
+
+
+def _assistant_meta(msg: dict) -> dict:
+    """Per-message metadata for the data-rich chat drawer (parity with OpenClaw
+    Control UI's `.msg-meta` row): ↑in/↓out, cache R/W, model, provider, ctx%,
+    cost. Only present fields are surfaced; `cost` is usually absent on
+    plan-billed (Claude-Max) sessions."""
+    meta = {"timestamp": msg.get("timestamp")}
+    _merge_assistant_meta(meta, msg)
+    return meta
+
+
+def _merge_assistant_meta(meta: dict, msg: dict) -> None:
+    """Fold one assistant message's usage/model/provider/cost into `meta`
+    (last-present wins). Used both per-message and to summarize a tool turn."""
+    if meta.get("timestamp") is None and msg.get("timestamp") is not None:
+        meta["timestamp"] = msg.get("timestamp")
+    _u = msg.get("usage")
+    if isinstance(_u, dict):
+        usage = {k: _u[k] for k in ("input", "output", "cacheRead", "cacheWrite")
+                 if isinstance(_u.get(k), (int, float))}
+        # Prefer a usage record that actually carries tokens — the toolCall
+        # messages in a turn are stamped with all-zero usage.
+        if usage and (any(usage.values()) or "usage" not in meta):
+            meta["usage"] = usage
+    for _f in ("model", "provider", "stopReason"):
+        if msg.get(_f) is not None:
+            meta[_f] = msg[_f]
+    _c = msg.get("cost")
+    if isinstance(_c, dict) and isinstance(_c.get("total"), (int, float)):
+        meta["cost"] = _c["total"]
 
 
 def _content_text(content) -> str:
@@ -503,6 +604,52 @@ def _content_text(content) -> str:
                  if isinstance(b, dict) and b.get("type") == "text"]
         return "".join(parts)
     return ""
+
+
+def _tool_command(block: dict) -> str:
+    """The command/input string shown on a tool card. Bash-style tools carry a
+    plain `command`; structured tools (search, etc.) get their args rendered as
+    JSON so the call is still legible on reload rather than dropped."""
+    args = block.get("arguments")
+    if not isinstance(args, dict):
+        args = block.get("input")
+    if isinstance(args, dict):
+        cmd = args.get("command")
+        if isinstance(cmd, str) and cmd.strip():
+            return cmd
+        try:
+            return json.dumps(args, ensure_ascii=False, indent=2)
+        except Exception:  # noqa: BLE001 - unserializable args → best-effort str
+            return str(args)
+    if isinstance(args, str):
+        return args
+    return ""
+
+
+def _tool_output(msg: dict) -> str:
+    """Flatten a toolResult message's body to display text for the tool card.
+    Results nest as `content: [{type: toolResult, content: <str | blocks>}]`;
+    very large outputs are capped so a long transcript page stays sane."""
+    parts: list = []
+
+    def _walk(c):
+        if isinstance(c, str):
+            parts.append(c)
+        elif isinstance(c, list):
+            for b in c:
+                if not isinstance(b, dict):
+                    continue
+                inner = b.get("content")
+                if isinstance(inner, (str, list)):
+                    _walk(inner)
+                elif b.get("type") == "text" and isinstance(b.get("text"), str):
+                    parts.append(b["text"])
+
+    _walk(msg.get("content"))
+    text = "\n".join(p for p in parts if p)
+    if len(text) > 8000:
+        text = text[:8000] + "\n…[truncated]"
+    return text
 
 
 def _gateway_http_base() -> str:
@@ -544,8 +691,9 @@ async def fetch_history_page(session_key: str, limit: int = 200,
         body = res.json()
     except Exception:  # noqa: BLE001 - transient HTTP trouble → empty page
         return empty
-    # The endpoint already display-projects (drops tool messages); _map_history
-    # reuses the WS path's role/text mapping so both history loaders agree.
+    # The endpoint returns the full rich transcript (assistant text + toolCall
+    # blocks, toolResult messages); _map_history rebuilds tool cards from it so
+    # both the WS and HTTP history loaders agree.
     mapped = _map_history(body.get("messages") or [])
     mapped["hasMore"] = bool(body.get("hasMore"))
     mapped["nextCursor"] = body.get("nextCursor")
@@ -630,6 +778,14 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
     return True  # no auth info for this provider → don't hide it
 
 
+# Endpoints hidden from the model picker. "anthropic" routes through the
+# anthropic:default API KEY profile (per-token billing); the Claude subscription
+# is the "claude-cli" endpoint (oauth, plan-billed). Frank uses the subscription
+# and doesn't want the metered API endpoint selectable — drop it here rather than
+# delete the gateway credential (reversible: remove "anthropic" from this set).
+_HIDDEN_ENDPOINTS = {"anthropic"}
+
+
 def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
     """Map models.list + models.authStatus onto the SPA's {items:[...]} shape."""
     auth_status = {p.get("provider", ""): p.get("status", "")
@@ -649,6 +805,8 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
 
     items = []
     for provider in order:
+        if provider in _HIDDEN_ENDPOINTS:
+            continue  # per-token API endpoint — see _HIDDEN_ENDPOINTS
         objs = [m for m in by_provider[provider] if m.get("id")]
         if not objs:
             continue
@@ -933,7 +1091,7 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
     they count as run-liveness for the stall watchdog (see _is_run_activity).
     Concurrent cron / heartbeat runs carry a different runId and are filtered out.
     """
-    emitted_len = 0        # fallback cumulative-text cursor
+    msg_text = ""          # text already emitted for the CURRENT assistant message
     analysis_seen: dict = {}  # itemId -> reasoning chars already emitted
     tool_since_text = False  # a tool card emitted since the last text delta?
     images_seen: set = set()  # image block urls already emitted (dedupe finals)
@@ -999,12 +1157,26 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                 if url not in images_seen:
                     images_seen.add(url)
                     yield _sse({"image_url": url, "image_prompt": alt})
+            # The agent can emit SEVERAL assistant messages in one turn — e.g.
+            # its `message`-tool delivery (Gary's Signal reply channel) and then
+            # its real final reply. The gateway RESETS message.content between
+            # them, so both used to stream in and render doubled ("Sent…Hey 👋").
+            # We track the current message's text; on a reset (new message whose
+            # content doesn't extend what we've shown) we tell the SPA to drop the
+            # turn's text so far and keep only the latest message. This also makes
+            # the trailing state:"final" snapshot a no-op (content == msg_text →
+            # no re-emit), fixing the older "final re-emits everything" doubling.
+            full = _extract_text(payload)
+            if full and not full.startswith(msg_text):
+                yield _sse({"type": "reply_reset"})  # SPA clears this turn's text
+                msg_text = ""
+                tool_since_text = False
             delta = payload.get("deltaText")
-            if not delta:
-                text = _extract_text(payload)
-                if text is not None and len(text) > emitted_len:
-                    delta = text[emitted_len:]
-                    emitted_len = len(text)
+            if delta:
+                msg_text += delta
+            elif full is not None and len(full) > len(msg_text):
+                delta = full[len(msg_text):]
+                msg_text = full
             if delta:
                 timing.setdefault("t_first_text", time.monotonic())
                 if tool_since_text:

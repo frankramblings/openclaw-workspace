@@ -612,13 +612,39 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
     sess = sessions_store.get(session_id)
     if not sess:
         return {"history": [], "model": None, "hasMore": False, "nextCursor": None}
-    data = await bridge.fetch_history_page(sess["sessionKey"], limit=limit, cursor=cursor)
+    if cursor:
+        # Older pages: only the gateway's HTTP history endpoint supports
+        # older-than-cursor paging.
+        data = await bridge.fetch_history_page(sess["sessionKey"], limit=limit,
+                                               cursor=cursor)
+    else:
+        # First page: the gateway's HTTP history endpoint truncates some sessions
+        # — a claude-cli turn can come back as a single message, dropping Gary's
+        # replies on reload. The WS chat.history returns the full transcript
+        # reliably for every provider, so read the newest window from it.
+        # (Tail-only: a transcript longer than the window won't lazy-load older
+        # pages — an acceptable trade vs. silently losing the assistant's replies.)
+        mapped = await bridge.fetch_history(sess["sessionKey"], limit=max(limit, 1000))
+        data = {"history": mapped.get("history", []),
+                "model": mapped.get("model"),
+                "hasMore": False, "nextCursor": None}
     # use_web turns store the augmented brain message (search block + the
     # user's text) in the transcript; show only what the user typed.
     for m in data.get("history", []):
         if m.get("role") == "user":
             content = websearch.strip_context_block(m.get("content"))
             m["content"] = terminals.strip_capability_note(content)
+    # The terminal-attach flow records the prompt twice (the two messages differ
+    # only in the stripped terminal-control note), so after stripping they're
+    # identical — collapse a user message that duplicates the one just before it.
+    deduped = []
+    for m in data.get("history", []):
+        if (m.get("role") == "user" and deduped
+                and deduped[-1].get("role") == "user"
+                and deduped[-1].get("content") == m.get("content")):
+            continue
+        deduped.append(m)
+    data["history"] = deduped
     # Prefer the record's chosen model label; fall back to whatever the brain used.
     data["model"] = sess.get("model") or data.get("model")
     return data
@@ -749,10 +775,30 @@ async def default_chat():
     # endpoint_url is REQUIRED: chat.js auto-creates the session only when both
     # endpoint_url and model are truthy. It's stored + echoed back to /api/session
     # but never used to route — every turn goes through the bridge regardless.
-    # Land on the primary agent's configured model so the picker opens on it.
-    provider, model = config.default_model()
+    # A user-set preference (POST /api/default-chat → .data/settings.json) wins;
+    # otherwise we land on the primary agent's configured model from openclaw.json.
+    pref = (websearch.load_settings().get("default_chat_model") or {})
+    if pref.get("model"):
+        provider = pref.get("endpoint_id") or config.default_model()[0]
+        model = pref["model"]
+    else:
+        provider, model = config.default_model()
     return {"endpoint_id": provider, "endpoint_url": config.gateway_ws_url(),
             "model": model}
+
+
+@app.post("/api/default-chat")
+async def set_default_chat(payload: dict = Body(default=None)):
+    """Persist the user's preferred default model for NEW web chats. Stored in
+    .data/settings.json (workspace-owned) — does NOT touch the gateway's
+    openclaw.json. Per-chat overrides still go through PATCH /api/session."""
+    payload = payload or {}
+    model = (payload.get("model") or "").strip()
+    if not model:
+        return JSONResponse(status_code=400, content={"error": "model required"})
+    pref = {"model": model, "endpoint_id": (payload.get("endpoint_id") or "").strip()}
+    websearch.save_settings({"default_chat_model": pref})
+    return {"ok": True, **pref}
 
 
 # Auth stubs: single-user/no-auth deployment behind Tailscale. Return a logged-in
@@ -788,6 +834,19 @@ async def auth_settings():
 @app.post("/api/auth/settings")
 async def save_auth_settings(payload: dict = Body(default=None)):
     return websearch.save_settings(payload or {})
+
+
+@app.post("/api/search/test")
+async def search_test(payload: dict = Body(default=None)):
+    """One-shot probe of the configured web-search provider so Settings → Search
+    can show a live OK/error. Runs a real query via websearch.py."""
+    query = ((payload or {}).get("query") or "OpenClaw connectivity test").strip()
+    try:
+        results = await websearch.search(query, count=3)
+        return {"ok": True, "count": len(results or []),
+                "provider": websearch.load_settings().get("search_provider")}
+    except Exception as exc:  # noqa: BLE001 — surface any provider/network error
+        return {"ok": False, "error": f"{exc!r}"}
 
 
 # --- Catch-all for Odysseus feature tabs v1 doesn't implement yet ------------

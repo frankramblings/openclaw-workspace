@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>__AGENT_NAME__ Workspace — Direction A (redesign preview)</title>
+  <meta name="theme-color" content="#15161a" />
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=gary3" />
+  <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
+
+  <!-- PWA: installable on iOS (Add to Home Screen) and desktop Chromium/Helium.
+       Its own manifest (start_url -> this page) so the installed app launches the
+       redesign, not the classic SPA whose manifest.json starts at "/". -->
+  <link rel="manifest" href="/static/manifest-redesign.json" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <!-- black-translucent paints under the status bar; mobile.css already pads via
+       env(safe-area-inset-*), so content stays clear of the clock. -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="__AGENT_NAME__" />
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=gary3" />
+
+  <!-- Prototype fonts: IBM Plex Sans (prose/UI) + JetBrains Mono (code/data).
+       In production these self-host via the existing font pipeline. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/static/redesign.css" />
+  <link rel="stylesheet" href="/static/js/redesign/mobile/mobile.css" />
+</head>
+<body>
+  <div id="oc-root"></div>
+  <script type="module" src="/static/js/redesign/app.js"></script>
+  <!-- Register the shared service worker (/sw.js, scope "/") so this redesign
+       shell is installable and works offline. Script is at the root, so its
+       default scope "/" controls this /static/ page too. -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>

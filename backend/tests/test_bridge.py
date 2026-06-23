@@ -52,6 +52,115 @@ def test_map_history_usage_metadata_is_optional():
     assert "usage" not in meta and "cost" not in meta and "provider" not in meta
 
 
+# --- Tool-use reconstruction (the "Gary's tool uses vanish on reload" bug) ---
+# The brain stores an agentic turn as a flat run of messages: assistant turns
+# whose content is EITHER text blocks OR toolCall blocks (never both), plus
+# `toolResult` messages keyed by toolCallId. The old mapper dropped every
+# toolCall/toolResult, so a reload showed only the user's side of any turn that
+# used tools. The mapper must now rebuild the renderer's tool_events/round_texts
+# metadata (see chatRenderer.addMessage) so reload matches the live view.
+
+def test_map_history_reconstructs_tool_card():
+    msgs = [
+        {"role": "user", "content": "list files", "timestamp": 100},
+        {"role": "assistant", "timestamp": 101, "model": "gpt-5.5",
+         "provider": "openai",
+         "content": [{"type": "toolCall", "id": "c1", "name": "bash",
+                      "arguments": {"command": "ls -la", "cwd": "/tmp"}}]},
+        {"role": "toolResult", "toolCallId": "c1", "toolName": "bash",
+         "isError": False,
+         "content": [{"type": "toolResult", "content": "file1\nfile2"}]},
+        {"role": "assistant", "timestamp": 102,
+         "content": [{"type": "text", "text": "Found 2 files."}]},
+    ]
+    out = _map_history(msgs)
+    h = out["history"]
+    assert h[0]["role"] == "user"
+    turn = h[1]
+    assert turn["role"] == "assistant"
+    te = turn["metadata"]["tool_events"]
+    assert len(te) == 1
+    ev = te[0]
+    assert ev["tool"] == "bash"
+    assert ev["command"] == "ls -la"          # bash command lifted verbatim
+    assert ev["output"] == "file1\nfile2"     # result body restored
+    assert ev["exit_code"] == 0               # isError False -> success
+    assert ev["round"] == 1
+    rt = turn["metadata"]["round_texts"]
+    # final text lands in a round AFTER the tools so it renders below the card
+    assert rt[ev["round"]].strip() == "Found 2 files."
+    # turn timestamp is the turn start (first message), not the trailing text
+    assert turn["metadata"]["timestamp"] == 101
+
+
+def test_map_history_marks_tool_error_exit_code():
+    msgs = [
+        {"role": "assistant",
+         "content": [{"type": "toolCall", "id": "c9", "name": "bash",
+                      "arguments": {"command": "false"}}]},
+        {"role": "toolResult", "toolCallId": "c9", "isError": True,
+         "content": [{"type": "toolResult", "content": "boom"}]},
+    ]
+    ev = _map_history(msgs)["history"][0]["metadata"]["tool_events"][0]
+    assert ev["exit_code"] == 1               # isError True -> failed card
+    assert ev["output"] == "boom"
+
+
+def test_map_history_groups_multi_round_turn():
+    # text -> tool -> text -> tool -> text becomes 3 rounds in one bubble.
+    msgs = [
+        {"role": "assistant", "content": [{"type": "text", "text": "Let me check."}]},
+        {"role": "assistant",
+         "content": [{"type": "toolCall", "id": "a", "name": "bash",
+                      "arguments": {"command": "step1"}}]},
+        {"role": "toolResult", "toolCallId": "a",
+         "content": [{"type": "toolResult", "content": "ok1"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Now step 2."}]},
+        {"role": "assistant",
+         "content": [{"type": "toolCall", "id": "b", "name": "bash",
+                      "arguments": {"command": "step2"}}]},
+        {"role": "toolResult", "toolCallId": "b",
+         "content": [{"type": "toolResult", "content": "ok2"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "All done."}]},
+    ]
+    meta = _map_history(msgs)["history"][0]["metadata"]
+    assert [t.strip() for t in meta["round_texts"]] == \
+        ["Let me check.", "Now step 2.", "All done."]
+    rounds = {e["command"]: e["round"] for e in meta["tool_events"]}
+    assert rounds == {"step1": 1, "step2": 2}
+
+
+def test_map_history_non_string_tool_input_serialized():
+    # Non-bash tools carry structured input; show it rather than dropping it.
+    msgs = [
+        {"role": "assistant",
+         "content": [{"type": "toolCall", "id": "z", "name": "web_search",
+                      "arguments": {"query": "python 3.14", "count": 5}}]},
+        {"role": "toolResult", "toolCallId": "z",
+         "content": [{"type": "toolResult", "content": "results"}]},
+    ]
+    ev = _map_history(msgs)["history"][0]["metadata"]["tool_events"][0]
+    assert ev["tool"] == "web_search"
+    assert "python 3.14" in ev["command"]      # structured input rendered
+
+
+def test_map_history_plaintext_turns_unchanged():
+    # Regression: a turn with NO tools still emits one entry per assistant
+    # message (legacy behavior the chat drawer/metrics rely on).
+    msgs = [
+        {"role": "user", "content": "hi", "timestamp": 1},
+        {"role": "assistant", "content": [{"type": "text", "text": "hello"}],
+         "model": "gpt-5.5", "timestamp": 2},
+        {"role": "assistant", "content": [{"type": "text", "text": "more"}],
+         "timestamp": 3},
+    ]
+    h = _map_history(msgs)["history"]
+    assert [m["role"] for m in h] == ["user", "assistant", "assistant"]
+    assert h[1]["content"] == "hello" and "tool_events" not in h[1]["metadata"]
+    assert h[2]["content"] == "more"
+    assert h[1]["metadata"]["timestamp"] == 2
+
+
 def test_default_model_floats_to_front_of_its_provider(monkeypatch):
     """The SPA picker auto-defaults new chats to models[0] — that slot must be
     the configured primary, not whatever sorts first in the gateway catalog

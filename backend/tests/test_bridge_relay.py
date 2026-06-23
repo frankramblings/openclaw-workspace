@@ -36,6 +36,67 @@ def test_delta_passthrough_and_lifecycle_end():
     assert not any(f.get("type") == "stall" for f in out)
 
 
+def test_final_snapshot_does_not_re_emit_streamed_text():
+    # claude-cli (and any model that ends with a state:"final" snapshot) streams
+    # deltaText increments, then sends a final frame carrying the WHOLE message
+    # with no deltaText. The relay must NOT re-emit the already-streamed text —
+    # that doubled the reply on screen ("Hi thereHi there"). Regression guard.
+    out = collect([
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "delta", "deltaText": "Hi",
+            "message": {"content": [{"text": "Hi"}]}}},
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "delta", "deltaText": " there",
+            "message": {"content": [{"text": "Hi there"}]}}},
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "final",
+            "message": {"content": [{"text": "Hi there"}]}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "lifecycle", "data": {"phase": "end"}}},
+    ])
+    deltas = "".join(f["delta"] for f in out if "delta" in f)
+    assert deltas == "Hi there"  # not the doubled "Hi thereHi there"
+
+
+def test_message_tool_delivery_is_dropped_for_final_reply():
+    # The agent emits its `message`-tool delivery ("Sent.") and THEN its real
+    # reply ("Hi there"); the gateway resets message.content between them. The
+    # relay must emit a reply_reset so the SPA drops the delivery and shows only
+    # the final reply — not "Sent.Hi there".
+    out = collect([
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "delta", "deltaText": "Sent.",
+            "message": {"content": [{"text": "Sent."}]}}},
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "delta", "deltaText": "Hi there",
+            "message": {"content": [{"text": "Hi there"}]}}},  # content RESET
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "final",
+            "message": {"content": [{"text": "Hi there"}]}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "lifecycle", "data": {"phase": "end"}}},
+    ])
+    assert any(f.get("type") == "reply_reset" for f in out)
+    # the SPA clears on reply_reset, so the deltas after the last reset are the reply
+    last_reset = max(i for i, f in enumerate(out) if f.get("type") == "reply_reset")
+    after = "".join(f["delta"] for f in out[last_reset:] if "delta" in f)
+    assert after == "Hi there"
+
+
+def test_final_snapshot_emits_text_when_no_deltas_streamed():
+    # The cumulative fallback must still work when a turn sends ONLY a final
+    # snapshot (no deltaText at all) — e.g. a non-streaming model.
+    out = collect([
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "final",
+            "message": {"content": [{"text": "All done."}]}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "lifecycle", "data": {"phase": "end"}}},
+    ])
+    deltas = "".join(f["delta"] for f in out if "delta" in f)
+    assert deltas == "All done."
+
+
 def test_aborted_state_maps_to_stopped_card():
     out = collect([
         {"type": "event", "event": "chat",

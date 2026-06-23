@@ -26,3 +26,4 @@
 2026-06-23 00:58 | index.html:571 close-theme-popup | verified [-] (no theme popup in redesign)
 2026-06-23 00:59 | index.html:575 theme-tab-browse | verified [-] (theme-popup internal tab; no preset browser in redesign)
 2026-06-23 00:59 | index.html:576 theme-tab-customize | verified [-] (theme-popup tab; reduced to inline accent swatches)
+2026-06-23 01:00 | index.html:596 Reset-this-color (Background, 1/18) | verified [-] (theme-popup per-color reset; redesign has single accent swatch only)

@@ -150,4 +150,39 @@ export const actions = {
       try { window.alert('Could not add user.'); } catch (_) {}
     }
   },
+
+  // Data Backup → Export: GET /api/export, download the JSON blob.
+  exportData: async () => {
+    try {
+      const res = await fetch(`${location.origin}/api/export`, { credentials: 'same-origin' });
+      const blob = await res.blob();
+      const cd = res.headers.get('content-disposition') || '';
+      const m = cd.match(/filename=([^;]+)/);
+      const name = m ? m[1].trim().replace(/['"]/g, '') : 'openclaw_backup.json';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
+    } catch (_) { try { window.alert('Export failed.'); } catch (_) {} }
+  },
+
+  // Data Backup → Import: pick a JSON file → POST /api/import (parsed body).
+  importData: () => {
+    try {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json,.json';
+      input.onchange = async () => {
+        const f = input.files && input.files[0];
+        if (!f) return;
+        try {
+          const data = JSON.parse(await f.text());
+          await apiJson('/api/import', data);
+          try { window.alert('Import complete. Reload to see your restored data.'); } catch (_) {}
+        } catch (_) { try { window.alert('Import failed — not a valid backup file.'); } catch (_) {} }
+      };
+      input.click();
+    } catch (_) {}
+  },
 };

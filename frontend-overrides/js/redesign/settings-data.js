@@ -140,7 +140,7 @@ export const PANELS = {
     card({ title: 'Add User', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', rows: [inp('Username', '', 'Username (email)', 'newUsername', 'text'), inp('Password', '', 'Password (min 8)', 'newPassword', 'password'), tgrow('newAdmin', 'Admin', 'Grant full admin access'), btns([{ label: 'Add User', primary: true, act: 'addUser' }])] }),
   ],
   system: [
-    card({ title: 'Data Backup', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>', sub: 'Export or import your user data (memories, presets, settings, skills, preferences) as a JSON file.', rows: [btns([{ label: 'Export Data' }, { label: 'Import Data' }])] }),
+    card({ title: 'Data Backup', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>', sub: 'Export or import your user data (memories, presets, settings, skills, preferences) as a JSON file.', rows: [btns([{ label: 'Export Data', act: 'exportData' }, { label: 'Import Data', act: 'importData' }])] }),
     card({ title: 'Danger Zone', danger: true, icon: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', sub: 'Irreversible. Each wipe targets one category — pick exactly what you want gone.', rows: [
       danger('Wipe all chats', 'Every session, message, and chat history.', 'chats'),
       danger('Wipe all memory', 'Clears memory.json, the Memory table, and the vector store.', 'memory'),

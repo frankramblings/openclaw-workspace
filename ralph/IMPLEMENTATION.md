@@ -70,3 +70,9 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - Upload input wired via the app.js `change` listener (extended to handle `data-ws-upload` alongside the composer's `data-upload`).
 - Contracts verified against backend/workspace_files.py.
 - Verified: node --check; synced; deployed.
+
+## P6 — settings data controls — partial (Data Backup done)
+- **Export Data** (`act:'exportData'`) → `GET /api/export` → downloads the JSON backup (filename from Content-Disposition).
+- **Import Data** (`act:'importData'`) → JS file picker → read + `JSON.parse` → `POST /api/import` (parsed body, matches legacy admin.js).
+- Verified: node --check; synced; deployed.
+- DEFERRED (lower value / need interactive-control conversion, not no-op fixes): model-endpoints add/test (`/api/model-endpoints` — needs an add form + the read-only Added Models card made interactive); fallback chips "+ add" editing; search provider selection + Test. These require converting display-only `select`/`provider`/`chips` rows into real inputs — a settings-forms build. The dispatch mechanism (P1) is in place for when they're built.

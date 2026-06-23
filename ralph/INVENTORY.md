@@ -92,7 +92,7 @@ legacy `js/*.js` module.
 - [!] id=auto-sort-sessions-more ("Tidy options" — session auto-sort/tidy menu) — index.html:898 → PARITY GAP (missing). No session auto-sort/tidy in the redesign (select-only list). Part of the absent session-management cluster — see FINDINGS.
 - [!] id=session-bulk-archive — index.html:915 → PARITY GAP (missing). No multi-select / bulk-archive of sessions in the redesign (select-only list). Part of the absent session-management cluster — see FINDINGS.
 - [!] id=session-bulk-delete — index.html:916 → PARITY GAP (missing). No multi-select / bulk-delete of sessions in the redesign (select-only list). Last of the absent session-management cluster (:871–:916) — see FINDINGS.
-- [ ] id=session-bulk-cancel  `<button>` — index.html:917
+- [!] id=session-bulk-cancel — index.html:917 → PARITY GAP (missing). Exits the session multi-select bar (with session-bulk-archive/delete :915–:916); no such mode in the redesign (select-only list). Final element of the absent session-management cluster — see FINDINGS.
 - [ ] id=email-compose-btn  `<button>` — index.html:955
 - [ ] id=library-new-doc-btn  `<button>` — index.html:1036
 - [ ] id=user-bar-settings  `<button>` — index.html:1085

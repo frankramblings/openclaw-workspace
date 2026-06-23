@@ -51,3 +51,4 @@
 2026-06-23 01:06 | index.html:792 theme-import-btn | verified [-] (theme-popup JSON import; no theme-only import in redesign)
 2026-06-23 01:06 | index.html:793 theme-export-btn | verified [-] (theme-popup JSON export; no theme-only export in redesign)
 2026-06-23 01:06 | index.html:797 theme-import-go | verified [-] (theme-popup import Apply; not ported)
+2026-06-23 01:07 | index.html:798 theme-import-cancel | verified [-] (theme-popup import Cancel; not ported)

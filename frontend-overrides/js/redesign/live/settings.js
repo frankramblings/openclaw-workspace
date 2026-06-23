@@ -113,4 +113,41 @@ export const actions = {
     try { await apiDelete(`/api/admin/wipe/${kind}`); } catch (_) {}
     try { runtime.render(); } catch (_) {}
   },
+
+  // Account → Change Password. Fields bound via data-model (pwCurrent/pwNew/pwConfirm).
+  changePassword: async () => {
+    const st = runtime.state;
+    if (!st) return;
+    const cur = (st.pwCurrent || '').trim();
+    const nw = (st.pwNew || '').trim();
+    const cf = (st.pwConfirm || '').trim();
+    if (nw.length < 8) { try { window.alert('New password must be at least 8 characters.'); } catch (_) {} return; }
+    if (nw !== cf) { try { window.alert('New password and confirmation do not match.'); } catch (_) {} return; }
+    try {
+      await apiJson('/api/auth/change-password', { current_password: cur, new_password: nw }, 'POST');
+      st.pwCurrent = ''; st.pwNew = ''; st.pwConfirm = '';
+      runtime.render();
+      try { window.alert('Password updated.'); } catch (_) {}
+    } catch (_) {
+      try { window.alert('Could not change password — check the current password.'); } catch (_) {}
+    }
+  },
+
+  // Users → Add User. Fields bound via data-model; admin from the newAdmin toggle.
+  addUser: async () => {
+    const st = runtime.state;
+    if (!st) return;
+    const username = (st.newUsername || '').trim();
+    const password = (st.newPassword || '').trim();
+    const is_admin = !!(st.ui && st.ui.newAdmin);
+    if (!username || password.length < 8) { try { window.alert('Username and an 8-character password are required.'); } catch (_) {} return; }
+    try {
+      await apiJson('/api/auth/users', { username, password, is_admin }, 'POST');
+      st.newUsername = ''; st.newPassword = '';
+      runtime.render();
+      try { window.alert('User added.'); } catch (_) {}
+    } catch (_) {
+      try { window.alert('Could not add user.'); } catch (_) {}
+    }
+  },
 };

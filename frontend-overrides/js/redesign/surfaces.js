@@ -432,6 +432,10 @@ function settingsSurface(s) {
       case 'select':
         return `<div class="set-field"><span class="k">${esc(r.label)}</span><div class="v between mono" style="color:${r.muted ? 'var(--faint)' : 'var(--fg)'}">${esc(r.value)}<span style="color:var(--faint)">▾</span></div></div>`;
       case 'input':
+        if (r.model) {
+          const mval = s[r.model] != null ? s[r.model] : '';
+          return `<div class="set-field"><span class="k">${esc(r.label)}</span><input class="set-input" type="${r.itype || 'text'}" data-model="${r.model}" data-focus="${r.model}" placeholder="${esc(r.ph || '')}" value="${esc(mval)}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;text-align:right;color:var(--fg);font-family:var(--sans)"></div>`;
+        }
         return `<div class="set-field"><span class="k">${esc(r.label)}</span><div class="v" style="color:${r.hasValue ? 'var(--fg)' : 'var(--faint)'};font-family:var(--sans)">${esc(r.value)}</div></div>`;
       case 'textarea':
         return `<div class="set-textarea">${esc(r.value)}</div>`;

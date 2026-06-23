@@ -27,7 +27,7 @@ export const TAB = {
 // ---- row builders ---------------------------------------------------------
 const head = (text, icon) => ({ type: 'head', text, icon: icon || '' });
 const sel = (label, value, muted) => ({ type: 'select', label, value, muted: !!muted });
-const inp = (label, value, ph) => ({ type: 'input', label, value: value || ph || '', hasValue: !!value, font: 'sans' });
+const inp = (label, value, ph, model, itype) => ({ type: 'input', label, value: value || ph || '', hasValue: !!value, font: 'sans', ph: ph || '', model, itype });
 const txt = (text) => ({ type: 'text', text });
 const ta = (value) => ({ type: 'textarea', value });
 const chips = (label, arr) => ({ type: 'chips', label, chips: arr });
@@ -120,7 +120,7 @@ export const PANELS = {
   ],
   account: [
     card({ title: 'Account', icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>', rows: [user('F', 'frank', 'Admin'), btns([{ label: 'Logout', danger: true, act: 'logout' }])] }),
-    card({ title: 'Change Password', icon: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', rows: [inp('Current', '', 'Current password'), inp('New', '', 'New password (min 8)'), inp('Confirm', '', 'Confirm new password'), btns([{ label: 'Update Password', primary: true }])] }),
+    card({ title: 'Change Password', icon: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', rows: [inp('Current', '', 'Current password', 'pwCurrent', 'password'), inp('New', '', 'New password (min 8)', 'pwNew', 'password'), inp('Confirm', '', 'Confirm new password', 'pwConfirm', 'password'), btns([{ label: 'Update Password', primary: true, act: 'changePassword' }])] }),
     card({ title: 'Two-Factor Authentication', icon: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/>', sub: 'Add a second step at login with an authenticator app.', rows: [btns([{ label: 'Enable 2FA', primary: true }])] }),
   ],
   tools: [
@@ -137,7 +137,7 @@ export const PANELS = {
   users: [
     card({ title: 'Registration', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', rows: [tgrow('signup', 'Open signup', 'Allow anyone to create an account from the login page')] }),
     card({ title: 'Users', icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>', rows: [user('F', 'frank', 'Admin · owner'), user('M', 'mitra', 'Member')] }),
-    card({ title: 'Add User', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', rows: [inp('Username', '', 'Username (email)'), inp('Password', '', 'Password (min 8)'), tgrow('newAdmin', 'Admin', 'Grant full admin access'), btns([{ label: 'Add User', primary: true }])] }),
+    card({ title: 'Add User', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', rows: [inp('Username', '', 'Username (email)', 'newUsername', 'text'), inp('Password', '', 'Password (min 8)', 'newPassword', 'password'), tgrow('newAdmin', 'Admin', 'Grant full admin access'), btns([{ label: 'Add User', primary: true, act: 'addUser' }])] }),
   ],
   system: [
     card({ title: 'Data Backup', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>', sub: 'Export or import your user data (memories, presets, settings, skills, preferences) as a JSON file.', rows: [btns([{ label: 'Export Data' }, { label: 'Import Data' }])] }),

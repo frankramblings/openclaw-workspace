@@ -14,3 +14,9 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - **Wipe all {kind}** — the 8 Danger-Zone rows now carry their kind (chats/memory/skills/notes/tasks/documents/gallery/calendar); handler `wipe(kind)` in `live/settings.js` → `window.confirm` guard → `DELETE /api/admin/wipe/{kind}`. Methods/kinds confirmed from legacy admin.js.
 - Verified: node --check all 3 files; synced; built output carries the data-act + handlers.
 - TODO next: **Update Password** (`POST /api/auth/change-password`) and **Add User** (`POST /api/auth/users`) — need the `inp()` fields bound to `data-model` first.
+
+## P1 — auth/destructive — ✅ DONE (Password + AddUser added)
+- **Bound text inputs**: `inp()` gained `model`/`itype`; the `input` renderer now emits a real `<input type=… data-model=… data-focus=…>` (controlled via app.js:211 + focus-restore) when a `model` is set — otherwise the old display div.
+- **Update Password** — Change Password card fields bound to `pwCurrent/pwNew/pwConfirm` (type=password); button `act:'changePassword'` → `live/settings.js` validates (≥8, match) → `POST /api/auth/change-password {current_password, new_password}` (body matches legacy) → clears fields.
+- **Add User** — Username/Password bound (`newUsername/newPassword`); admin from the `newAdmin` toggle; button `act:'addUser'` → `POST /api/auth/users {username, password, is_admin}` (matches legacy admin.js:289).
+- Verified: node --check; synced; deployed output carries handlers + bound inputs.

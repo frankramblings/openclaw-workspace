@@ -184,7 +184,7 @@ legacy `js/*.js` module.
 - [!] id=adm-epLocalAddBtn ("Add" a local model endpoint, admin) — index.html:2246 → PARITY GAP (missing). No add-endpoint control in the redesign (Added Models card is read-only, settings-data.js:56; settings surface non-interactive). Same as model-picker-add-models-btn:1267. See FINDINGS (dead Settings / no endpoint management).
 - [-] role="button" aria-expanded (admin endpoint accordion section header, adm-section-toggle) — index.html:2249 — collapsible-section layout pattern not ported (same as :2230). Redesign settings use flat cards; endpoints shown flat in Added Models. Layout simplification.
 - [!] id=adm-epDiscoverBtn ("Discover" model endpoints — auto-detect, admin) — index.html:2254 → PARITY GAP (missing). No endpoint discovery/management in the redesign (Added Models card read-only, settings-data.js:56). Part of the no-endpoint-management / dead-Settings gap — see FINDINGS (model-picker-add-models-btn:1267).
-- [ ] id=adm-epOllamaBtn  `<button>` — index.html:2257
+- [!] id=adm-epOllamaBtn ("Ollama" — add/connect the Ollama endpoint, admin) — index.html:2257 → PARITY GAP (missing). No endpoint connect/management in the redesign; the Added Models card merely *lists* "Ollama (localhost:11434)" read-only (settings-data.js:57). Part of the no-endpoint-management / dead-Settings gap — see FINDINGS.
 - [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2266
 - [ ] id=adm-provider-btn  `<button>` — index.html:2277
 - [ ] id=adm-epApiTestBtn  `<button>` — index.html:2304

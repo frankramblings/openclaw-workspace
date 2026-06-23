@@ -170,3 +170,4 @@
 2026-06-23 02:17 | index.html:2246 adm-epLocalAddBtn | verified [!] no add-endpoint in redesign; dead-settings FINDINGS
 2026-06-23 02:17 | index.html:2249 adm accordion toggle | verified [-] accordion layout not ported (same as :2230)
 2026-06-23 02:17 | index.html:2254 adm-epDiscoverBtn | verified [!] no endpoint discovery in redesign; FINDINGS
+2026-06-23 02:18 | index.html:2257 adm-epOllamaBtn | verified [!] no endpoint connect in redesign (Ollama listed read-only); FINDINGS

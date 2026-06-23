@@ -214,7 +214,7 @@ legacy `js/*.js` module.
 - [x] data-act=`companionTab` — mobile/mobile-sheets.js:39 → WIRED. Handler mobile-app.js:60 (sets state.companionTab — switches the mobile companion sheet between Terminal/Files). Bound mobile-sheets.js:39/40. Real state change + re-render.
 - [x] data-act=`dismiss` — mobile/mobile-surfaces.js:87 → WIRED & functional. Handler: mock app.js:167 + LIVE override inbox.js:92 (optimistic markDismissed + POST /api/items/action with source/id/action, dismiss fallback). Bound to inbox triage Archive/Keep (surfaces.js:187/194, mobile :87/:96). Real backend archive.
 - [x] data-act=`go` — app.js:52 → WIRED. Handler app.js:127 (sets state.surface, clears resOpenCtl). The primary surface-nav action — bound to every rail item (app.js:52 railItem/ocnav). After dispatch, loadActive() fetches the surface's live data. Verified functional across the rail-* parity rows (chat/email/calendar/research/library/notes/settings).
-- [ ] data-act=`libFilter` — surfaces.js:346
+- [x] data-act=`libFilter` — surfaces.js:346 → WIRED & functional. Handler app.js:162 (sets state.libFilter). Actually filters the list: surfaces.js:341 `all.filter((a) => lf==='all' || a.cat===lf)`. Bound to the Library filter chips (surfaces.js:346).
 - [ ] data-act=`mBackToHub` — mobile/mobile-app.js:17
 - [ ] data-act=`mCloseReader` — mobile/mobile-surfaces.js:144
 - [ ] data-act=`mGo` — mobile/mobile-surfaces.js:23

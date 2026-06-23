@@ -194,3 +194,4 @@
 2026-06-23 02:26 | new-wiring data-act=companionTab | verified [x] WIRED -> mobile-app.js:60
 2026-06-23 02:27 | new-wiring data-act=dismiss | verified [x] WIRED -> live inbox.js:92 (POST /api/items/action)
 2026-06-23 02:27 | new-wiring data-act=go | verified [x] WIRED -> app.js:127 (primary surface nav)
+2026-06-23 02:28 | new-wiring data-act=libFilter | verified [x] WIRED -> app.js:162 + filters list (surfaces.js:341)

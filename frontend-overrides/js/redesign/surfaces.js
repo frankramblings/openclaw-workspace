@@ -21,6 +21,7 @@ export function renderChatList(s) {
     <div class="chat-list-top">
       <button class="new-conv" data-act="newChat"><span class="plus">+</span> New conversation</button>
       <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Filter conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:6px"><button data-act="cycleSessionSort" title="Sort order" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer">${s.convSort === 'alpha' ? 'A–Z' : 'Recent'} ⇅</button></div>
     </div>
     <div class="conv-scroll">${convListBody(s)}</div>
     <div class="conv-foot">${esc(s.live?.chat?.cwd ?? '/home/frank/.openclaw/workspace')}</div>
@@ -45,9 +46,14 @@ function convListBody(s) {
     ? groups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
     : groups;
   if (q && !groups2.length) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
-  return map(groups2, (g, gi) => `
+  // Alpha sort flattens the date groups into a single A–Z list; Recent keeps groups.
+  const sorted = s.convSort === 'alpha'
+    ? [{ label: 'A–Z', rows: groups2.flatMap((g) => g.rows || []).slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' })) }]
+    : groups2;
+  const convRow = (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span><span class="conv-arch" data-act="archiveSession" data-arg="${esc(r.id)}" title="Archive conversation" style="margin-left:auto;padding:0 4px;color:var(--faint);opacity:.5;cursor:pointer">archive</span><span class="conv-del" data-act="deleteSession" data-arg="${esc(r.id)}" title="Delete conversation" style="padding:0 4px;color:var(--faint);opacity:.5;cursor:pointer">✕</span></div>`;
+  return map(sorted, (g, gi) => `
     <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
-    ${map(g.rows, (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span><span class="conv-del" data-act="deleteSession" data-arg="${esc(r.id)}" title="Delete conversation" style="margin-left:auto;padding:0 4px;color:var(--faint);opacity:.55;cursor:pointer">✕</span></div>`)}`);
+    ${map(g.rows, convRow)}`);
 }
 
 // one chat message → html (assistant prose / user bubble). Live thread items:

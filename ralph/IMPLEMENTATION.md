@@ -125,3 +125,9 @@ Done: P0 (orphaned data-act + capture bug), P1 (logout/password/adduser/wipe), P
 - **Sidebar** vis list: removed Compare/Cookbook/Gallery/Tasks (no such surfaces). Kept the real ones.
 - **Chat Bar** vis list: removed Web Search/Document Editor/Shell/Deep Research/Characters (no such composer controls). Kept More Tools / Agent-Chat / Attach Files (these controls exist).
 - (DEFAULT_UI keys left intact — harmless unused entries.)
+
+## Sessions — ✅ DONE (sort + per-row archive)
+- **Sort toggle** in the conversation-list header (`cycleSessionSort`, app.js) → Recent (date groups) ⇄ A–Z (flattens to one alphabetical list).
+- **Per-row Archive** added beside the delete ✕ → `archiveSession(id)` (live/chat.js) → `POST /api/session/{id}/archive` → reload (resets chat if the archived one was active).
+- (Per choice: skipped multi-select bulk mode.)
+- Verified: node --check; synced; deployed.

@@ -11,7 +11,7 @@
 //   }
 
 import { runtime } from './runtime.js';
-import { apiGet, apiForm, apiDelete, postStream } from './api.js';
+import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 
 // ---- helpers --------------------------------------------------------------
 
@@ -581,6 +581,18 @@ export const actions = {
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
     } catch (_) {}
+    runtime.render();
+  },
+
+  // Session list: archive a conversation → POST /api/session/{id}/archive.
+  archiveSession: async (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    const wasActive = chat.activeId === id;
+    try { await apiJson(`/api/session/${id}/archive`, {}); } catch (_) {}
+    if (wasActive) { chat.activeId = null; chat.thread = []; chat.title = 'New chat'; chat.subtitle = ''; }
+    try { await load(state); } catch (_) {}
     runtime.render();
   },
 

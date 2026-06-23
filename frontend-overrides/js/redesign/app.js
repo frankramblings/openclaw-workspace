@@ -136,6 +136,8 @@ const actions = {
   toggleIncognito: () => { state.incognito = !state.incognito; },
   // Jump the chat thread to the latest message (button shown by the scroll listener).
   scrollChatBottom: () => { const el = document.querySelector('.chat-thread'); if (el) el.scrollTop = el.scrollHeight; },
+  // Session list sort order: Recent (date groups) ⇄ A–Z (flat alphabetical).
+  cycleSessionSort: () => { state.convSort = state.convSort === 'alpha' ? 'recent' : 'alpha'; },
 
   // chat activity trail (UI-only collapse; default trail open, steps closed)
   toggleTrail: (id) => { const t = state.chatUI.trail; t[id] = t[id] === false ? true : false; },

@@ -116,6 +116,79 @@ def test_disconnect_message_reflects_monitor_state():
     assert "may not have completed" in _disconnect_message("down")
 
 
+# --- claude-cli (Claude Code agent) live tool frames ---
+# Unlike OpenAI's stream:"item"/kind:{command,tool}/phase:{start,end} shape,
+# claude-cli emits stream:"tool" with data.phase {start,result}, the call id in
+# data.toolCallId, args in data.args, and the result in data.result/isError.
+# The relay must map these to the same tool_start/tool_output SSE.
+
+def _cli_tool(phase, **data):
+    return {"type": "event", "event": "agent",
+            "payload": {"runId": "r1", "stream": "tool", "kind": "direct",
+                        "status": "running", "data": {"phase": phase, **data}}}
+
+
+def _end():
+    return {"type": "event", "event": "agent",
+            "payload": {"runId": "r1", "stream": "lifecycle", "data": {"phase": "end"}}}
+
+
+def test_claude_cli_tool_frames_map_to_tool_cards():
+    out = collect([
+        _cli_tool("start", name="Bash", toolCallId="toolu_1",
+                  args={"command": "echo hi", "description": "Echo test"}),
+        _cli_tool("result", name="Bash", toolCallId="toolu_1",
+                  isError=False, result="hi"),
+        _end(),
+    ])
+    starts = [f for f in out if f.get("type") == "tool_start"]
+    outs = [f for f in out if f.get("type") == "tool_output"]
+    assert len(starts) == 1 and len(outs) == 1
+    assert starts[0] == {"type": "tool_start", "tool": "Bash",
+                         "tool_id": "toolu_1", "command": "echo hi", "round": 1}
+    assert outs[0] == {"type": "tool_output", "tool": "Bash",
+                       "tool_id": "toolu_1", "output": "hi", "exit_code": 0}
+
+
+def test_claude_cli_tool_error_maps_exit_code_1():
+    out = collect([
+        _cli_tool("start", name="Bash", toolCallId="toolu_9",
+                  args={"command": "false"}),
+        _cli_tool("result", name="Bash", toolCallId="toolu_9",
+                  isError=True, result="boom"),
+        _end(),
+    ])
+    outs = [f for f in out if f.get("type") == "tool_output"]
+    assert outs[0]["exit_code"] == 1 and outs[0]["output"] == "boom"
+
+
+def test_claude_cli_message_delivery_tool_is_dropped():
+    # mcp__openclaw__message is Gary's reply-delivery channel, not a user-facing
+    # action — no card, matching the reload renderer (historySteps skips it).
+    out = collect([
+        _cli_tool("start", name="mcp__openclaw__message", toolCallId="toolu_m",
+                  args={"action": "send", "message": "hello"}),
+        _cli_tool("result", name="mcp__openclaw__message", toolCallId="toolu_m",
+                  isError=False, result="Sent."),
+        _end(),
+    ])
+    assert not [f for f in out if f.get("type") in ("tool_start", "tool_output")]
+
+
+def test_claude_cli_structured_tool_args_serialized():
+    # A non-bash tool's args have no `command`; render them as JSON so the live
+    # card shows the call rather than a blank line (parity with reload).
+    out = collect([
+        _cli_tool("start", name="ToolSearch", toolCallId="toolu_s",
+                  args={"query": "select:foo", "max_results": 1}),
+        _cli_tool("result", name="ToolSearch", toolCallId="toolu_s",
+                  isError=False, result="ok"),
+        _end(),
+    ])
+    start = next(f for f in out if f.get("type") == "tool_start")
+    assert "select:foo" in start["command"]
+
+
 def test_analysis_items_map_to_thinking_deltas_with_cumulative_diff():
     def item(phase, **fields):
         return {"type": "event", "event": "agent",

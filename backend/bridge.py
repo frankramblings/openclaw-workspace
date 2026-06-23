@@ -1078,6 +1078,11 @@ async def _await_response(ws, req_id: str) -> dict:
 # skipped — it's not a tool call.
 _TOOL_ITEM_KINDS = {"command", "tool"}
 
+# Reply-delivery tools (Gary's message channel) carry the assistant's reply as a
+# chat delta, so their tool card is blank/noise — hidden in BOTH the live relay
+# and the reload renderer (frontend historySteps skips the same names).
+_REPLY_DELIVERY_TOOLS = {"message", "mcp__openclaw__message"}
+
 
 async def _relay_events(ws, run_id, run_info: dict | None = None,
                         session_key: str | None = None):
@@ -1243,6 +1248,33 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                 yield _sse({"type": "tool_output", "tool": label,
                             "tool_id": tool_id, "output": detail,
                             "exit_code": 0 if data.get("status") == "completed" else 1})
+
+        elif stream == "tool":
+            # claude-cli (Claude Code agent) tool frames. Unlike OpenAI's
+            # stream:"item" shape, the call id is data.toolCallId, the input is
+            # data.args, the result is data.result with an isError flag, and the
+            # end phase is "result" (not "end"). Map to the same SSE cards.
+            name = data.get("name") or "tool"
+            if name in _REPLY_DELIVERY_TOOLS:
+                continue  # reply-delivery channel, not a user-facing action
+            tool_id = data.get("toolCallId")
+            phase = data.get("phase")
+            if phase == "start":
+                tool_since_text = True
+                if session_key:
+                    try:
+                        session_context.bump_tool_calls(session_key)
+                    except Exception:  # noqa: BLE001
+                        pass
+                command = _tool_command({"arguments": data.get("args")})
+                yield _sse({"type": "tool_start", "tool": name,
+                            "tool_id": tool_id, "command": command, "round": 1})
+            elif phase == "result":
+                tool_since_text = True
+                yield _sse({"type": "tool_output", "tool": name,
+                            "tool_id": tool_id,
+                            "output": _tool_output({"content": data.get("result")}),
+                            "exit_code": 1 if data.get("isError") else 0})
 
         elif stream == "fallback":
             # Provider fallback on this run's own stream (primary unavailable →

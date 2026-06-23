@@ -66,7 +66,7 @@ legacy `js/*.js` module.
 - [-] id=theme-export-btn ("Export current colors as JSON") — index.html:793 — theme-popup-specific I/O (export sibling of theme-import-btn:792). No theme-only export in redesign (general Data Backup Export covers all-data, is dead). Removed with the theme-popup.
 - [-] id=theme-import-go ("Apply" — confirms theme-JSON import) — index.html:797 — sub-control of the theme-popup import flow (theme-import-btn:792). No theme import in redesign. Removed with the theme-popup.
 - [-] id=theme-import-cancel ("Cancel" — cancels theme-JSON import) — index.html:798 — sub-control of the theme-popup import flow (paired with theme-import-go:797). No theme import in redesign. Removed with the theme-popup.
-- [ ] id=theme-reset-btn  `<button>` — index.html:801
+- [-] id=theme-reset-btn ("Reset to Default" — resets the whole theme) — index.html:801 — last interactive control of the theme popup; redesign has no dedicated theme-reset (only inline accent selection via setAccent). Removed with the theme-popup. (Ends the theme-modal cluster :563–:801; main app chrome begins ~:807.)
 - [ ] id=mobile-menu-btn  `<button>` — index.html:807
 - [ ] id=hamburger-btn  `<button>` — index.html:809
 - [ ] id=sidebar-toggle-btn  `<button>` — index.html:816

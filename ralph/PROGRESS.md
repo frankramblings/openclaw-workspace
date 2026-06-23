@@ -58,3 +58,4 @@
 2026-06-23 01:09 | index.html:816 sidebar-toggle-btn | verified [x] parity OK -> toggleRail (same as :809)
 2026-06-23 01:11 | index.html:825 rail-search-btn | verified [!] PARITY GAP — search decorative across redesign (oc-search x4, no input/handler/Ctrl-K). Logged FINDINGS + tracking row.
 2026-06-23 01:11 | index.html:826 rail-new-session | verified [x] parity OK -> newChat (live/chat.js:295, surfaces.js:22)
+2026-06-23 01:13 | index.html:827 rail-delete-session | verified [!] PARITY GAP — no session-delete affordance in redesign; logged FINDINGS (deferred)

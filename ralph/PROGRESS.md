@@ -75,3 +75,4 @@
 2026-06-23 01:21 | index.html:846 rail-settings | verified [x] parity OK -> go:settings (live/settings.js); surface nav wired (internal buttons dead per FINDINGS)
 2026-06-23 01:22 | index.html:871 chats-library-btn | verified [!] PARITY GAP — no session-management view; logged consolidated FINDINGS for the :871-916 cluster
 2026-06-23 01:22 | index.html:878 session-sort-btn | verified [!] PARITY GAP — no session sort; covered by session-management FINDINGS
+2026-06-23 01:23 | index.html:898 auto-sort-sessions-more | verified [!] PARITY GAP — no auto-sort/tidy; covered by session-management FINDINGS

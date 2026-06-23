@@ -20,7 +20,7 @@ export function renderChatList(s) {
   <div class="oc-secondary chat-list">
     <div class="chat-list-top">
       <button class="new-conv" data-act="newChat"><span class="plus">+</span> New conversation</button>
-      <div class="oc-search" style="margin-top:10px">${I.search()}<span class="ph">Filter conversations…</span><span class="kbd">⌘K</span></div>
+      <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Filter conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
     </div>
     <div class="conv-scroll">${convListBody(s)}</div>
     <div class="conv-foot">${esc(s.live?.chat?.cwd ?? '/home/frank/.openclaw/workspace')}</div>
@@ -40,7 +40,12 @@ function convListBody(s) {
       <div class="conv-row ocrow"><span class="conv-badge">A\\</span><span class="conv-title">Punny Names for OpenClaw</span></div>
       <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Claude Code on Ubuntu</span></div>`;
   }
-  return map(groups, (g, gi) => `
+  const q = (s.convFilter || '').trim().toLowerCase();
+  const groups2 = q
+    ? groups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
+    : groups;
+  if (q && !groups2.length) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
+  return map(groups2, (g, gi) => `
     <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
     ${map(g.rows, (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span><span class="conv-del" data-act="deleteSession" data-arg="${esc(r.id)}" title="Delete conversation" style="margin-left:auto;padding:0 4px;color:var(--faint);opacity:.55;cursor:pointer">✕</span></div>`)}`);
 }
@@ -141,17 +146,17 @@ function emailSurface(s) {
     <div class="oc-secondary email-list">
       <div class="list-top">
         <div class="list-top-head"><span class="ttl">Email</span><span class="pill-teal">1 unread</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="composeNew">+ New</button></div>
-        <div class="oc-search">${I.search()}<span class="ph">Search · INBOX</span></div>
+        <div class="oc-search">${I.search()}<input data-model="emailQuery" data-focus="emailQuery" placeholder="Search · INBOX" value="${esc(s.emailQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
       </div>
       <div class="list-scroll">
-        ${map(emails, (e, i) => {
+        ${emails.map((e, i) => ({ e, i })).filter(({ e }) => { const q = (s.emailQuery || '').trim().toLowerCase(); return !q || `${e.subj || ''} ${e.from || ''} ${e.src || ''}`.toLowerCase().includes(q); }).map(({ e, i }) => {
           const a = i === sel;
           return `<div class="mail-row ocrow${a ? ' active' : ''}" data-act="selEmail" data-arg="${i}">
             <div class="top"><span class="src-tag" style="color:${e.srcColor};background:${e.srcBg}">${esc(e.src)}</span>${when(e.unread, '<span class="unread-dot"></span>')}<span class="time">${esc(e.time)}</span></div>
             <div class="subj${e.unread ? ' bold' : ''}">${esc(e.subj)}</div>
             <div class="from">${esc(e.from)}</div>
           </div>`;
-        })}
+        }).join('')}
       </div>
     </div>
     <div class="reader">
@@ -385,9 +390,10 @@ function researchSurface(s) {
 function librarySurface(s) {
   const lf = s.libFilter;
   const all = s.live?.library?.items ?? LIBRARY;
-  const items = all.filter((a) => lf === 'all' || a.cat === lf);
+  const lq = (s.libQuery || '').trim().toLowerCase();
+  const items = all.filter((a) => (lf === 'all' || a.cat === lf) && (!lq || String(a.title || '').toLowerCase().includes(lq)));
   return `
-  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts Gary has produced</span><div class="oc-spacer"></div><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<span class="ph">Filter library…</span></div></div>
+  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts Gary has produced</span><div class="oc-spacer"></div><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div></div>
   <div class="lib-wrap">
     <div class="lib-filters">
       ${map(LIB_FILTERS, ([id, label]) => `<span class="lib-filter${lf === id ? ' active' : ''}" data-act="libFilter" data-arg="${id}">${esc(label)}</span>`)}
@@ -425,16 +431,16 @@ function notesSurface(s) {
     <div class="oc-secondary notes-list">
       <div class="list-top">
         <div class="list-top-head"><span class="ttl">Notes</span><span style="font-size:11px;color:var(--faint)">vault · 41</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newNote">+ New</button></div>
-        <div class="oc-search">${I.search()}<span class="ph">Search notes…</span></div>
+        <div class="oc-search">${I.search()}<input data-model="notesFilter" data-focus="notesFilter" placeholder="Search notes…" value="${esc(s.notesFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
       </div>
       <div class="list-scroll">
-        ${map(docs0, (n, i) => {
+        ${docs0.map((n, i) => ({ n, i })).filter(({ n }) => { const q = (s.notesFilter || '').trim().toLowerCase(); return !q || String(n.title || '').toLowerCase().includes(q); }).map(({ n, i }) => {
           const a = i === sel;
           return `<div class="note-row${a ? ' active' : ''}" data-act="selDoc" data-arg="${i}">
             <div class="top">${I.file(13, a ? 'var(--teal)' : 'var(--faint)')}<span class="nm">${esc(n.title)}</span></div>
             <div class="meta">v${n.version} · ${esc(n.meta.split('·')[0].trim())}</div>
           </div>`;
-        })}
+        }).join('')}
       </div>
     </div>
     <div class="note-editor">

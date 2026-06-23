@@ -76,3 +76,13 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - **Import Data** (`act:'importData'`) → JS file picker → read + `JSON.parse` → `POST /api/import` (parsed body, matches legacy admin.js).
 - Verified: node --check; synced; deployed.
 - DEFERRED (lower value / need interactive-control conversion, not no-op fixes): model-endpoints add/test (`/api/model-endpoints` — needs an add form + the read-only Added Models card made interactive); fallback chips "+ add" editing; search provider selection + Test. These require converting display-only `select`/`provider`/`chips` rows into real inputs — a settings-forms build. The dispatch mechanism (P1) is in place for when they're built.
+
+## P7 — search — ✅ DONE (client-side filters)
+- Converted all 4 decorative `oc-search` divs into real bound inputs (auto-wired via the app.js `input` listener → `state[field]`), each filtering its already-loaded list live:
+  - **Conversations** (`convFilter`) → filters session groups by title (drops empty groups; "No conversations match." empty state).
+  - **Notes** (`notesFilter`) → filters the doc list by title (origIdx preserved so `selDoc` still maps correctly).
+  - **Library** (`libQuery`) → ANDed with the existing category `libFilter`.
+  - **Email** (`emailQuery`) → filters by subject/from/source (origIdx preserved for `selEmail`).
+- No backend needed (mirrors the `libFilter` pattern). 
+- DEFERRED: global ⌘K shortcut (needs a global keydown dispatcher in app.js — same gap as incognito shortcuts, P9) and server-side `/api/email/search` (client filter covers the loaded page).
+- Verified: node --check; synced; deployed.

@@ -101,3 +101,4 @@
 2026-06-23 01:39 | index.html:1263 model-picker-btn | verified [!] PARITY GAP — composer model-btn dead (no data-act); effort pill also dead. Logged FINDINGS.
 2026-06-23 01:40 | index.html:1267 model-picker-add-models-btn | verified [!] partial — Added Models card is read-only display; no add control; dead-settings FINDINGS
 2026-06-23 01:41 | index.html:1276 mode-agent-btn | verified [x] parity OK -> setMode (app.js:133) + mode sent to /api/chat_stream (chat.js:436). Caught truncated-grep false alarm.
+2026-06-23 01:42 | index.html:1277 mode-chat-btn | verified [x] parity OK -> setMode chat (functional, same toggle as :1276)

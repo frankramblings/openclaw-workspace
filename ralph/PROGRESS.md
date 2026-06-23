@@ -173,3 +173,4 @@
 2026-06-23 02:18 | index.html:2257 adm-epOllamaBtn | verified [!] no endpoint connect in redesign (Ollama listed read-only); FINDINGS
 2026-06-23 02:19 | index.html:2266 adm accordion toggle | verified [-] accordion layout not ported
 2026-06-23 02:19 | index.html:2277 adm-provider-btn | verified [!] dead provider selector; dead-settings FINDINGS
+2026-06-23 02:19 | index.html:2304 adm-epApiTestBtn | verified [!] no API endpoint test in redesign; FINDINGS

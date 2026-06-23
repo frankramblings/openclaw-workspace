@@ -1,0 +1,256 @@
+# Redesign Parity + Wiring Inventory
+
+Seeded 2026-06-23 (iteration 1). Branch `redesign/direction-a-refined-charcoal`.
+Status legend: `[ ]` pending · `[x]` verified · `[!]` issue (see FINDINGS.md) · `[-]` intentionally removed.
+
+- OLD parity rows: 186
+- NEW wiring rows: 45
+
+Dispatch model (new design): `data-act="X"` → `actions['X']` registry, merged in app.js from
+companion.js + live/*.js + mobile/*.js. `data-model="X"` → two-way binds `state.X` via the
+delegated `input` listener (app.js:210). Old design: `getElementById(id).addEventListener` per
+legacy `js/*.js` module.
+
+---
+
+## Old → New parity
+
+- [ ] <a href="tel:..."> with  `<a href>` — index.html:23
+- [ ] id=close-memory-modal  `<button>` — index.html:377
+- [ ] class=memory-tab active  `<button>` — index.html:381
+- [ ] class=memory-tab  `<button>` — index.html:382
+- [ ] class=memory-tab  `<button>` — index.html:383
+- [ ] class=memory-tab  `<button>` — index.html:384
+- [ ] id=memory-select-btn  `<button>` — index.html:403
+- [ ] id=memory-tidy-btn  `<button>` — index.html:404
+- [ ] class=memory-cat-chip active  `<button>` — index.html:408
+- [ ] id=memory-bulk-delete  `<button>` — index.html:414
+- [ ] id=memory-bulk-cancel  `<button>` — index.html:415
+- [ ] id=memory-import-btn  `<button>` — index.html:427
+- [ ] id=memory-export-btn  `<button>` — index.html:428
+- [ ] id=add-skill-btn  `<button>` — index.html:463
+- [ ] id=skills-select-btn  `<button>` — index.html:497
+- [ ] id=skills-audit-btn  `<button>` — index.html:498
+- [ ] id=skills-bulk-publish  `<button>` — index.html:506
+- [ ] id=skills-bulk-audit  `<button>` — index.html:507
+- [ ] id=skills-bulk-delete-nonpassing  `<button>` — index.html:508
+- [ ] id=skills-bulk-delete  `<button>` — index.html:509
+- [ ] id=skills-bulk-cancel  `<button>` — index.html:510
+- [ ] id=theme-opacity-wrap  `<button>` — index.html:567
+- [ ] id=close-theme-popup  `<button>` — index.html:571
+- [ ] data-tab=theme-tab-browse  `<button>` — index.html:575
+- [ ] data-tab=theme-tab-customize  `<button>` — index.html:576
+- [ ] title=Reset this color  `<button>` — index.html:596
+- [ ] title=Reset this color  `<button>` — index.html:597
+- [ ] title=Reset this color  `<button>` — index.html:598
+- [ ] title=Reset this color  `<button>` — index.html:599
+- [ ] title=Reset this color  `<button>` — index.html:600
+- [ ] title=Reset this color  `<button>` — index.html:601
+- [ ] title=Reset this color  `<button>` — index.html:611
+- [ ] title=Reset this color  `<button>` — index.html:612
+- [ ] title=Reset this color  `<button>` — index.html:613
+- [ ] title=Reset this color  `<button>` — index.html:619
+- [ ] title=Reset this color  `<button>` — index.html:620
+- [ ] title=Reset this color  `<button>` — index.html:626
+- [ ] title=Reset this color  `<button>` — index.html:627
+- [ ] title=Reset this color  `<button>` — index.html:628
+- [ ] title=Reset this color  `<button>` — index.html:629
+- [ ] title=Reset this color  `<button>` — index.html:635
+- [ ] title=Reset this color  `<button>` — index.html:636
+- [ ] title=Reset this color  `<button>` — index.html:642
+- [ ] id=theme-adv-clear  `<button>` — index.html:649
+- [ ] id=harmony-generate-btn  `<button>` — index.html:681
+- [ ] title=Reset to text color  `<button>` — index.html:769
+- [ ] id=theme-save-go  `<button>` — index.html:788
+- [ ] id=theme-import-btn  `<button>` — index.html:792
+- [ ] id=theme-export-btn  `<button>` — index.html:793
+- [ ] id=theme-import-go  `<button>` — index.html:797
+- [ ] id=theme-import-cancel  `<button>` — index.html:798
+- [ ] id=theme-reset-btn  `<button>` — index.html:801
+- [ ] id=mobile-menu-btn  `<button>` — index.html:807
+- [ ] id=hamburger-btn  `<button>` — index.html:809
+- [ ] id=sidebar-toggle-btn  `<button>` — index.html:816
+- [ ] id=rail-search-btn  `<button>` — index.html:825
+- [ ] id=rail-new-session  `<button>` — index.html:826
+- [ ] id=rail-delete-session  `<button>` — index.html:827
+- [ ] id=rail-chats  `<button>` — index.html:830
+- [ ] id=rail-documents  `<button>` — index.html:831
+- [ ] id=rail-calendar  `<button>` — index.html:833
+- [ ] id=rail-compare  `<button>` — index.html:834
+- [ ] id=rail-cookbook  `<button>` — index.html:835
+- [ ] id=rail-research  `<button>` — index.html:836
+- [ ] id=rail-email  `<button>` — index.html:837
+- [ ] id=rail-gallery  `<button>` — index.html:838
+- [ ] id=rail-archive  `<button>` — index.html:839
+- [ ] id=rail-memory  `<button>` — index.html:840
+- [ ] id=rail-notes  `<button>` — index.html:841
+- [ ] id=rail-tasks  `<button>` — index.html:842
+- [ ] id=rail-theme  `<button>` — index.html:843
+- [ ] id=rail-settings  `<button>` — index.html:846
+- [ ] id=chats-library-btn  `<button>` — index.html:871
+- [ ] id=session-sort-btn  `<button>` — index.html:878
+- [ ] id=auto-sort-sessions-more  `<button>` — index.html:898
+- [ ] id=session-bulk-archive  `<button>` — index.html:915
+- [ ] id=session-bulk-delete  `<button>` — index.html:916
+- [ ] id=session-bulk-cancel  `<button>` — index.html:917
+- [ ] id=email-compose-btn  `<button>` — index.html:955
+- [ ] id=library-new-doc-btn  `<button>` — index.html:1036
+- [ ] id=user-bar-settings  `<button>` — index.html:1085
+- [ ] id=incognito-indicator  `<button>` — index.html:1100
+- [ ] id=export-dl-btn  `<button>` — index.html:1101
+- [ ] id=incognito-btn  `<button>` — index.html:1106
+- [ ] id=overflow-plus-btn  `<button>` — index.html:1166
+- [ ] id=overflow-attach-btn  `<button>` — index.html:1173
+- [ ] id=overflow-doc-btn  `<button>` — index.html:1177
+- [ ] id=overflow-rag-btn  `<button>` — index.html:1183
+- [ ] id=overflow-tts-btn  `<button>` — index.html:1196
+- [ ] id=overflow-preset-btn  `<button>` — index.html:1201
+- [ ] id=web-toggle-btn  `<button>` — index.html:1210
+- [ ] id=bash-toggle-btn  `<button>` — index.html:1216
+- [ ] id=rag-indicator-btn  `<button>` — index.html:1222
+- [ ] id=research-toggle-btn  `<button>` — index.html:1230
+- [ ] id=group-toggle-btn  `<button>` — index.html:1236
+- [ ] id=character-indicator-btn  `<button>` — index.html:1243
+- [ ] id=compare-indicator-btn  `<button>` — index.html:1249
+- [ ] id=model-picker-btn  `<button>` — index.html:1263
+- [ ] id=model-picker-add-models-btn  `<button>` — index.html:1267
+- [ ] id=mode-agent-btn  `<button>` — index.html:1276
+- [ ] id=mode-chat-btn  `<button>` — index.html:1277
+- [ ] aria-label=New chat  `<button>` — index.html:1279
+- [ ] id=close-custom-preset  `<button>` — index.html:1295
+- [ ] class=preset-tab active  `<button>` — index.html:1300
+- [ ] class=preset-tab  `<button>` — index.html:1301
+- [ ] class=preset-tab  `<button>` — index.html:1302
+- [ ] id=char-new-btn  `<button>` — index.html:1333
+- [ ] id=char-delete-template-btn  `<button>` — index.html:1339
+- [ ] id=reset-character-btn  `<button>` — index.html:1340
+- [ ] id=char-expand-btn  `<button>` — index.html:1346
+- [ ] id=group-mode-btn  `<button>` — index.html:1355
+- [ ] id=group-add-btn  `<button>` — index.html:1361
+- [ ] id=cancel-custom-preset  `<button>` — index.html:1367
+- [ ] id=save-custom-preset  `<button>` — index.html:1368
+- [ ] id=we-new-file  `<button>` — index.html:1382
+- [ ] id=we-new-folder  `<button>` — index.html:1383
+- [ ] id=we-upload  `<button>` — index.html:1384
+- [ ] id=we-prefs  `<button>` — index.html:1385
+- [ ] id=we-refresh  `<button>` — index.html:1386
+- [ ] id=we-collapse  `<button>` — index.html:1387
+- [ ] id=we-tab-files  `<button>` — index.html:1390
+- [ ] id=we-tab-artifacts  `<button>` — index.html:1391
+- [ ] id=we-reopen  `<button>` — index.html:1397
+- [ ] id=scroll-bottom-btn  `<button>` — index.html:1398
+- [ ] id=close-rename-session  `<button>` — index.html:1473
+- [ ] id=cancel-rename-session  `<button>` — index.html:1486
+- [ ] id=save-session-name  `<button>` — index.html:1487
+- [ ] id=close-cookbook-modal  `<button>` — index.html:1499
+- [ ] id=settings-opacity-wrap  `<button>` — index.html:1510
+- [ ] class=close-btn  `<button>` — index.html:1514
+- [ ] class=settings-nav-item active  `<button>` — index.html:1520
+- [ ] class=settings-nav-item  `<button>` — index.html:1524
+- [ ] class=settings-nav-item  `<button>` — index.html:1528
+- [ ] class=settings-nav-item  `<button>` — index.html:1536
+- [ ] class=settings-nav-item  `<button>` — index.html:1540
+- [ ] class=settings-nav-item  `<button>` — index.html:1544
+- [ ] class=settings-nav-item  `<button>` — index.html:1549
+- [ ] class=settings-nav-item  `<button>` — index.html:1553
+- [ ] class=settings-nav-item  `<button>` — index.html:1559
+- [ ] class=settings-nav-item  `<button>` — index.html:1563
+- [ ] class=settings-nav-item  `<button>` — index.html:1569
+- [ ] class=settings-nav-item admin-only  `<button>` — index.html:1575
+- [ ] class=settings-nav-item admin-only  `<button>` — index.html:1579
+- [ ] class=settings-nav-item admin-only  `<button>` — index.html:1583
+- [ ] id=set-defaultAddFallback  `<button>` — index.html:1606
+- [ ] id=set-utilityAddFallback  `<button>` — index.html:1623
+- [ ] id=set-visionAddFallback  `<button>` — index.html:1636
+- [ ] id=set-ttsPreviewBtn  `<button>` — index.html:1767
+- [ ] id=search-provider-btn  `<button>` — index.html:1800
+- [ ] id=set-searchTestBtn  `<button>` — index.html:1816
+- [ ] id=settings-open-brain  `<button>` — index.html:1855
+- [ ] id=settings-open-cron  `<button>` — index.html:1862
+- [ ] id=settings-open-theme  `<button>` — index.html:1869
+- [ ] id=set-uiVisResetBtn  `<button>` — index.html:2047
+- [ ] id=shortcuts-reset-btn  `<button>` — index.html:2061
+- [ ] id=settings-logout-btn  `<button>` — index.html:2079
+- [ ] id=settings-pw-save  `<button>` — index.html:2093
+- [ ] id=set-email-open-integrations  `<button>` — index.html:2111
+- [ ] id=set-email-open-tasks  `<button>` — index.html:2119
+- [ ] id=set-email-style-extract  `<button>` — index.html:2130
+- [ ] id=set-email-style-save  `<button>` — index.html:2131
+- [ ] id=set-reminders-open-integrations  `<a href>` — index.html:2164
+- [ ] id=set-reminder-test-btn  `<button>` — index.html:2187
+- [ ] id=adm-addBtn  `<button>` — index.html:2216
+- [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2230
+- [ ] id=adm-epLocalTestBtn  `<button>` — index.html:2245
+- [ ] id=adm-epLocalAddBtn  `<button>` — index.html:2246
+- [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2249
+- [ ] id=adm-epDiscoverBtn  `<button>` — index.html:2254
+- [ ] id=adm-epOllamaBtn  `<button>` — index.html:2257
+- [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2266
+- [ ] id=adm-provider-btn  `<button>` — index.html:2277
+- [ ] id=adm-epApiTestBtn  `<button>` — index.html:2304
+- [ ] id=adm-epApiCancelTestBtn  `<button>` — index.html:2305
+- [ ] id=adm-epAddBtn  `<button>` — index.html:2306
+- [ ] id=unified-intg-add-btn  `<button>` — index.html:2341
+- [ ] id=adm-exportDataBtn  `<button>` — index.html:2362
+- [ ] id=adm-importDataBtn  `<button>` — index.html:2363
+- [ ] class=admin-btn-delete  `<button>` — index.html:2377
+- [ ] class=admin-btn-delete  `<button>` — index.html:2385
+- [ ] class=admin-btn-delete  `<button>` — index.html:2393
+- [ ] class=admin-btn-delete  `<button>` — index.html:2401
+- [ ] class=admin-btn-delete  `<button>` — index.html:2409
+- [ ] class=admin-btn-delete  `<button>` — index.html:2417
+- [ ] class=admin-btn-delete  `<button>` — index.html:2425
+- [ ] class=admin-btn-delete  `<button>` — index.html:2433
+
+---
+
+## New → wiring
+
+### data-act handlers
+- [ ] data-act=`clearQuick` — mobile/mobile-surfaces.js:178
+- [ ] data-act=`closeCapture` — mobile/mobile-sheets.js:57
+- [ ] data-act=`closeCompanion` — mobile/mobile-sheets.js:34
+- [ ] data-act=`compTab` — companion.js:103
+- [ ] data-act=`companionTab` — mobile/mobile-sheets.js:39
+- [ ] data-act=`dismiss` — mobile/mobile-surfaces.js:87
+- [ ] data-act=`go` — app.js:52
+- [ ] data-act=`libFilter` — surfaces.js:346
+- [ ] data-act=`mBackToHub` — mobile/mobile-app.js:17
+- [ ] data-act=`mCloseReader` — mobile/mobile-surfaces.js:144
+- [ ] data-act=`mGo` — mobile/mobile-surfaces.js:23
+- [ ] data-act=`mOpenReader` — mobile/mobile-surfaces.js:127
+- [ ] data-act=`mOpenSub` — mobile/mobile-surfaces.js:188
+- [ ] data-act=`newChat` — mobile/mobile-surfaces.js:55
+- [ ] data-act=`openCapture` — mobile/mobile-surfaces.js:30
+- [ ] data-act=`openCompanion` — mobile/mobile-surfaces.js:58
+- [ ] data-act=`pickResOpt` — surfaces.js:284
+- [ ] data-act=`pickSlash` — surfaces.js:89
+- [ ] data-act=`resDiscuss` — surfaces.js:330
+- [ ] data-act=`resReport` — surfaces.js:330
+- [ ] data-act=`resetResearch` — surfaces.js:313
+- [ ] data-act=`selDoc` — surfaces.js:386
+- [ ] data-act=`selEmail` — surfaces.js:128
+- [ ] data-act=`selectSession` — surfaces.js:45
+- [ ] data-act=`send` — mobile/mobile-surfaces.js:65
+- [ ] data-act=`setAccent` — surfaces.js:461
+- [ ] data-act=`setCaptureType` — mobile/mobile-sheets.js:64
+- [ ] data-act=`setMode` — surfaces.js:100
+- [ ] data-act=`setSection` — surfaces.js:422
+- [ ] data-act=`startResearch` — surfaces.js:307
+- [ ] data-act=`stopRun` — chat-activity.js:96
+- [ ] data-act=`toggleComp` — companion.js:108
+- [ ] data-act=`toggleFs` — companion.js:38
+- [ ] data-act=`toggleRail` — app.js:62
+- [ ] data-act=`toggleResCtl` — surfaces.js:287
+- [ ] data-act=`toggleSlash` — surfaces.js:94
+- [ ] data-act=`toggleSplit` — companion.js:107
+- [ ] data-act=`toggleStep` — chat-activity.js:63
+- [ ] data-act=`toggleTrail` — chat-activity.js:112
+- [ ] data-act=`toggleUi` — surfaces.js:447
+- [ ] data-act=`triageAll` — mobile/mobile-surfaces.js:101
+
+### data-model inputs
+- [ ] data-model=`captureDraft` — mobile/mobile-sheets.js:61
+- [ ] data-model=`draft` — mobile/mobile-surfaces.js:63
+- [ ] data-model=`quick` — mobile/mobile-surfaces.js:178
+- [ ] data-model=`researchQuery` — surfaces.js:300

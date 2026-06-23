@@ -31,7 +31,7 @@ legacy `js/*.js` module.
 - [-] id=add-skill-btn ("Add Skill") — index.html:463 — in removed memory-modal Skills-tab panel. Redesign surfaces skills as `data/skills/*.md` files in the workspace explorer (data.js:79) + the Brain card ("memories and skills"); no dedicated Add-Skill button (adding a skill = creating a SKILL.md file). Removed with the modal.
 - [-] id=skills-select-btn ("Select multiple skills") — index.html:497 — Skills-tab toolbar in the removed memory-modal; redesign surfaces skills as data/skills/*.md files (no bulk-select UI). Removed with the modal.
 - [-] id=skills-audit-btn ("Test every skill, auto-fix the weak ones, flag what still fails") — index.html:498 — Skills-tab toolbar in removed memory-modal. The "audit" concept survives only as Brain-card sub-text ("browse, edit, pin, and audit them", settings-data.js:106), with no actionable button (Brain launcher itself dead — see FINDINGS). Removed with the modal.
-- [ ] id=skills-bulk-publish  `<button>` — index.html:506
+- [-] id=skills-bulk-publish — index.html:506 — Skills-tab multi-select bulk-action bar in the removed memory-modal (with skills-select-btn:497). No bulk-skills UI in redesign. Removed with the modal.
 - [ ] id=skills-bulk-audit  `<button>` — index.html:507
 - [ ] id=skills-bulk-delete-nonpassing  `<button>` — index.html:508
 - [ ] id=skills-bulk-delete  `<button>` — index.html:509

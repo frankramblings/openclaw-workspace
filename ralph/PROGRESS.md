@@ -17,3 +17,4 @@
 2026-06-23 00:55 | index.html:463 add-skill-btn | verified [-] (memory-modal Skills tab; skills now data/skills files+Brain card). Broadened FINDINGS: all settings set-btn/set-launcher/Wipe buttons dead.
 2026-06-23 00:56 | index.html:497 skills-select-btn | verified [-] (memory-modal Skills-tab toolbar; no bulk-select in redesign)
 2026-06-23 00:56 | index.html:498 skills-audit-btn | verified [-] (memory-modal Skills tab; audit only in Brain-card subtext, no button)
+2026-06-23 00:56 | index.html:506 skills-bulk-publish | verified [-] (memory-modal Skills-tab bulk bar)

@@ -138,7 +138,7 @@ legacy `js/*.js` module.
 - [x] id=we-tab-files ("Files" tab of the workspace explorer) — index.html:1390 → PARITY OK. Redesign sibling: the companion "Files" tab button (companion.js:104, data-act=`compTab` data-arg=`files`) → compTab action switches the companion to the file tree. Real wiring.
 - [-] id=we-tab-artifacts ("Artifacts" tab of the workspace explorer) — index.html:1391 — relocated, not lost. The redesign companion tabs are Terminal/Files/Gary (companion.js:103–105), no Artifacts tab; artifacts moved to the dedicated **Library** nav surface ("artifacts Gary has produced", reachable via rail-documents/archive, [x]). Function preserved on a first-class surface.
 - [x] id=we-reopen ("Workspace files" — collapsed-state reveal to reopen the explorer panel) — index.html:1397 → PARITY OK. Redesign sibling: the companion collapsed reveal strip — `reveal-btn` ("Show panel", data-act=`toggleComp`, companion.js:118) + reveal-icon (compTab, :120). Real wiring. Pairs with we-collapse:1387.
-- [ ] id=scroll-bottom-btn  `<button>` — index.html:1398
+- [!] id=scroll-bottom-btn ("Scroll to bottom" — chat jump-to-latest, appears when scrolled up) — index.html:1398 → PARITY GAP (missing, MINOR). No scroll-to-bottom affordance in the redesign chat (grep empty). Low-priority UX convenience. See FINDINGS (minor).
 - [ ] id=close-rename-session  `<button>` — index.html:1473
 - [ ] id=cancel-rename-session  `<button>` — index.html:1486
 - [ ] id=save-session-name  `<button>` — index.html:1487

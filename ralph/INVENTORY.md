@@ -69,7 +69,7 @@ legacy `js/*.js` module.
 - [-] id=theme-reset-btn ("Reset to Default" — resets the whole theme) — index.html:801 — last interactive control of the theme popup; redesign has no dedicated theme-reset (only inline accent selection via setAccent). Removed with the theme-popup. (Ends the theme-modal cluster :563–:801; main app chrome begins ~:807.)
 - [-] id=mobile-menu-btn ("Toggle sidebar" ☰, mobile) — index.html:807 — mobile nav paradigm intentionally replaced: redesign mobile uses a persistent **bottom tab bar + "More" hub** (mobile-app.js renderTabBar / `mGo` action, data-act=`mGo`), not a slide-out sidebar. No hamburger-toggles-sidebar on mobile ⇒ no 1:1 sibling; function (reach any surface) covered by the tab bar. (Old id has 0 refs in frontend/js — wired by class/elsewhere or vestigial.)
 - [x] id=hamburger-btn ("Show sidebar", desktop) — index.html:809 → PARITY OK. Redesign sibling: `toggleRail` action (app.js:126, flips state.railExpanded), bound via data-act=`toggleRail` on the avatar (app.js:62) and the "Collapse sidebar" rail button (app.js:66). Real wiring, functional.
-- [ ] id=sidebar-toggle-btn  `<button>` — index.html:816
+- [x] id=sidebar-toggle-btn ("Toggle sidebar", in-sidebar collapse; sidebar-layout.js:88) — index.html:816 → PARITY OK. Same redesign sibling as hamburger-btn:809 — the `toggleRail` action (app.js:126) handles both expand+collapse, bound to avatar (app.js:62) and the rail collapse button (app.js:66).
 - [ ] id=rail-search-btn  `<button>` — index.html:825
 - [ ] id=rail-new-session  `<button>` — index.html:826
 - [ ] id=rail-delete-session  `<button>` — index.html:827

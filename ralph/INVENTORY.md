@@ -94,7 +94,7 @@ legacy `js/*.js` module.
 - [!] id=session-bulk-delete — index.html:916 → PARITY GAP (missing). No multi-select / bulk-delete of sessions in the redesign (select-only list). Last of the absent session-management cluster (:871–:916) — see FINDINGS.
 - [!] id=session-bulk-cancel — index.html:917 → PARITY GAP (missing). Exits the session multi-select bar (with session-bulk-archive/delete :915–:916); no such mode in the redesign (select-only list). Final element of the absent session-management cluster — see FINDINGS.
 - [!] id=email-compose-btn ("Compose email", legacy emailInbox.js) — index.html:955 → PARITY GAP (dead affordance). Redesign email surface renders a "+ New" compose button (surfaces.js:122) but it has NO `data-act`; live/email.js actions only define selEmail/mOpenReader (no compose). Button shown but dead. Part of a SYSTEMIC gap — most per-surface `.btn` action buttons are unwired; see FINDINGS "Per-surface action buttons unwired."
-- [ ] id=library-new-doc-btn  `<button>` — index.html:1036
+- [!] id=library-new-doc-btn ("New document", legacy documentLibrary) — index.html:1036 → PARITY GAP (missing). The redesign Library surface (surfaces.js:342) has NO create affordance — only filter chips (libFilter) + a dead search bar; it's reframed read-only as "artifacts Gary has produced". User-initiated document creation has no sibling. Clean omission (no button shown), plausibly intentional given the reframing — needs human to confirm vs. restore. Relates to FINDINGS "Per-surface action buttons unwired" (no create affordances).
 - [ ] id=user-bar-settings  `<button>` — index.html:1085
 - [ ] id=incognito-indicator  `<button>` — index.html:1100
 - [ ] id=export-dl-btn  `<button>` — index.html:1101

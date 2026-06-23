@@ -475,6 +475,23 @@ function cronPanel(cron) {
     </div>`).join('')}</div>`;
 }
 
+// Inline Brain panel (memories + skills) loaded by openBrain.
+function brainPanel(brain) {
+  const mems = (brain && brain.memory) || [];
+  const skills = (brain && brain.skills) || [];
+  return `
+  <div style="margin-top:10px">
+    <div style="font-size:11px;color:var(--faint);margin-bottom:6px">MEMORIES · ${mems.length}</div>
+    <div style="display:flex;flex-direction:column;gap:5px;max-height:240px;overflow:auto">
+      ${mems.length ? mems.map((m) => `<div style="padding:7px 10px;background:#1e2025;border-radius:8px;font-size:13px"><div>${esc(m.text || m.content || m.name || '')}</div>${m.category ? `<div style="font-size:11px;color:var(--faint);margin-top:2px">${esc(m.category)}</div>` : ''}</div>`).join('') : '<div style="color:var(--faint);font-size:12px;padding:4px 0">No memories yet.</div>'}
+    </div>
+    <div style="font-size:11px;color:var(--faint);margin:12px 0 6px">SKILLS · ${skills.length}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      ${skills.length ? skills.map((sk) => `<span style="padding:4px 9px;background:#2a2d33;border-radius:7px;font-size:12px">${esc((sk && (sk.name || sk.id)) || sk)}</span>`).join('') : '<div style="color:var(--faint);font-size:12px">No skills yet.</div>'}
+    </div>
+  </div>`;
+}
+
 function settingsSurface(s) {
   const sec = TAB[s.setSection] ? s.setSection : 'services';
   const ui = s.ui;
@@ -551,6 +568,7 @@ function settingsSurface(s) {
       ${(c.rows || []).map(renderRow).join('')}
       ${c.launcher ? `<button class="set-launcher"${c.launcherAct ? ` data-act="${c.launcherAct}"` : ''}>${esc(c.launcher)}</button>` : ''}
       ${(c.scheduledPanel && s.live && s.live.cron) ? cronPanel(s.live.cron) : ''}
+      ${(c.brainPanel && s.live && s.live.brain) ? brainPanel(s.live.brain) : ''}
     </div>`;
   };
 

@@ -92,3 +92,10 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - **"Open Scheduled jobs"** (`launcherAct:'openScheduled'`) → `openScheduled` fetches `GET /api/cron` → `cronPanel()` lists jobs with status + schedule + **Run** (`cronRun` → `POST /api/cron/{id}/run`) and **Enable/Disable** (`cronToggle` → `POST /api/cron/{id}/{enable|disable}`, then refresh). The launcher now opens a real, actionable jobs view.
 - TODO (fold into P9): "Open theme picker" → remove (redundant; inline accent already works). "Open Brain" → either build a minimal memory/skills list (`GET /api/memory`,`/api/skills`) or remove the launcher. These are surface-builds/cleanups, not no-op wirings.
 - Verified: node --check; synced; deployed.
+
+## P8 — dead launchers — ✅ DONE
+- **"Open Brain"** (`launcherAct:'openBrain'`, `brainPanel:true`) → fetches `GET /api/memory` + `GET /api/skills` → inline `brainPanel()` listing memories (text+category) and skills chips.
+- **"Open theme picker"** → REMOVED (redundant — inline accent swatches already work via `setAccent`; the launcher had no distinct target).
+- (with P8 prior: "Open Scheduled jobs" → live cron panel.)
+- All three dead `set-launcher` buttons are now either functional or honestly removed.
+- Verified: node --check; synced; deployed.

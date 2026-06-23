@@ -186,6 +186,18 @@ export const actions = {
     } catch (_) {}
   },
 
+  // Brain → "Open Brain": load memories + skills into state.live.brain.
+  openBrain: async () => {
+    const s = runtime.state;
+    if (!s) return;
+    s.live = s.live || {};
+    const brain = {};
+    try { const m = await apiGet('/api/memory'); brain.memory = (m && m.memory) || []; } catch (_) { brain.memory = []; }
+    try { const k = await apiGet('/api/skills'); brain.skills = (k && k.skills) || []; } catch (_) { brain.skills = []; }
+    s.live.brain = brain;
+    runtime.render();
+  },
+
   // Scheduled → "Open Scheduled jobs": load the cron list into state.live.cron.
   openScheduled: async () => {
     const s = runtime.state;

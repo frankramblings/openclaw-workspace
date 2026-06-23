@@ -102,3 +102,4 @@
 2026-06-23 01:40 | index.html:1267 model-picker-add-models-btn | verified [!] partial — Added Models card is read-only display; no add control; dead-settings FINDINGS
 2026-06-23 01:41 | index.html:1276 mode-agent-btn | verified [x] parity OK -> setMode (app.js:133) + mode sent to /api/chat_stream (chat.js:436). Caught truncated-grep false alarm.
 2026-06-23 01:42 | index.html:1277 mode-chat-btn | verified [x] parity OK -> setMode chat (functional, same toggle as :1276)
+2026-06-23 01:42 | index.html:1279 New-chat send-btn | verified [x] parity OK -> split into send + newChat (both wired)

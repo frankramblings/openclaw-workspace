@@ -478,7 +478,8 @@ def _map_history(messages: list) -> dict:
             isinstance(m, dict) and (
                 m.get("role") == "toolResult"
                 or (isinstance(m.get("content"), list)
-                    and any(isinstance(b, dict) and b.get("type") == "toolCall"
+                    and any(isinstance(b, dict)
+                            and b.get("type") in ("toolCall", "toolcall")
                             for b in m["content"])))
             for m in pending)
         if not has_tools:
@@ -521,17 +522,28 @@ def _map_history(messages: list) -> dict:
                         round_texts[-1] = text
                 if isinstance(blocks, list):
                     for b in blocks:
-                        if not isinstance(b, dict) or b.get("type") != "toolCall":
+                        if not isinstance(b, dict):
                             continue
-                        ev = {"round": len(round_texts),  # 1-indexed for renderer
-                              "tool": b.get("name") or "tool",
-                              "command": _tool_command(b),
-                              "exit_code": None}            # None until result lands
-                        cid = b.get("id")
-                        if cid is not None:
-                            calls[cid] = ev
-                        tool_events.append(ev)
-                        cur_round_has_tools = True
+                        btype = b.get("type")
+                        if btype in ("toolCall", "toolcall"):
+                            ev = {"round": len(round_texts),  # 1-indexed for renderer
+                                  "tool": b.get("name") or "tool",
+                                  "command": _tool_command(b),
+                                  "exit_code": None}        # None until result lands
+                            cid = b.get("id")
+                            if cid is not None:
+                                calls[cid] = ev
+                            tool_events.append(ev)
+                            cur_round_has_tools = True
+                        elif btype == "tool_result":
+                            # claude-cli stores the result INLINE in the assistant
+                            # message (keyed by tool_use_id, is_error flag), rather
+                            # than as a separate role:"toolResult" message.
+                            cid = b.get("tool_use_id") or b.get("id")
+                            ev = calls.get(cid)
+                            if ev is not None:
+                                ev["output"] = _tool_output(b)
+                                ev["exit_code"] = 1 if b.get("is_error") else 0
             elif m.get("role") == "toolResult":
                 cid = m.get("toolCallId") or m.get("id")
                 ev = calls.get(cid)

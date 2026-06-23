@@ -220,3 +220,4 @@
 2026-06-23 02:38 | new-wiring data-act=stopRun | verified [x] WIRED -> live chat.js:441 (abort stream)
 2026-06-23 02:39 | new-wiring data-act=toggleComp | verified [x] WIRED -> app.js:143
 2026-06-23 02:39 | new-wiring data-act=toggleFs | verified [x] WIRED -> app.js:144 (expand/collapse folder)
+2026-06-23 02:40 | new-wiring data-act=toggleRail | verified [x] WIRED -> app.js:126 (verified at hamburger-btn)

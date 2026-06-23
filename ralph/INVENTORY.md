@@ -226,7 +226,7 @@ legacy `js/*.js` module.
 - [x] data-act=`pickResOpt` — surfaces.js:284 → WIRED. Handler app.js:148 (parses `key:value` arg, sets state.resCfg[key]=val — the Deep Research config option — then closes the control). Bound to research option rows. Real state change.
 - [x] data-act=`pickSlash` — surfaces.js:89 → WIRED. Handler app.js:132 (sets state.draft = name+' ', clears forceSlash — inserts the picked slash command into the composer). Bound to slash-menu items. Real draft update; user then sends (mode/send carry it to the backend).
 - [!] data-act=`resDiscuss` — surfaces.js:330 → UNWIRED. The "Discuss" chip on a past Deep-Research run carries data-act=`resDiscuss` (rendered only when the row has an rid), but NO `resDiscuss` handler exists in any actions registry (app.js / live/research.js define only startResearch/resetResearch). The delegated dispatcher finds no `actions['resDiscuss']` → no-op. See FINDINGS "Past-research actions (Discuss / Visual Report) are unwired."
-- [ ] data-act=`resReport` — surfaces.js:330
+- [!] data-act=`resReport` — surfaces.js:330 → UNWIRED. The "↗ Visual Report" chip on a past Deep-Research run carries data-act=`resReport` (when the row has an rid), but NO `resReport` handler exists (app.js / live/research.js define only startResearch/resetResearch). No-op. Sibling of resDiscuss — see FINDINGS "Past-research actions (Discuss / Visual Report) are unwired."
 - [ ] data-act=`resetResearch` — surfaces.js:313
 - [ ] data-act=`selDoc` — surfaces.js:386
 - [ ] data-act=`selEmail` — surfaces.js:128

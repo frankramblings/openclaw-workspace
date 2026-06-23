@@ -237,7 +237,7 @@ legacy `js/*.js` module.
 - [x] data-act=`setMode` — surfaces.js:100 → WIRED & functional. Handler app.js:133 (sets state.chatMode). Verified at mode-agent-btn:1276 — the mode is transmitted to the backend on send (POST /api/chat_stream {mode}, chat.js:436). Bound to the Agent/Chat toggle (surfaces.js:100/101).
 - [x] data-act=`setSection` — surfaces.js:422 → WIRED. Handler app.js:177 (sets state.setSection); renderSettings reads it (surfaces.js:410) to render the chosen panel. Bound to the settings section nav items. Verified functional across the 14 settings-nav-item parity rows (services…system). Section navigation works (card buttons inside are the separate dead-Settings FINDINGS).
 - [x] data-act=`startResearch` — surfaces.js:307 → WIRED & functional. Handler: mock app.js:154 + LIVE override research.js:122 (POST /api/research/start {query, max_rounds from resCfg}, then streams progress via EventSource). Bound to the research start button. Real backend launch.
-- [ ] data-act=`stopRun` — chat-activity.js:96
+- [x] data-act=`stopRun` — chat-activity.js:96 → WIRED & functional. Handler: mock app.js:138 (no-op placeholder) + LIVE override chat.js:441 (aborts streamCtrl, finalizeAll, sets activity status='done' + "Stopped after …"). Bound to the "Stop" button in the activity-trail working header. Real stream abort.
 - [ ] data-act=`toggleComp` — companion.js:108
 - [ ] data-act=`toggleFs` — companion.js:38
 - [ ] data-act=`toggleRail` — app.js:62

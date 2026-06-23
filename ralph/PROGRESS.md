@@ -217,3 +217,4 @@
 2026-06-23 02:37 | new-wiring data-act=setMode | verified [x] WIRED -> app.js:133 (mode reaches backend, verified :1276)
 2026-06-23 02:37 | new-wiring data-act=setSection | verified [x] WIRED -> app.js:177 (settings section nav)
 2026-06-23 02:38 | new-wiring data-act=startResearch | verified [x] WIRED -> live research.js:122 (POST /api/research/start)
+2026-06-23 02:38 | new-wiring data-act=stopRun | verified [x] WIRED -> live chat.js:441 (abort stream)

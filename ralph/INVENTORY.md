@@ -149,7 +149,7 @@ legacy `js/*.js` module.
 - [x] class=settings-nav-item (data-settings-tab="ai" — "Add Models"/AI category) — index.html:1524 → PARITY OK. Redesign sibling: set-nav-item setSection `ai` (surfaces.js:422; 'ai' in NAV_GROUPS settings-data.js:159). Section nav wired.
 - [x] class=settings-nav-item (data-settings-tab="search" — "Search" category) — index.html:1528 → PARITY OK. Redesign sibling: set-nav-item setSection `search` (surfaces.js:422; 'search' in NAV_GROUPS settings-data.js:159). Section nav wired.
 - [x] class=settings-nav-item (data-settings-tab="integrations") — index.html:1536 → PARITY OK. Redesign sibling: set-nav-item setSection `integrations` (surfaces.js:422; in NAV_GROUPS settings-data.js:160). Section nav wired.
-- [ ] class=settings-nav-item  `<button>` — index.html:1540
+- [x] class=settings-nav-item (data-settings-tab="email") — index.html:1540 → PARITY OK. Redesign sibling: set-nav-item setSection `email` (surfaces.js:422; in NAV_GROUPS settings-data.js:160). Section nav wired.
 - [ ] class=settings-nav-item  `<button>` — index.html:1544
 - [ ] class=settings-nav-item  `<button>` — index.html:1549
 - [ ] class=settings-nav-item  `<button>` — index.html:1553

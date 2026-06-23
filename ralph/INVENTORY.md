@@ -117,7 +117,7 @@ legacy `js/*.js` module.
 - [x] id=mode-agent-btn ("Agent" mode) — index.html:1276 → PARITY OK (wired + functional). Redesign Agent button (surfaces.js:100, data-act=`setMode` data-arg=`agent` → setMode app.js:133 sets state.chatMode). Verified functional: send() transmits `mode: state.chatMode` to /api/chat_stream (live/chat.js:436), so Agent mode actually reaches the backend.
 - [x] id=mode-chat-btn ("Chat" mode) — index.html:1277 → PARITY OK (wired + functional). Redesign Chat button (surfaces.js:101, data-act=`setMode` data-arg=`chat` → setMode app.js:133). Same functional toggle as mode-agent-btn:1276 — mode reaches backend via send() → /api/chat_stream (chat.js:436).
 - [x] aria-label="New chat" (send-btn in `newchat-mode` — old design overloaded the send button to start a new chat when the draft is empty) — index.html:1279 → PARITY OK. Redesign splits the overloaded button into two explicit wired controls: `send` (surfaces.js:103, data-act=send) and `newChat` ("New conversation", surfaces.js:22, verified [x] at rail-new-session:826). New-chat function preserved.
-- [ ] id=close-custom-preset  `<button>` — index.html:1295
+- [-] id=close-custom-preset (✖ closes the custom-preset modal) — index.html:1295 — chrome of the custom-preset-modal (spans :1291–:1468), removed with the unported preset feature (overflow-preset-btn:1201 [!]). No preset UI in the redesign ⇒ no modal ⇒ no close button. See FINDINGS (preset gap).
 - [ ] class=preset-tab active  `<button>` — index.html:1300
 - [ ] class=preset-tab  `<button>` — index.html:1301
 - [ ] class=preset-tab  `<button>` — index.html:1302

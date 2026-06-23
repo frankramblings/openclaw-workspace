@@ -103,3 +103,4 @@
 2026-06-23 01:41 | index.html:1276 mode-agent-btn | verified [x] parity OK -> setMode (app.js:133) + mode sent to /api/chat_stream (chat.js:436). Caught truncated-grep false alarm.
 2026-06-23 01:42 | index.html:1277 mode-chat-btn | verified [x] parity OK -> setMode chat (functional, same toggle as :1276)
 2026-06-23 01:42 | index.html:1279 New-chat send-btn | verified [x] parity OK -> split into send + newChat (both wired)
+2026-06-23 01:43 | index.html:1295 close-custom-preset | verified [-] custom-preset-modal chrome removed with unported preset feature (modal :1291-1468)

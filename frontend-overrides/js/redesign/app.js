@@ -19,7 +19,7 @@ const state = {
   railExpanded: true,
   // chat
   draft: '', forceSlash: false, chatMode: 'agent',
-  chatUI: { trail: {}, step: {} }, // activity-trail collapse state (per msg/step)
+  chatUI: { trail: {}, step: {}, group: {} }, // activity-trail collapse (msg/step/group)
   // companion (collapsed to the reveal strip by default)
   compTab: null, compSplit: false, compHidden: true,
   fsOpen: { data: true, 'data/skills': false, documents: true, notes: false, research: false },
@@ -139,9 +139,10 @@ const actions = {
   // Session list sort order: Recent (date groups) ⇄ A–Z (flat alphabetical).
   cycleSessionSort: () => { state.convSort = state.convSort === 'alpha' ? 'recent' : 'alpha'; },
 
-  // chat activity trail (UI-only collapse; default trail open, steps closed)
-  toggleTrail: (id) => { const t = state.chatUI.trail; t[id] = t[id] === false ? true : false; },
+  // chat activity trail (UI-only collapse; default trail collapsed, steps/groups closed)
+  toggleTrail: (id) => { const t = state.chatUI.trail; t[id] = !t[id]; },
   toggleStep: (id) => { const st = state.chatUI.step; st[id] = !st[id]; },
+  toggleGroup: (id) => { const g = state.chatUI.group; g[id] = !g[id]; },
   stopRun: () => { /* overridden by the live chat module to abort the stream */ },
 
   // companion

@@ -18,6 +18,7 @@
 
 import { icon } from './icons.js';
 import { esc, map, when } from './dom.js';
+import { groupSteps, groupLabel, summarize } from './chat-activity-group.js';
 
 // kind → icon path + color
 export const ACT_ICONS = {
@@ -81,6 +82,38 @@ function activeStep(st) {
   </div>${out}`;
 }
 
+function summaryText(act) {
+  const { parts, failed } = summarize(act.steps);
+  const segs = [];
+  if (act.elapsed) segs.push(`Worked for ${act.elapsed}`);
+  if (parts.length) segs.push(parts.join(', '));
+  if (!segs.length) segs.push('Worked');
+  let txt = segs.join(' · ');
+  if (failed) txt += ` · ${failed} failed`;
+  return { txt, failed };
+}
+
+// Render one groupSteps item. `working` shows completed singles with a green check.
+function renderItem(it, s, working) {
+  if (it.type === 'group') {
+    const open = !!((s.chatUI && s.chatUI.group) || {})[it.id];
+    const failed = it.steps.filter((x) => x.state === 'error').length;
+    const ic = ACT_ICONS[it.kind] || ACT_ICONS.generic;
+    const meta = failed
+      ? `<span class="meta" style="color:var(--red)">${failed} failed</span>` : '';
+    const head = `<div class="act-group ocact" data-act="toggleGroup" data-arg="${esc(it.id)}">`
+      + `<span class="act-ic" style="color:${ic.color}">${icon(ic.path, { size: 13, sw: 1.8 })}</span>`
+      + `<span class="lbl">${esc(groupLabel(it.kind, it.steps.length))}</span>`
+      + `<div class="oc-spacer"></div>${meta}${chev(open ? '90deg' : '0deg')}</div>`;
+    const body = open
+      ? `<div class="act-spine act-subspine">${map(it.steps, (st) => stepRow(st, s))}</div>` : '';
+    return head + body;
+  }
+  const st = it.step;
+  if (st.state === 'running') return activeStep(st);
+  return working ? stepRow(st, s, { iconHtml: checkIcon(13) }) : stepRow(st, s);
+}
+
 function renderWorking(m, act) {
   const steps = act.steps || [];
   const rows = steps.map((st) => st.state === 'running'
@@ -103,18 +136,19 @@ function renderWorking(m, act) {
 export function renderActivity(m, s) {
   const act = m.activity;
   if (!act || !act.steps || !act.steps.length) return '';
-  if (act.status === 'working') return renderWorking(m, act);
+  if (act.status === 'working') return renderWorking(m, act); // Task 3 reworks this
 
-  const trailOpen = ((s.chatUI && s.chatUI.trail) || {})[m.id] !== false; // default open
-  const worked = act.worked || `Worked for ${act.elapsed || '?'} · ${act.steps.length} steps`;
+  const trailOpen = !!((s.chatUI && s.chatUI.trail) || {})[m.id]; // default COLLAPSED
+  const { txt, failed } = summaryText(act);
+  const items = groupSteps(act.steps);
   return `
   <div class="act-wrap">
     <div class="act-summary ocact" data-act="toggleTrail" data-arg="${esc(m.id)}">
-      <span style="display:flex;color:var(--green)">${checkIcon(13)}</span>
-      <span class="act-worked">${esc(worked)}</span>
+      <span style="display:flex;color:${failed ? 'var(--red)' : 'var(--green)'}">${checkIcon(13)}</span>
+      <span class="act-worked">${esc(txt)}</span>
       ${chev(trailOpen ? '90deg' : '0deg')}
     </div>
-    ${when(trailOpen, `<div class="act-spine">${map(act.steps, (st) => stepRow(st, s))}</div>`)}
+    ${when(trailOpen, `<div class="act-spine">${items.map((it) => renderItem(it, s, false)).join('')}</div>`)}
   </div>`;
 }
 

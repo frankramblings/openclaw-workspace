@@ -136,7 +136,7 @@ legacy `js/*.js` module.
 - [!] id=we-refresh ("Refresh" file tree) — index.html:1386 → PARITY GAP (missing). No manual refresh control in the redesign browse-only Files tab (the tree is loaded via fsOpen state; no refresh button). Covered by FINDINGS "Workspace explorer is browse-only."
 - [x] id=we-collapse ("Hide panel" — hides the workspace explorer/right panel) — index.html:1387 → PARITY OK. Redesign sibling: `toggleComp` action ("Hide panel", companion.js:108, data-act=`toggleComp`), with a reveal-btn ("Show panel", companion.js:118) to restore. Real wiring.
 - [x] id=we-tab-files ("Files" tab of the workspace explorer) — index.html:1390 → PARITY OK. Redesign sibling: the companion "Files" tab button (companion.js:104, data-act=`compTab` data-arg=`files`) → compTab action switches the companion to the file tree. Real wiring.
-- [ ] id=we-tab-artifacts  `<button>` — index.html:1391
+- [-] id=we-tab-artifacts ("Artifacts" tab of the workspace explorer) — index.html:1391 — relocated, not lost. The redesign companion tabs are Terminal/Files/Gary (companion.js:103–105), no Artifacts tab; artifacts moved to the dedicated **Library** nav surface ("artifacts Gary has produced", reachable via rail-documents/archive, [x]). Function preserved on a first-class surface.
 - [ ] id=we-reopen  `<button>` — index.html:1397
 - [ ] id=scroll-bottom-btn  `<button>` — index.html:1398
 - [ ] id=close-rename-session  `<button>` — index.html:1473

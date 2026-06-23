@@ -182,3 +182,4 @@
 2026-06-23 02:21 | index.html:2377 admin-btn-delete (Wipe all chats, 1/8) | verified [!] dead Wipe danger btn; dead-settings FINDINGS (high-pri)
 2026-06-23 02:22 | index.html:2385 admin-btn-delete (Wipe all memory, 2/8) | verified [!] dead Wipe danger btn; FINDINGS
 2026-06-23 02:22 | index.html:2393 admin-btn-delete (Wipe all skills, 3/8) | verified [!] dead Wipe danger btn; FINDINGS
+2026-06-23 02:23 | index.html:2401 admin-btn-delete (Wipe all notes, 4/8) | verified [!] dead Wipe danger btn; FINDINGS

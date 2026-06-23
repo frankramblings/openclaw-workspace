@@ -134,3 +134,4 @@
 2026-06-23 01:56 | index.html:1520 settings-nav-item services | verified [x] parity OK -> setSection services (surfaces.js:422)
 2026-06-23 01:57 | index.html:1524 settings-nav-item ai | verified [x] parity OK -> setSection ai
 2026-06-23 01:57 | index.html:1528 settings-nav-item search | verified [x] parity OK -> setSection search
+2026-06-23 01:58 | index.html:1536 settings-nav-item integrations | verified [x] parity OK -> setSection integrations

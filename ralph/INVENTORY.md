@@ -148,7 +148,7 @@ legacy `js/*.js` module.
 - [x] class=settings-nav-item active (data-settings-tab="services" — "Services" category) — index.html:1520 → PARITY OK. Redesign sibling: the settings-surface section nav `set-nav-item` (surfaces.js:422, data-act=`setSection` data-arg=`services`), driven by NAV_GROUPS (settings-data.js:159, includes 'services'). Section navigation is wired (the card action buttons inside are the separate dead-settings FINDINGS issue).
 - [x] class=settings-nav-item (data-settings-tab="ai" — "Add Models"/AI category) — index.html:1524 → PARITY OK. Redesign sibling: set-nav-item setSection `ai` (surfaces.js:422; 'ai' in NAV_GROUPS settings-data.js:159). Section nav wired.
 - [x] class=settings-nav-item (data-settings-tab="search" — "Search" category) — index.html:1528 → PARITY OK. Redesign sibling: set-nav-item setSection `search` (surfaces.js:422; 'search' in NAV_GROUPS settings-data.js:159). Section nav wired.
-- [ ] class=settings-nav-item  `<button>` — index.html:1536
+- [x] class=settings-nav-item (data-settings-tab="integrations") — index.html:1536 → PARITY OK. Redesign sibling: set-nav-item setSection `integrations` (surfaces.js:422; in NAV_GROUPS settings-data.js:160). Section nav wired.
 - [ ] class=settings-nav-item  `<button>` — index.html:1540
 - [ ] class=settings-nav-item  `<button>` — index.html:1544
 - [ ] class=settings-nav-item  `<button>` — index.html:1549

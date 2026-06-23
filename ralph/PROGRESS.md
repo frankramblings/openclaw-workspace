@@ -137,3 +137,4 @@
 2026-06-23 01:58 | index.html:1536 settings-nav-item integrations | verified [x] parity OK -> setSection integrations
 2026-06-23 01:59 | index.html:1540 settings-nav-item email | verified [x] parity OK -> setSection email
 2026-06-23 01:59 | index.html:1544 settings-nav-item reminders | verified [x] parity OK -> setSection reminders
+2026-06-23 02:00 | index.html:1549 settings-nav-item brain | verified [x] parity OK -> setSection brain (old tabs map 1:1 to NAV_GROUPS)

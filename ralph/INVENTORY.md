@@ -151,7 +151,7 @@ legacy `js/*.js` module.
 - [x] class=settings-nav-item (data-settings-tab="integrations") — index.html:1536 → PARITY OK. Redesign sibling: set-nav-item setSection `integrations` (surfaces.js:422; in NAV_GROUPS settings-data.js:160). Section nav wired.
 - [x] class=settings-nav-item (data-settings-tab="email") — index.html:1540 → PARITY OK. Redesign sibling: set-nav-item setSection `email` (surfaces.js:422; in NAV_GROUPS settings-data.js:160). Section nav wired.
 - [x] class=settings-nav-item (data-settings-tab="reminders") — index.html:1544 → PARITY OK. Redesign sibling: set-nav-item setSection `reminders` (surfaces.js:422; in NAV_GROUPS settings-data.js:160). Section nav wired.
-- [ ] class=settings-nav-item  `<button>` — index.html:1549
+- [x] class=settings-nav-item (data-settings-tab="brain") — index.html:1549 → PARITY OK. Redesign sibling: set-nav-item setSection `brain` (surfaces.js:422; in NAV_GROUPS settings-data.js:160). Section nav wired. NB: old settings tabs (services/ai/search/integrations/email/reminders/brain/scheduled/appearance/shortcuts/account/tools/users/system) map 1:1 to redesign NAV_GROUPS — all remaining settings-nav-items are setSection siblings.
 - [ ] class=settings-nav-item  `<button>` — index.html:1553
 - [ ] class=settings-nav-item  `<button>` — index.html:1559
 - [ ] class=settings-nav-item  `<button>` — index.html:1563

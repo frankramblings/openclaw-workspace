@@ -438,7 +438,7 @@ function settingsSurface(s) {
       case 'chips':
         return `<div class="set-chips"><span class="k">${esc(r.label)}</span>${map(r.chips, (ch) => `<span class="set-chip">${esc(ch)}</span>`)}<span class="set-add">+ add</span></div>`;
       case 'buttons':
-        return `<div class="set-buttons">${map(r.buttons, (b) => `<button class="set-btn${b.primary ? ' primary' : ''}${b.danger ? ' danger' : ''}">${esc(b.label)}</button>`)}</div>`;
+        return `<div class="set-buttons">${map(r.buttons, (b) => `<button class="set-btn${b.primary ? ' primary' : ''}${b.danger ? ' danger' : ''}"${b.act ? ` data-act="${b.act}"${b.arg != null ? ` data-arg="${esc(String(b.arg))}"` : ''}` : ''}>${esc(b.label)}</button>`)}</div>`;
       case 'provider':
         return `<div class="set-providers">${map(r.names, (n) => `<span class="set-provider${n === r.cur ? ' active' : ''}">${esc(n)}</span>`)}</div>`;
       case 'endpoint':
@@ -452,7 +452,7 @@ function settingsSurface(s) {
       case 'user':
         return `<div class="set-user"><span class="av">${esc(r.av)}</span><div style="flex:1"><div class="nm">${esc(r.name)}</div><div class="rl">${esc(r.role)}</div></div><span class="edit">Edit</span></div>`;
       case 'danger':
-        return `<div class="set-danger"><div style="flex:1"><div class="lbl">${esc(r.label)}</div><div class="dsc">${esc(r.desc)}</div></div><button class="set-btn danger" style="height:30px">Wipe</button></div>`;
+        return `<div class="set-danger"><div style="flex:1"><div class="lbl">${esc(r.label)}</div><div class="dsc">${esc(r.desc)}</div></div><button class="set-btn danger" style="height:30px"${r.kind ? ` data-act="wipe" data-arg="${esc(r.kind)}"` : ''}>Wipe</button></div>`;
       case 'text':
         return `<div class="set-text">${esc(r.text)}</div>`;
       case 'accent':

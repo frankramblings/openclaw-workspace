@@ -18,7 +18,7 @@
 // visibly drives the app.
 
 import { runtime } from './runtime.js';
-import { apiGet, apiJson } from './api.js';
+import { apiGet, apiJson, apiDelete } from './api.js';
 
 // state.ui toggle key -> real /api/auth/settings key. Only keys we're confident
 // map to a real backend setting persist server-side; everything else stays
@@ -95,5 +95,22 @@ export const actions = {
     runtime.render();
     const realKey = SETTINGS_TOGGLE_MAP[key];
     if (realKey) persistSetting(realKey, st.ui[key]); // best-effort
+  },
+
+  // Account → Logout. POST /api/auth/logout then return to the entry page.
+  logout: async () => {
+    try { await apiJson('/api/auth/logout', {}, 'POST'); } catch (_) {}
+    try { window.location.assign('/'); } catch (_) { try { location.reload(); } catch (_) {} }
+  },
+
+  // Danger Zone → Wipe <kind>. Confirm first; DELETE /api/admin/wipe/{kind}.
+  // kind ∈ chats|memory|skills|notes|tasks|documents|gallery|calendar.
+  wipe: async (kind) => {
+    if (!kind) return;
+    let ok = false;
+    try { ok = window.confirm(`Wipe all ${kind}? This is irreversible.`); } catch (_) { ok = false; }
+    if (!ok) return;
+    try { await apiDelete(`/api/admin/wipe/${kind}`); } catch (_) {}
+    try { runtime.render(); } catch (_) {}
   },
 };

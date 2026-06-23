@@ -37,7 +37,7 @@ const ep = (glyph, name, detail, iconBg, iconColor) => ({ type: 'endpoint', glyp
 const tgrow = (key, label, desc) => ({ type: 'toggleRow', key, label, desc });
 const vis = (items) => ({ type: 'vis', items });
 const shortcut = (action, keys) => ({ type: 'shortcut', action, keys });
-const danger = (label, desc) => ({ type: 'danger', label, desc });
+const danger = (label, desc, kind) => ({ type: 'danger', label, desc, kind });
 const user = (av, name, role) => ({ type: 'user', av, name, role });
 const accents = () => ({ type: 'accent' });
 const card = (o) => o;
@@ -119,7 +119,7 @@ export const PANELS = {
     ] }),
   ],
   account: [
-    card({ title: 'Account', icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>', rows: [user('F', 'frank', 'Admin'), btns([{ label: 'Logout', danger: true }])] }),
+    card({ title: 'Account', icon: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>', rows: [user('F', 'frank', 'Admin'), btns([{ label: 'Logout', danger: true, act: 'logout' }])] }),
     card({ title: 'Change Password', icon: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', rows: [inp('Current', '', 'Current password'), inp('New', '', 'New password (min 8)'), inp('Confirm', '', 'Confirm new password'), btns([{ label: 'Update Password', primary: true }])] }),
     card({ title: 'Two-Factor Authentication', icon: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/>', sub: 'Add a second step at login with an authenticator app.', rows: [btns([{ label: 'Enable 2FA', primary: true }])] }),
   ],
@@ -142,14 +142,14 @@ export const PANELS = {
   system: [
     card({ title: 'Data Backup', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>', sub: 'Export or import your user data (memories, presets, settings, skills, preferences) as a JSON file.', rows: [btns([{ label: 'Export Data' }, { label: 'Import Data' }])] }),
     card({ title: 'Danger Zone', danger: true, icon: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', sub: 'Irreversible. Each wipe targets one category — pick exactly what you want gone.', rows: [
-      danger('Wipe all chats', 'Every session, message, and chat history.'),
-      danger('Wipe all memory', 'Clears memory.json, the Memory table, and the vector store.'),
-      danger('Wipe all skills', 'Drops data/skills/ (all SKILL.md files).'),
-      danger('Wipe all notes', 'Every note, todo, and checklist.'),
-      danger('Wipe all tasks', 'Every scheduled task and its run history.'),
-      danger('Wipe all documents', 'Every document and version.'),
-      danger('Wipe all gallery', 'Every image record and the upload directory.'),
-      danger('Wipe all calendar', 'Every event and every calendar.'),
+      danger('Wipe all chats', 'Every session, message, and chat history.', 'chats'),
+      danger('Wipe all memory', 'Clears memory.json, the Memory table, and the vector store.', 'memory'),
+      danger('Wipe all skills', 'Drops data/skills/ (all SKILL.md files).', 'skills'),
+      danger('Wipe all notes', 'Every note, todo, and checklist.', 'notes'),
+      danger('Wipe all tasks', 'Every scheduled task and its run history.', 'tasks'),
+      danger('Wipe all documents', 'Every document and version.', 'documents'),
+      danger('Wipe all gallery', 'Every image record and the upload directory.', 'gallery'),
+      danger('Wipe all calendar', 'Every event and every calendar.', 'calendar'),
     ] }),
   ],
 };

@@ -7,3 +7,10 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - **resReport(rid)** — `live/research.js`. "↗ Visual Report" chip → opens `/api/research/report/{rid}` in a new tab.
 - **sendCapture()** — `mobile/mobile-app.js` + re-pointed the "Send to Gary" button in `mobile-sheets.js` from `closeCapture`→`sendCapture`. Persists `captureDraft` as a note `POST /api/notes {title, body, kind=remind|note|task}`; optimistic close, restores the text on failure so a capture is never lost. (Was: silently discarded.)
 - Verified: `node --check` on all 3 files passes; `runtime.actions` already exposed (app.js:263); `mobileActions` merged (app.js:185); research actions merge via `loadSurface('research')`. Synced to `frontend/`.
+
+## P1 — auth/destructive — partial (Logout + Wipe done; Password/AddUser next)
+- **Settings dispatch mechanism** (unlocks P1+P6): `surfaces.js` `buttons` case now emits `data-act`/`data-arg` when a button object has `act`/`arg`; `danger` case emits `data-act="wipe" data-arg="${kind}"`. `settings-data.js` `danger()` helper gained a `kind` param.
+- **Logout** — `settings-data.js:122` Logout button → `act:'logout'`; handler `live/settings.js` → `POST /api/auth/logout` → redirect to `/`. (User can now sign out.)
+- **Wipe all {kind}** — the 8 Danger-Zone rows now carry their kind (chats/memory/skills/notes/tasks/documents/gallery/calendar); handler `wipe(kind)` in `live/settings.js` → `window.confirm` guard → `DELETE /api/admin/wipe/{kind}`. Methods/kinds confirmed from legacy admin.js.
+- Verified: node --check all 3 files; synced; built output carries the data-act + handlers.
+- TODO next: **Update Password** (`POST /api/auth/change-password`) and **Add User** (`POST /api/auth/users`) — need the `inp()` fields bound to `data-model` first.

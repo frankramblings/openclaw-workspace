@@ -22,3 +22,4 @@
 2026-06-23 00:57 | index.html:508 skills-bulk-delete-nonpassing | verified [-] (memory-modal Skills-tab bulk bar)
 2026-06-23 00:57 | index.html:509 skills-bulk-delete | verified [-] (memory-modal Skills-tab bulk bar; completes memory-modal cluster)
 2026-06-23 00:57 | index.html:510 skills-bulk-cancel | verified [-] (final memory-modal element; cluster :377-510 complete)
+2026-06-23 00:58 | index.html:567 theme-opacity-wrap | verified [-] (theme-popup Peek; redesign has only inline accents + dead launcher)

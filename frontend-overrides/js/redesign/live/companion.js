@@ -15,7 +15,8 @@
 //   file: { n: name, t: extOf(name) }   // ext like 'md','json','db','env','txt'
 // The render colors md/json/db/env via EXT_COLOR and falls back to muted.
 
-import { apiGet } from './api.js';
+import { apiGet, apiJson } from './api.js';
+import { runtime } from './runtime.js';
 import { initTerminal } from './terminal.js';
 
 /** Lowercase file extension (no dot), or '' when the name has none. */
@@ -66,3 +67,50 @@ export async function load(state) {
   state.live = state.live || {};
   state.live.companion = { tree: transform(data.tree) };
 }
+
+// Workspace file-management toolbar actions. All paths are relative to the
+// workspace root; created/uploaded items appear after the tree reload.
+export const actions = {
+  wsNewFile: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    let name = null;
+    try { name = window.prompt('New file (path relative to workspace root):', 'untitled.md'); } catch (_) { name = null; }
+    if (name == null) return;
+    name = name.trim();
+    if (!name) return;
+    try { await apiJson('/api/workspace/create', { path: name }); } catch (_) {}
+    try { await load(state); } catch (_) {}
+    runtime.render();
+  },
+  wsNewFolder: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    let name = null;
+    try { name = window.prompt('New folder (path relative to workspace root):', 'new-folder'); } catch (_) { name = null; }
+    if (name == null) return;
+    name = name.trim();
+    if (!name) return;
+    try { await apiJson('/api/workspace/mkdir', { path: name }); } catch (_) {}
+    try { await load(state); } catch (_) {}
+    runtime.render();
+  },
+  wsUpload: async (files) => {
+    const state = runtime.state;
+    if (!state || !files || !files.length) return;
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f, f.name || 'upload');
+    fd.append('dir', '');
+    try {
+      await fetch(`${location.origin}/api/workspace/upload`, { method: 'POST', credentials: 'same-origin', body: fd });
+    } catch (_) {}
+    try { await load(state); } catch (_) {}
+    runtime.render();
+  },
+  wsRefresh: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    try { await load(state); } catch (_) {}
+    runtime.render();
+  },
+};

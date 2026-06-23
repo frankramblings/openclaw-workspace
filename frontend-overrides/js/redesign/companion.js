@@ -51,6 +51,10 @@ function filesPane(s) {
     <span class="ft">Files</span>
     <span class="at">Artifacts <span class="n">0</span></span>
     <div class="oc-spacer"></div>
+    <span class="ws-tool" data-act="wsNewFile" title="New file" style="cursor:pointer;padding:0 5px;color:var(--faint)">${I.file ? I.file(13, 'currentColor') : '📄'}<span style="font-size:14px">＋</span></span>
+    <span class="ws-tool" data-act="wsNewFolder" title="New folder" style="cursor:pointer;padding:0 5px;color:var(--faint)">${I.folder(13, 'currentColor')}<span style="font-size:14px">＋</span></span>
+    <label class="ws-tool" title="Upload files" style="cursor:pointer;padding:0 5px;color:var(--faint)"><input type="file" data-ws-upload multiple style="display:none">⤒</label>
+    <span class="ws-tool" data-act="wsRefresh" title="Refresh" style="cursor:pointer;padding:0 5px;color:var(--faint)">⟳</span>
     <span class="ws">workspace</span>
   </div>
   <div class="files-body">${fileTreeHtml(s)}</div>`;

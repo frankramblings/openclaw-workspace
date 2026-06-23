@@ -63,3 +63,10 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
   - **Export as Markdown** (`exportChat`) → client-side `.md` blob download.
 - Verified: node --check; synced; deployed.
 - P4 remainder (OPTIONAL/deferred): bulk session management (multi-select archive/delete, sort) — a "manage mode" build, not a no-op fix. Per-conversation delete + rename already cover the core need. Archive endpoints exist (`POST /api/session/{id}/archive`) if a per-row archive is later wanted.
+
+## P5 — workspace file management — ✅ DONE
+- Files tab subtab bar gained a toolbar (companion.js `filesPane`): **New file**, **New folder**, **Upload**, **Refresh**.
+- Handlers in `live/companion.js` (new `actions` export): `wsNewFile` → prompt → `POST /api/workspace/create {path}`; `wsNewFolder` → `POST /api/workspace/mkdir {path}`; `wsUpload(files)` → `POST /api/workspace/upload` (FormData files + dir); `wsRefresh` → re-`GET /api/workspace/tree`. All reload the tree after.
+- Upload input wired via the app.js `change` listener (extended to handle `data-ws-upload` alongside the composer's `data-upload`).
+- Contracts verified against backend/workspace_files.py.
+- Verified: node --check; synced; deployed.

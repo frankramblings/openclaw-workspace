@@ -217,12 +217,17 @@ root.addEventListener('input', (e) => {
   render();
 });
 
-// composer file-attach: <input type=file data-upload> → upload, keep as pending
+// file inputs: composer attach (data-upload) and workspace upload (data-ws-upload)
 root.addEventListener('change', (e) => {
   const t = e.target;
-  if (!t || t.type !== 'file' || !t.hasAttribute('data-upload')) return;
-  if (actions.uploadAttachments && t.files && t.files.length) actions.uploadAttachments(t.files);
-  t.value = ''; // allow re-picking the same file
+  if (!t || t.type !== 'file') return;
+  if (t.hasAttribute('data-upload')) {
+    if (actions.uploadAttachments && t.files && t.files.length) actions.uploadAttachments(t.files);
+    t.value = '';
+  } else if (t.hasAttribute('data-ws-upload')) {
+    if (actions.wsUpload && t.files && t.files.length) actions.wsUpload(t.files);
+    t.value = '';
+  }
 });
 
 // Enter-to-send in the chat composer (Shift+Enter = newline). Calls the chat

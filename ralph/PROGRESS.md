@@ -98,3 +98,4 @@
 2026-06-23 01:37 | index.html:1236 group-toggle-btn | verified [!] PARITY GAP — Group Chat (multi-model) absent; sibling to Compare gap
 2026-06-23 01:38 | index.html:1243 character-indicator-btn | verified [!] PARITY GAP — no character/persona feature; cb-chars label only; Chat Bar FINDINGS
 2026-06-23 01:38 | index.html:1249 compare-indicator-btn | verified [!] PARITY GAP — no Compare feature (same as :834); FINDINGS
+2026-06-23 01:39 | index.html:1263 model-picker-btn | verified [!] PARITY GAP — composer model-btn dead (no data-act); effort pill also dead. Logged FINDINGS.

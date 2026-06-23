@@ -207,3 +207,4 @@
 2026-06-23 02:32 | new-wiring data-act=pickSlash | verified [x] WIRED -> app.js:132 (insert slash cmd into draft)
 2026-06-23 02:33 | new-wiring data-act=resDiscuss | verified [!] UNWIRED — no resDiscuss handler (orphaned data-act). Logged FINDINGS.
 2026-06-23 02:34 | new-wiring data-act=resReport | verified [!] UNWIRED — no resReport handler (orphaned data-act, sibling of resDiscuss); FINDINGS
+2026-06-23 02:34 | new-wiring data-act=resetResearch | verified [x] WIRED -> live research.js:174 (cancel + reset)

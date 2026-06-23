@@ -15,6 +15,21 @@ import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 
 // ---- helpers --------------------------------------------------------------
 
+// Which conversation to reopen after a page reload. Without this the loader
+// falls back to list[0] (the most-recently-touched session), so a refresh
+// silently swapped you onto a different chat — the thread you were reading
+// looked like it had vanished.
+const ACTIVE_KEY = 'redesign.chat.activeId';
+function storeActiveId(id) {
+  try {
+    if (id) localStorage.setItem(ACTIVE_KEY, id);
+    else localStorage.removeItem(ACTIVE_KEY);
+  } catch (_) { /* storage disabled → just lose the restore */ }
+}
+function readActiveId() {
+  try { return localStorage.getItem(ACTIVE_KEY) || null; } catch (_) { return null; }
+}
+
 function fmtTime(ts) {
   if (ts == null) return '';
   const d = new Date(typeof ts === 'number' ? ts : Number(ts) || Date.parse(ts));
@@ -157,8 +172,14 @@ export async function load(state) {
   const list = Array.isArray(sessions) ? sessions : [];
 
   const chat = ensureChat(state);
-  const activeId = chat.activeId || (list[0] && list[0].id) || null;
+  // Prefer the in-memory active chat, then the one persisted from last session
+  // (if it still exists), and only then fall back to the most-recent session.
+  const stored = readActiveId();
+  const storedValid = stored && list.some((s) => s.id === stored);
+  const activeId = chat.activeId || (storedValid ? stored : null)
+    || (list[0] && list[0].id) || null;
   chat.activeId = activeId;
+  storeActiveId(activeId);
 
   // fallback model + cwd (best-effort)
   let fallbackModel = '';
@@ -313,6 +334,7 @@ export const actions = {
     if (!state || !id) return;
     const chat = ensureChat(state);
     chat.activeId = id;
+    storeActiveId(id);
     if (Array.isArray(chat.groups)) {
       for (const g of chat.groups) {
         for (const r of g.rows) r.active = r.id === id;
@@ -377,6 +399,7 @@ export const actions = {
         const id = await createSession(chat.model);
         if (!id) return;
         chat.activeId = id;
+        storeActiveId(id);
       } catch (_) {
         return;
       }
@@ -420,6 +443,12 @@ export const actions = {
       if (tid != null) turn.byTid[tid] = st;
       return st;
     };
+
+    // Immediate feedback: show the "Working…" spinner the moment we send, so the
+    // model's warmup (claude-cli can take a few seconds before its first frame)
+    // never looks like a dead, unresponsive turn.
+    ensureActivity();
+    flushRender();
 
     const onEvent = (ev) => {
       if (!ev) return;
@@ -711,7 +740,7 @@ export const actions = {
     const chat = ensureChat(state);
     const wasActive = chat.activeId === id;
     try { await apiJson(`/api/session/${id}/archive`, {}); } catch (_) {}
-    if (wasActive) { chat.activeId = null; chat.thread = []; chat.title = 'New chat'; chat.subtitle = ''; }
+    if (wasActive) { chat.activeId = null; storeActiveId(null); chat.thread = []; chat.title = 'New chat'; chat.subtitle = ''; }
     try { await load(state); } catch (_) {}
     runtime.render();
   },
@@ -726,7 +755,7 @@ export const actions = {
     const chat = ensureChat(state);
     const wasActive = chat.activeId === id;
     try { await apiDelete(`/api/session/${id}`); } catch (_) {}
-    if (wasActive) { chat.activeId = null; chat.thread = []; chat.title = 'New chat'; chat.subtitle = ''; }
+    if (wasActive) { chat.activeId = null; storeActiveId(null); chat.thread = []; chat.title = 'New chat'; chat.subtitle = ''; }
     try { await load(state); } catch (_) {}
     runtime.render();
   },

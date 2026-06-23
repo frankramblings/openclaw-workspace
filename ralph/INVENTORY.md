@@ -121,7 +121,7 @@ legacy `js/*.js` module.
 - [-] class=preset-tab active — index.html:1300 — sub-tab of the removed custom-preset-modal (:1291–:1468, bundles preset/character/group builders — all unported features). No sibling. Removed with the modal. See FINDINGS (preset/character/group gaps).
 - [-] class=preset-tab — index.html:1301 — sub-tab of the removed custom-preset-modal (:1291–:1468). No sibling. Removed with the modal (preset/character/group builders all unported).
 - [-] class=preset-tab — index.html:1302 — 3rd sub-tab of the removed custom-preset-modal (:1291–:1468). No sibling. Removed with the modal.
-- [ ] id=char-new-btn  `<button>` — index.html:1333
+- [-] id=char-new-btn ("new character") — index.html:1333 — character-builder control inside the removed custom-preset-modal; character/persona feature unported (see character-indicator-btn:1243 [!]). Removed with the modal.
 - [ ] id=char-delete-template-btn  `<button>` — index.html:1339
 - [ ] id=reset-character-btn  `<button>` — index.html:1340
 - [ ] id=char-expand-btn  `<button>` — index.html:1346

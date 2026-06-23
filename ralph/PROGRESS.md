@@ -107,3 +107,4 @@
 2026-06-23 01:43 | index.html:1300 preset-tab active | verified [-] removed custom-preset-modal sub-tab
 2026-06-23 01:44 | index.html:1301 preset-tab | verified [-] removed custom-preset-modal sub-tab
 2026-06-23 01:44 | index.html:1302 preset-tab | verified [-] removed custom-preset-modal sub-tab (3rd)
+2026-06-23 01:45 | index.html:1333 char-new-btn | verified [-] character-builder control in removed preset modal (char feature unported)

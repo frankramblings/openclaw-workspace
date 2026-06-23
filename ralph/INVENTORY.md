@@ -143,7 +143,7 @@ legacy `js/*.js` module.
 - [-] id=cancel-rename-session ("Cancel") — index.html:1486 — footer of the removed rename-session-modal; conversation-rename unported (export-dl-btn:1101 [!]). Removed with the modal.
 - [-] id=save-session-name ("Save") — index.html:1487 — footer of the removed rename-session-modal (:1469–~:1498); conversation-rename unported. Removed with the modal. Completes the rename-modal cluster.
 - [-] id=close-cookbook-modal (✖ closes the cookbook modal) — index.html:1499 — chrome of the cookbook-modal (:1499–:1505), removed with the unported Cookbook feature (rail-cookbook:835 [!]). No Cookbook in the redesign ⇒ no modal ⇒ no close button.
-- [ ] id=settings-opacity-wrap  `<button>` — index.html:1510
+- [-] id=settings-opacity-wrap ("Fade this window to preview the page behind it" — settings-modal Peek toggle) — index.html:1510 — modal-only affordance. The redesign replaces the settings *modal* with a full settings *surface* (rail-settings:846 [x], go→settings) — no overlay, so no peek-behind. Removed with the modal pattern. (Settings surface's own buttons being dead is the separate FINDINGS issue.)
 - [ ] class=close-btn  `<button>` — index.html:1514
 - [ ] class=settings-nav-item active  `<button>` — index.html:1520
 - [ ] class=settings-nav-item  `<button>` — index.html:1524

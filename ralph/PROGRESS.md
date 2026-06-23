@@ -54,3 +54,4 @@
 2026-06-23 01:07 | index.html:798 theme-import-cancel | verified [-] (theme-popup import Cancel; not ported)
 2026-06-23 01:08 | index.html:801 theme-reset-btn | verified [-] (theme-popup Reset-to-Default; ends theme-modal cluster :563-801)
 2026-06-23 01:08 | index.html:807 mobile-menu-btn | verified [-] (mobile nav replaced by bottom tab bar + More hub)
+2026-06-23 01:09 | index.html:809 hamburger-btn | verified [x] parity OK -> toggleRail (app.js:62/66/126)

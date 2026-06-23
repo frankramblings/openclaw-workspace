@@ -84,3 +84,4 @@
 2026-06-23 01:27 | index.html:1085 user-bar-settings | verified [-] redundant settings shortcut; settings reachable via rail-settings ([x])
 2026-06-23 01:28 | index.html:1100 incognito-indicator | verified [!] PARITY GAP — no incognito mode; shortcuts card decorative (no kbd handlers). Logged FINDINGS.
 2026-06-23 01:29 | index.html:1101 export-dl-btn | verified [!] PARITY GAP — no chat conversation-actions/More menu; logged cluster FINDINGS
+2026-06-23 01:30 | index.html:1106 incognito-btn | verified [!] PARITY GAP — incognito toggle; same missing feature as :1100 (FINDINGS). Also fixed export-dl-btn note (export-* are <div>s, not rows).

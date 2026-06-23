@@ -188,7 +188,7 @@ legacy `js/*.js` module.
 - [-] role="button" aria-expanded (admin endpoint accordion section header, adm-section-toggle) — index.html:2266 — collapsible-section layout pattern not ported (same as :2230/:2249). Redesign settings use flat cards. Layout simplification.
 - [!] id=adm-provider-btn (API provider selector, admin endpoints) — index.html:2277 → PARITY GAP (dead affordance). Redesign Added Models card lists API providers (Anthropic/DeepSeek) read-only; `provider`/`select` rows are display-only (surfaces.js:442/432, no data-act). Can't pick/configure a provider. Part of the dead Settings surface / no endpoint management — see FINDINGS.
 - [!] id=adm-epApiTestBtn ("Test" an API model endpoint, admin) — index.html:2304 → PARITY GAP (missing). No per-endpoint Test in the redesign (Added Models read-only, non-interactive settings). Same as adm-epLocalTestBtn:2245. See FINDINGS (dead Settings / no endpoint management).
-- [ ] id=adm-epApiCancelTestBtn  `<button>` — index.html:2305
+- [!] id=adm-epApiCancelTestBtn ("Cancel" the endpoint test, admin) — index.html:2305 → PARITY GAP (missing). Sub-control of the absent per-endpoint Test flow (adm-epApiTestBtn:2304). No endpoint testing in the redesign. See FINDINGS (no endpoint management).
 - [ ] id=adm-epAddBtn  `<button>` — index.html:2306
 - [ ] id=unified-intg-add-btn  `<button>` — index.html:2341
 - [ ] id=adm-exportDataBtn  `<button>` — index.html:2362

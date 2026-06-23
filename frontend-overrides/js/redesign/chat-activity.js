@@ -114,11 +114,9 @@ function renderItem(it, s, working) {
   return working ? stepRow(st, s, { iconHtml: checkIcon(13) }) : stepRow(st, s);
 }
 
-function renderWorking(m, act) {
-  const steps = act.steps || [];
-  const rows = steps.map((st) => st.state === 'running'
-    ? activeStep(st)
-    : stepRow(st, {}, { iconHtml: checkIcon(13), alwaysOpen: false })).join('');
+function renderWorking(m, s) {
+  const act = m.activity;
+  const rows = groupSteps(act.steps).map((it) => renderItem(it, s, true)).join('');
   return `
   <div class="act-wrap"><div class="act-spine">
     <div class="act-working">
@@ -136,7 +134,7 @@ function renderWorking(m, act) {
 export function renderActivity(m, s) {
   const act = m.activity;
   if (!act || !act.steps || !act.steps.length) return '';
-  if (act.status === 'working') return renderWorking(m, act); // Task 3 reworks this
+  if (act.status === 'working') return renderWorking(m, s);
 
   const trailOpen = !!((s.chatUI && s.chatUI.trail) || {})[m.id]; // default COLLAPSED
   const { txt, failed } = summaryText(act);

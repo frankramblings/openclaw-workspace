@@ -50,3 +50,26 @@ test('failures bubble to the summary and the group line', () => {
   const expanded = renderActivity(doneMsg(steps), ui({ trail: { m1: true } }));
   assert.match(expanded, /1 failed/);
 });
+
+const workingMsg = (steps, elapsed = '14s') =>
+  ({ id: 'm2', role: 'assistant', activity: { status: 'working', elapsed, steps } });
+
+test('working state groups completed runs and streams the running step standalone', () => {
+  const html = renderActivity(workingMsg([
+    step('a', 'run'), step('b', 'run'),     // done -> group
+    step('c', 'run', 'running'),            // running -> standalone activeStep
+  ]), ui());
+  assert.match(html, /Working/);            // working header
+  assert.match(html, /Stop/);              // stop button
+  assert.match(html, /Ran 2 commands/);    // completed run grouped
+  assert.match(html, /act-working/);       // running step rendered as active
+});
+
+test('working state shows a single completed step with a check, not a group', () => {
+  const html = renderActivity(workingMsg([
+    step('a', 'read'),
+    step('b', 'run', 'running'),
+  ]), ui());
+  assert.doesNotMatch(html, /toggleGroup/);  // lone read not grouped
+  assert.match(html, /data-act="toggleStep" data-arg="a"/);
+});

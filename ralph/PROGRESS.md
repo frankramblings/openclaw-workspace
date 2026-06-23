@@ -69,3 +69,4 @@
 2026-06-23 01:17 | index.html:838 rail-gallery | verified [!] PARITY GAP — no Gallery browse surface (data persists via Wipe-gallery); covered by FINDINGS
 2026-06-23 01:17 | index.html:839 rail-archive | verified [x] parity OK -> Library surface (title=Library/doclib; same as rail-documents)
 2026-06-23 01:18 | index.html:840 rail-memory | verified [!] Brain relocated to Settings card but Open-Brain launcher dead (unreachable); covered by FINDINGS
+2026-06-23 01:19 | index.html:841 rail-notes | verified [x] parity OK -> go:notes (live/notes.js)

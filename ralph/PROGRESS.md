@@ -56,3 +56,4 @@
 2026-06-23 01:08 | index.html:807 mobile-menu-btn | verified [-] (mobile nav replaced by bottom tab bar + More hub)
 2026-06-23 01:09 | index.html:809 hamburger-btn | verified [x] parity OK -> toggleRail (app.js:62/66/126)
 2026-06-23 01:09 | index.html:816 sidebar-toggle-btn | verified [x] parity OK -> toggleRail (same as :809)
+2026-06-23 01:11 | index.html:825 rail-search-btn | verified [!] PARITY GAP — search decorative across redesign (oc-search x4, no input/handler/Ctrl-K). Logged FINDINGS + tracking row.

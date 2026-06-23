@@ -70,7 +70,7 @@ legacy `js/*.js` module.
 - [-] id=mobile-menu-btn ("Toggle sidebar" ☰, mobile) — index.html:807 — mobile nav paradigm intentionally replaced: redesign mobile uses a persistent **bottom tab bar + "More" hub** (mobile-app.js renderTabBar / `mGo` action, data-act=`mGo`), not a slide-out sidebar. No hamburger-toggles-sidebar on mobile ⇒ no 1:1 sibling; function (reach any surface) covered by the tab bar. (Old id has 0 refs in frontend/js — wired by class/elsewhere or vestigial.)
 - [x] id=hamburger-btn ("Show sidebar", desktop) — index.html:809 → PARITY OK. Redesign sibling: `toggleRail` action (app.js:126, flips state.railExpanded), bound via data-act=`toggleRail` on the avatar (app.js:62) and the "Collapse sidebar" rail button (app.js:66). Real wiring, functional.
 - [x] id=sidebar-toggle-btn ("Toggle sidebar", in-sidebar collapse; sidebar-layout.js:88) — index.html:816 → PARITY OK. Same redesign sibling as hamburger-btn:809 — the `toggleRail` action (app.js:126) handles both expand+collapse, bound to avatar (app.js:62) and the rail collapse button (app.js:66).
-- [ ] id=rail-search-btn  `<button>` — index.html:825
+- [!] id=rail-search-btn ("Search conversations (Ctrl+K)", legacy search.js/search-chat.js) — index.html:825 → PARITY GAP. Redesign *shows* a ⌘K search bar (surfaces.js:23) + 3 more "Search/Filter" bars (inbox:123, library:343, notes:381) but ALL are decorative `<div class="oc-search">` with a placeholder `<span>` — no input, no data-act, no handler, and NO ⌘K/Ctrl-K keybinding anywhere in frontend/js/redesign. Affordance shown but dead. See FINDINGS.
 - [ ] id=rail-new-session  `<button>` — index.html:826
 - [ ] id=rail-delete-session  `<button>` — index.html:827
 - [ ] id=rail-chats  `<button>` — index.html:830
@@ -259,3 +259,4 @@ legacy `js/*.js` module.
 - [!] `<button class="set-launcher">` (settings card launcher: "Open Brain" / "Open Scheduled jobs" / "Open theme picker") — surfaces.js:479 — NO `data-act`, no class handler → dead. See FINDINGS.
 - [!] `<button class="set-btn">` via `btns()` ("Export Data" / "Import Data", settings-data.js:143) — surfaces.js:441 — NO `data-act` → dead. See FINDINGS.
 - [!] `<button class="set-btn danger">` "Wipe" (Danger-Zone: wipe memory/skills/all, settings-data.js:144–147) — surfaces.js:455 — NO `data-act` → dead (also needs a confirm guard). See FINDINGS.
+- [!] `<div class="oc-search">` ×4 (chat ⌘K filter surfaces.js:23, inbox :123, library :343, notes :381) — decorative only: no `<input>`, no `data-act`, no handler, no ⌘K/Ctrl-K keybinding. The redesign's only search/filter affordances and all dead. See FINDINGS (parity gap for legacy rail-search-btn:825).

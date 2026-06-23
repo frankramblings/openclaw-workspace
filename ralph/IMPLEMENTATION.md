@@ -141,3 +141,22 @@ You chose "Full config forms," but the backend only supports a slice:
   - **Search "Test"** — no search-test endpoint exists (search runs server-side during chat).
   - **Search result-count / URL / fallbacks** — only `search_result_count` is stored (kept read-only display); URL/fallbacks aren't in the settings schema.
 - **To make model config editable, the backend needs:** write endpoints for model roles (or a settable default-model API) and POST/PUT/DELETE on `/api/model-endpoints`, plus a search-test endpoint. Flagged for a backend pass.
+
+## Library doc editor (Toast UI) — ✅ DONE
+- **Vendored** Toast UI Editor 3.2.2 → `frontend-overrides/js/vendor/toastui/` (all.min.js 534KB + base CSS + dark-theme CSS), served at `/static/js/vendor/toastui/`.
+- **`live/document-editor.js`** (new): lazy-loads the bundle on first use; mounts the editor in a persistent full-screen overlay appended to `<body>` (outside `#oc-root`, so app.js's re-render never destroys it); shown/hidden via `onRender()` hooked into `runtime.afterRender` (same pattern as the xterm terminal). Header has a bound title input, Save, and Close; debounced 2.5s autosave + save-on-close.
+- Actions (merged via `live/library.js`): `newDoc` → `POST /api/document` → open; `openDoc(id)` → `GET /api/document/{id}` → `editor.setMarkdown`; `saveDoc` → `PUT /api/document/{id} {content,title}`; `closeDoc` → save + `reload('library')`.
+- **Library surface**: added a **"+ New doc"** button (`newDoc`); DOC/CODE cards are now clickable (`openDoc` with the real doc id). `live/library.js` now carries `d.id` through so existing docs open.
+- **Verified**: headless boot of the redesign page is clean (#oc-root renders, 13 rail items, no JS/module errors — confirms the ESM graph incl. document-editor↔index loads in-browser); document API round-trip (POST→GET→PUT→DELETE) validated live and the throwaway test doc cleaned up.
+
+---
+# Round 2 summary — all 8 decisions resolved
+1. Settings forms → **partial** (search provider wired; model config backend-blocked, flagged).
+2. Library doc editor → **DONE** (Toast UI vendored + wired).
+3. Sessions → **DONE** (sort + per-row archive).
+4. Incognito → **DONE** (Odysseus flag ported: toggle + ⌘⇧I + send `incognito=true`).
+5. Effort pill → **DONE** (removed; backend has no effort param).
+6. Visibility toggles → **DONE** (dead ones removed).
+7. Scroll-to-bottom → **DONE**.
+8. Email search → already client-side (no change).
+The only carry-over is a BACKEND task: write APIs for model-role/model-endpoint config (+ search test) to make the Settings model cards editable.

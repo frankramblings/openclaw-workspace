@@ -400,7 +400,7 @@ function librarySurface(s) {
   const lq = (s.libQuery || '').trim().toLowerCase();
   const items = all.filter((a) => (lf === 'all' || a.cat === lf) && (!lq || String(a.title || '').toLowerCase().includes(lq)));
   return `
-  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts Gary has produced</span><div class="oc-spacer"></div><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div></div>
+  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts Gary has produced</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newDoc" style="margin-right:8px">+ New doc</button><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div></div>
   <div class="lib-wrap">
     <div class="lib-filters">
       ${map(LIB_FILTERS, ([id, label]) => `<span class="lib-filter${lf === id ? ' active' : ''}" data-act="libFilter" data-arg="${id}">${esc(label)}</span>`)}
@@ -408,7 +408,8 @@ function librarySurface(s) {
     <div class="lib-grid">
       ${map(items, (a) => {
         const k = KIND_STYLE[a.kind];
-        return `<div class="lib-card">
+        const openable = a.id && (a.cat === 'doc' || a.cat === 'code');
+        return `<div class="lib-card"${openable ? ` data-act="openDoc" data-arg="${esc(a.id)}" style="cursor:pointer"` : ''}>
           <div class="lib-thumb" style="background:${k.thumbBg}"><span class="kl" style="color:${k.kindColor}">${esc(a.kindLabel)}</span></div>
           <div class="meta">
             <div class="t">${esc(a.title)}</div>

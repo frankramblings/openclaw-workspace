@@ -9,6 +9,11 @@
 //     when, cat:'report'|'doc'|'note'|'code' }
 
 import { apiGet } from './api.js';
+import { actions as docActions, initDocEditor } from './document-editor.js';
+
+// Library exposes the document-editor actions (newDoc / openDoc / saveDoc / closeDoc).
+export const actions = { ...docActions };
+let editorInited = false;
 
 const CAP = 30;
 
@@ -96,6 +101,7 @@ async function loadDocuments() {
   return asArray(raw, 'documents').map((d) => {
     const code = isCodeLang(d.language);
     return {
+      id: d.id,
       title: d.title || 'Untitled document',
       kind: code ? 'CODE' : 'DOC',
       kindLabel: code ? 'SNIPPET' : 'DOCUMENT',
@@ -120,6 +126,7 @@ async function loadNotes() {
 // independently so one failure doesn't sink the rest; if ALL three fail we
 // throw to keep the mock in place.
 export async function load(state) {
+  if (!editorInited) { try { initDocEditor(); } catch (_) {} editorInited = true; }
   const [research, documents, notes] = await Promise.all([
     safe(loadResearch),
     safe(loadDocuments),

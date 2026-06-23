@@ -76,7 +76,7 @@ legacy `js/*.js` module.
 - [x] id=rail-chats ("Chat" rail nav) — index.html:830 → PARITY OK. Redesign sibling: `railItem('chat','Chat')` (app.js:68) → renders data-act=`go` data-arg=`chat` (railItem, app.js:52) → `go` action (app.js:127 sets state.surface). Real wiring.
 - [x] id=rail-documents ("Documents" — legacy documentLibrary) — index.html:831 → PARITY OK (consolidated). Redesign sibling: the **Library** nav surface (railItem('library') app.js:73 → data-act=`go`/`library`, backed by live/library.js) for produced artifacts/docs, plus the browsable `documents/` folder in the workspace explorer (data.js:83, fsOpen.documents app.js:25). Real wiring.
 - [x] id=rail-calendar ("Calendar") — index.html:833 → PARITY OK. Direct sibling: railItem('calendar') (app.js:71) → data-act=`go`/`calendar` → `go` action (app.js:127), backed by live/calendar.js. Real wiring.
-- [ ] id=rail-compare  `<button>` — index.html:834
+- [!] id=rail-compare ("Compare" — legacy multi-model side-by-side, chat.js/sessions.js/modelSort) — index.html:834 → PARITY GAP (missing). No `compare` railItem in app.js (rail = chat/inbox/email/calendar/research/library/notes/settings), no compare surface, no go→compare target. "Compare" appears ONLY as a dangling label in the Settings→Sidebar visibility list (settings-data.js:110, default-on :168) — toggling it shows/hides nothing. (data.js "Compare" hits are unrelated research-scope labels.) See FINDINGS.
 - [ ] id=rail-cookbook  `<button>` — index.html:835
 - [ ] id=rail-research  `<button>` — index.html:836
 - [ ] id=rail-email  `<button>` — index.html:837

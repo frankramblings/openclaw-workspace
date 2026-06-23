@@ -62,3 +62,4 @@
 2026-06-23 01:13 | index.html:830 rail-chats | verified [x] parity OK -> go:chat (app.js:68/52/127)
 2026-06-23 01:14 | index.html:831 rail-documents | verified [x] parity OK -> Library surface + explorer documents/ (consolidated)
 2026-06-23 01:14 | index.html:833 rail-calendar | verified [x] parity OK -> go:calendar (live/calendar.js)
+2026-06-23 01:15 | index.html:834 rail-compare | verified [!] PARITY GAP — no Compare surface; only dangling settings-visibility label. Logged FINDINGS (sidebar list advertises nonexistent surfaces).

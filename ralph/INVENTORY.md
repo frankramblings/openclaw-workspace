@@ -145,7 +145,7 @@ legacy `js/*.js` module.
 - [-] id=close-cookbook-modal (✖ closes the cookbook modal) — index.html:1499 — chrome of the cookbook-modal (:1499–:1505), removed with the unported Cookbook feature (rail-cookbook:835 [!]). No Cookbook in the redesign ⇒ no modal ⇒ no close button.
 - [-] id=settings-opacity-wrap ("Fade this window to preview the page behind it" — settings-modal Peek toggle) — index.html:1510 — modal-only affordance. The redesign replaces the settings *modal* with a full settings *surface* (rail-settings:846 [x], go→settings) — no overlay, so no peek-behind. Removed with the modal pattern. (Settings surface's own buttons being dead is the separate FINDINGS issue.)
 - [-] class=close-btn (✖ closes the settings modal) — index.html:1514 — chrome of the settings-modal (opens :1506). Redesign settings is a full nav surface (rail-settings:846 [x], go→settings), not a modal ⇒ no close button. Removed with the modal pattern.
-- [ ] class=settings-nav-item active  `<button>` — index.html:1520
+- [x] class=settings-nav-item active (data-settings-tab="services" — "Services" category) — index.html:1520 → PARITY OK. Redesign sibling: the settings-surface section nav `set-nav-item` (surfaces.js:422, data-act=`setSection` data-arg=`services`), driven by NAV_GROUPS (settings-data.js:159, includes 'services'). Section navigation is wired (the card action buttons inside are the separate dead-settings FINDINGS issue).
 - [ ] class=settings-nav-item  `<button>` — index.html:1524
 - [ ] class=settings-nav-item  `<button>` — index.html:1528
 - [ ] class=settings-nav-item  `<button>` — index.html:1536

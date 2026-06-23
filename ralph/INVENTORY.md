@@ -195,7 +195,7 @@ legacy `js/*.js` module.
 - [!] id=adm-importDataBtn ("Import Data" — restore user data from JSON) — index.html:2363 → PARITY GAP (dead affordance). Redesign Data Backup card (settings-data.js:143) "Import Data" via `btns([...])` → dead `set-btn` (no data-act). Pairs with adm-exportDataBtn:2362. Already in FINDINGS (dead Settings surface).
 - [!] class=admin-btn-delete ("Wipe all chats" — admin Danger Zone, 1 of 8 at :2377–:2433) — index.html:2377 → PARITY GAP (dead affordance, destructive). Redesign Danger Zone renders "Wipe …" `set-btn danger` (surfaces.js:455) with NO data-act → dead (and would need a confirm guard). See FINDINGS (dead Settings surface — Wipe flagged high-priority).
 - [!] class=admin-btn-delete ("Wipe all memory", 2 of 8) — index.html:2385 → PARITY GAP (dead affordance, destructive). Redesign Danger Zone "Wipe all memory" (settings-data.js:146) is a dead `set-btn danger` (no data-act). See FINDINGS (dead Settings — Wipe high-priority).
-- [ ] class=admin-btn-delete  `<button>` — index.html:2393
+- [!] class=admin-btn-delete ("Wipe all skills", 3 of 8) — index.html:2393 → PARITY GAP (dead affordance, destructive). Redesign Danger Zone "Wipe all skills" (settings-data.js:147) is a dead `set-btn danger` (no data-act). See FINDINGS.
 - [ ] class=admin-btn-delete  `<button>` — index.html:2401
 - [ ] class=admin-btn-delete  `<button>` — index.html:2409
 - [ ] class=admin-btn-delete  `<button>` — index.html:2417

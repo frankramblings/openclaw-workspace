@@ -164,7 +164,7 @@ legacy `js/*.js` module.
 - [!] id=set-visionAddFallback ("+ Add fallback" for the vision-model role) — index.html:1636 → PARITY GAP (dead affordance). Same as set-defaultAddFallback:1606 — redesign `chips()` "+ add" (surfaces.js:439) has no data-act. Display-only. See FINDINGS "entire Settings surface buttons unwired."
 - [-] id=set-ttsPreviewBtn ("Preview" — TTS voice preview in settings) — index.html:1767 — TTS feature not ported. No TTS/voice section in the redesign settings (grep empty). Consistent with the baseline: the composer TTS button (overflow-tts-btn:1196) was already `hidden`/vestigial, i.e. TTS was a disabled feature. No active feature to preserve.
 - [!] id=search-provider-btn ("Search provider" selector — pick the web-search API) — index.html:1800 → PARITY GAP (dead affordance). Redesign search panel (settings-data.js:77) has a `provider(...)` selector, but the `provider` row renders `set-provider` spans with NO data-act (surfaces.js:442), and `select` rows are display-only too (surfaces.js:432, no `<select>`). Can't change provider. Part of the dead Settings surface — see FINDINGS "entire Settings surface buttons unwired" (now incl. select/provider rows).
-- [ ] id=set-searchTestBtn  `<button>` — index.html:1816
+- [!] id=set-searchTestBtn ("Test" the search provider connection) — index.html:1816 → PARITY GAP (dead affordance). Redesign search panel has `btns([{label:'Test'}])` (settings-data.js:81) → dead `set-btn` (surfaces.js:441, no data-act). Can't test the provider. Part of the dead Settings surface — see FINDINGS.
 - [ ] id=settings-open-brain  `<button>` — index.html:1855
 - [ ] id=settings-open-cron  `<button>` — index.html:1862
 - [ ] id=settings-open-theme  `<button>` — index.html:1869

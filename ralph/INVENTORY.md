@@ -238,7 +238,7 @@ legacy `js/*.js` module.
 - [x] data-act=`setSection` — surfaces.js:422 → WIRED. Handler app.js:177 (sets state.setSection); renderSettings reads it (surfaces.js:410) to render the chosen panel. Bound to the settings section nav items. Verified functional across the 14 settings-nav-item parity rows (services…system). Section navigation works (card buttons inside are the separate dead-Settings FINDINGS).
 - [x] data-act=`startResearch` — surfaces.js:307 → WIRED & functional. Handler: mock app.js:154 + LIVE override research.js:122 (POST /api/research/start {query, max_rounds from resCfg}, then streams progress via EventSource). Bound to the research start button. Real backend launch.
 - [x] data-act=`stopRun` — chat-activity.js:96 → WIRED & functional. Handler: mock app.js:138 (no-op placeholder) + LIVE override chat.js:441 (aborts streamCtrl, finalizeAll, sets activity status='done' + "Stopped after …"). Bound to the "Stop" button in the activity-trail working header. Real stream abort.
-- [ ] data-act=`toggleComp` — companion.js:108
+- [x] data-act=`toggleComp` — companion.js:108 → WIRED. Handler app.js:143 (toggles state.compHidden — hide/show the companion panel). Bound to the panel "Hide" ctl (companion.js:108) + collapsed "Show" reveal (:118). Verified at we-collapse:1387 / we-reopen:1397.
 - [ ] data-act=`toggleFs` — companion.js:38
 - [ ] data-act=`toggleRail` — app.js:62
 - [ ] data-act=`toggleResCtl` — surfaces.js:287

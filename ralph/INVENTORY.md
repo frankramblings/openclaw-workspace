@@ -27,7 +27,7 @@ legacy `js/*.js` module.
 - [-] id=memory-bulk-delete (bulk-action bar) — index.html:414 — appears only in the removed memory-modal's multi-select bar (paired with memory-select-btn:403). No browse/select UI in redesign Brain card. Removed with the modal.
 - [-] id=memory-bulk-cancel ("Cancel (Esc)", exits multi-select) — index.html:415 — sibling of memory-bulk-delete:414 in the removed memory-modal multi-select bar. Removed with the modal.
 - [-] id=memory-import-btn ("Import memories from a file") — index.html:427 — memory-modal footer I/O button; no memory import UI in redesign (only JS `import` keywords match). Removed with the modal.
-- [ ] id=memory-export-btn  `<button>` — index.html:428
+- [-] id=memory-export-btn ("Export all memories as JSON") — index.html:428 — memory-modal footer I/O button (export sibling of import:427); no redesign equivalent. Removed with the modal. (NOTE: memory-modal spans :373–~:562; the theme-modal opens at :563, so rows :463–:509 below are the memory-modal's Skills-tab panel.)
 - [ ] id=add-skill-btn  `<button>` — index.html:463
 - [ ] id=skills-select-btn  `<button>` — index.html:497
 - [ ] id=skills-audit-btn  `<button>` — index.html:498

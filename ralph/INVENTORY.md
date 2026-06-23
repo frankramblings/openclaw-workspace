@@ -193,7 +193,7 @@ legacy `js/*.js` module.
 - [!] id=unified-intg-add-btn ("+ Add Integration" — connect a new external service) — index.html:2341 → PARITY GAP (dead affordance). Redesign Connections card (settings-data.js:84) renders "+ Add Integration" via `btns([...])` → dead `set-btn` (no data-act, no add-integration flow). Feature shown but non-functional. Part of the dead Settings surface — see FINDINGS.
 - [!] id=adm-exportDataBtn ("Export Data" — export all user data as JSON) — index.html:2362 → PARITY GAP (dead affordance). Redesign Data Backup card (settings-data.js:143) renders "Export Data" via `btns([...])` → dead `set-btn` (no data-act). Already listed in FINDINGS (dead Settings surface, set-btn). Can't export.
 - [!] id=adm-importDataBtn ("Import Data" — restore user data from JSON) — index.html:2363 → PARITY GAP (dead affordance). Redesign Data Backup card (settings-data.js:143) "Import Data" via `btns([...])` → dead `set-btn` (no data-act). Pairs with adm-exportDataBtn:2362. Already in FINDINGS (dead Settings surface).
-- [ ] class=admin-btn-delete  `<button>` — index.html:2377
+- [!] class=admin-btn-delete ("Wipe all chats" — admin Danger Zone, 1 of 8 at :2377–:2433) — index.html:2377 → PARITY GAP (dead affordance, destructive). Redesign Danger Zone renders "Wipe …" `set-btn danger` (surfaces.js:455) with NO data-act → dead (and would need a confirm guard). See FINDINGS (dead Settings surface — Wipe flagged high-priority).
 - [ ] class=admin-btn-delete  `<button>` — index.html:2385
 - [ ] class=admin-btn-delete  `<button>` — index.html:2393
 - [ ] class=admin-btn-delete  `<button>` — index.html:2401

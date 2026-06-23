@@ -121,3 +121,4 @@
 2026-06-23 01:49 | index.html:1385 we-prefs | verified [!] PARITY GAP — no explorer prefs; workspace-explorer FINDINGS
 2026-06-23 01:49 | index.html:1386 we-refresh | verified [!] PARITY GAP — no refresh; workspace-explorer FINDINGS
 2026-06-23 01:50 | index.html:1387 we-collapse | verified [x] parity OK -> toggleComp Hide panel (companion.js:108/118)
+2026-06-23 01:50 | index.html:1390 we-tab-files | verified [x] parity OK -> compTab files (companion.js:104)

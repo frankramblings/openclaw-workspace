@@ -71,3 +71,4 @@
 2026-06-23 01:18 | index.html:840 rail-memory | verified [!] Brain relocated to Settings card but Open-Brain launcher dead (unreachable); covered by FINDINGS
 2026-06-23 01:19 | index.html:841 rail-notes | verified [x] parity OK -> go:notes (live/notes.js)
 2026-06-23 01:19 | index.html:842 rail-tasks | verified [!] PARITY GAP — no Tasks surface (Inbox is triage, not tasks); covered by FINDINGS
+2026-06-23 01:20 | index.html:843 rail-theme | verified [x] parity OK (reduced) -> Settings accent swatches setAccent live-wired (live/settings.js:82); full picker dead (FINDINGS)

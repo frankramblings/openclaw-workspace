@@ -200,7 +200,7 @@ legacy `js/*.js` module.
 - [!] class=admin-btn-delete ("Wipe all tasks", 5 of 8) — index.html:2409 → PARITY GAP (dead affordance, destructive). Redesign Danger Zone "Wipe all tasks" (settings-data.js:149) is a dead `set-btn danger` (no data-act). See FINDINGS.
 - [!] class=admin-btn-delete ("Wipe all documents", 6 of 8) — index.html:2417 → PARITY GAP (dead affordance, destructive). Redesign Danger Zone "Wipe all documents" (settings-data.js:150) is a dead `set-btn danger` (no data-act). See FINDINGS.
 - [!] class=admin-btn-delete ("Wipe all gallery", 7 of 8) — index.html:2425 → PARITY GAP (dead affordance, destructive). Redesign Danger Zone "Wipe all gallery" (settings-data.js:151) is a dead `set-btn danger` (no data-act). See FINDINGS.
-- [ ] class=admin-btn-delete  `<button>` — index.html:2433
+- [!] class=admin-btn-delete ("Wipe all calendar", 8 of 8) — index.html:2433 → PARITY GAP (dead affordance, destructive). Redesign Danger Zone "Wipe all calendar" (settings-data.js:152) is a dead `set-btn danger` (no data-act). Completes the 8 admin Wipe buttons (:2377–:2433). See FINDINGS.
 
 ---
 

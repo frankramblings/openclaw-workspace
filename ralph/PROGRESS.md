@@ -113,3 +113,4 @@
 2026-06-23 01:45 | index.html:1346 char-expand-btn | verified [-] character-builder control in removed preset modal
 2026-06-23 01:46 | index.html:1355 group-mode-btn | verified [-] group-chat builder control in removed preset modal (group unported)
 2026-06-23 01:46 | index.html:1361 group-add-btn | verified [-] group-builder control in removed preset modal
+2026-06-23 01:47 | index.html:1367 cancel-custom-preset | verified [-] removed custom-preset-modal footer

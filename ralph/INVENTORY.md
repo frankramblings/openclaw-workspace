@@ -127,7 +127,7 @@ legacy `js/*.js` module.
 - [-] id=char-expand-btn ("expand character editor") — index.html:1346 — character-builder control in the removed custom-preset-modal; character feature unported (:1243 [!]). Removed with the modal.
 - [-] id=group-mode-btn ("group chat mode" — parallel/round-robin) — index.html:1355 — group-chat builder control in the removed custom-preset-modal; Group Chat (multi-model) feature unported (group-toggle-btn:1236 [!]). Removed with the modal.
 - [-] id=group-add-btn ("add model to group") — index.html:1361 — group-chat builder control in the removed custom-preset-modal; Group Chat feature unported (:1236 [!]). Removed with the modal.
-- [ ] id=cancel-custom-preset  `<button>` — index.html:1367
+- [-] id=cancel-custom-preset ("Cancel") — index.html:1367 — footer button of the removed custom-preset-modal (:1291–:1468). Removed with the modal (preset/character/group features unported).
 - [ ] id=save-custom-preset  `<button>` — index.html:1368
 - [ ] id=we-new-file  `<button>` — index.html:1382
 - [ ] id=we-new-folder  `<button>` — index.html:1383

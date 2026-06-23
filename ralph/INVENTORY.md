@@ -81,7 +81,7 @@ legacy `js/*.js` module.
 - [x] id=rail-research ("Deep Research") — index.html:836 → PARITY OK. Direct sibling: railItem('research') (app.js:72) → data-act=`go`/`research` → `go` action, backed by live/research.js (+ startResearch/resetResearch actions). Real wiring.
 - [x] id=rail-email ("Email") — index.html:837 → PARITY OK. Direct sibling: railItem('email') (app.js:70, with unread nav-count badge) → data-act=`go`/`email` → `go` action, backed by live/email.js. Real wiring.
 - [!] id=rail-gallery ("Gallery" — legacy gallery.js/galleryEditor.js) — index.html:838 → PARITY GAP (missing). No gallery railItem or image-browse surface in the redesign; only the dangling `sb-gallery` visibility label + a "Wipe all gallery" danger button (settings-data.js:151 — so gallery DATA persists server-side but has no browse UI). Library surface is artifacts/docs, not an image gallery. Covered by FINDINGS "Sidebar visibility list advertises surfaces that don't exist."
-- [ ] id=rail-archive  `<button>` — index.html:839
+- [x] id=rail-archive (title="Library" — legacy doclib-modal / document archive; modalManager.js:1383) — index.html:839 → PARITY OK. Redesign sibling: the **Library** nav surface (railItem('library') app.js:73 → data-act=`go`/`library`, live/library.js). Same target as rail-documents:831. (NB: not an email-archive — the redesign's dismiss/aiArchive is separate inbox triage.) Real wiring.
 - [ ] id=rail-memory  `<button>` — index.html:840
 - [ ] id=rail-notes  `<button>` — index.html:841
 - [ ] id=rail-tasks  `<button>` — index.html:842

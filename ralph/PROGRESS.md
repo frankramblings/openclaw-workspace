@@ -64,3 +64,4 @@
 2026-06-23 01:14 | index.html:833 rail-calendar | verified [x] parity OK -> go:calendar (live/calendar.js)
 2026-06-23 01:15 | index.html:834 rail-compare | verified [!] PARITY GAP — no Compare surface; only dangling settings-visibility label. Logged FINDINGS (sidebar list advertises nonexistent surfaces).
 2026-06-23 01:15 | index.html:835 rail-cookbook | verified [!] PARITY GAP — no Cookbook surface (only sb-cookbook label); covered by existing FINDINGS
+2026-06-23 01:16 | index.html:836 rail-research | verified [x] parity OK -> go:research (live/research.js)

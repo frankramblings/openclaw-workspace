@@ -78,7 +78,7 @@ legacy `js/*.js` module.
 - [x] id=rail-calendar ("Calendar") — index.html:833 → PARITY OK. Direct sibling: railItem('calendar') (app.js:71) → data-act=`go`/`calendar` → `go` action (app.js:127), backed by live/calendar.js. Real wiring.
 - [!] id=rail-compare ("Compare" — legacy multi-model side-by-side, chat.js/sessions.js/modelSort) — index.html:834 → PARITY GAP (missing). No `compare` railItem in app.js (rail = chat/inbox/email/calendar/research/library/notes/settings), no compare surface, no go→compare target. "Compare" appears ONLY as a dangling label in the Settings→Sidebar visibility list (settings-data.js:110, default-on :168) — toggling it shows/hides nothing. (data.js "Compare" hits are unrelated research-scope labels.) See FINDINGS.
 - [!] id=rail-cookbook ("Cookbook" — legacy cookbook*.js suite) — index.html:835 → PARITY GAP (missing). No cookbook railItem or surface in the redesign; only the dangling `sb-cookbook` visibility label (settings-data.js:110). Covered by the FINDINGS entry "Sidebar visibility list advertises surfaces that don't exist."
-- [ ] id=rail-research  `<button>` — index.html:836
+- [x] id=rail-research ("Deep Research") — index.html:836 → PARITY OK. Direct sibling: railItem('research') (app.js:72) → data-act=`go`/`research` → `go` action, backed by live/research.js (+ startResearch/resetResearch actions). Real wiring.
 - [ ] id=rail-email  `<button>` — index.html:837
 - [ ] id=rail-gallery  `<button>` — index.html:838
 - [ ] id=rail-archive  `<button>` — index.html:839

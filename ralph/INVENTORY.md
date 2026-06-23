@@ -158,7 +158,7 @@ legacy `js/*.js` module.
 - [x] class=settings-nav-item (data-settings-tab="account") — index.html:1569 → PARITY OK. Redesign sibling: set-nav-item setSection `account` (surfaces.js:422; in NAV_GROUPS). Section nav wired.
 - [x] class=settings-nav-item admin-only (data-settings-tab="tools") — index.html:1575 → PARITY OK. Redesign sibling: set-nav-item setSection `tools` in the ADMIN NAV_GROUP (settings-data.js:162 `{label:'ADMIN', ids:['tools','users','system']}`, surfaces.js:422). Section nav wired.
 - [x] class=settings-nav-item admin-only (data-settings-tab="users") — index.html:1579 → PARITY OK. Redesign sibling: set-nav-item setSection `users` in the ADMIN NAV_GROUP (settings-data.js:162). Section nav wired.
-- [ ] class=settings-nav-item admin-only  `<button>` — index.html:1583
+- [x] class=settings-nav-item admin-only (data-settings-tab="system") — index.html:1583 → PARITY OK. Redesign sibling: set-nav-item setSection `system` in the ADMIN NAV_GROUP (settings-data.js:162). Section nav wired. Completes the settings category nav (:1520–:1583 = 14 tabs, all [x], 1:1 with NAV_GROUPS).
 - [ ] id=set-defaultAddFallback  `<button>` — index.html:1606
 - [ ] id=set-utilityAddFallback  `<button>` — index.html:1623
 - [ ] id=set-visionAddFallback  `<button>` — index.html:1636

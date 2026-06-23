@@ -71,7 +71,7 @@ legacy `js/*.js` module.
 - [x] id=hamburger-btn ("Show sidebar", desktop) — index.html:809 → PARITY OK. Redesign sibling: `toggleRail` action (app.js:126, flips state.railExpanded), bound via data-act=`toggleRail` on the avatar (app.js:62) and the "Collapse sidebar" rail button (app.js:66). Real wiring, functional.
 - [x] id=sidebar-toggle-btn ("Toggle sidebar", in-sidebar collapse; sidebar-layout.js:88) — index.html:816 → PARITY OK. Same redesign sibling as hamburger-btn:809 — the `toggleRail` action (app.js:126) handles both expand+collapse, bound to avatar (app.js:62) and the rail collapse button (app.js:66).
 - [!] id=rail-search-btn ("Search conversations (Ctrl+K)", legacy search.js/search-chat.js) — index.html:825 → PARITY GAP. Redesign *shows* a ⌘K search bar (surfaces.js:23) + 3 more "Search/Filter" bars (inbox:123, library:343, notes:381) but ALL are decorative `<div class="oc-search">` with a placeholder `<span>` — no input, no data-act, no handler, and NO ⌘K/Ctrl-K keybinding anywhere in frontend/js/redesign. Affordance shown but dead. See FINDINGS.
-- [ ] id=rail-new-session  `<button>` — index.html:826
+- [x] id=rail-new-session ("New chat") — index.html:826 → PARITY OK. Redesign sibling: `newChat` action — live override at live/chat.js:295 (resets activeId/thread/title, deactivates rows, re-renders; server session created on first send), bound via data-act=`newChat` on the "New conversation" button (surfaces.js:22) and mobile (mobile-surfaces.js:55). Real wiring.
 - [ ] id=rail-delete-session  `<button>` — index.html:827
 - [ ] id=rail-chats  `<button>` — index.html:830
 - [ ] id=rail-documents  `<button>` — index.html:831

@@ -25,3 +25,4 @@
 2026-06-23 00:58 | index.html:567 theme-opacity-wrap | verified [-] (theme-popup Peek; redesign has only inline accents + dead launcher)
 2026-06-23 00:58 | index.html:571 close-theme-popup | verified [-] (no theme popup in redesign)
 2026-06-23 00:59 | index.html:575 theme-tab-browse | verified [-] (theme-popup internal tab; no preset browser in redesign)
+2026-06-23 00:59 | index.html:576 theme-tab-customize | verified [-] (theme-popup tab; reduced to inline accent swatches)

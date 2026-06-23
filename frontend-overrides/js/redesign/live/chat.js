@@ -74,16 +74,63 @@ function ensureChat(state) {
 }
 
 // Fetch + map history into a thread; returns { thread, title?, subtitle, model }.
+// Rebuild the Cowork-style activity trail from a turn's saved tool_events
+// (backend _map_history). Skips Gary's `message` reply-delivery tool — parity
+// with the live relay, which hides its card — so reload matches the live view.
+function historySteps(toolEvents, msgIdx) {
+  if (!Array.isArray(toolEvents)) return [];
+  const steps = [];
+  toolEvents.forEach((ev, i) => {
+    const name = String(ev.tool || '');
+    if (/^(message|mcp__openclaw__message)$/i.test(name)) return;
+    const kind = toolKind(name);
+    const failed = ev.exit_code != null && ev.exit_code !== 0;
+    const lines = String(ev.output || '').split('\n').filter((l) => l.length)
+      .slice(0, 200).map((t) => ({ t, c: lineColor(t) }));
+    steps.push({
+      id: `h${msgIdx}-s${i}`,
+      kind,
+      label: PAST[kind] || 'Ran',
+      file: ev.command || '',
+      meta: failed ? `exit ${ev.exit_code}` : '',
+      metaColor: failed ? 'var(--red)' : undefined,
+      state: failed ? 'error' : 'done',
+      lines,
+    });
+  });
+  return steps;
+}
+
 async function fetchThread(id, fallbackModel, name) {
   const hist = await apiGet(`/api/history/${id}?limit=100`);
   const list = Array.isArray(hist?.history) ? hist.history : [];
   const model = hist?.model || fallbackModel || '';
-  const thread = list.map((h) => ({
-    role: h.role === 'user' ? 'user' : 'assistant',
-    text: h.content || '',
-    time: fmtTime(h?.metadata?.timestamp),
-    model: h?.metadata?.model || model,
-  }));
+  const thread = list.map((h, i) => {
+    const meta = h?.metadata || {};
+    const msg = {
+      id: `h${i}`,
+      role: h.role === 'user' ? 'user' : 'assistant',
+      text: h.content || '',
+      time: fmtTime(meta.timestamp),
+      model: meta.model || model,
+    };
+    if (msg.role === 'assistant') {
+      const steps = historySteps(meta.tool_events, i);
+      if (steps.length) {
+        // The final answer is the LAST non-empty round (backend `content` is the
+        // first); render it below the trail, like the live multi-round view.
+        const rts = Array.isArray(meta.round_texts)
+          ? meta.round_texts.filter((t) => t && t.trim()) : [];
+        if (rts.length) msg.text = rts[rts.length - 1];
+        msg.activity = {
+          status: 'done',
+          worked: `Worked · ${steps.length} step${steps.length === 1 ? '' : 's'}`,
+          steps,
+        };
+      }
+    }
+    return msg;
+  });
   return {
     thread,
     title: name,

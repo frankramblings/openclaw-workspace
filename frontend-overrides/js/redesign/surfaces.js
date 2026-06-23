@@ -10,7 +10,7 @@ import {
   CAL_MONTH, CAL_CELLS, CAL_BAR_TONE,
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
-import { renderActivity, MOCK_CHAT_THREAD } from './chat-activity.js';
+import { renderActivity } from './chat-activity.js';
 
 // ===========================================================================
 // CHAT
@@ -50,7 +50,7 @@ function convListBody(s) {
   const sorted = s.convSort === 'alpha'
     ? [{ label: 'A–Z', rows: groups2.flatMap((g) => g.rows || []).slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' })) }]
     : groups2;
-  const convRow = (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span><span class="conv-arch" data-act="archiveSession" data-arg="${esc(r.id)}" title="Archive conversation" style="margin-left:auto;padding:0 4px;color:var(--faint);opacity:.5;cursor:pointer">archive</span><span class="conv-del" data-act="deleteSession" data-arg="${esc(r.id)}" title="Delete conversation" style="padding:0 4px;color:var(--faint);opacity:.5;cursor:pointer">✕</span></div>`;
+  const convRow = (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span><span class="conv-arch" data-act="archiveSession" data-arg="${esc(r.id)}" title="Archive conversation" style="margin-left:auto;padding:0 4px;color:var(--faint);opacity:.5;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span><span class="conv-del" data-act="deleteSession" data-arg="${esc(r.id)}" title="Delete conversation" style="padding:0 4px;color:var(--faint);opacity:.5;cursor:pointer">✕</span></div>`;
   return map(sorted, (g, gi) => `
     <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
     ${map(g.rows, convRow)}`);
@@ -89,7 +89,7 @@ function chatSurface(s) {
   const subtitle = chat.subtitle ?? '12 messages · claude-opus-4';
   const model = chat.model ?? 'opus-4';
   const pct = chat.usagePct != null ? chat.usagePct : 4.4;
-  const thread = map(chat.thread || MOCK_CHAT_THREAD, (msg) => chatMsg(msg, s));
+  const thread = map(chat.thread || [], (msg) => chatMsg(msg, s));
 
   return `
   <div class="chat-head">

@@ -5,7 +5,7 @@ import { I, icon } from '../icons.js';
 import { esc, map, when } from '../dom.js';
 import { AVATAR, EMAILS, INBOX } from '../data.js';
 import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
-import { renderActivity, MOCK_CHAT_THREAD } from '../chat-activity.js';
+import { renderActivity } from '../chat-activity.js';
 
 const ic = {
   mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
@@ -56,7 +56,7 @@ export function mChat(s) {
     </div>
   </div>
   ${when(!focused, `<div class="m-comp-handle"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>`)}
-  <div class="m-scroll m-thread">${map(s.live?.chat?.thread || MOCK_CHAT_THREAD, (msg) => mChatMsg(msg, s))}</div>
+  <div class="m-scroll m-thread">${map(s.live?.chat?.thread || [], (msg) => mChatMsg(msg, s))}</div>
   <div class="m-composer${focused ? ' focused' : ''}">
     <div class="bar">
       ${when(focused, `<button class="m-round-btn bordered">${I.plus(16)}</button>`)}

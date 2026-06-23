@@ -210,3 +210,4 @@
 2026-06-23 02:34 | new-wiring data-act=resetResearch | verified [x] WIRED -> live research.js:174 (cancel + reset)
 2026-06-23 02:34 | new-wiring data-act=selDoc | verified [x] WIRED -> app.js:163 (select note/doc)
 2026-06-23 02:35 | new-wiring data-act=selEmail | verified [x] WIRED -> live email.js:176 (openAt loads message)
+2026-06-23 02:35 | new-wiring data-act=selectSession | verified [x] WIRED -> live chat.js:264 (loads session thread)

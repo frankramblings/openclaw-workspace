@@ -230,7 +230,7 @@ legacy `js/*.js` module.
 - [x] data-act=`resetResearch` — surfaces.js:313 → WIRED & functional. Handler: mock app.js:159 + LIVE override research.js:174 (closeES(), clears activeRid, resets state.research='idle' / researchProgress). Bound to "Stop" (surfaces.js:313) + "New research" (:324). Real run-cancel + state reset.
 - [x] data-act=`selDoc` — surfaces.js:386 → WIRED. Handler app.js:163 (sets state.selDoc=Number(i)). The Notes surface renders docs[state.selDoc] (notes.js:4). Bound to note/doc list rows. Real selection + re-render.
 - [x] data-act=`selEmail` — surfaces.js:128 → WIRED & functional. Handler: mock app.js:164 + LIVE override email.js:176 (openAt(i) → loads the full message body). Bound to desktop email list rows. Real data load + re-render.
-- [ ] data-act=`selectSession` — surfaces.js:45
+- [x] data-act=`selectSession` — surfaces.js:45 → WIRED & functional. Handler: LIVE chat.js:264 (sets chat.activeId, marks active row, re-renders, then GET /api/sessions + loads the session's thread via fetchThread). Bound to conv-row session list items. Real data load.
 - [ ] data-act=`send` — mobile/mobile-surfaces.js:65
 - [ ] data-act=`setAccent` — surfaces.js:461
 - [ ] data-act=`setCaptureType` — mobile/mobile-sheets.js:64

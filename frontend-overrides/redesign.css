@@ -55,13 +55,6 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
    SHELL
    ========================================================================== */
 .oc-app{height:100vh;width:100%;display:flex;flex-direction:column;background:var(--bg)}
-
-/* window chrome */
-.oc-chrome{height:44px;flex:none;display:flex;align-items:center;padding:0 14px;background:#101115;border-bottom:1px solid var(--bd2);gap:13px}
-.oc-lights{display:flex;gap:8px}
-.oc-lights span{width:12px;height:12px;border-radius:50%}
-.oc-light-r{background:var(--red)} .oc-light-y{background:var(--gold)} .oc-light-g{background:var(--green)}
-.oc-crumb{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
 .oc-spacer{flex:1}
 
 .oc-body{flex:1;display:flex;min-height:0}

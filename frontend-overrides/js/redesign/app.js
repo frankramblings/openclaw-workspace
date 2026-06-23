@@ -45,13 +45,6 @@ const root = document.getElementById('oc-root');
 const mq = window.matchMedia('(max-width: 768px)');
 const isMobile = () => mq.matches;
 
-// ---- crumb ----------------------------------------------------------------
-const CRUMB = {
-  chat: 'workspace / chat', email: 'workspace / email', inbox: 'workspace / inbox',
-  calendar: 'workspace / calendar', research: 'workspace / research',
-  library: 'workspace / library', notes: 'workspace / notes', settings: 'workspace / settings',
-};
-
 // ---- rail -----------------------------------------------------------------
 function railItem(surface, label, iconHtml, badge) {
   const active = state.surface === surface;
@@ -88,13 +81,9 @@ function renderRail() {
 function renderDesktop(s) {
   const showCompanion = s.surface !== 'settings' && !s.compHidden;
   const showReveal = s.surface !== 'settings' && s.compHidden;
+  // No simulated window-chrome bar — the PWA renders in a real browser window.
   return `
   <div class="oc-app">
-    <div class="oc-chrome">
-      <div class="oc-lights"><span class="oc-light-r"></span><span class="oc-light-y"></span><span class="oc-light-g"></span></div>
-      <div class="oc-spacer"></div>
-      <span class="oc-crumb">${esc(CRUMB[s.surface])}</span>
-    </div>
     <div class="oc-body">
       ${renderRail()}
       ${when(s.surface === 'chat', renderChatList(s))}

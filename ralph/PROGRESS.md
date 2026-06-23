@@ -161,3 +161,4 @@
 2026-06-23 02:12 | index.html:2111 set-email-open-integrations | verified [!] dead "Manage in Integrations" set-btn; dead-settings FINDINGS
 2026-06-23 02:13 | index.html:2119 set-email-open-tasks | verified [!] dead "Open Tasks" set-btn + no Tasks surface; FINDINGS
 2026-06-23 02:13 | index.html:2130 set-email-style-extract | verified [!] dead Writing-Style Extract btn; dead-settings FINDINGS
+2026-06-23 02:14 | index.html:2131 set-email-style-save | verified [!] dead Writing-Style Save btn; dead-settings FINDINGS

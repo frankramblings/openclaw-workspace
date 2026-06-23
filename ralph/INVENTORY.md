@@ -175,7 +175,7 @@ legacy `js/*.js` module.
 - [!] id=set-email-open-integrations ("Manage in Integrations" — cross-link to the Integrations settings) — index.html:2111 → PARITY GAP (dead affordance). Redesign Email Accounts card renders `btns([{label:'Manage in Integrations'}])` (settings-data.js:96) → dead `set-btn` (no data-act; doesn't navigate to setSection integrations). Part of the dead Settings surface — see FINDINGS.
 - [!] id=set-email-open-tasks ("Open Tasks" — cross-link to email background tasks) — index.html:2119 → PARITY GAP (dead affordance + no target). Redesign Email Tasks card renders `btns([{label:'Open Tasks'}])` (settings-data.js:97) → dead `set-btn` (no data-act). Doubly broken: there is no Tasks surface in the redesign anyway (rail-tasks:842 [!]). See FINDINGS (dead Settings surface + missing Tasks).
 - [!] id=set-email-style-extract ("Extract from Sent" — derive email writing style) — index.html:2130 → PARITY GAP (dead affordance). Redesign Writing Style card (settings-data.js:98) renders the textarea + `btns([{label:'Extract from Sent (15 emails)'},{label:'Save'}])` → dead `set-btn`s (no data-act). Feature shown but non-functional. Part of the dead Settings surface — see FINDINGS.
-- [ ] id=set-email-style-save  `<button>` — index.html:2131
+- [!] id=set-email-style-save ("Save" the email writing style) — index.html:2131 → PARITY GAP (dead affordance). The "Save" half of the redesign Writing Style card `btns()` (settings-data.js:98) — dead `set-btn` (no data-act). Pairs with set-email-style-extract:2130. See FINDINGS.
 - [ ] id=set-reminders-open-integrations  `<a href>` — index.html:2164
 - [ ] id=set-reminder-test-btn  `<button>` — index.html:2187
 - [ ] id=adm-addBtn  `<button>` — index.html:2216

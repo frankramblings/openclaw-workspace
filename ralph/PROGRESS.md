@@ -91,3 +91,4 @@
 2026-06-23 01:33 | index.html:1183 overflow-rag-btn | verified [!] PARITY GAP — no RAG tool in redesign (vector store persists server-side); Chat Bar FINDINGS
 2026-06-23 01:34 | index.html:1196 overflow-tts-btn | verified [-] old button already hidden(display:none) in baseline; no active feature; redesign has no TTS
 2026-06-23 01:34 | index.html:1201 overflow-preset-btn | verified [!] PARITY GAP — no preset-picker UI (data persists); Chat Bar FINDINGS
+2026-06-23 01:35 | index.html:1210 web-toggle-btn | verified [!] composer web-search toggle gone; capability via agent tools+/research; Chat Bar FINDINGS

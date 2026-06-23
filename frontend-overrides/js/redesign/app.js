@@ -10,6 +10,8 @@ import { DEFAULT_UI } from './settings-data.js';
 import { renderCenter, renderChatList } from './surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
+import { loadSurface } from './live/index.js';
+import { runtime } from './live/runtime.js';
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -33,6 +35,8 @@ const state = {
   companionSheetOpen: false, companionTab: 'terminal',
   quickCaptureOpen: false, captureType: 'remind', captureDraft: '',
   refreshing: false,
+  // live backend data per surface (loaders populate; render falls back to mock)
+  live: {},
 };
 
 let researchTimer = null;
@@ -183,6 +187,16 @@ const actions = {
   ...mobileActions(state),
 };
 
+// ---- live data layer ------------------------------------------------------
+// The currently-visible surface (desktop = surface; mobile = sub or tab).
+function activeSurface() {
+  if (isMobile()) return state.mSub || state.mTab;
+  return state.surface;
+}
+function loadActive(force = false) {
+  loadSurface(activeSurface(), { state, actions, render, force });
+}
+
 // ---- event delegation -----------------------------------------------------
 root.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');
@@ -192,6 +206,7 @@ root.addEventListener('click', (e) => {
   if (!fn) return;
   fn(t.getAttribute('data-arg'), e);
   render();
+  loadActive(); // fetch live data for any newly-activated surface (idempotent)
 });
 
 // live-bound inputs/textareas
@@ -202,6 +217,18 @@ root.addEventListener('input', (e) => {
   state[field] = t.value;
   if (field === 'draft') state.forceSlash = false; // typing manages the slash menu
   render();
+});
+
+// Enter-to-send in the chat composer (Shift+Enter = newline). Calls the chat
+// module's `send` action once it's been merged in (no-op until then).
+root.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (!t || !t.getAttribute) return;
+  const fk = t.getAttribute('data-focus');
+  if ((fk === 'draft' || fk === 'mdraft') && e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    if (actions.send) { actions.send(); render(); }
+  }
 });
 
 // mobile keyboard: focusing the chat composer raises the keyboard (frame 9 —
@@ -229,8 +256,13 @@ wireMobileGestures({
   render,
 });
 
-// re-render on breakpoint cross (desktop ⇆ mobile)
-mq.addEventListener('change', render);
+// re-render on breakpoint cross (desktop ⇆ mobile), then load the active surface
+mq.addEventListener('change', () => { render(); loadActive(); });
+
+// expose state/render/actions to live/* modules (async re-renders after fetch)
+runtime.state = state;
+runtime.render = render;
+runtime.actions = actions;
 
 // ---- boot -----------------------------------------------------------------
 // Deep-link the initial surface from the hash (e.g. #calendar), and keep the
@@ -258,6 +290,8 @@ window.addEventListener('hashchange', () => {
   const h = (location.hash || '').replace('#', '');
   if (SURFACES.includes(h) && h !== state.surface) { state.surface = h; seedMobileFromHash(h); render(); }
   else if ((h === 'more' || h === 'capture')) { seedMobileFromHash(h); render(); }
+  loadActive();
 });
 
 render();
+loadActive(); // kick off live data for the initial surface

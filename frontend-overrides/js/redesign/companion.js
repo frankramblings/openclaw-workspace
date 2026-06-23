@@ -13,6 +13,7 @@ export function effectiveTab(s) {
 
 // flatten the workspace tree into renderable rows honoring fsOpen
 function fsRows(s) {
+  const tree = s.live?.companion?.tree ?? FS;
   const rows = [];
   const walk = (nodes, depth, prefix) => {
     for (const node of nodes) {
@@ -26,7 +27,7 @@ function fsRows(s) {
       }
     }
   };
-  walk(FS, 0, '');
+  walk(tree, 0, '');
   return rows;
 }
 

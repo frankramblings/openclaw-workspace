@@ -32,6 +32,28 @@ export function renderTabBar(s) {
   </div>`;
 }
 
+// one mobile chat message → html (live thread item: {role,time,model,text})
+function mChatMsg(m) {
+  const paras = String(m.text || '').split(/\n\n+/).filter(Boolean)
+    .map((p) => `<p style="margin:0 0 8px">${esc(p).replace(/\n/g, '<br>')}</p>`).join('') || '<p style="margin:0"></p>';
+  if (m.role === 'user') return `<div class="m-msg-user-wrap"><div class="m-msg-user">${esc(m.text || '')}</div></div>`;
+  return `<div class="m-msg-asst"><div class="m-msg-av"><img src="${AVATAR}" alt="Gary"></div><div style="min-width:0">${paras}</div></div>`;
+}
+
+const M_STATIC_THREAD = `
+    <div class="m-msg-asst">
+      <div class="m-msg-av"><img src="${AVATAR}" alt="Gary"></div>
+      <div style="min-width:0">
+        <p>On thread switch, call <code class="code-inline">StreamManager.activate()</code> — it replays missed events, then reopens the live SSE.</p>
+        <div class="m-code-card">
+          <div class="bar"><span>javascript</span><span>copy</span></div>
+          <pre><span class="tok-kw">const</span> tree = <span class="tok-kw">new</span> <span class="tok-fn">ActivityTree</span>(<span class="tok-str">'#pane'</span>);</pre>
+        </div>
+      </div>
+    </div>
+    <div class="m-toolchip"><span class="d"></span><span class="nm">ActivityTree</span><span class="tc">tool_call</span><div class="m-spacer"></div><span class="done">done · 1.2s</span></div>
+    <div class="m-msg-user-wrap"><div class="m-msg-user">now have subagent(s) implement all of this &amp; confirm when it's live</div></div>`;
+
 // ---- chat -----------------------------------------------------------------
 export function mChat(s) {
   const focused = s.keyboard;
@@ -45,33 +67,21 @@ export function mChat(s) {
     </div>
   </div>
   ${when(!focused, `<div class="m-comp-handle"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>`)}
-  <div class="m-scroll m-thread">
-    <div class="m-msg-asst">
-      <div class="m-msg-av"><img src="${AVATAR}" alt="Gary"></div>
-      <div style="min-width:0">
-        <p>On thread switch, call <code class="code-inline">StreamManager.activate()</code> — it replays missed events, then reopens the live SSE.</p>
-        <div class="m-code-card">
-          <div class="bar"><span>javascript</span><span>copy</span></div>
-          <pre><span class="tok-kw">const</span> tree = <span class="tok-kw">new</span> <span class="tok-fn">ActivityTree</span>(<span class="tok-str">'#pane'</span>);</pre>
-        </div>
-      </div>
-    </div>
-    <div class="m-toolchip"><span class="d"></span><span class="nm">ActivityTree</span><span class="tc">tool_call</span><div class="m-spacer"></div><span class="done">done · 1.2s</span></div>
-    <div class="m-msg-user-wrap"><div class="m-msg-user">now have subagent(s) implement all of this &amp; confirm when it's live</div></div>
-  </div>
+  <div class="m-scroll m-thread">${s.live?.chat?.thread ? map(s.live.chat.thread, mChatMsg) : M_STATIC_THREAD}</div>
   <div class="m-composer${focused ? ' focused' : ''}">
     <div class="bar">
       ${when(focused, `<button class="m-round-btn bordered">${I.plus(16)}</button>`)}
       <textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message Gary…">${esc(s.draft || '')}</textarea>
       ${when(!focused, `<button class="m-round-btn">${ic.mic()}</button>`)}
-      <button class="m-send">${I.send(16)}</button>
+      <button class="m-send" data-act="send">${I.send(16)}</button>
     </div>
   </div>`;
 }
 
 // ---- inbox ----------------------------------------------------------------
 export function mInbox(s) {
-  const visible = INBOX.filter((m) => !s.dismissed.includes(m.id));
+  const items = s.live?.inbox?.items ?? INBOX;
+  const visible = items.filter((m) => !s.dismissed.includes(m.id));
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
   const cnt = (src) => visible.filter((m) => m.src === src).length;
@@ -116,13 +126,14 @@ export function mInbox(s) {
 
 // ---- email list -----------------------------------------------------------
 export function mEmailList(s) {
+  const emails = s.live?.email?.emails ?? EMAILS;
   return `
   <div class="m-head">
     <div class="m-head-row"><span class="m-title">Email</span><span class="pill-teal">1 unread</span><div class="m-spacer"></div><button class="m-icon-btn">${I.plus(16)}</button></div>
     <div class="m-search">${I.search()}<span class="ph">Search · INBOX</span></div>
   </div>
   <div class="m-scroll m-mail-list">
-    ${map(EMAILS, (e, i) => {
+    ${map(emails, (e, i) => {
       const snippet = (e.body && e.body[0]) ? e.body[0] : '';
       return `<div class="m-mail${i === s.selEmail && e.unread ? ' active' : ''}" data-act="mOpenReader" data-arg="${i}">
         <div class="top"><span class="m-src" style="color:${e.srcColor};background:${e.srcBg}">${esc(e.src)}</span>${when(e.unread, '<span class="udot"></span>')}<span class="time">${esc(e.time)}</span></div>
@@ -135,9 +146,10 @@ export function mEmailList(s) {
 
 // ---- email reader (pushed, no tab bar) ------------------------------------
 export function mEmailReader(s) {
-  const m = EMAILS[s.selEmail];
+  const emails = s.live?.email?.emails ?? EMAILS;
+  const m = s.live?.email?.current ?? emails[s.selEmail] ?? EMAILS[0];
   const attach = (m.attach || [])[0];
-  const replyTo = m.from.split(' ')[0];
+  const replyTo = (m.from || '').split(' ')[0];
   return `
   <div class="m-head" style="display:flex;align-items:center;gap:6px;padding-left:12px;padding-right:12px">
     <button class="m-back" data-act="mCloseReader">${ic.back()}<span>Email</span></button>
@@ -149,7 +161,7 @@ export function mEmailReader(s) {
     <h1>${esc(m.subj)}</h1>
     <div class="m-reader-from"><div class="m-reader-av" style="background:${m.avBg};color:${m.avFg}">${esc(m.initials)}</div><div style="min-width:0"><div class="nm">${esc(m.from)}</div><div class="to">to me · ${esc(m.time)}</div></div></div>
     <div class="m-ai-row"><span class="m-ai-btn teal">✦ AI reply</span><span class="m-ai-btn violet">✦ Summarize</span></div>
-    ${map(m.body, (p) => `<p>${esc(p)}</p>`)}
+    ${map(m.body || [], (p) => `<p>${esc(p)}</p>`)}
     ${when(!!attach, `<div class="m-attach"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(attach ? attach.name : '')}</div><div class="sz">${esc(attach ? attach.size : '')}</div></div></div>`)}
   </div>
   <div class="m-reply-bar"><div class="box"><span class="ph">Reply to ${esc(replyTo)}…</span><span class="m-draft">✦ Draft</span><button class="m-send" style="width:32px;height:32px">${I.send(15)}</button></div></div>`;
@@ -163,14 +175,17 @@ export function mCalendar(s) {
   const group = (g, i) => `
     <div class="m-agenda-grp${i > 0 ? ' next' : ''}"><span class="lbl ${i === 0 ? 'today' : 'dim'}">${esc(g.label)}</span>${g.tag ? `<span class="tag" style="color:${g.tagColor}">${esc(g.tag)}</span>` : ''}<div class="rule"></div></div>
     ${map(g.events, event)}`;
+  const week = s.live?.calendar?.week ?? WEEK_STRIP;
+  const agenda = s.live?.calendar?.agenda ?? AGENDA;
+  const monthLabel = (s.live?.calendar?.month ?? 'June 2026').split(' ')[0];
   return `
   <div class="m-head">
-    <div class="m-head-row"><button class="m-back" data-act="mBackToHub">${ic.back()}</button><span class="m-title">June</span><span class="m-title-sub">2026</span><div class="m-spacer"></div><div class="m-seg"><span>Day</span><span class="active">Agenda</span></div></div>
+    <div class="m-head-row"><button class="m-back" data-act="mBackToHub">${ic.back()}</button><span class="m-title">${esc(monthLabel)}</span><span class="m-title-sub">2026</span><div class="m-spacer"></div><div class="m-seg"><span>Day</span><span class="active">Agenda</span></div></div>
     <div class="m-week">
-      ${map(WEEK_STRIP, (w) => `<div class="col"><span class="dl${w.today ? ' today' : ''}">${w.d}</span><span class="dn${w.today ? ' today' : ''}">${w.date}</span></div>`)}
+      ${map(week, (w) => `<div class="col"><span class="dl${w.today ? ' today' : ''}">${w.d}</span><span class="dn${w.today ? ' today' : ''}">${w.date}</span></div>`)}
     </div>
   </div>
-  <div class="m-scroll m-agenda">${map(AGENDA, group)}</div>
+  <div class="m-scroll m-agenda">${map(agenda, group)}</div>
   <div class="m-quickadd"><div class="box"><span class="star">✦</span><input data-model="quick" data-focus="mquick" placeholder="&quot;return home to Ithaca 1pm tmrw&quot;" value="${esc(s.quick || '')}"/><button class="add" data-act="clearQuick">${I.plus(15)}</button></div></div>`;
 }
 

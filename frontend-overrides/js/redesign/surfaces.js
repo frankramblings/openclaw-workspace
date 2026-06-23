@@ -21,36 +21,41 @@ export function renderChatList(s) {
       <button class="new-conv" data-act="newChat"><span class="plus">+</span> New conversation</button>
       <div class="oc-search" style="margin-top:10px">${I.search()}<span class="ph">Filter conversations…</span><span class="kbd">⌘K</span></div>
     </div>
-    <div class="conv-scroll">
+    <div class="conv-scroll">${convListBody(s)}</div>
+    <div class="conv-foot">${esc(s.live?.chat?.cwd ?? '/home/frank/.openclaw/workspace')}</div>
+  </div>`;
+}
+
+// conversation rows: live sessions (grouped) with mock fallback
+function convListBody(s) {
+  const groups = s.live?.chat?.groups; // [{ label, rows:[{id,title,glyph,term,active}] }]
+  if (!groups) {
+    return `
       <div class="conv-group top"><span class="sect-label">TODAY</span></div>
       <div class="conv-row active"><span class="conv-badge">A\\</span><span class="conv-title">Workspace Streaming Chat</span></div>
       <div class="conv-row ocrow"><span class="conv-badge">A\\</span><span class="conv-title">Comedy Show Misogyny Check</span></div>
       <div class="conv-row ocrow"><span class="conv-badge">A\\</span><span class="conv-title">help me organize these thoughts</span></div>
       <div class="conv-group"><span class="sect-label">YESTERDAY</span></div>
       <div class="conv-row ocrow"><span class="conv-badge">A\\</span><span class="conv-title">Punny Names for OpenClaw</span></div>
-      <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Claude Code on Ubuntu</span></div>
-    </div>
-    <div class="conv-foot">/home/frank/.openclaw/workspace</div>
-  </div>`;
+      <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Claude Code on Ubuntu</span></div>`;
+  }
+  return map(groups, (g, gi) => `
+    <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
+    ${map(g.rows, (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span></div>`)}`);
 }
 
-function chatSurface(s) {
-  const d = s.draft || '';
-  const typedSlash = d.startsWith('/');
-  const open = typedSlash || s.forceSlash;
-  const q = typedSlash ? d.slice(1).toLowerCase().split(' ')[0] : '';
-  const filtered = SLASH_COMMANDS.filter((c) => q === '' || c.name.slice(1).startsWith(q));
-  const slashOpen = open && filtered.length > 0;
-  const agent = s.chatMode === 'agent';
+// one chat message → html (assistant prose / user bubble). Live thread items:
+// { role:'assistant'|'user', time, model, text }  (text rendered as paragraphs)
+function chatMsg(m) {
+  const paras = String(m.text || '').split(/\n\n+/).filter(Boolean)
+    .map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('') || '<p></p>';
+  if (m.role === 'user') {
+    return `<div class="msg-user-wrap"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${paras}</div></div>`;
+  }
+  return `<div class="msg-asst"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${paras}</div></div>`;
+}
 
-  return `
-  <div class="chat-head">
-    <div style="min-width:0;flex:1">
-      <div class="ttl">Workspace Streaming Chat Updates</div>
-      <div class="sub">12 messages · claude-opus-4</div>
-    </div>
-  </div>
-  <div class="chat-thread">
+const STATIC_THREAD = `
     <div class="msg-asst">
       <div class="msg-av"><img src="${AVATAR}" alt="Gary"></div>
       <div class="msg-body">
@@ -66,8 +71,31 @@ function chatSurface(s) {
     <div class="msg-user-wrap"><div class="msg-user">
       <div class="meta"><span class="time">09:50 PM</span><span class="you">You</span></div>
       <p>now have subagent(s) implement all of this and confirm when it's live</p>
-    </div></div>
+    </div></div>`;
+
+function chatSurface(s) {
+  const d = s.draft || '';
+  const typedSlash = d.startsWith('/');
+  const open = typedSlash || s.forceSlash;
+  const q = typedSlash ? d.slice(1).toLowerCase().split(' ')[0] : '';
+  const filtered = SLASH_COMMANDS.filter((c) => q === '' || c.name.slice(1).startsWith(q));
+  const slashOpen = open && filtered.length > 0;
+  const agent = s.chatMode === 'agent';
+  const chat = s.live?.chat || {};
+  const title = chat.title ?? 'Workspace Streaming Chat Updates';
+  const subtitle = chat.subtitle ?? '12 messages · claude-opus-4';
+  const model = chat.model ?? 'opus-4';
+  const pct = chat.usagePct != null ? chat.usagePct : 4.4;
+  const thread = chat.thread ? map(chat.thread, chatMsg) : STATIC_THREAD;
+
+  return `
+  <div class="chat-head">
+    <div style="min-width:0;flex:1">
+      <div class="ttl">${esc(title)}</div>
+      <div class="sub">${esc(subtitle)}</div>
+    </div>
   </div>
+  <div class="chat-thread">${thread}</div>
   <div class="composer-wrap">
     ${when(slashOpen, `
     <div class="slash-menu">
@@ -78,15 +106,15 @@ function chatSurface(s) {
       <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message Gary…   ( type / for commands )">${esc(d)}</textarea>
       <div class="composer-row">
         <button class="icon-btn ocbtn" data-act="toggleSlash" title="More tools">${I.plus()}</button>
-        <div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:4.4%"></div></div><span class="pct">4.4%</span></div>
+        <div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
         <div class="oc-spacer"></div>
         <button class="pill-btn ocbtn" title="Reasoning effort">Normal</button>
-        <button class="model-btn ocbtn" title="Switch model"><span class="glyph">A\\</span>opus-4${I.chevDownSm()}</button>
+        <button class="model-btn ocbtn" title="Switch model"><span class="glyph">A\\</span>${esc(model)}${I.chevDownSm()}</button>
         <div class="mode-toggle">
           <button class="${agent ? 'active-agent' : ''}" data-act="setMode" data-arg="agent">Agent</button>
           <button class="${!agent ? 'active-chat' : ''}" data-act="setMode" data-arg="chat">Chat</button>
         </div>
-        <button class="btn-send ocbtn" title="Send">${I.send()}</button>
+        <button class="btn-send ocbtn" data-act="send" title="Send">${I.send()}</button>
       </div>
     </div>
   </div>`;
@@ -96,10 +124,11 @@ function chatSurface(s) {
 // EMAIL
 // ===========================================================================
 function emailSurface(s) {
-  const sel = s.selEmail;
-  const m = EMAILS[sel];
+  const emails = s.live?.email?.emails ?? EMAILS;
+  const sel = Math.max(0, Math.min(s.selEmail, emails.length - 1));
+  const m = s.live?.email?.current ?? emails[sel] ?? EMAILS[0];
   const attach = m.attach || [];
-  const replyTo = m.from.split(' ')[0];
+  const replyTo = (m.from || '').split(' ')[0];
   return `
   <div class="split-h">
     <div class="oc-secondary email-list">
@@ -108,7 +137,7 @@ function emailSurface(s) {
         <div class="oc-search">${I.search()}<span class="ph">Search · INBOX</span></div>
       </div>
       <div class="list-scroll">
-        ${map(EMAILS, (e, i) => {
+        ${map(emails, (e, i) => {
           const a = i === sel;
           return `<div class="mail-row ocrow${a ? ' active' : ''}" data-act="selEmail" data-arg="${i}">
             <div class="top"><span class="src-tag" style="color:${e.srcColor};background:${e.srcBg}">${esc(e.src)}</span>${when(e.unread, '<span class="unread-dot"></span>')}<span class="time">${esc(e.time)}</span></div>
@@ -139,7 +168,7 @@ function emailSurface(s) {
       </div>
       <div class="reader-body">
         <div class="col">
-          ${map(m.body, (p) => `<p>${esc(p)}</p>`)}
+          ${map(m.body || [], (p) => `<p>${esc(p)}</p>`)}
           ${when(attach.length > 0, `<div class="attach-row">${map(attach, (att) => `<div class="attach ocbtn"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(att.name)}</div><div class="sz">${esc(att.size)}</div></div></div>`)}</div>`)}
           <div class="quote"><div class="hd">On Wed, Jun 17, 2026 at 2:16 PM, Frank Emanuele <span class="mono">&lt;femanuele@wistia.com&gt;</span> wrote:</div><p>Hi Mica, Thank you! Here is the signed agreement. Looking forward to working together! — Frank</p></div>
         </div>
@@ -159,7 +188,8 @@ function emailSurface(s) {
 // INBOX
 // ===========================================================================
 function inboxSurface(s) {
-  const visible = INBOX.filter((m) => !s.dismissed.includes(m.id));
+  const items = s.live?.inbox?.items ?? INBOX;
+  const visible = items.filter((m) => !s.dismissed.includes(m.id));
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
   const cnt = (src) => visible.filter((m) => m.src === src).length;
@@ -224,6 +254,8 @@ function calendarSurface(s) {
     return `<div class="${cls.join(' ')}">${dateHtml}${bars}${events}${more}</div>`;
   };
   const weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+  const cells = s.live?.calendar?.cells ?? CAL_CELLS;
+  const month = s.live?.calendar?.month ?? CAL_MONTH;
   return `
   <div class="cal-col">
     <div class="cal-top">
@@ -231,7 +263,7 @@ function calendarSurface(s) {
         <button class="cal-nav">‹</button>
         <button class="btn btn-ghost">Today</button>
         <button class="cal-nav">›</button>
-        <span class="cal-month">${esc(CAL_MONTH)}</span>
+        <span class="cal-month">${esc(month)}</span>
         <div class="oc-spacer"></div>
         <div class="cal-views"><span>Week</span><span class="active">Month</span><span>Agenda</span></div>
         <button class="btn btn-teal">+ New</button>
@@ -244,7 +276,7 @@ function calendarSurface(s) {
       ${when(has, `<div class="cal-parse"><span class="k">Gary parsed:</span><span class="ev"><span class="d"></span>${esc(q)}</span><span class="x">· Personal · 1 hr</span></div>`)}
     </div>
     <div class="cal-weekdays">${map(weekdays, (d) => `<div>${d}</div>`)}</div>
-    <div class="cal-grid">${map(CAL_CELLS, cell)}</div>
+    <div class="cal-grid">${map(cells, cell)}</div>
   </div>`;
 }
 
@@ -292,7 +324,7 @@ function researchSurface(s) {
 
       ${when(running, `
       <div class="res-card running">
-        <div class="row1"><span class="res-spin"></span><span class="running-ttl">Researching… round 2 of 3</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:28px" data-act="resetResearch">Stop</button></div>
+        <div class="row1"><span class="res-spin"></span><span class="running-ttl">${esc(s.researchProgress?.label || 'Researching…')}</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:28px" data-act="resetResearch">Stop</button></div>
         <div class="res-steps">
           <div class="res-step"><span style="color:var(--green)">✓</span><div class="done-txt">Planned the search — 4 sub-questions</div></div>
           <div class="res-step"><span style="color:var(--green)">✓</span><div class="done-txt">Searched the web — <span class="mono" style="color:var(--faint)">12 results</span> across 4 queries</div></div>
@@ -304,12 +336,12 @@ function researchSurface(s) {
       ${when(done, `
       <div class="res-card done">
         <div class="row1"><span class="res-done-ico">✓</span><span class="t">Report ready</span><span class="meta">3 rounds · 8 sources · 2:14</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:30px" data-act="resetResearch">New research</button></div>
-        <p class="res-summary"><strong>Transistor</strong> wins on price-per-show and unlimited podcasts; <strong>Buzzsprout</strong> leads on ease + analytics polish; <strong>Captivate</strong> is strongest for growth/marketing tools. None has a first-party Wistia integration — all support it via RSS + embed.</p>
+        <p class="res-summary">${s.live?.research?.summary ?? '<strong>Transistor</strong> wins on price-per-show and unlimited podcasts; <strong>Buzzsprout</strong> leads on ease + analytics polish; <strong>Captivate</strong> is strongest for growth/marketing tools. None has a first-party Wistia integration — all support it via RSS + embed.'}</p>
         <div class="card-actions"><button class="btn-sm">↗ Visual Report</button><button class="btn-sm ghost">Discuss in chat</button><button class="btn-sm ghost">Save to Library</button></div>
       </div>`)}
 
-      <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">7</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer">Library, Research →</span></div>
-      ${map(PAST_RESEARCH, (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal">Discuss</span><span class="chip-ghost">↗ Visual Report</span></div></div>`)}
+      <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past ?? PAST_RESEARCH).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer">Library, Research →</span></div>
+      ${map(s.live?.research?.past ?? PAST_RESEARCH, (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}
     </div>
   </div>`;
 }
@@ -319,7 +351,8 @@ function researchSurface(s) {
 // ===========================================================================
 function librarySurface(s) {
   const lf = s.libFilter;
-  const items = LIBRARY.filter((a) => lf === 'all' || a.cat === lf);
+  const all = s.live?.library?.items ?? LIBRARY;
+  const items = all.filter((a) => lf === 'all' || a.cat === lf);
   return `
   <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts Gary has produced</span><div class="oc-spacer"></div><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<span class="ph">Filter library…</span></div></div>
   <div class="lib-wrap">
@@ -345,8 +378,9 @@ function librarySurface(s) {
 // NOTES
 // ===========================================================================
 function notesSurface(s) {
-  const sel = s.selDoc;
-  const doc = NOTES[sel];
+  const docs0 = s.live?.notes?.docs ?? NOTES;
+  const sel = Math.max(0, Math.min(s.selDoc, docs0.length - 1));
+  const doc = docs0[sel] || NOTES[0];
   const block = (b) => {
     if (b.t === 'h') return `<h2>${esc(b.text)}</h2>`;
     if (b.t === 'quote') return `<blockquote>${esc(b.text)}</blockquote>`;
@@ -361,7 +395,7 @@ function notesSurface(s) {
         <div class="oc-search">${I.search()}<span class="ph">Search notes…</span></div>
       </div>
       <div class="list-scroll">
-        ${map(NOTES, (n, i) => {
+        ${map(docs0, (n, i) => {
           const a = i === sel;
           return `<div class="note-row${a ? ' active' : ''}" data-act="selDoc" data-arg="${i}">
             <div class="top">${I.file(13, a ? 'var(--teal)' : 'var(--faint)')}<span class="nm">${esc(n.title)}</span></div>

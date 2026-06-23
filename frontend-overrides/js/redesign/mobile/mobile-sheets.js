@@ -8,6 +8,7 @@ import { CAPTURE_TYPES, CAPTURE_PARSE, RECENT_CAPTURES } from './mobile-data.js'
 
 // compact file tree (shared FS data) for the companion sheet's Files tab
 function fileTree(s) {
+  const tree = s.live?.companion?.tree ?? FS;
   const rows = [];
   const walk = (nodes, depth, prefix) => {
     for (const node of nodes) {
@@ -23,7 +24,7 @@ function fileTree(s) {
       }
     }
   };
-  walk(FS, 0, '');
+  walk(tree, 0, '');
   return rows.join('');
 }
 

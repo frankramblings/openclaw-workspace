@@ -244,7 +244,7 @@ legacy `js/*.js` module.
 - [x] data-act=`toggleResCtl` — surfaces.js:287 → WIRED. Handler app.js:147 (toggles state.resOpenCtl for a given key — opens/closes a Deep Research config dropdown). Bound to the research control headers; pairs with pickResOpt. Real open/close.
 - [x] data-act=`toggleSlash` — surfaces.js:94 → WIRED. Handler app.js:131 (toggles state.forceSlash — opens/closes the slash-command palette). Bound to the composer "+" / "More tools" button; pairs with pickSlash. Verified at overflow-plus-btn:1166.
 - [x] data-act=`toggleSplit` — companion.js:107 → WIRED. Handler app.js:142 (toggles state.compSplit — the companion split layout, terminal over files). Bound to the comp-ctl split button. Real layout toggle.
-- [ ] data-act=`toggleStep` — chat-activity.js:63
+- [x] data-act=`toggleStep` — chat-activity.js:63 → WIRED. Handler app.js:137 (toggles state.chatUI.step[id] — expand/collapse an individual activity-trail tool step's detail). Bound to step rows. Real collapse state + re-render.
 - [ ] data-act=`toggleTrail` — chat-activity.js:112
 - [ ] data-act=`toggleUi` — surfaces.js:447
 - [ ] data-act=`triageAll` — mobile/mobile-surfaces.js:101

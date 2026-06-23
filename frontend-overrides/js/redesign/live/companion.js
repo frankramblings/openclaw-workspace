@@ -2,10 +2,9 @@
 // mobile companion sheet. Both render `fsRows(state)` which reads
 // `state.live.companion.tree` with a fallback to the `FS` mock in ../data.js.
 //
-// We only wire the file tree here — the clean, robust win. The Terminal pane is
-// intentionally left as its existing visual mock: the redesign rebuilds
-// #oc-root on every state change, which would destroy a mounted xterm/WS, so a
-// live terminal would break on the next re-render. See the parent's summary.
+// This wires the Files pane. The Terminal pane is wired separately by
+// ./terminal.js (a persistent xterm overlay that survives the full-rerender
+// model); we boot it here since the companion loads alongside chat.
 //
 // Endpoint: GET /api/workspace/tree?hidden=0
 //   → { root, branch, dirty, tree: [{ name, path, type:'file'|'dir', size, children? }] }
@@ -17,6 +16,7 @@
 // The render colors md/json/db/env via EXT_COLOR and falls back to muted.
 
 import { apiGet } from './api.js';
+import { initTerminal } from './terminal.js';
 
 /** Lowercase file extension (no dot), or '' when the name has none. */
 function extOf(name) {
@@ -58,6 +58,7 @@ function transform(tree) {
 
 // Populate state.live.companion in the mock's shape. Throwing keeps the mock.
 export async function load(state) {
+  initTerminal(); // boot the persistent xterm overlay (idempotent)
   const data = await apiGet('/api/workspace/tree?hidden=0');
   if (!data || !Array.isArray(data.tree)) {
     throw new Error('workspace tree: missing tree array');

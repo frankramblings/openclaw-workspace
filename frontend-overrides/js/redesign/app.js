@@ -126,6 +126,9 @@ function render() {
       }
     }
   }
+
+  // post-render hook (the live terminal overlay repositions itself here)
+  if (runtime.afterRender) runtime.afterRender();
 }
 
 // ---- actions --------------------------------------------------------------

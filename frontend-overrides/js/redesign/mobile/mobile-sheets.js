@@ -42,13 +42,9 @@ export function renderCompanionSheet(s) {
       <button class="m-sheet-x" data-act="closeCompanion">${I.x(15)}</button>
     </div>
     ${onTerm ? `
-    <div class="m-term">
-      <div class="cwd">~/.openclaw/workspace · this chat</div>
-      <div><span class="host">frank@naboo</span>:<span class="ws">~/ws</span>$ npm run we-smoke</div>
-      <div class="dim">—— restored 22:16 ——</div>
-      <div class="ok">✓ activity-tree mounted · 14 events replayed</div>
-      <div class="ok">✓ SSE reconnect OK · stream live</div>
-      <div><span class="host">frank@naboo</span>:<span class="ws">~/ws</span>$ <span class="m-term-cursor"></span></div>
+    <div class="m-term" style="display:flex;flex-direction:column;padding:0">
+      <div class="cwd" style="padding:8px 16px 4px">~/.openclaw/workspace · this chat</div>
+      <div style="flex:1;min-height:0" data-term-mount></div>
     </div>` : `<div class="m-files">${fileTree(s)}</div>`}
   </div>`;
 }

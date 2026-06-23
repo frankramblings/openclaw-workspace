@@ -42,14 +42,8 @@ function fileTreeHtml(s, { dense } = {}) {
 }
 
 const TERM_SUBHEAD = `<div class="comp-subhead"><span class="cwd">~/.openclaw/workspace</span><span class="sub">· this chat</span><div class="oc-spacer"></div><span class="comp-live"><span class="d"></span>live</span></div>`;
-const TERM_BODY = `
-  <div class="term-body">
-    <div><span class="host">frank@naboo</span>:<span class="cwd2">~/ws</span>$ npm run we-smoke</div>
-    <div class="dim">—— restored 2026-06-19 22:16 ——</div>
-    <div class="ok">✓ activity-tree mounted · 14 events replayed</div>
-    <div class="ok">✓ SSE reconnect OK · stream live</div>
-    <div><span class="host">frank@naboo</span>:<span class="cwd2">~/ws</span>$ <span class="term-cursor"></span></div>
-  </div>`;
+// the live xterm overlay (live/terminal.js) positions itself over this mount
+const TERM_BODY = `<div class="term-body" data-term-mount></div>`;
 
 function filesPane(s) {
   return `
@@ -82,11 +76,7 @@ function splitPane(s) {
   return `
   <div class="comp-split-top">
     <div class="comp-split-head">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal</span><span class="s">· this chat</span></div>
-    <div class="term-body">
-      <div><span class="host">frank@naboo</span>:<span class="cwd2">~/ws</span>$ npm run we-smoke</div>
-      <div class="ok">✓ activity-tree mounted · stream live</div>
-      <div><span class="host">frank@naboo</span>:<span class="cwd2">~/ws</span>$ <span class="term-cursor" style="width:7px;height:13px"></span></div>
-    </div>
+    <div class="term-body" data-term-mount></div>
   </div>
   <div class="comp-split-bottom">
     <div class="comp-split-head">${I.folder(13)}<span class="t">Files</span><span class="s">· workspace</span></div>

@@ -61,7 +61,7 @@ legacy `js/*.js` module.
 - [-] id=theme-adv-clear ("Clear Advanced Overrides") — index.html:649 — advanced-customize control in the unported theme popup; redesign has no advanced per-element override system (only a single accent). Removed with the theme-popup.
 - [-] id=harmony-generate-btn ("Generate" — color-harmony generator) — index.html:681 — theme-popup customize tool; no harmony/palette-generation feature in redesign. Removed with the theme-popup.
 - [-] title="Reset to text color" (data-reset-effect — effect-color reset) — index.html:769 — theme-popup customize control; no effect-color customizer in redesign (single accent only). Removed with the theme-popup.
-- [ ] id=theme-save-go  `<button>` — index.html:788
+- [-] id=theme-save-go ("Save" — saves a custom theme/preset) — index.html:788 — theme-popup preset-save flow; redesign has no custom-theme save (accent is applied/persisted inline via live/settings setAccent, no named presets). Removed with the theme-popup.
 - [ ] id=theme-import-btn  `<button>` — index.html:792
 - [ ] id=theme-export-btn  `<button>` — index.html:793
 - [ ] id=theme-import-go  `<button>` — index.html:797

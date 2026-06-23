@@ -207,7 +207,7 @@ legacy `js/*.js` module.
 ## New → wiring
 
 ### data-act handlers
-- [ ] data-act=`clearQuick` — mobile/mobile-surfaces.js:178
+- [x] data-act=`clearQuick` — mobile/mobile-surfaces.js:178 → WIRED & functional. Handler: mock app.js:174 + LIVE override calendar.js:310 (parses quick-add via /api/calendar/quick-parse, creates event via POST /api/calendar/events, clears input, reloads). Bound desktop (surfaces.js:260 "↵ Add") + mobile quickadd.
 - [ ] data-act=`closeCapture` — mobile/mobile-sheets.js:57
 - [ ] data-act=`closeCompanion` — mobile/mobile-sheets.js:34
 - [ ] data-act=`compTab` — companion.js:103

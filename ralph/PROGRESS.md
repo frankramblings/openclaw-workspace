@@ -48,3 +48,4 @@
 2026-06-23 01:05 | index.html:681 harmony-generate-btn | verified [-] (theme-popup harmony generator; not ported)
 2026-06-23 01:05 | index.html:769 Reset-to-text-color | verified [-] (theme-popup effect-color reset; not ported)
 2026-06-23 01:06 | index.html:788 theme-save-go | verified [-] (theme-popup preset-save; no custom-theme save in redesign)
+2026-06-23 01:06 | index.html:792 theme-import-btn | verified [-] (theme-popup JSON import; no theme-only import in redesign)

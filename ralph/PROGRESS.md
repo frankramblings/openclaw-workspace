@@ -94,3 +94,4 @@
 2026-06-23 01:35 | index.html:1210 web-toggle-btn | verified [!] composer web-search toggle gone; capability via agent tools+/research; Chat Bar FINDINGS
 2026-06-23 01:35 | index.html:1216 bash-toggle-btn | verified [!] composer shell toggle gone; capability via /run+Terminal; Chat Bar FINDINGS
 2026-06-23 01:35 | index.html:1222 rag-indicator-btn | verified [!] PARITY GAP — no RAG UI (same as :1183); Chat Bar FINDINGS
+2026-06-23 01:36 | index.html:1230 research-toggle-btn | verified [!] composer research toggle gone; strong replacement (Research surface + /research); Chat Bar FINDINGS

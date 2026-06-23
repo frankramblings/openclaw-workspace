@@ -418,6 +418,15 @@ export const actions = {
         return;
       }
 
+      // reply_reset → the agent began a NEW message mid-turn (its real reply
+      // after a message-tool delivery). Drop the text shown so far so the final
+      // reply isn't doubled ("Sent…Hey 👋"). Tool/thinking steps are kept.
+      if (ev.type === 'reply_reset') {
+        if (turn.asstMsg) turn.asstMsg.text = '';
+        throttledRender();
+        return;
+      }
+
       // thinking delta → a 'think' step whose body is the reasoning
       if (typeof ev.delta === 'string' && ev.thinking === true) {
         ensureActivity();

@@ -1081,7 +1081,7 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
     they count as run-liveness for the stall watchdog (see _is_run_activity).
     Concurrent cron / heartbeat runs carry a different runId and are filtered out.
     """
-    emitted_len = 0        # fallback cumulative-text cursor
+    msg_text = ""          # text already emitted for the CURRENT assistant message
     analysis_seen: dict = {}  # itemId -> reasoning chars already emitted
     tool_since_text = False  # a tool card emitted since the last text delta?
     images_seen: set = set()  # image block urls already emitted (dedupe finals)
@@ -1147,12 +1147,26 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                 if url not in images_seen:
                     images_seen.add(url)
                     yield _sse({"image_url": url, "image_prompt": alt})
+            # The agent can emit SEVERAL assistant messages in one turn — e.g.
+            # its `message`-tool delivery (Gary's Signal reply channel) and then
+            # its real final reply. The gateway RESETS message.content between
+            # them, so both used to stream in and render doubled ("Sent…Hey 👋").
+            # We track the current message's text; on a reset (new message whose
+            # content doesn't extend what we've shown) we tell the SPA to drop the
+            # turn's text so far and keep only the latest message. This also makes
+            # the trailing state:"final" snapshot a no-op (content == msg_text →
+            # no re-emit), fixing the older "final re-emits everything" doubling.
+            full = _extract_text(payload)
+            if full and not full.startswith(msg_text):
+                yield _sse({"type": "reply_reset"})  # SPA clears this turn's text
+                msg_text = ""
+                tool_since_text = False
             delta = payload.get("deltaText")
-            if not delta:
-                text = _extract_text(payload)
-                if text is not None and len(text) > emitted_len:
-                    delta = text[emitted_len:]
-                    emitted_len = len(text)
+            if delta:
+                msg_text += delta
+            elif full is not None and len(full) > len(msg_text):
+                delta = full[len(msg_text):]
+                msg_text = full
             if delta:
                 timing.setdefault("t_first_text", time.monotonic())
                 if tool_since_text:

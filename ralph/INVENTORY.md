@@ -246,7 +246,7 @@ legacy `js/*.js` module.
 - [x] data-act=`toggleSplit` — companion.js:107 → WIRED. Handler app.js:142 (toggles state.compSplit — the companion split layout, terminal over files). Bound to the comp-ctl split button. Real layout toggle.
 - [x] data-act=`toggleStep` — chat-activity.js:63 → WIRED. Handler app.js:137 (toggles state.chatUI.step[id] — expand/collapse an individual activity-trail tool step's detail). Bound to step rows. Real collapse state + re-render.
 - [x] data-act=`toggleTrail` — chat-activity.js:112 → WIRED. Handler app.js:136 (toggles state.chatUI.trail[id] — expand/collapse a message's whole activity trail; default-open via the `=== false` check). Bound to the trail summary header. Real collapse state + re-render.
-- [ ] data-act=`toggleUi` — surfaces.js:447
+- [x] data-act=`toggleUi` — surfaces.js:447 → WIRED & functional. Handler: mock app.js:178 (toggles state.ui[key]) + LIVE override settings.js:91 (also persists real key via POST /api/auth/settings). Bound to settings visibility toggles (surfaces.js:447 + card toggleKey :475). The ONE genuinely-functional Settings control (everything else on that surface is dead — see FINDINGS).
 - [ ] data-act=`triageAll` — mobile/mobile-surfaces.js:101
 
 ### data-model inputs

@@ -38,7 +38,7 @@ legacy `js/*.js` module.
 - [-] id=skills-bulk-cancel — index.html:510 — exits the Skills-tab multi-select bar (:506–:510) in the removed memory-modal. No bulk-skills UI in redesign. Removed with the modal. (Final element of the memory-modal cluster :377–:510; next row is the theme-modal at :567.)
 - [-] id=theme-opacity-wrap ("Peek" — temporarily lowers bg opacity in the theme popup) — index.html:567 — sub-feature of the old theme **popup** header. Redesign has no theme popup: accent picking is reduced to inline swatches (setAccent / accents() in settings) + a (dead) "Open theme picker" launcher. No Peek sibling. The unbuilt theme-picker surface is already tracked in FINDINGS (set-launcher).
 - [-] id=close-theme-popup (✖ closes the theme popup) — index.html:571 — no theme popup exists in the redesign (accent picking is inline in settings; "Open theme picker" launcher is dead — FINDINGS). No popup ⇒ no close button. Removed with the theme-popup.
-- [ ] data-tab=theme-tab-browse  `<button>` — index.html:575
+- [-] data-tab="theme-tab-browse" (Browse-presets tab of the theme popup) — index.html:575 — internal tab of the unported theme popup. Redesign has no preset browser (only inline accent swatches). Removed with the theme-popup. See FINDINGS (theme picker unbuilt).
 - [ ] data-tab=theme-tab-customize  `<button>` — index.html:576
 - [ ] title=Reset this color  `<button>` — index.html:596
 - [ ] title=Reset this color  `<button>` — index.html:597

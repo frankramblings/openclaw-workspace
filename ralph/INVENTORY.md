@@ -90,7 +90,7 @@ legacy `js/*.js` module.
 - [!] id=chats-library-btn ("Manage Chats (Library)" — section-header, opens bulk session-management view) — index.html:871 → PARITY GAP (missing). Redesign session list is select-only (data-act=`selectSession`, surfaces.js:45) with no manage/library view. Start of the absent session-management cluster (sort/auto-sort/bulk-archive/bulk-delete, :878–:916). See FINDINGS "No session management in the redesign."
 - [!] id=session-sort-btn ("Sort sessions") — index.html:878 → PARITY GAP (missing). No session-sort control in the redesign (session list is select-only). Part of the absent session-management cluster — see FINDINGS "No session management in the redesign."
 - [!] id=auto-sort-sessions-more ("Tidy options" — session auto-sort/tidy menu) — index.html:898 → PARITY GAP (missing). No session auto-sort/tidy in the redesign (select-only list). Part of the absent session-management cluster — see FINDINGS.
-- [ ] id=session-bulk-archive  `<button>` — index.html:915
+- [!] id=session-bulk-archive — index.html:915 → PARITY GAP (missing). No multi-select / bulk-archive of sessions in the redesign (select-only list). Part of the absent session-management cluster — see FINDINGS.
 - [ ] id=session-bulk-delete  `<button>` — index.html:916
 - [ ] id=session-bulk-cancel  `<button>` — index.html:917
 - [ ] id=email-compose-btn  `<button>` — index.html:955

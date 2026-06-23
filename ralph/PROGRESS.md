@@ -153,3 +153,4 @@
 2026-06-23 02:09 | index.html:1816 set-searchTestBtn | verified [!] dead set-btn Test; dead-settings FINDINGS
 2026-06-23 02:09 | index.html:1855 settings-open-brain | verified [!] dead Open-Brain launcher (set-launcher); FINDINGS
 2026-06-23 02:10 | index.html:1862 settings-open-cron | verified [!] dead Open-Scheduled launcher (set-launcher); FINDINGS
+2026-06-23 02:10 | index.html:1869 settings-open-theme | verified [!] dead Open-theme-picker launcher (set-launcher); FINDINGS

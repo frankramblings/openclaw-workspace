@@ -167,7 +167,7 @@ legacy `js/*.js` module.
 - [!] id=set-searchTestBtn ("Test" the search provider connection) — index.html:1816 → PARITY GAP (dead affordance). Redesign search panel has `btns([{label:'Test'}])` (settings-data.js:81) → dead `set-btn` (surfaces.js:441, no data-act). Can't test the provider. Part of the dead Settings surface — see FINDINGS.
 - [!] id=settings-open-brain ("Open Brain" from settings) — index.html:1855 → PARITY GAP (dead affordance). Redesign Settings→Brain card renders an "Open Brain" `set-launcher` (surfaces.js:479) with NO data-act → dead, and there's no Brain surface to open. Same as rail-memory:840. See FINDINGS "entire Settings surface buttons unwired" (set-launcher).
 - [!] id=settings-open-cron ("Open Scheduled jobs"/cron from settings) — index.html:1862 → PARITY GAP (dead affordance). Redesign Settings→Scheduled card renders an "Open Scheduled jobs" `set-launcher` (settings-data.js:107, surfaces.js:479) with NO data-act → dead, and there's no Scheduled surface to open. See FINDINGS "entire Settings surface buttons unwired" (set-launcher).
-- [ ] id=settings-open-theme  `<button>` — index.html:1869
+- [!] id=settings-open-theme ("Open theme picker" from settings) — index.html:1869 → PARITY GAP (dead affordance). Redesign Settings→Theme card renders an "Open theme picker" `set-launcher` (settings-data.js:109, surfaces.js:479) with NO data-act → dead, and there's no full theme-picker surface (only inline accent swatches). See FINDINGS "entire Settings surface buttons unwired" (set-launcher). (Accent picking itself works — rail-theme:843 [x].)
 - [ ] id=set-uiVisResetBtn  `<button>` — index.html:2047
 - [ ] id=shortcuts-reset-btn  `<button>` — index.html:2061
 - [ ] id=settings-logout-btn  `<button>` — index.html:2079

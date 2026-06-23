@@ -155,7 +155,7 @@ legacy `js/*.js` module.
 - [x] class=settings-nav-item (data-settings-tab="scheduled") — index.html:1553 → PARITY OK. Redesign sibling: set-nav-item setSection `scheduled` (surfaces.js:422; in NAV_GROUPS). Section nav wired.
 - [x] class=settings-nav-item (data-settings-tab="appearance") — index.html:1559 → PARITY OK. Redesign sibling: set-nav-item setSection `appearance` (surfaces.js:422; in NAV_GROUPS). Section nav wired.
 - [x] class=settings-nav-item (data-settings-tab="shortcuts") — index.html:1563 → PARITY OK. Redesign sibling: set-nav-item setSection `shortcuts` (surfaces.js:422; in NAV_GROUPS). Section nav wired. (NB: the shortcuts *content* card lists keybindings that aren't wired — see incognito/shortcuts FINDINGS — but the nav item itself works.)
-- [ ] class=settings-nav-item  `<button>` — index.html:1569
+- [x] class=settings-nav-item (data-settings-tab="account") — index.html:1569 → PARITY OK. Redesign sibling: set-nav-item setSection `account` (surfaces.js:422; in NAV_GROUPS). Section nav wired.
 - [ ] class=settings-nav-item admin-only  `<button>` — index.html:1575
 - [ ] class=settings-nav-item admin-only  `<button>` — index.html:1579
 - [ ] class=settings-nav-item admin-only  `<button>` — index.html:1583

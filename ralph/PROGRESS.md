@@ -225,3 +225,4 @@
 2026-06-23 02:40 | new-wiring data-act=toggleSlash | verified [x] WIRED -> app.js:131
 2026-06-23 02:41 | new-wiring data-act=toggleSplit | verified [x] WIRED -> app.js:142
 2026-06-23 02:41 | new-wiring data-act=toggleStep | verified [x] WIRED -> app.js:137
+2026-06-23 02:41 | new-wiring data-act=toggleTrail | verified [x] WIRED -> app.js:136

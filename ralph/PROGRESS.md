@@ -188,3 +188,4 @@
 2026-06-23 02:23 | index.html:2425 admin-btn-delete (Wipe all gallery, 7/8) | verified [!] dead Wipe danger btn; FINDINGS
 2026-06-23 02:24 | index.html:2433 admin-btn-delete (Wipe all calendar, 8/8) | verified [!] dead Wipe danger btn; 8 wipe buttons done
 2026-06-23 02:24 | new-wiring data-act=clearQuick | verified [x] WIRED -> live calendar.js:310 (quick-parse + create event)
+2026-06-23 02:25 | new-wiring data-act=closeCapture | verified [x] WIRED (mobile-app.js:62); but Send-to-Gary mis-wired to closeCapture -> capture discarded. Logged FINDINGS.

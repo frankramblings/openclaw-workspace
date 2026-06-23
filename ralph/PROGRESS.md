@@ -72,3 +72,4 @@
 2026-06-23 01:19 | index.html:841 rail-notes | verified [x] parity OK -> go:notes (live/notes.js)
 2026-06-23 01:19 | index.html:842 rail-tasks | verified [!] PARITY GAP — no Tasks surface (Inbox is triage, not tasks); covered by FINDINGS
 2026-06-23 01:20 | index.html:843 rail-theme | verified [x] parity OK (reduced) -> Settings accent swatches setAccent live-wired (live/settings.js:82); full picker dead (FINDINGS)
+2026-06-23 01:21 | index.html:846 rail-settings | verified [x] parity OK -> go:settings (live/settings.js); surface nav wired (internal buttons dead per FINDINGS)

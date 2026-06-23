@@ -86,7 +86,7 @@ legacy `js/*.js` module.
 - [x] id=rail-notes ("Notes") — index.html:841 → PARITY OK. Direct sibling: railItem('notes') (app.js:74) → data-act=`go`/`notes` → `go` action, backed by live/notes.js. Real wiring.
 - [!] id=rail-tasks ("Tasks" — legacy tasks.js) — index.html:842 → PARITY GAP (missing). No tasks railItem or surface in the redesign; only the dangling `sb-tasks` visibility label (settings-data.js:110). The redesign Inbox is notification/email triage, not a task manager. Covered by FINDINGS "Sidebar visibility list advertises surfaces that don't exist."
 - [x] id=rail-theme ("Theme" — opens legacy theme-modal) — index.html:843 → PARITY OK (reduced, but the core function is wired). Redesign sibling: Settings → Appearance accent swatches, `setAccent` action with a LIVE override (live/settings.js:82 sets real --accent/--red + persists), bound data-act=`setAccent` (surfaces.js:461). Reachable & functional. NB: the *extended* full theme picker ("Open theme picker" launcher) is dead — tracked in FINDINGS — but unlike Brain, the everyday accent change works without it.
-- [ ] id=rail-settings  `<button>` — index.html:846
+- [x] id=rail-settings ("Settings") — index.html:846 → PARITY OK. Direct sibling: railItem('settings') (app.js:76) → data-act=`go`/`settings` → `go` action, backed by live/settings.js. Navigation wired. (Caveat: the settings surface's internal action buttons are dead — separate FINDINGS issue — but reaching the surface works.)
 - [ ] id=chats-library-btn  `<button>` — index.html:871
 - [ ] id=session-sort-btn  `<button>` — index.html:878
 - [ ] id=auto-sort-sessions-more  `<button>` — index.html:898

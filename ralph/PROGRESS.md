@@ -197,3 +197,4 @@
 2026-06-23 02:28 | new-wiring data-act=libFilter | verified [x] WIRED -> app.js:162 + filters list (surfaces.js:341)
 2026-06-23 02:28 | new-wiring data-act=mBackToHub | verified [x] WIRED -> mobile-app.js:55
 2026-06-23 02:29 | new-wiring data-act=mCloseReader | verified [x] WIRED -> mobile-app.js:57
+2026-06-23 02:29 | new-wiring data-act=mGo | verified [x] WIRED -> mobile-app.js:49 (mobile tab nav)

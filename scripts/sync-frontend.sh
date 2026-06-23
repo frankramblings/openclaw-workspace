@@ -288,10 +288,14 @@ SW="$DEST/sw.js"
 if [[ -f "$SW" ]]; then
   # Generate the precache manifest from what's actually deployed (sw.js holds
   # a /*__PRECACHE__*/ token). Keep it to the shell the app needs offline:
-  # all JS/CSS, fonts, icons, manifest. Exclude sw.js itself and source maps.
+  # all JS/CSS, fonts, icons, manifests. Exclude sw.js itself and source maps.
+  # index-redesign.html is the installable redesign's start_url, so it (and its
+  # manifest) must be precached — else an offline launch hits the SW nav
+  # fallback to '/' and opens the classic SPA instead of the redesign.
   PRECACHE_LIST=$(cd "$DEST" && find . -type f \
       \( -name '*.js' -o -name '*.css' -o -name '*.woff2' -o -name '*.png' \
-         -o -name '*.svg' -o -name 'manifest.json' \) \
+         -o -name '*.svg' -o -name 'manifest.json' -o -name 'manifest-redesign.json' \
+         -o -name 'index-redesign.html' \) \
       ! -name 'sw.js' ! -name '*.map' \
     | sort | sed "s|^\./|'/static/|; s|\$|',|" | tr '\n' ' ')
   python3 - "$SW" "$PRECACHE_LIST" <<'PYEOF'

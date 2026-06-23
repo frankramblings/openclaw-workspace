@@ -247,7 +247,7 @@ legacy `js/*.js` module.
 - [x] data-act=`toggleStep` — chat-activity.js:63 → WIRED. Handler app.js:137 (toggles state.chatUI.step[id] — expand/collapse an individual activity-trail tool step's detail). Bound to step rows. Real collapse state + re-render.
 - [x] data-act=`toggleTrail` — chat-activity.js:112 → WIRED. Handler app.js:136 (toggles state.chatUI.trail[id] — expand/collapse a message's whole activity trail; default-open via the `=== false` check). Bound to the trail summary header. Real collapse state + re-render.
 - [x] data-act=`toggleUi` — surfaces.js:447 → WIRED & functional. Handler: mock app.js:178 (toggles state.ui[key]) + LIVE override settings.js:91 (also persists real key via POST /api/auth/settings). Bound to settings visibility toggles (surfaces.js:447 + card toggleKey :475). The ONE genuinely-functional Settings control (everything else on that surface is dead — see FINDINGS).
-- [ ] data-act=`triageAll` — mobile/mobile-surfaces.js:101
+- [x] data-act=`triageAll` — mobile/mobile-surfaces.js:101 → WIRED & functional. Handler: mock app.js:168 + LIVE override inbox.js:118 (batch-archives all aiArchive items via POST /api/items/action). Bound to the "✦ Archive the FYI batch" button (desktop + mobile). Real backend batch archive.
 
 ### data-model inputs
 - [ ] data-model=`captureDraft` — mobile/mobile-sheets.js:61

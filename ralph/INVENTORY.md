@@ -253,7 +253,7 @@ legacy `js/*.js` module.
 - [x] data-model=`captureDraft` — mobile/mobile-sheets.js:61 → WIRED (binding). Two-way bound via the delegated input listener (app.js:211: state[field]=t.value). Typing updates state.captureDraft + re-renders. CAVEAT: the value is never *consumed* — the "Send to Gary" button discards it (see FINDINGS "Mobile quick-capture discards input"). The data-model binding itself is correct.
 - [x] data-model=`draft` — mobile/mobile-surfaces.js:63 → WIRED & functional. Two-way bound via the delegated input listener (app.js:211: state.draft=t.value, clears forceSlash on typing). state.draft is consumed by send() (chat.js:309) → POST /api/chat_stream. Bound on the chat composer textarea (desktop surfaces.js:92 + mobile :63). Real + consumed.
 - [x] data-model=`quick` — mobile/mobile-surfaces.js:178 → WIRED & functional. Two-way bound via the delegated input listener (app.js:211: state.quick=t.value). Consumed by clearQuick (live calendar.js:310 → POST /api/calendar/quick-parse + create event). Bound on the calendar quick-add input (desktop surfaces.js:259 + mobile :178). Real + consumed.
-- [ ] data-model=`researchQuery` — surfaces.js:300
+- [x] data-model=`researchQuery` — surfaces.js:300 → WIRED & functional. Two-way bound via the delegated input listener (app.js:211: state.researchQuery=t.value). Consumed by startResearch (live research.js:122 reads state.researchQuery → POST /api/research/start). Bound on the Deep Research query textarea. Real + consumed.
 
 ### non-data-act clickables (found during audit; missed at seed)
 - [!] `<button class="set-launcher">` (settings card launcher: "Open Brain" / "Open Scheduled jobs" / "Open theme picker") — surfaces.js:479 — NO `data-act`, no class handler → dead. See FINDINGS.

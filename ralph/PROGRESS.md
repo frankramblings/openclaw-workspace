@@ -130,3 +130,4 @@
 2026-06-23 01:53 | index.html:1487 save-session-name | verified [-] removed rename-session-modal footer; rename modal cluster done
 2026-06-23 01:54 | index.html:1499 close-cookbook-modal | verified [-] cookbook-modal chrome removed with unported Cookbook feature
 2026-06-23 01:54 | index.html:1510 settings-opacity-wrap | verified [-] settings-modal Peek toggle; redesign settings is a surface (no overlay)
+2026-06-23 01:55 | index.html:1514 settings close-btn | verified [-] settings-modal chrome; settings is a surface now

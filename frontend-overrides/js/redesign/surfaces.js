@@ -66,7 +66,13 @@ function chatMsg(m, s) {
   if (m.role === 'user') {
     return `<div class="msg-user-wrap"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${paras || '<p></p>'}</div></div>`;
   }
-  return `<div class="msg-asst"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${renderActivity(m, s)}${paras}</div></div>`;
+  // Empty/failed turn safeguard: when a turn produced no text and no tool work
+  // (e.g. the model isn't served on this plan, or the request errored), show an
+  // explicit notice instead of a silent blank bubble. See live/chat.js onEvent.
+  const notice = m.error
+    ? `<div class="msg-error" style="margin-top:6px;display:flex;gap:7px;align-items:flex-start;color:var(--red,#e5616a);font-size:13px;line-height:1.45;background:rgba(229,97,106,.08);border:1px solid rgba(229,97,106,.28);border-radius:8px;padding:8px 11px"><span aria-hidden="true">⚠</span><span>${esc(m.notice || 'No response from this model.')}</span></div>`
+    : '';
+  return `<div class="msg-asst"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${renderActivity(m, s)}${paras}${notice}</div></div>`;
 }
 
 
@@ -113,7 +119,7 @@ function chatSurface(s) {
     <div class="slash-menu model-menu">
       <div class="hd">MODEL <span style="float:right;font-weight:400;text-transform:none;color:var(--faint)">★ = default for new chats</span></div>
       ${(s.live && s.live.modelList && s.live.modelList.length)
-        ? map(s.live.modelList, (m) => `<div class="slash-cmd" data-act="setModel" data-arg="${esc(m.mid)}"><span class="name">${esc(m.name)}</span><span class="desc">${esc(m.ep || '')}</span>${m.mid === model ? '<span class="glyph" style="color:var(--green)">✓</span>' : ''}<span data-act="setDefaultModel" data-arg="${esc(m.mid)}" title="Set as default for new chats" style="cursor:pointer;padding:0 4px;color:${m.mid === (s.live && s.live.defaultModel) ? 'var(--gold,#e8c268)' : 'var(--faint)'}">★</span></div>`).join('')
+        ? map(s.live.modelList, (m) => `<div class="slash-cmd" data-act="setModel" data-arg="${esc(m.mid)}"><span class="name">${esc(m.name)}</span><span class="desc">${esc(m.ep || '')}</span>${m.mid === model ? '<span class="glyph" style="color:var(--green)">✓</span>' : ''}<span data-act="setDefaultModel" data-arg="${esc(m.mid)}" title="Set as default for new chats" style="cursor:pointer;padding:0 4px;color:${m.mid === (s.live && s.live.defaultModel) ? 'var(--gold,#e8c268)' : 'var(--faint)'}">★</span></div>`)
         : '<div class="slash-cmd"><span class="desc">Loading…</span></div>'}
     </div>`)}
     <div class="composer${slashOpen ? ' slash' : ''}">

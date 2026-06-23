@@ -299,11 +299,21 @@ export const actions = {
     chat.activeId = null;
     chat.thread = [];
     chat.title = 'New chat';
-    chat.subtitle = `0 messages · ${chat.model || ''}`;
     if (Array.isArray(chat.groups)) {
       for (const g of chat.groups) for (const r of g.rows) r.active = false;
     }
+    chat.subtitle = `0 messages · ${chat.model || ''}`;
     runtime.render();
+    // A new chat should start on the persisted default model, not whatever the
+    // last-opened conversation happened to use. Fetch it and re-render if it
+    // differs (createSession() on first send then carries this model).
+    apiGet('/api/default-chat').then((dc) => {
+      if (dc && dc.model && dc.model !== chat.model && !chat.activeId) {
+        chat.model = dc.model;
+        chat.subtitle = `0 messages · ${chat.model || ''}`;
+        runtime.render();
+      }
+    }).catch(() => { /* keep current model */ });
   },
 
   send: async () => {
@@ -377,13 +387,36 @@ export const actions = {
           a.worked = `Worked for ${a.elapsed} · ${a.steps.length} steps`;
         }
         stopElapsed();
+        // Empty-turn safeguard: the turn ended with no assistant text and no
+        // tool work (e.g. the model isn't served on this plan/endpoint, so the
+        // gateway streamed an empty reply). Surface that instead of a blank.
+        const hadText = turn.asstMsg && String(turn.asstMsg.text || '').trim();
+        const hadWork = turn.activity && (turn.activity.steps || []).some((st) => st.kind !== 'think');
+        if (!hadText && !hadWork && !turn.got404) {
+          const m = ensureAsst();
+          m.error = true;
+          m.notice = 'No response from this model — it may not be available on your plan or endpoint. Try another model from the picker.';
+        }
         flushRender();
         if (turn.got404) { actions.reloadSessions(); turn = null; return; }
         refreshSidebarUsage(state);
         turn = null;
         return;
       }
-      if (ev.type === 'error') { if (ev.status === 404) turn.got404 = true; return; }
+      if (ev.type === 'error') {
+        if (ev.status === 404) { turn.got404 = true; return; }
+        // Non-404 failure (the stream never opened, or dropped): show why rather
+        // than leaving the user staring at their own message with no reply.
+        const m = ensureAsst();
+        m.error = true;
+        m.notice = ev.status
+          ? `Couldn’t get a response (HTTP ${ev.status}). Try again, or pick another model.`
+          : 'The connection dropped before a response arrived. Try again.';
+        stopElapsed();
+        flushRender();
+        turn = null;
+        return;
+      }
 
       // thinking delta → a 'think' step whose body is the reasoning
       if (typeof ev.delta === 'string' && ev.thinking === true) {

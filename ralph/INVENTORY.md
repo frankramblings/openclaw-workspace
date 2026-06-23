@@ -189,7 +189,7 @@ legacy `js/*.js` module.
 - [!] id=adm-provider-btn (API provider selector, admin endpoints) — index.html:2277 → PARITY GAP (dead affordance). Redesign Added Models card lists API providers (Anthropic/DeepSeek) read-only; `provider`/`select` rows are display-only (surfaces.js:442/432, no data-act). Can't pick/configure a provider. Part of the dead Settings surface / no endpoint management — see FINDINGS.
 - [!] id=adm-epApiTestBtn ("Test" an API model endpoint, admin) — index.html:2304 → PARITY GAP (missing). No per-endpoint Test in the redesign (Added Models read-only, non-interactive settings). Same as adm-epLocalTestBtn:2245. See FINDINGS (dead Settings / no endpoint management).
 - [!] id=adm-epApiCancelTestBtn ("Cancel" the endpoint test, admin) — index.html:2305 → PARITY GAP (missing). Sub-control of the absent per-endpoint Test flow (adm-epApiTestBtn:2304). No endpoint testing in the redesign. See FINDINGS (no endpoint management).
-- [ ] id=adm-epAddBtn  `<button>` — index.html:2306
+- [!] id=adm-epAddBtn ("Add" an API model endpoint, admin) — index.html:2306 → PARITY GAP (missing). No add-endpoint control in the redesign (Added Models read-only). Same as adm-epLocalAddBtn:2246 / model-picker-add-models-btn:1267. See FINDINGS (no endpoint management).
 - [ ] id=unified-intg-add-btn  `<button>` — index.html:2341
 - [ ] id=adm-exportDataBtn  `<button>` — index.html:2362
 - [ ] id=adm-importDataBtn  `<button>` — index.html:2363

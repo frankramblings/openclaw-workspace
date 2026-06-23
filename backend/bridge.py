@@ -778,6 +778,14 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
     return True  # no auth info for this provider → don't hide it
 
 
+# Endpoints hidden from the model picker. "anthropic" routes through the
+# anthropic:default API KEY profile (per-token billing); the Claude subscription
+# is the "claude-cli" endpoint (oauth, plan-billed). Frank uses the subscription
+# and doesn't want the metered API endpoint selectable — drop it here rather than
+# delete the gateway credential (reversible: remove "anthropic" from this set).
+_HIDDEN_ENDPOINTS = {"anthropic"}
+
+
 def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
     """Map models.list + models.authStatus onto the SPA's {items:[...]} shape."""
     auth_status = {p.get("provider", ""): p.get("status", "")
@@ -797,6 +805,8 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
 
     items = []
     for provider in order:
+        if provider in _HIDDEN_ENDPOINTS:
+            continue  # per-token API endpoint — see _HIDDEN_ENDPOINTS
         objs = [m for m in by_provider[provider] if m.get("id")]
         if not objs:
             continue

@@ -169,3 +169,4 @@
 2026-06-23 02:16 | index.html:2245 adm-epLocalTestBtn | verified [!] no endpoint Test in redesign (read-only Added Models); dead-settings FINDINGS
 2026-06-23 02:17 | index.html:2246 adm-epLocalAddBtn | verified [!] no add-endpoint in redesign; dead-settings FINDINGS
 2026-06-23 02:17 | index.html:2249 adm accordion toggle | verified [-] accordion layout not ported (same as :2230)
+2026-06-23 02:17 | index.html:2254 adm-epDiscoverBtn | verified [!] no endpoint discovery in redesign; FINDINGS

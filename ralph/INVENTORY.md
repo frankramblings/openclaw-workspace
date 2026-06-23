@@ -104,7 +104,7 @@ legacy `js/*.js` module.
 - [!] id=overflow-doc-btn ("Document Editor" composer tool; cb-doc) — index.html:1177 → PARITY GAP (composer button missing; partial coverage elsewhere). No document-editor button in the redesign composer. Doc editing partially survives via the Notes surface (rail-notes [x]) + the `/note` and `/split` slash commands (data.js:11–12) — but the inline composer quick-tool has no sibling. Part of the Chat Bar cluster — see FINDINGS "Composer reimagined."
 - [!] id=overflow-rag-btn ("RAG"/knowledge-retrieval composer tool, legacy rag.js) — index.html:1183 → PARITY GAP (missing). No RAG UI anywhere in the redesign (only "vector store" mentioned in the Wipe-memory danger text, settings-data.js:146 — so the store persists server-side but has no composer tool). Part of the Chat Bar cluster — see FINDINGS "Composer reimagined."
 - [-] id=overflow-tts-btn (TTS composer tool) — index.html:1196 — already `hidden style="display:none"` in the OLD design (vestigial/disabled in the baseline), so no active feature to preserve. Redesign also has no TTS. No parity obligation.
-- [ ] id=overflow-preset-btn  `<button>` — index.html:1201
+- [!] id=overflow-preset-btn ("Presets" composer tool, legacy presets.js) — index.html:1201 → PARITY GAP (missing). No preset-picker UI anywhere in the redesign; "preset" only appears in the Data Backup export blurb (settings-data.js:143 — data persists server-side, no UI). Last of the overflow tools cluster — see FINDINGS "Composer reimagined."
 - [ ] id=web-toggle-btn  `<button>` — index.html:1210
 - [ ] id=bash-toggle-btn  `<button>` — index.html:1216
 - [ ] id=rag-indicator-btn  `<button>` — index.html:1222

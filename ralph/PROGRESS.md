@@ -190,3 +190,4 @@
 2026-06-23 02:24 | new-wiring data-act=clearQuick | verified [x] WIRED -> live calendar.js:310 (quick-parse + create event)
 2026-06-23 02:25 | new-wiring data-act=closeCapture | verified [x] WIRED (mobile-app.js:62); but Send-to-Gary mis-wired to closeCapture -> capture discarded. Logged FINDINGS.
 2026-06-23 02:26 | new-wiring data-act=closeCompanion | verified [x] WIRED -> mobile-app.js:59
+2026-06-23 02:26 | new-wiring data-act=compTab | verified [x] WIRED -> app.js:141 (switch companion tab)

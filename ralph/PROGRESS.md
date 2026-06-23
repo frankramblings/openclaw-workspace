@@ -115,3 +115,4 @@
 2026-06-23 01:46 | index.html:1361 group-add-btn | verified [-] group-builder control in removed preset modal
 2026-06-23 01:47 | index.html:1367 cancel-custom-preset | verified [-] removed custom-preset-modal footer
 2026-06-23 01:47 | index.html:1368 save-custom-preset | verified [-] removed custom-preset-modal footer; preset-modal cluster :1291-1368 done
+2026-06-23 01:48 | index.html:1382 we-new-file | verified [!] PARITY GAP — explorer browse-only, no file mgmt; logged workspace-explorer FINDINGS

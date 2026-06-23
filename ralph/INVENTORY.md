@@ -129,7 +129,7 @@ legacy `js/*.js` module.
 - [-] id=group-add-btn ("add model to group") — index.html:1361 — group-chat builder control in the removed custom-preset-modal; Group Chat feature unported (:1236 [!]). Removed with the modal.
 - [-] id=cancel-custom-preset ("Cancel") — index.html:1367 — footer button of the removed custom-preset-modal (:1291–:1468). Removed with the modal (preset/character/group features unported).
 - [-] id=save-custom-preset ("Save") — index.html:1368 — footer button of the removed custom-preset-modal; completes the modal cluster (:1291–:1468). Removed with the modal (preset/character/group features unported).
-- [ ] id=we-new-file  `<button>` — index.html:1382
+- [!] id=we-new-file ("New file", legacy workspace-explorer.js) — index.html:1382 → PARITY GAP (missing). The redesign companion Files tab (companion.js) is browse-only: an expandable file tree (toggleFs) + tab/split/hide controls, with NO file-management toolbar — no new-file/new-folder/upload/refresh. File creation has no sibling. See FINDINGS "Workspace explorer is browse-only (no file management)."
 - [ ] id=we-new-folder  `<button>` — index.html:1383
 - [ ] id=we-upload  `<button>` — index.html:1384
 - [ ] id=we-prefs  `<button>` — index.html:1385

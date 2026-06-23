@@ -119,7 +119,7 @@ legacy `js/*.js` module.
 - [x] aria-label="New chat" (send-btn in `newchat-mode` — old design overloaded the send button to start a new chat when the draft is empty) — index.html:1279 → PARITY OK. Redesign splits the overloaded button into two explicit wired controls: `send` (surfaces.js:103, data-act=send) and `newChat` ("New conversation", surfaces.js:22, verified [x] at rail-new-session:826). New-chat function preserved.
 - [-] id=close-custom-preset (✖ closes the custom-preset modal) — index.html:1295 — chrome of the custom-preset-modal (spans :1291–:1468), removed with the unported preset feature (overflow-preset-btn:1201 [!]). No preset UI in the redesign ⇒ no modal ⇒ no close button. See FINDINGS (preset gap).
 - [-] class=preset-tab active — index.html:1300 — sub-tab of the removed custom-preset-modal (:1291–:1468, bundles preset/character/group builders — all unported features). No sibling. Removed with the modal. See FINDINGS (preset/character/group gaps).
-- [ ] class=preset-tab  `<button>` — index.html:1301
+- [-] class=preset-tab — index.html:1301 — sub-tab of the removed custom-preset-modal (:1291–:1468). No sibling. Removed with the modal (preset/character/group builders all unported).
 - [ ] class=preset-tab  `<button>` — index.html:1302
 - [ ] id=char-new-btn  `<button>` — index.html:1333
 - [ ] id=char-delete-template-btn  `<button>` — index.html:1339

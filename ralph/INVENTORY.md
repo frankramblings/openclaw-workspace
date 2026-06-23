@@ -216,7 +216,7 @@ legacy `js/*.js` module.
 - [x] data-act=`go` — app.js:52 → WIRED. Handler app.js:127 (sets state.surface, clears resOpenCtl). The primary surface-nav action — bound to every rail item (app.js:52 railItem/ocnav). After dispatch, loadActive() fetches the surface's live data. Verified functional across the rail-* parity rows (chat/email/calendar/research/library/notes/settings).
 - [x] data-act=`libFilter` — surfaces.js:346 → WIRED & functional. Handler app.js:162 (sets state.libFilter). Actually filters the list: surfaces.js:341 `all.filter((a) => lf==='all' || a.cat===lf)`. Bound to the Library filter chips (surfaces.js:346).
 - [x] data-act=`mBackToHub` — mobile/mobile-app.js:17 → WIRED. Handler mobile-app.js:55 (sets state.mSub=null — pops a pushed sub-surface back to the mobile "More" hub). Bound to the m-back button (:17) + other back affordances (mobile-surfaces.js). Real state change + re-render.
-- [ ] data-act=`mCloseReader` — mobile/mobile-surfaces.js:144
+- [x] data-act=`mCloseReader` — mobile/mobile-surfaces.js:144 → WIRED. Handler mobile-app.js:57 (sets state.mReader=false — exits the mobile email reader back to the list). Bound to the reader's m-back button. Real state change + re-render.
 - [ ] data-act=`mGo` — mobile/mobile-surfaces.js:23
 - [ ] data-act=`mOpenReader` — mobile/mobile-surfaces.js:127
 - [ ] data-act=`mOpenSub` — mobile/mobile-surfaces.js:188

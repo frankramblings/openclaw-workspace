@@ -140,7 +140,7 @@ legacy `js/*.js` module.
 - [x] id=we-reopen ("Workspace files" — collapsed-state reveal to reopen the explorer panel) — index.html:1397 → PARITY OK. Redesign sibling: the companion collapsed reveal strip — `reveal-btn` ("Show panel", data-act=`toggleComp`, companion.js:118) + reveal-icon (compTab, :120). Real wiring. Pairs with we-collapse:1387.
 - [!] id=scroll-bottom-btn ("Scroll to bottom" — chat jump-to-latest, appears when scrolled up) — index.html:1398 → PARITY GAP (missing, MINOR). No scroll-to-bottom affordance in the redesign chat (grep empty). Low-priority UX convenience. See FINDINGS (minor).
 - [-] id=close-rename-session (✖ closes the rename-session modal) — index.html:1473 — chrome of the rename-session-modal (:1469–~:1498), removed with the unported conversation-rename feature (the redesign has no rename — see export-dl-btn:1101 [!] / "No conversation-actions menu" FINDINGS). No modal ⇒ no close button.
-- [ ] id=cancel-rename-session  `<button>` — index.html:1486
+- [-] id=cancel-rename-session ("Cancel") — index.html:1486 — footer of the removed rename-session-modal; conversation-rename unported (export-dl-btn:1101 [!]). Removed with the modal.
 - [ ] id=save-session-name  `<button>` — index.html:1487
 - [ ] id=close-cookbook-modal  `<button>` — index.html:1499
 - [ ] id=settings-opacity-wrap  `<button>` — index.html:1510

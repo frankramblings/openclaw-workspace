@@ -7,6 +7,7 @@ Note in a bullet if a fix also requires Frank to re-run `scripts/sync-frontend.s
     - `set-launcher` (surfaces.js:479) — **"Open Brain"** (settings-data.js:106), **"Open Scheduled jobs"** (:107), **"Open theme picker"** (:109).
     - `set-btn` via `btns()` (surfaces.js:441) — **"Export Data" / "Import Data"** (Data Backup, settings-data.js:143), plus any other `btns([...])` rows.
     - `set-btn danger` "Wipe" (surfaces.js:455) — every Danger-Zone **"Wipe …"** button (settings-data.js:144–147: wipe memory/skills/all).
+    - `set-add` "+ add" (surfaces.js:439) — the **"+ add"** on every `chips()` row (e.g. Fallbacks: set-defaultAddFallback/utility/vision, model + search-provider fallbacks). Display-only.
   - Discovered while auditing the old memory-modal cluster (close/tabs/IO/skills, index.html:377–509): those features are intentionally relocated into Settings cards, but the cards can't actually *do* anything yet.
   - `deferred — needs human:` this is a build-out, not a one-line wiring fix. (a) The launchers have no target surface (no Brain/Scheduled/theme-picker surface exists). (b) Export/Import Data + Wipe buttons need real backend calls (and Wipe needs a confirm guard — destructive). Decide per button: build the target surface/modal, add a `data-act` + an `actions[...]` handler, and the backend endpoint. Likely >50 lines / multiple files → out of scope for a single audit iteration.
   - When fixed in `frontend-overrides/`, Frank must re-run `scripts/sync-frontend.sh` to deploy.

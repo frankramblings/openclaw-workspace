@@ -97,8 +97,13 @@ function chatSurface(s) {
     </div>`)}
     <div class="composer${slashOpen ? ' slash' : ''}">
       <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message Gary…   ( type / for commands )">${esc(d)}</textarea>
+      ${when(s.pendingAttach && s.pendingAttach.length, `
+      <div class="attach-pending" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 6px 0">
+        ${map(s.pendingAttach || [], (a) => `<span class="attach-chip" style="display:inline-flex;align-items:center;gap:5px;background:#2a2d33;border-radius:7px;padding:3px 8px;font-size:12px"><span>${esc(a.name || a.id)}</span><span data-act="removeAttach" data-arg="${esc(a.id)}" style="cursor:pointer;color:var(--faint)">✕</span></span>`)}
+      </div>`)}
       <div class="composer-row">
         <button class="icon-btn ocbtn" data-act="toggleSlash" title="More tools">${I.plus()}</button>
+        <label class="icon-btn ocbtn" title="Attach files" style="cursor:pointer;display:inline-flex;align-items:center"><input type="file" data-upload multiple style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></label>
         <div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
         <div class="oc-spacer"></div>
         <button class="pill-btn ocbtn" title="Reasoning effort">Normal</button>

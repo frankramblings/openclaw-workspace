@@ -24,3 +24,10 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 ## P2 — core composer — partial (model picker done; effort + attach next)
 - **Model picker** — composer `.model-btn` now `data-act="toggleModelMenu"`; a popover (reusing `.slash-menu` styling) lists models. Handlers in `live/chat.js`: `toggleModelMenu` lazily fetches `GET /api/models` and flattens `items[].models`/`models_display` → `state.live.modelList=[{mid,name,ep}]`; `setModel(mid)` sets `state.live.chat.model` (used by `createSession` on next new chat) + closes. Soft-fails to an empty menu.
 - TODO next: reasoning-effort pill, and **Attach Files** (`POST /api/upload` → attach to next send).
+
+## P2 — Attach Files — ✅ DONE
+- **Composer attach** — paperclip `<label><input type=file data-upload multiple></label>` added to the composer row; a delegated `change` listener in `app.js` calls `actions.uploadAttachments(files)`.
+- `uploadAttachments(files)` (live/chat.js) → `POST /api/upload` (FormData field `files`) → stores `{id,name}` in `state.pendingAttach`; rendered as removable chips above the composer (`removeAttach(id)`).
+- `send()` now carries `attachments: JSON.stringify(ids)` in the stream body (the `/api/chat_stream` endpoint resolves them per backend app.py:330), allows attach-only sends, and clears `pendingAttach` after the turn.
+- Verified: node --check (chat/surfaces/app); synced; deployed.
+- **Reasoning-effort pill**: deferred (low value; backend effort param unconfirmed — would just be a state flag in the stream body). Not blocking.

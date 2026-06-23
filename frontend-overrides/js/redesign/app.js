@@ -217,6 +217,14 @@ root.addEventListener('input', (e) => {
   render();
 });
 
+// composer file-attach: <input type=file data-upload> → upload, keep as pending
+root.addEventListener('change', (e) => {
+  const t = e.target;
+  if (!t || t.type !== 'file' || !t.hasAttribute('data-upload')) return;
+  if (actions.uploadAttachments && t.files && t.files.length) actions.uploadAttachments(t.files);
+  t.value = ''; // allow re-picking the same file
+});
+
 // Enter-to-send in the chat composer (Shift+Enter = newline). Calls the chat
 // module's `send` action once it's been merged in (no-op until then).
 root.addEventListener('keydown', (e) => {

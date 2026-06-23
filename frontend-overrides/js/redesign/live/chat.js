@@ -310,7 +310,8 @@ export const actions = {
     const state = runtime.state;
     if (!state) return;
     const text = (state.draft || '').trim();
-    if (!text) return;
+    const attachIds = (state.pendingAttach || []).map((a) => a.id);
+    if (!text && !attachIds.length) return;
     const chat = ensureChat(state);
 
     // ensure we have a session
@@ -433,9 +434,15 @@ export const actions = {
 
     streamCtrl = postStream(
       '/api/chat_stream',
-      { message: text, session: sessionId, mode: state.chatMode || 'agent' },
+      {
+        message: text,
+        session: sessionId,
+        mode: state.chatMode || 'agent',
+        ...(attachIds.length ? { attachments: JSON.stringify(attachIds) } : {}),
+      },
       onEvent,
     );
+    state.pendingAttach = []; // consumed by this turn
   },
 
   stopRun: () => {
@@ -493,6 +500,32 @@ export const actions = {
     if (!state || !mid) return;
     ensureChat(state).model = mid;
     state.modelMenuOpen = false;
+    runtime.render();
+  },
+
+  // Composer attach: upload picked files, keep ids as pending chips; send()
+  // carries them on the next turn. Called directly by the file-input change
+  // listener (app.js) with a FileList.
+  uploadAttachments: async (files) => {
+    const state = runtime.state;
+    if (!state || !files || !files.length) return;
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f, f.name || 'upload');
+    try {
+      const res = await fetch(`${location.origin}/api/upload`, { method: 'POST', credentials: 'same-origin', body: fd });
+      if (!res.ok) throw new Error(String(res.status));
+      const data = await res.json();
+      const saved = (data && data.files) || [];
+      state.pendingAttach = [...(state.pendingAttach || []), ...saved.map((s) => ({ id: s.id, name: s.name }))];
+      runtime.render();
+    } catch (_) { /* soft-fail: nothing attached */ }
+  },
+
+  // Remove a pending attachment chip before sending.
+  removeAttach: (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    state.pendingAttach = (state.pendingAttach || []).filter((a) => a.id !== id);
     runtime.render();
   },
 };

@@ -195,6 +195,23 @@
   overflow: auto;
 }
 
+/* Grouped run line (e.g. "Ran 11 commands") — same rhythm as .act-row, clickable. */
+.act-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.act-group .lbl { color: var(--fg, #e7eaf0); }
+.act-group:hover .lbl { color: #fff; }
+/* Member rows of an expanded group sit on a lighter, inset spine. */
+.act-subspine {
+  border-left-color: #23262e;
+  margin-left: 8px;
+}
+
 /* ── Reload-resumed live answer bubble (main chat) ─────────────────────
    The lightweight live bubble shown while an in-flight answer is rebuilt
    from the event log after a reload; replaced by the canonical render on

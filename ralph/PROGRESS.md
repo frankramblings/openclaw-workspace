@@ -184,3 +184,4 @@
 2026-06-23 02:22 | index.html:2393 admin-btn-delete (Wipe all skills, 3/8) | verified [!] dead Wipe danger btn; FINDINGS
 2026-06-23 02:23 | index.html:2401 admin-btn-delete (Wipe all notes, 4/8) | verified [!] dead Wipe danger btn; FINDINGS
 2026-06-23 02:23 | index.html:2409 admin-btn-delete (Wipe all tasks, 5/8) | verified [!] dead Wipe danger btn; FINDINGS
+2026-06-23 02:23 | index.html:2417 admin-btn-delete (Wipe all documents, 6/8) | verified [!] dead Wipe danger btn; FINDINGS

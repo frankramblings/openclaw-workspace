@@ -177,7 +177,7 @@ legacy `js/*.js` module.
 - [!] id=set-email-style-extract ("Extract from Sent" — derive email writing style) — index.html:2130 → PARITY GAP (dead affordance). Redesign Writing Style card (settings-data.js:98) renders the textarea + `btns([{label:'Extract from Sent (15 emails)'},{label:'Save'}])` → dead `set-btn`s (no data-act). Feature shown but non-functional. Part of the dead Settings surface — see FINDINGS.
 - [!] id=set-email-style-save ("Save" the email writing style) — index.html:2131 → PARITY GAP (dead affordance). The "Save" half of the redesign Writing Style card `btns()` (settings-data.js:98) — dead `set-btn` (no data-act). Pairs with set-email-style-extract:2130. See FINDINGS.
 - [!] id=set-reminders-open-integrations (`<a href="#">Integrations</a>` — cross-link from Reminders settings to the Integrations section) — index.html:2164 → PARITY GAP (missing, MINOR). The redesign reminders panel (settings-data.js:100) has cards but no Integrations cross-link. No setSection cross-nav from card content anyway (dead Settings surface). Low-priority convenience. See FINDINGS (dead Settings surface).
-- [ ] id=set-reminder-test-btn  `<button>` — index.html:2187
+- [!] id=set-reminder-test-btn ("Fire a test reminder") — index.html:2187 → PARITY GAP (dead affordance). Redesign reminders panel has a "Test" card (settings-data.js:103) but its button is a dead `set-btn` (no data-act, no test action). Part of the dead Settings surface — see FINDINGS.
 - [ ] id=adm-addBtn  `<button>` — index.html:2216
 - [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2230
 - [ ] id=adm-epLocalTestBtn  `<button>` — index.html:2245

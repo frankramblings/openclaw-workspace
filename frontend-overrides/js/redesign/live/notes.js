@@ -4,7 +4,8 @@
 // docs[state.selDoc]; selDoc is already wired. We only produce the doc list.
 // Fails soft: load() throws on error, which keeps the mock.
 
-import { apiGet } from './api.js';
+import { apiGet, apiJson } from './api.js';
+import { runtime } from './runtime.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -98,6 +99,7 @@ export async function load(state) {
   const docs = list.map((note) => {
     const title = note.title || '(untitled)';
     return {
+      id: note.id || note.note_id,
       title,
       path: note.path || `notes/${slug(note.title)}.md`,
       version: note.version || 1,
@@ -117,3 +119,20 @@ export async function load(state) {
 
   state.live.notes = { docs };
 }
+
+export const actions = {
+  // Notes header "+ New": create a blank note, reload the list, select it.
+  newNote: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    try {
+      const res = await apiJson('/api/notes', { title: 'Untitled note', content: '' });
+      const newId = res && (res.id || res.note_id || (res.note && res.note.id));
+      await load(state);
+      const docs = (state.live && state.live.notes && state.live.notes.docs) || [];
+      const idx = newId ? docs.findIndex((d) => d.id === newId) : -1;
+      state.selDoc = idx >= 0 ? idx : 0;
+      runtime.render();
+    } catch (_) { /* soft-fail */ }
+  },
+};

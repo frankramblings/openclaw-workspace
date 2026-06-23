@@ -264,7 +264,7 @@ function calendarSurface(s) {
         <span class="cal-month">${esc(month)}</span>
         <div class="oc-spacer"></div>
         <div class="cal-views"><span>Week</span><span class="active">Month</span><span>Agenda</span></div>
-        <button class="btn btn-teal">+ New</button>
+        <button class="btn btn-teal" data-act="newEvent">+ New</button>
       </div>
       <div class="cal-quick${has ? ' has' : ''}">
         <span class="star">✦</span>
@@ -389,7 +389,7 @@ function notesSurface(s) {
   <div class="split-h">
     <div class="oc-secondary notes-list">
       <div class="list-top">
-        <div class="list-top-head"><span class="ttl">Notes</span><span style="font-size:11px;color:var(--faint)">vault · 41</span><div class="oc-spacer"></div><button class="btn btn-teal">+ New</button></div>
+        <div class="list-top-head"><span class="ttl">Notes</span><span style="font-size:11px;color:var(--faint)">vault · 41</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newNote">+ New</button></div>
         <div class="oc-search">${I.search()}<span class="ph">Search notes…</span></div>
       </div>
       <div class="list-scroll">

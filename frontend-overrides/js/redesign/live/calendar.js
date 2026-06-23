@@ -307,6 +307,16 @@ export async function load(state /* , { force } = {} */) {
 // UI never gets stuck. quick-parse returns a BARE event dict (NOT {ok,event}).
 
 export const actions = {
+  // Calendar header "+ New": focus the natural-language quick-add (the create path).
+  newEvent: () => {
+    try {
+      setTimeout(() => {
+        const el = document.querySelector('[data-focus="quick"]');
+        if (el && el.focus) { el.focus(); try { el.select(); } catch (_) {} }
+      }, 0);
+    } catch (_) {}
+  },
+
   clearQuick: async () => {
     const state = runtime.state;
     const text = (state?.quick || '').trim();

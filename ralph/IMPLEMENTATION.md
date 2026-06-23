@@ -31,3 +31,9 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - `send()` now carries `attachments: JSON.stringify(ids)` in the stream body (the `/api/chat_stream` endpoint resolves them per backend app.py:330), allows attach-only sends, and clears `pendingAttach` after the turn.
 - Verified: node --check (chat/surfaces/app); synced; deployed.
 - **Reasoning-effort pill**: deferred (low value; backend effort param unconfirmed — would just be a state flag in the stream body). Not blocking.
+
+## P3 — per-surface actions — partial (notes + calendar create done; email cluster next)
+- **Notes "+ New"** (surfaces.js Notes header) → `data-act="newNote"`; handler in `live/notes.js` → `POST /api/notes {title:'Untitled note', content:''}` → reload list → select the new note (by id; doc shape now carries `id`).
+- **Calendar "+ New"** (surfaces.js cal header) → `data-act="newEvent"` → focuses the natural-language quick-add input (the real create path; `clearQuick` already POSTs `/api/calendar/events`).
+- Verified: node --check; synced; deployed.
+- TODO next (P3 email cluster): "+ New" compose, Reply/Reply-all/Forward (`/api/email/send`,`/api/email/draft`), "✦ AI reply" (`/api/email/ai-reply`), "✦ Summarize" (`/api/email/summarize`), archive (`/api/email/archive/{uid}`); research "+ Queue".

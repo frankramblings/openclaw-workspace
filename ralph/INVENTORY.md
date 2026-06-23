@@ -15,7 +15,7 @@ legacy `js/*.js` module.
 
 ## Old → New parity
 
-- [ ] <a href="tel:..."> with  `<a href>` — index.html:23
+- [-] <a href="tel:..."> — index.html:23 — false positive: regex matched text *inside an HTML comment* (not a live element). The real functional intent nearby — the `format-detection` telephone=no meta — HAS parity in index-redesign.html:9.
 - [ ] id=close-memory-modal  `<button>` — index.html:377
 - [ ] class=memory-tab active  `<button>` — index.html:381
 - [ ] class=memory-tab  `<button>` — index.html:382

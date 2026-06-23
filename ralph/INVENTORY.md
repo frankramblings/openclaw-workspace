@@ -75,7 +75,7 @@ legacy `js/*.js` module.
 - [!] id=rail-delete-session ("Delete session" ✕) — index.html:827 → PARITY GAP (missing). Redesign session rows (surfaces.js:45) have only data-act=`selectSession`; there is NO delete affordance and NO `apiDelete('/api/sessions/{id}')` call wired to any UI in frontend/js/redesign (the apiDelete helper, api.js:41, is never used for sessions). Users cannot delete a conversation. No affordance shown ⇒ omission, not a dead button. See FINDINGS.
 - [x] id=rail-chats ("Chat" rail nav) — index.html:830 → PARITY OK. Redesign sibling: `railItem('chat','Chat')` (app.js:68) → renders data-act=`go` data-arg=`chat` (railItem, app.js:52) → `go` action (app.js:127 sets state.surface). Real wiring.
 - [x] id=rail-documents ("Documents" — legacy documentLibrary) — index.html:831 → PARITY OK (consolidated). Redesign sibling: the **Library** nav surface (railItem('library') app.js:73 → data-act=`go`/`library`, backed by live/library.js) for produced artifacts/docs, plus the browsable `documents/` folder in the workspace explorer (data.js:83, fsOpen.documents app.js:25). Real wiring.
-- [ ] id=rail-calendar  `<button>` — index.html:833
+- [x] id=rail-calendar ("Calendar") — index.html:833 → PARITY OK. Direct sibling: railItem('calendar') (app.js:71) → data-act=`go`/`calendar` → `go` action (app.js:127), backed by live/calendar.js. Real wiring.
 - [ ] id=rail-compare  `<button>` — index.html:834
 - [ ] id=rail-cookbook  `<button>` — index.html:835
 - [ ] id=rail-research  `<button>` — index.html:836

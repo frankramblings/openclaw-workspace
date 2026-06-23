@@ -212,7 +212,7 @@ legacy `js/*.js` module.
 - [x] data-act=`closeCompanion` — mobile/mobile-sheets.js:34 → WIRED. Handler mobile-app.js:59 (sets companionSheetOpen=false, closes the mobile companion sheet). Bound to scrim (:34) + close-X (:42). Real state change + re-render.
 - [x] data-act=`compTab` — companion.js:103 → WIRED. Handler app.js:141 (sets state.compTab, compSplit=false, compHidden=false — switches the companion panel to Terminal/Files/Gary). Bound to tab buttons (companion.js:103–105) + collapsed reveal icons (:120–122). Real state change + re-render.
 - [x] data-act=`companionTab` — mobile/mobile-sheets.js:39 → WIRED. Handler mobile-app.js:60 (sets state.companionTab — switches the mobile companion sheet between Terminal/Files). Bound mobile-sheets.js:39/40. Real state change + re-render.
-- [ ] data-act=`dismiss` — mobile/mobile-surfaces.js:87
+- [x] data-act=`dismiss` — mobile/mobile-surfaces.js:87 → WIRED & functional. Handler: mock app.js:167 + LIVE override inbox.js:92 (optimistic markDismissed + POST /api/items/action with source/id/action, dismiss fallback). Bound to inbox triage Archive/Keep (surfaces.js:187/194, mobile :87/:96). Real backend archive.
 - [ ] data-act=`go` — app.js:52
 - [ ] data-act=`libFilter` — surfaces.js:346
 - [ ] data-act=`mBackToHub` — mobile/mobile-app.js:17

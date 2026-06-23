@@ -239,7 +239,7 @@ legacy `js/*.js` module.
 - [x] data-act=`startResearch` — surfaces.js:307 → WIRED & functional. Handler: mock app.js:154 + LIVE override research.js:122 (POST /api/research/start {query, max_rounds from resCfg}, then streams progress via EventSource). Bound to the research start button. Real backend launch.
 - [x] data-act=`stopRun` — chat-activity.js:96 → WIRED & functional. Handler: mock app.js:138 (no-op placeholder) + LIVE override chat.js:441 (aborts streamCtrl, finalizeAll, sets activity status='done' + "Stopped after …"). Bound to the "Stop" button in the activity-trail working header. Real stream abort.
 - [x] data-act=`toggleComp` — companion.js:108 → WIRED. Handler app.js:143 (toggles state.compHidden — hide/show the companion panel). Bound to the panel "Hide" ctl (companion.js:108) + collapsed "Show" reveal (:118). Verified at we-collapse:1387 / we-reopen:1397.
-- [ ] data-act=`toggleFs` — companion.js:38
+- [x] data-act=`toggleFs` — companion.js:38 → WIRED. Handler app.js:144 (toggles state.fsOpen[path] — expand/collapse a workspace file-tree folder). The tree flattener honors fsOpen (companion.js:14–22). Bound to fs-dir rows. Real expand/collapse.
 - [ ] data-act=`toggleRail` — app.js:62
 - [ ] data-act=`toggleResCtl` — surfaces.js:287
 - [ ] data-act=`toggleSlash` — surfaces.js:94

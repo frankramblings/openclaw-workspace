@@ -47,7 +47,7 @@ legacy `js/*.js` module.
 - [-] title="Reset this color" (Border, 5 of 18) — index.html:600 — theme-popup per-color reset; no per-color customizer in redesign. Removed with the theme-popup. Same disposition as :596.
 - [-] title="Reset this color" (6 of 18) — index.html:601 — theme-popup per-color reset; no per-color customizer in redesign. Removed with the theme-popup. Same disposition as :596.
 - [-] title="Reset this color" (7 of 18) — index.html:611 — theme-popup per-color reset; no per-color customizer in redesign. Removed with the theme-popup. Same disposition as :596.
-- [ ] title=Reset this color  `<button>` — index.html:612
+- [-] title="Reset this color" (8 of 18) — index.html:612 — theme-popup per-color reset; no per-color customizer in redesign. Removed with the theme-popup. Same disposition as :596.
 - [ ] title=Reset this color  `<button>` — index.html:613
 - [ ] title=Reset this color  `<button>` — index.html:619
 - [ ] title=Reset this color  `<button>` — index.html:620

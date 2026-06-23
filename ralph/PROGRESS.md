@@ -44,3 +44,4 @@
 2026-06-23 01:04 | index.html:635 Reset-this-color (16/18) | verified [-] (theme-popup per-color reset)
 2026-06-23 01:04 | index.html:636 Reset-this-color (17/18) | verified [-] (theme-popup per-color reset)
 2026-06-23 01:04 | index.html:642 Reset-this-color (18/18) | verified [-] (theme-popup per-color reset; run :596-642 complete)
+2026-06-23 01:05 | index.html:649 theme-adv-clear | verified [-] (advanced theme-popup override control; not ported)

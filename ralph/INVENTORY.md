@@ -93,7 +93,7 @@ legacy `js/*.js` module.
 - [!] id=session-bulk-archive — index.html:915 → PARITY GAP (missing). No multi-select / bulk-archive of sessions in the redesign (select-only list). Part of the absent session-management cluster — see FINDINGS.
 - [!] id=session-bulk-delete — index.html:916 → PARITY GAP (missing). No multi-select / bulk-delete of sessions in the redesign (select-only list). Last of the absent session-management cluster (:871–:916) — see FINDINGS.
 - [!] id=session-bulk-cancel — index.html:917 → PARITY GAP (missing). Exits the session multi-select bar (with session-bulk-archive/delete :915–:916); no such mode in the redesign (select-only list). Final element of the absent session-management cluster — see FINDINGS.
-- [ ] id=email-compose-btn  `<button>` — index.html:955
+- [!] id=email-compose-btn ("Compose email", legacy emailInbox.js) — index.html:955 → PARITY GAP (dead affordance). Redesign email surface renders a "+ New" compose button (surfaces.js:122) but it has NO `data-act`; live/email.js actions only define selEmail/mOpenReader (no compose). Button shown but dead. Part of a SYSTEMIC gap — most per-surface `.btn` action buttons are unwired; see FINDINGS "Per-surface action buttons unwired."
 - [ ] id=library-new-doc-btn  `<button>` — index.html:1036
 - [ ] id=user-bar-settings  `<button>` — index.html:1085
 - [ ] id=incognito-indicator  `<button>` — index.html:1100
@@ -260,3 +260,4 @@ legacy `js/*.js` module.
 - [!] `<button class="set-btn">` via `btns()` ("Export Data" / "Import Data", settings-data.js:143) — surfaces.js:441 — NO `data-act` → dead. See FINDINGS.
 - [!] `<button class="set-btn danger">` "Wipe" (Danger-Zone: wipe memory/skills/all, settings-data.js:144–147) — surfaces.js:455 — NO `data-act` → dead (also needs a confirm guard). See FINDINGS.
 - [!] `<div class="oc-search">` ×4 (chat ⌘K filter surfaces.js:23, inbox :123, library :343, notes :381) — decorative only: no `<input>`, no `data-act`, no handler, no ⌘K/Ctrl-K keybinding. The redesign's only search/filter affordances and all dead. See FINDINGS (parity gap for legacy rail-search-btn:825).
+- [!] per-surface `.btn`/`.btn-sm` action buttons w/o `data-act` (~16) — surfaces.js: email +New :122, Reply/Reply-all/Forward :147–149, AI reply/Summarize :151–152, Draft/quick-send :165–166; calendar Today :250, +New :255; research +Queue :306, Visual-Report/Discuss/Save :326; notes +New :380. All dead (only chat-send :103, inbox dismiss :187/194, research stop/new :313/324 are wired). See FINDINGS "Per-surface action buttons unwired."

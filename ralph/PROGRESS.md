@@ -79,3 +79,4 @@
 2026-06-23 01:23 | index.html:915 session-bulk-archive | verified [!] PARITY GAP — no bulk session archive; covered by session-management FINDINGS
 2026-06-23 01:23 | index.html:916 session-bulk-delete | verified [!] PARITY GAP — no bulk session delete; session-mgmt cluster :871-916 complete
 2026-06-23 01:24 | index.html:917 session-bulk-cancel | verified [!] PARITY GAP — session multi-select cancel; covered by session-management FINDINGS
+2026-06-23 01:25 | index.html:955 email-compose-btn | verified [!] PARITY GAP — +New email dead (no data-act). Logged SYSTEMIC FINDINGS: ~16 per-surface action buttons unwired.

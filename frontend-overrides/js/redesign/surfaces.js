@@ -131,7 +131,7 @@ function emailSurface(s) {
   <div class="split-h">
     <div class="oc-secondary email-list">
       <div class="list-top">
-        <div class="list-top-head"><span class="ttl">Email</span><span class="pill-teal">1 unread</span><div class="oc-spacer"></div><button class="btn btn-teal">+ New</button></div>
+        <div class="list-top-head"><span class="ttl">Email</span><span class="pill-teal">1 unread</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="composeNew">+ New</button></div>
         <div class="oc-search">${I.search()}<span class="ph">Search · INBOX</span></div>
       </div>
       <div class="list-scroll">
@@ -156,13 +156,14 @@ function emailSurface(s) {
           </div>
         </div>
         <div class="reader-toolbar">
-          <button class="btn">${I.reply()}Reply</button>
-          <button class="btn btn-ghost">Reply all</button>
-          <button class="btn btn-ghost">Forward</button>
+          <button class="btn" data-act="composeReply" data-arg="reply">${I.reply()}Reply</button>
+          <button class="btn btn-ghost" data-act="composeReply" data-arg="replyall">Reply all</button>
+          <button class="btn btn-ghost" data-act="composeReply" data-arg="forward">Forward</button>
           <div class="tb-divider"></div>
-          <button class="btn btn-teal">✦ AI reply</button>
-          <button class="btn btn-violet">✦ Summarize</button>
+          <button class="btn btn-teal" data-act="composeAiDraft">✦ AI reply</button>
+          <button class="btn btn-violet" data-act="summarizeEmail">✦ Summarize</button>
         </div>
+        ${when(s.emailSummary, `<div class="email-summary" style="margin:8px 0 0;padding:10px 12px;background:rgba(123,182,255,.10);border:1px solid var(--border);border-radius:8px;font-size:13px;line-height:1.5"><b style="color:var(--violet)">✦ Summary</b> <span data-act="clearEmailSummary" style="float:right;cursor:pointer;color:var(--faint)">✕</span><div style="margin-top:4px;white-space:pre-wrap">${esc(s.emailSummary)}</div></div>`)}
       </div>
       <div class="reader-body">
         <div class="col">
@@ -172,12 +173,37 @@ function emailSurface(s) {
         </div>
       </div>
       <div class="reply-bar">
-        <div class="box">
+        <div class="box" data-act="composeReply" data-arg="reply" style="cursor:text">
           <span class="ph">Reply to ${esc(replyTo)}…</span>
-          <button class="btn-sm" title="AI draft">✦ Draft</button>
-          <button class="btn-send-sm ocbtn" title="Send">${I.send(15)}</button>
+          <button class="btn-sm" title="AI draft" data-act="composeAiDraft">✦ Draft</button>
+          <button class="btn-send-sm ocbtn" title="Reply" data-act="composeReply" data-arg="reply">${I.send(15)}</button>
         </div>
       </div>
+    </div>
+  </div>
+  ${when(s.composeOpen, composeOverlay(s))}`;
+}
+
+// Email compose/reply overlay — bound inputs (composeTo/Subject/Body), Send via
+// /api/email/send. Rendered when state.composeOpen.
+function composeOverlay(s) {
+  const busy = !!s.emailBusy;
+  return `
+  <div class="oc-compose-scrim" data-act="closeCompose" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60"></div>
+  <div class="oc-compose" style="position:fixed;z-index:61;left:50%;top:50%;transform:translate(-50%,-50%);width:min(640px,92vw);max-height:86vh;display:flex;flex-direction:column;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden">
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)">
+      <b style="flex:1">New message</b>
+      <button class="btn btn-ghost" data-act="composeAiDraft"${busy ? ' disabled' : ''}>✦ AI draft</button>
+      <span data-act="closeCompose" style="cursor:pointer;color:var(--faint);padding:0 4px">✕</span>
+    </div>
+    <div style="padding:10px 14px;display:flex;flex-direction:column;gap:8px;overflow:auto">
+      <input class="set-input" data-model="composeTo" data-focus="composeTo" placeholder="To (email)" value="${esc(s.composeTo || '')}" autocomplete="off" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--fg);font-family:var(--sans)">
+      <input class="set-input" data-model="composeSubject" data-focus="composeSubject" placeholder="Subject" value="${esc(s.composeSubject || '')}" autocomplete="off" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--fg);font-family:var(--sans)">
+      <textarea data-model="composeBody" data-focus="composeBody" rows="10" placeholder="Write your message…" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--fg);font-family:var(--sans);resize:vertical">${esc(s.composeBody || '')}</textarea>
+    </div>
+    <div style="display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--border)">
+      <button class="btn btn-teal" data-act="sendEmail"${busy ? ' disabled' : ''}>${busy ? 'Sending…' : 'Send'}</button>
+      <button class="btn btn-ghost" data-act="closeCompose">Cancel</button>
     </div>
   </div>`;
 }

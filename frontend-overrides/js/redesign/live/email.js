@@ -5,7 +5,18 @@
 // throw keeps the mock; load() swallows errors so the UI never breaks.
 
 import { runtime } from './runtime.js';
-import { apiGet } from './api.js';
+import { apiGet, apiJson } from './api.js';
+
+// Current reader email (live current, else the selected list row).
+function curEmail(state) {
+  const e = state && state.live && state.live.email;
+  if (!e) return null;
+  return e.current || (e.emails || [])[state.selEmail || 0] || null;
+}
+function bodyText(m) {
+  if (!m) return '';
+  return Array.isArray(m.body) ? m.body.join('\n\n') : String(m.body || '');
+}
 
 const FOLDER = 'INBOX';
 
@@ -180,4 +191,77 @@ export const actions = {
     if (s) s.mReader = true;
     return openAt(i);
   },
+
+  // --- Compose / reply / forward -------------------------------------------
+  composeNew: () => {
+    const s = runtime.state;
+    if (!s) return;
+    s.composeOpen = true; s.composeTo = ''; s.composeSubject = ''; s.composeBody = ''; s.composeInReplyTo = '';
+    runtime.render();
+  },
+  composeReply: (mode) => {
+    const s = runtime.state;
+    if (!s) return;
+    const m = curEmail(s);
+    s.composeOpen = true;
+    if (mode === 'forward') {
+      s.composeTo = '';
+      s.composeSubject = `Fwd: ${m ? m.subj : ''}`;
+      s.composeBody = `\n\n---------- Forwarded message ----------\nFrom: ${m ? m.from : ''} <${m ? m.fromMail : ''}>\n\n${bodyText(m)}`;
+      s.composeInReplyTo = '';
+    } else {
+      s.composeTo = (mode === 'replyall' && m && m.to) ? `${m.fromMail}, ${m.to}` : (m ? m.fromMail : '');
+      s.composeSubject = `Re: ${m ? m.subj : ''}`;
+      s.composeBody = `\n\nOn ${m ? m.time : ''}, ${m ? m.from : ''} wrote:\n> ${bodyText(m).replace(/\n/g, '\n> ')}`;
+      s.composeInReplyTo = m ? m.uid : '';
+    }
+    runtime.render();
+  },
+  closeCompose: () => { const s = runtime.state; if (s) { s.composeOpen = false; runtime.render(); } },
+  sendEmail: async () => {
+    const s = runtime.state;
+    if (!s) return;
+    const to = (s.composeTo || '').trim();
+    if (!to) { try { window.alert('Add a recipient.'); } catch (_) {} return; }
+    const payload = { to, subject: s.composeSubject || '', body: s.composeBody || '' };
+    if (s.composeInReplyTo) payload.in_reply_to = s.composeInReplyTo;
+    s.emailBusy = true; runtime.render();
+    try {
+      await apiJson('/api/email/send', payload);
+      s.composeOpen = false; s.composeTo = ''; s.composeSubject = ''; s.composeBody = ''; s.composeInReplyTo = '';
+    } catch (_) { try { window.alert('Could not send the email.'); } catch (_) {} }
+    s.emailBusy = false; runtime.render();
+  },
+  // "✦ AI reply": open a reply and fill the body from the brain.
+  composeAiDraft: async () => {
+    const s = runtime.state;
+    if (!s) return;
+    const m = curEmail(s);
+    if (!m) return;
+    s.composeOpen = true;
+    s.composeTo = s.composeTo || m.fromMail || '';
+    s.composeSubject = s.composeSubject || `Re: ${m.subj || ''}`;
+    s.composeInReplyTo = m.uid || '';
+    s.emailBusy = true; runtime.render();
+    try {
+      const res = await apiJson('/api/email/ai-reply', { subject: m.subj || '', from_address: m.fromMail || '', original_body: bodyText(m) });
+      const draft = res && (res.reply || res.draft || res.text || res.body);
+      if (draft) { s.composeBody = draft; }
+    } catch (_) { try { window.alert('AI reply unavailable.'); } catch (_) {} }
+    s.emailBusy = false; runtime.render();
+  },
+  // "✦ Summarize": show an inline AI summary of the open email.
+  summarizeEmail: async () => {
+    const s = runtime.state;
+    if (!s) return;
+    const m = curEmail(s);
+    if (!m) return;
+    s.emailSummary = '…'; s.emailBusy = true; runtime.render();
+    try {
+      const res = await apiJson('/api/email/summarize', { subject: m.subj || '', from: m.fromMail || '', body: bodyText(m) });
+      s.emailSummary = (res && res.summary) || 'No summary available.';
+    } catch (_) { s.emailSummary = 'Summary unavailable.'; }
+    s.emailBusy = false; runtime.render();
+  },
+  clearEmailSummary: () => { const s = runtime.state; if (s) { s.emailSummary = ''; runtime.render(); } },
 };

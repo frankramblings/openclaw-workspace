@@ -37,3 +37,11 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - **Calendar "+ New"** (surfaces.js cal header) → `data-act="newEvent"` → focuses the natural-language quick-add input (the real create path; `clearQuick` already POSTs `/api/calendar/events`).
 - Verified: node --check; synced; deployed.
 - TODO next (P3 email cluster): "+ New" compose, Reply/Reply-all/Forward (`/api/email/send`,`/api/email/draft`), "✦ AI reply" (`/api/email/ai-reply`), "✦ Summarize" (`/api/email/summarize`), archive (`/api/email/archive/{uid}`); research "+ Queue".
+
+## P3 — email cluster — ✅ DONE
+- New **compose overlay** (`composeOverlay(s)` in surfaces.js): bound To/Subject/Body inputs (data-model composeTo/Subject/Body), Send + Cancel + AI-draft. Rendered when `state.composeOpen`.
+- Handlers in `live/email.js`: `composeNew`, `composeReply(reply|replyall|forward)` (prefills To/Subject/quoted body from the open email), `closeCompose`, `sendEmail` → `POST /api/email/send {to,subject,body,in_reply_to}`, `composeAiDraft` → `POST /api/email/ai-reply` fills the body, `summarizeEmail` → `POST /api/email/summarize` shows an inline summary banner, `clearEmailSummary`.
+- Wired buttons: list "+ New" → composeNew; reader toolbar Reply/Reply-all/Forward/✦AI-reply/✦Summarize; the bottom quick reply-bar (Draft → composeAiDraft, send → reply).
+- Contracts verified against backend/email_himalaya.py (send/summarize/ai-reply payloads).
+- Verified: node --check; synced; deployed.
+- TODO P3 remainder: research "+ Queue"; library "New document".

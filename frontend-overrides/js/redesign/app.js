@@ -9,6 +9,7 @@ import { AVATAR } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
 import { renderCenter, renderChatList } from './surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
+import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -27,10 +28,18 @@ const state = {
   // settings
   setSection: 'services', accent: '#4fe3d1',
   ui: { ...DEFAULT_UI },
+  // ---- mobile shell ----
+  mTab: 'chat', mSub: null, mReader: false, keyboard: false,
+  companionSheetOpen: false, companionTab: 'terminal',
+  quickCaptureOpen: false, captureType: 'remind', captureDraft: '',
+  refreshing: false,
 };
 
 let researchTimer = null;
+let refreshTimer = null;
 const root = document.getElementById('oc-root');
+const mq = window.matchMedia('(max-width: 768px)');
+const isMobile = () => mq.matches;
 
 // ---- crumb ----------------------------------------------------------------
 const CRUMB = {
@@ -71,19 +80,11 @@ function renderRail() {
   </div>`;
 }
 
-// ---- shell assembly -------------------------------------------------------
-function render() {
-  // capture focus + caret before rebuild
-  const act = document.activeElement;
-  const focusKey = act && act.getAttribute ? act.getAttribute('data-focus') : null;
-  const selStart = focusKey ? act.selectionStart : null;
-  const selEnd = focusKey ? act.selectionEnd : null;
-
-  const s = state;
+// ---- desktop shell --------------------------------------------------------
+function renderDesktop(s) {
   const showCompanion = s.surface !== 'settings' && !s.compHidden;
   const showReveal = s.surface !== 'settings' && s.compHidden;
-
-  root.innerHTML = `
+  return `
   <div class="oc-app">
     <div class="oc-chrome">
       <div class="oc-lights"><span class="oc-light-r"></span><span class="oc-light-y"></span><span class="oc-light-g"></span></div>
@@ -98,6 +99,18 @@ function render() {
       ${when(showReveal, renderReveal(s))}
     </div>
   </div>`;
+}
+
+// ---- shell assembly (breakpoint dispatch) ---------------------------------
+function render() {
+  // capture focus + caret before rebuild
+  const act = document.activeElement;
+  const focusKey = act && act.getAttribute ? act.getAttribute('data-focus') : null;
+  const selStart = focusKey ? act.selectionStart : null;
+  const selEnd = focusKey ? act.selectionEnd : null;
+
+  const s = state;
+  root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
 
   // restore focus + caret
   if (focusKey) {
@@ -165,6 +178,9 @@ const actions = {
     state.accent = hex;
     document.documentElement.style.setProperty('--accent', hex);
   },
+
+  // mobile (merged below)
+  ...mobileActions(state),
 };
 
 // ---- event delegation -----------------------------------------------------
@@ -188,6 +204,34 @@ root.addEventListener('input', (e) => {
   render();
 });
 
+// mobile keyboard: focusing the chat composer raises the keyboard (frame 9 —
+// tab bar hides, composer lifts). Guarded so the focus-restore loop is a no-op.
+root.addEventListener('focusin', (e) => {
+  if (isMobile() && e.target.getAttribute && e.target.getAttribute('data-focus') === 'mdraft' && !state.keyboard) {
+    state.keyboard = true; render();
+  }
+});
+root.addEventListener('focusout', (e) => {
+  if (e.target.getAttribute && e.target.getAttribute('data-focus') === 'mdraft' && state.keyboard) {
+    state.keyboard = false; render();
+  }
+});
+
+// touch gestures (swipe-to-archive, pull-to-refresh)
+wireMobileGestures({
+  root, state,
+  commitArchive: (id) => actions.dismiss(id),
+  refresh: () => {
+    state.refreshing = true; render();
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => { state.refreshing = false; render(); }, 900);
+  },
+  render,
+});
+
+// re-render on breakpoint cross (desktop ⇆ mobile)
+mq.addEventListener('change', render);
+
 // ---- boot -----------------------------------------------------------------
 // Deep-link the initial surface from the hash (e.g. #calendar), and keep the
 // hash in sync as the user navigates so views are shareable / reloadable.
@@ -195,12 +239,25 @@ const SURFACES = ['chat', 'inbox', 'email', 'calendar', 'research', 'library', '
 const fromHash = (location.hash || '').replace('#', '');
 if (SURFACES.includes(fromHash)) state.surface = fromHash;
 
+// Seed the mobile shell from the same hash: primary tabs map directly; the
+// desktop-only surfaces land under "More" (calendar opens its agenda screen).
+// Special hashes #more / #capture target mobile-only destinations.
+const MOBILE_PRIMARY = ['chat', 'inbox', 'email'];
+function seedMobileFromHash(h) {
+  if (MOBILE_PRIMARY.includes(h)) { state.mTab = h; state.mSub = null; }
+  else if (h === 'more') { state.mTab = 'more'; state.mSub = null; }
+  else if (h === 'capture') { state.mTab = 'chat'; state.quickCaptureOpen = true; }
+  else if (['calendar', 'research', 'library', 'notes', 'settings'].includes(h)) { state.mTab = 'more'; state.mSub = h; }
+}
+seedMobileFromHash(fromHash);
+
 const _go = actions.go;
 actions.go = (surface) => { _go(surface); if (location.hash !== '#' + surface) history.replaceState(null, '', '#' + surface); };
 
 window.addEventListener('hashchange', () => {
   const h = (location.hash || '').replace('#', '');
-  if (SURFACES.includes(h) && h !== state.surface) { state.surface = h; render(); }
+  if (SURFACES.includes(h) && h !== state.surface) { state.surface = h; seedMobileFromHash(h); render(); }
+  else if ((h === 'more' || h === 'capture')) { seedMobileFromHash(h); render(); }
 });
 
 render();

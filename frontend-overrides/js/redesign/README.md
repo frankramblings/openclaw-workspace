@@ -33,6 +33,31 @@ Deep-link a surface with a hash, e.g. `/static/index-redesign.html#calendar`
 | `settings-data.js` | the Settings IA — section nav + panel/card/row definitions (mirrors the real settings modal) |
 | `icons.js` / `dom.js` | inline Lucide/Feather icons + tiny template helpers |
 
+## Mobile (≤768px)
+
+Mobile is **not** a responsive reflow — it inverts the desktop model: one
+surface at a time via a **bottom tab bar** (Chat · Inbox · ➕ · Email · More),
+the companion demoted to a **swipe-up sheet**, and a center **quick-capture**
+button. `app.js` dispatches desktop-vs-mobile by `matchMedia('(max-width: 768px)')`
+and re-renders on breakpoint cross; both shells share the same `state`, action
+map, data, and tokens — only chrome/layout differ.
+
+| file (under `mobile/`) | role |
+|---|---|
+| `mobile.css` | phone shell styles; safe-area insets via `env(safe-area-inset-*)` |
+| `mobile-app.js` | shell assembly, mobile actions, touch gestures (swipe-to-archive, pull-to-refresh) |
+| `mobile-surfaces.js` | tab bar + Chat, Inbox, Email list/reader, Calendar agenda, More hub |
+| `mobile-sheets.js` | companion sheet (Terminal/Files) + quick-capture sheet |
+| `mobile-data.js` | mobile-only data (agenda, capture types, More cards) |
+
+The 9 frames from the handoff are all implemented: Chat, companion sheet, Inbox
+(real swipe-to-archive + pull-to-refresh), Quick capture, Email list, Email
+reader (pushed, no tab bar), Calendar agenda, More hub, and Composing (keyboard
+up → tab bar hides, composer lifts). Long-tail surfaces behind More
+(Research/Library/Notes/Settings) **reuse the desktop renderers** in a
+single-column pushed wrapper. Resize the browser ≤768px (or use device mode) to
+see it; deep-link with `#capture`, `#more`, `#calendar`, etc.
+
 ## Status & next steps
 
 This is a **high-fidelity shell with mock data** (the prototype's contribution is

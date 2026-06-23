@@ -208,3 +208,4 @@
 2026-06-23 02:33 | new-wiring data-act=resDiscuss | verified [!] UNWIRED — no resDiscuss handler (orphaned data-act). Logged FINDINGS.
 2026-06-23 02:34 | new-wiring data-act=resReport | verified [!] UNWIRED — no resReport handler (orphaned data-act, sibling of resDiscuss); FINDINGS
 2026-06-23 02:34 | new-wiring data-act=resetResearch | verified [x] WIRED -> live research.js:174 (cancel + reset)
+2026-06-23 02:34 | new-wiring data-act=selDoc | verified [x] WIRED -> app.js:163 (select note/doc)

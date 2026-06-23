@@ -228,7 +228,7 @@ legacy `js/*.js` module.
 - [!] data-act=`resDiscuss` — surfaces.js:330 → UNWIRED. The "Discuss" chip on a past Deep-Research run carries data-act=`resDiscuss` (rendered only when the row has an rid), but NO `resDiscuss` handler exists in any actions registry (app.js / live/research.js define only startResearch/resetResearch). The delegated dispatcher finds no `actions['resDiscuss']` → no-op. See FINDINGS "Past-research actions (Discuss / Visual Report) are unwired."
 - [!] data-act=`resReport` — surfaces.js:330 → UNWIRED. The "↗ Visual Report" chip on a past Deep-Research run carries data-act=`resReport` (when the row has an rid), but NO `resReport` handler exists (app.js / live/research.js define only startResearch/resetResearch). No-op. Sibling of resDiscuss — see FINDINGS "Past-research actions (Discuss / Visual Report) are unwired."
 - [x] data-act=`resetResearch` — surfaces.js:313 → WIRED & functional. Handler: mock app.js:159 + LIVE override research.js:174 (closeES(), clears activeRid, resets state.research='idle' / researchProgress). Bound to "Stop" (surfaces.js:313) + "New research" (:324). Real run-cancel + state reset.
-- [ ] data-act=`selDoc` — surfaces.js:386
+- [x] data-act=`selDoc` — surfaces.js:386 → WIRED. Handler app.js:163 (sets state.selDoc=Number(i)). The Notes surface renders docs[state.selDoc] (notes.js:4). Bound to note/doc list rows. Real selection + re-render.
 - [ ] data-act=`selEmail` — surfaces.js:128
 - [ ] data-act=`selectSession` — surfaces.js:45
 - [ ] data-act=`send` — mobile/mobile-surfaces.js:65

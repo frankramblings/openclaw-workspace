@@ -8,3 +8,4 @@
 2026-06-23 00:50 | index.html:383 memory-tab add | verified [-] (internal tab of removed memory-modal)
 2026-06-23 00:50 | index.html:384 memory-tab settings | verified [-] (internal tab of removed memory-modal)
 2026-06-23 00:51 | index.html:403 memory-select-btn | verified [-] (memory-modal body toolbar; no redesign browse list)
+2026-06-23 00:51 | index.html:404 memory-tidy-btn | verified [-] (memory-modal toolbar; no dedupe sibling)

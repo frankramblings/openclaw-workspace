@@ -60,3 +60,4 @@
 2026-06-23 01:11 | index.html:826 rail-new-session | verified [x] parity OK -> newChat (live/chat.js:295, surfaces.js:22)
 2026-06-23 01:13 | index.html:827 rail-delete-session | verified [!] PARITY GAP — no session-delete affordance in redesign; logged FINDINGS (deferred)
 2026-06-23 01:13 | index.html:830 rail-chats | verified [x] parity OK -> go:chat (app.js:68/52/127)
+2026-06-23 01:14 | index.html:831 rail-documents | verified [x] parity OK -> Library surface + explorer documents/ (consolidated)

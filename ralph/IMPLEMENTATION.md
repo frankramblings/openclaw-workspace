@@ -111,3 +111,12 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 
 ## Summary — P0→P9
 Done: P0 (orphaned data-act + capture bug), P1 (logout/password/adduser/wipe), P2 (model picker + attach), P3 (notes/calendar/email cluster/research), P4 (delete + rename/copy/export conversation), P5 (workspace file CRUD), P6 (data backup), P7 (search filters), P8 (all 3 launchers), P9 (⌘K + "/" shortcuts). Deferred with reasons: model-endpoint/fallback/provider settings forms (P6), library doc-editor (P3), bulk session-manage (P4), reasoning-effort pill (P2), incognito + visibility-list trims + scroll-to-bottom (P9). Every deferral is a surface/forms BUILD or a product decision — not a remaining no-op.
+
+---
+# Round 2 — guided builds (Frank's 8 decisions)
+
+## Composer cluster — ✅ DONE
+- **Reasoning-effort pill** → REMOVED (backend chat stream has no effort/reasoning param; per "wire if supported, else remove").
+- **Incognito / Nobody mode** (borrowed from Odysseus) → composer toggle button (`toggleIncognito`, eye-off icon, violet when on) + ⌘⇧I shortcut; `send()` appends `incognito:'true'` to the stream body when on (backend honors it, same as legacy chat.js:782). State-only, no new endpoint.
+- **Scroll-to-bottom** → floating ↓ button in composer-wrap; a capture-phase `scroll` listener on `.chat-thread` shows it only when scrolled up (>80px from bottom); `scrollChatBottom` jumps to latest. No re-render thrash.
+- Verified: node --check (surfaces/app/chat); synced; deployed.

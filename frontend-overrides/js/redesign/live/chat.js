@@ -439,6 +439,7 @@ export const actions = {
         session: sessionId,
         mode: state.chatMode || 'agent',
         ...(attachIds.length ? { attachments: JSON.stringify(attachIds) } : {}),
+        ...(state.incognito ? { incognito: 'true' } : {}),
       },
       onEvent,
     );

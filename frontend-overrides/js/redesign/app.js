@@ -131,6 +131,11 @@ const actions = {
   toggleSlash: () => { state.forceSlash = !state.forceSlash; },
   pickSlash: (name) => { state.draft = name + ' '; state.forceSlash = false; },
   setMode: (mode) => { state.chatMode = mode; },
+  // Incognito / "Nobody" mode (ported from Odysseus): when on, send() appends
+  // incognito=true so the backend doesn't persist the turn.
+  toggleIncognito: () => { state.incognito = !state.incognito; },
+  // Jump the chat thread to the latest message (button shown by the scroll listener).
+  scrollChatBottom: () => { const el = document.querySelector('.chat-thread'); if (el) el.scrollTop = el.scrollHeight; },
 
   // chat activity trail (UI-only collapse; default trail open, steps closed)
   toggleTrail: (id) => { const t = state.chatUI.trail; t[id] = t[id] === false ? true : false; },
@@ -242,6 +247,17 @@ root.addEventListener('keydown', (e) => {
   }
 });
 
+// Show the chat "jump to latest" button only when the thread is scrolled up.
+// (scroll doesn't bubble → capture phase; toggles the button directly, no re-render.)
+root.addEventListener('scroll', (e) => {
+  const t = e.target;
+  if (!t || !t.classList || !t.classList.contains('chat-thread')) return;
+  const btn = root.querySelector('[data-act="scrollChatBottom"]');
+  if (!btn) return;
+  const nearBottom = t.scrollHeight - t.scrollTop - t.clientHeight < 80;
+  btn.style.display = nearBottom ? 'none' : 'flex';
+}, true);
+
 // Global keyboard shortcuts (the Settings → Shortcuts card advertises these):
 //   ⌘K / Ctrl-K → focus the active surface's search/filter input
 //   "/"         → focus the chat composer (when not already typing in a field)
@@ -249,6 +265,12 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
     const el = root.querySelector('[data-model="convFilter"],[data-model="notesFilter"],[data-model="libQuery"],[data-model="emailQuery"]');
     if (el) { e.preventDefault(); el.focus(); }
+    return;
+  }
+  // ⌘⇧I / Ctrl-Shift-I → toggle incognito (Odysseus shortcut)
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+    e.preventDefault();
+    if (actions.toggleIncognito) { actions.toggleIncognito(); render(); }
     return;
   }
   if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {

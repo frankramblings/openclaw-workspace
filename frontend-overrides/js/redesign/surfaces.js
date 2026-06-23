@@ -97,6 +97,7 @@ function chatSurface(s) {
   </div>
   <div class="chat-thread">${thread}</div>
   <div class="composer-wrap">
+    <button class="scroll-btm ocbtn" data-act="scrollChatBottom" title="Jump to latest" style="position:absolute;right:16px;top:-44px;z-index:25;width:34px;height:34px;border-radius:50%;background:var(--panel,#1e2025);border:1px solid var(--border);color:var(--fg);cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)">↓</button>
     ${when(slashOpen, `
     <div class="slash-menu">
       <div class="hd">COMMANDS</div>
@@ -120,7 +121,7 @@ function chatSurface(s) {
         <label class="icon-btn ocbtn" title="Attach files" style="cursor:pointer;display:inline-flex;align-items:center"><input type="file" data-upload multiple style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></label>
         <div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
         <div class="oc-spacer"></div>
-        <button class="pill-btn ocbtn" title="Reasoning effort">Normal</button>
+        <button class="icon-btn ocbtn" data-act="toggleIncognito" title="${s.incognito ? 'Incognito ON — this chat is not saved' : 'Incognito — don’t save this chat'}" style="${s.incognito ? 'color:var(--violet)' : ''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7"/><path d="M2 12s3 7 10 7 10-7 10-7"/><circle cx="12" cy="12" r="2.5"/>${s.incognito ? '<line x1="3" y1="3" x2="21" y2="21"/>' : ''}</svg></button>
         <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="glyph">A\\</span>${esc(model)}${I.chevDownSm()}</button>
         <div class="mode-toggle">
           <button class="${agent ? 'active-agent' : ''}" data-act="setMode" data-arg="agent">Agent</button>

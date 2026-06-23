@@ -162,3 +162,4 @@
 2026-06-23 02:13 | index.html:2119 set-email-open-tasks | verified [!] dead "Open Tasks" set-btn + no Tasks surface; FINDINGS
 2026-06-23 02:13 | index.html:2130 set-email-style-extract | verified [!] dead Writing-Style Extract btn; dead-settings FINDINGS
 2026-06-23 02:14 | index.html:2131 set-email-style-save | verified [!] dead Writing-Style Save btn; dead-settings FINDINGS
+2026-06-23 02:15 | index.html:2164 set-reminders-open-integrations | verified [!] minor — no Integrations cross-link in redesign reminders

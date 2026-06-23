@@ -250,7 +250,7 @@ legacy `js/*.js` module.
 - [x] data-act=`triageAll` — mobile/mobile-surfaces.js:101 → WIRED & functional. Handler: mock app.js:168 + LIVE override inbox.js:118 (batch-archives all aiArchive items via POST /api/items/action). Bound to the "✦ Archive the FYI batch" button (desktop + mobile). Real backend batch archive.
 
 ### data-model inputs
-- [ ] data-model=`captureDraft` — mobile/mobile-sheets.js:61
+- [x] data-model=`captureDraft` — mobile/mobile-sheets.js:61 → WIRED (binding). Two-way bound via the delegated input listener (app.js:211: state[field]=t.value). Typing updates state.captureDraft + re-renders. CAVEAT: the value is never *consumed* — the "Send to Gary" button discards it (see FINDINGS "Mobile quick-capture discards input"). The data-model binding itself is correct.
 - [ ] data-model=`draft` — mobile/mobile-surfaces.js:63
 - [ ] data-model=`quick` — mobile/mobile-surfaces.js:178
 - [ ] data-model=`researchQuery` — surfaces.js:300

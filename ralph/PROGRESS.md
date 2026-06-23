@@ -228,3 +228,4 @@
 2026-06-23 02:41 | new-wiring data-act=toggleTrail | verified [x] WIRED -> app.js:136
 2026-06-23 02:42 | new-wiring data-act=toggleUi | verified [x] WIRED -> live settings.js:91 (toggle + persist)
 2026-06-23 02:42 | new-wiring data-act=triageAll | verified [x] WIRED -> live inbox.js:118 (batch archive)
+2026-06-23 02:43 | new-wiring data-model=captureDraft | verified [x] WIRED (binding app.js:211); value unconsumed (Send-to-Gary FINDINGS)

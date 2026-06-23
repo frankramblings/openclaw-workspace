@@ -80,6 +80,15 @@ function chatSurface(s) {
       <div class="ttl">${esc(title)}</div>
       <div class="sub">${esc(subtitle)}</div>
     </div>
+    <div style="position:relative">
+      <button class="icon-btn ocbtn" data-act="toggleChatMenu" title="Conversation actions" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px">⋯</button>
+      ${when(s.chatMenuOpen, `
+      <div class="chat-more-menu" style="position:absolute;right:0;top:30px;z-index:40;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:10px;padding:5px;min-width:170px;box-shadow:0 10px 34px rgba(0,0,0,.45)">
+        <div class="cm-item" data-act="renameSession" style="padding:8px 10px;border-radius:7px;cursor:pointer">Rename</div>
+        <div class="cm-item" data-act="copyTranscript" style="padding:8px 10px;border-radius:7px;cursor:pointer">Copy transcript</div>
+        <div class="cm-item" data-act="exportChat" style="padding:8px 10px;border-radius:7px;cursor:pointer">Export as Markdown</div>
+      </div>`)}
+    </div>
   </div>
   <div class="chat-thread">${thread}</div>
   <div class="composer-wrap">

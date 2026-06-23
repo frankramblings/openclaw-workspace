@@ -529,6 +529,60 @@ export const actions = {
     runtime.render();
   },
 
+  // Chat-header "More" menu: open/close + per-conversation actions.
+  toggleChatMenu: () => {
+    const state = runtime.state;
+    if (!state) return;
+    state.chatMenuOpen = !state.chatMenuOpen;
+    runtime.render();
+  },
+  // Rename the active conversation → PATCH /api/session/{id} (FormData name).
+  renameSession: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    state.chatMenuOpen = false;
+    const chat = ensureChat(state);
+    if (!chat.activeId) { runtime.render(); return; }
+    let name = null;
+    try { name = window.prompt('Rename conversation', chat.title || ''); } catch (_) { name = null; }
+    if (name == null) { runtime.render(); return; }
+    name = name.trim();
+    if (!name) { runtime.render(); return; }
+    chat.title = name;
+    runtime.render();
+    try { await apiForm(`/api/session/${chat.activeId}`, { name }, { method: 'PATCH' }); } catch (_) {}
+    try { await load(state); } catch (_) {}
+    runtime.render();
+  },
+  // Copy the transcript to the clipboard.
+  copyTranscript: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    state.chatMenuOpen = false;
+    const chat = ensureChat(state);
+    const text = (chat.thread || []).map((m) => `${m.role === 'user' ? 'You' : 'Gary'}: ${m.text || ''}`).join('\n\n');
+    try { await navigator.clipboard.writeText(text); } catch (_) {}
+    runtime.render();
+  },
+  // Export the transcript as a downloaded Markdown file (client-side).
+  exportChat: () => {
+    const state = runtime.state;
+    if (!state) return;
+    state.chatMenuOpen = false;
+    const chat = ensureChat(state);
+    const title = chat.title || 'conversation';
+    const md = `# ${title}\n\n` + (chat.thread || []).map((m) => `**${m.role === 'user' ? 'You' : 'Gary'}:** ${m.text || ''}`).join('\n\n');
+    try {
+      const blob = new Blob([md], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${title.replace(/[^\w.-]+/g, '_')}.md`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
+    } catch (_) {}
+    runtime.render();
+  },
+
   // Session list: delete a conversation (confirm-guarded) → DELETE /api/session/{id}.
   deleteSession: async (id) => {
     const state = runtime.state;

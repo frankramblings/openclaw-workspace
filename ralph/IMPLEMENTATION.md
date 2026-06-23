@@ -55,3 +55,11 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 ## P4 — session management — partial (delete done; archive + header More menu next)
 - **Delete conversation** — each session row now has a ✕ (`conv-del`, its own `data-act="deleteSession"` so the delegated `closest('[data-act]')` dispatches delete, not select). Handler `deleteSession(id)` in `live/chat.js`: `window.confirm` → `DELETE /api/session/{id}` (app.py:656) → if active, reset chat → reload list. (Was: no way to delete a conversation at all.)
 - TODO next: archive (`POST /api/session/{id}/archive`), and the chat-header "More" kebab — Rename (`PATCH /api/session/{id}`), Copy transcript, Export.
+
+## P4 — conversation "More" menu — ✅ DONE (P4 core complete)
+- Chat header now has a **⋯ kebab** (`toggleChatMenu`) → dropdown:
+  - **Rename** (`renameSession`) → `window.prompt` → `PATCH /api/session/{id}` (FormData `name`, matches legacy) → updates title + reload.
+  - **Copy transcript** (`copyTranscript`) → `navigator.clipboard.writeText` of the thread.
+  - **Export as Markdown** (`exportChat`) → client-side `.md` blob download.
+- Verified: node --check; synced; deployed.
+- P4 remainder (OPTIONAL/deferred): bulk session management (multi-select archive/delete, sort) — a "manage mode" build, not a no-op fix. Per-conversation delete + rename already cover the core need. Archive endpoints exist (`POST /api/session/{id}/archive`) if a per-row archive is later wanted.

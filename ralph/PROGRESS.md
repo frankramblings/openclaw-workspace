@@ -118,3 +118,4 @@
 2026-06-23 01:48 | index.html:1382 we-new-file | verified [!] PARITY GAP — explorer browse-only, no file mgmt; logged workspace-explorer FINDINGS
 2026-06-23 01:48 | index.html:1383 we-new-folder | verified [!] PARITY GAP — no folder create; workspace-explorer FINDINGS
 2026-06-23 01:48 | index.html:1384 we-upload | verified [!] PARITY GAP — no upload; workspace-explorer FINDINGS
+2026-06-23 01:49 | index.html:1385 we-prefs | verified [!] PARITY GAP — no explorer prefs; workspace-explorer FINDINGS

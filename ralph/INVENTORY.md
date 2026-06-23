@@ -132,7 +132,7 @@ legacy `js/*.js` module.
 - [!] id=we-new-file ("New file", legacy workspace-explorer.js) — index.html:1382 → PARITY GAP (missing). The redesign companion Files tab (companion.js) is browse-only: an expandable file tree (toggleFs) + tab/split/hide controls, with NO file-management toolbar — no new-file/new-folder/upload/refresh. File creation has no sibling. See FINDINGS "Workspace explorer is browse-only (no file management)."
 - [!] id=we-new-folder ("New folder") — index.html:1383 → PARITY GAP (missing). No folder-creation in the redesign browse-only Files tab. Covered by FINDINGS "Workspace explorer is browse-only."
 - [!] id=we-upload ("Upload" files to workspace) — index.html:1384 → PARITY GAP (missing). No file-upload affordance in the redesign browse-only Files tab. Covered by FINDINGS "Workspace explorer is browse-only."
-- [ ] id=we-prefs  `<button>` — index.html:1385
+- [!] id=we-prefs ("Explorer preferences/options") — index.html:1385 → PARITY GAP (missing). No explorer-prefs control in the redesign browse-only Files tab. Covered by FINDINGS "Workspace explorer is browse-only."
 - [ ] id=we-refresh  `<button>` — index.html:1386
 - [ ] id=we-collapse  `<button>` — index.html:1387
 - [ ] id=we-tab-files  `<button>` — index.html:1390

@@ -162,7 +162,7 @@ legacy `js/*.js` module.
 - [!] id=set-defaultAddFallback ("+ Add fallback" — add a fallback model for the default role) — index.html:1606 → PARITY GAP (dead affordance). Redesign shows Fallbacks chips (settings-data.js:64 chips('Fallbacks',…)) rendered with a `<span class="set-add">+ add</span>` (surfaces.js:439) — but it has NO `data-act` / handler. Display-only; can't add a fallback. Part of the dead Settings surface — see FINDINGS "entire Settings surface buttons unwired."
 - [!] id=set-utilityAddFallback ("+ Add fallback" for the utility-model role) — index.html:1623 → PARITY GAP (dead affordance). Same as set-defaultAddFallback:1606 — redesign `chips()` "+ add" (surfaces.js:439) has no data-act. Display-only. See FINDINGS "entire Settings surface buttons unwired."
 - [!] id=set-visionAddFallback ("+ Add fallback" for the vision-model role) — index.html:1636 → PARITY GAP (dead affordance). Same as set-defaultAddFallback:1606 — redesign `chips()` "+ add" (surfaces.js:439) has no data-act. Display-only. See FINDINGS "entire Settings surface buttons unwired."
-- [ ] id=set-ttsPreviewBtn  `<button>` — index.html:1767
+- [-] id=set-ttsPreviewBtn ("Preview" — TTS voice preview in settings) — index.html:1767 — TTS feature not ported. No TTS/voice section in the redesign settings (grep empty). Consistent with the baseline: the composer TTS button (overflow-tts-btn:1196) was already `hidden`/vestigial, i.e. TTS was a disabled feature. No active feature to preserve.
 - [ ] id=search-provider-btn  `<button>` — index.html:1800
 - [ ] id=set-searchTestBtn  `<button>` — index.html:1816
 - [ ] id=settings-open-brain  `<button>` — index.html:1855

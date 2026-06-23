@@ -214,3 +214,4 @@
 2026-06-23 02:36 | new-wiring data-act=send | verified [x] WIRED -> live chat.js:309 (POST /api/chat_stream + activity trail)
 2026-06-23 02:36 | new-wiring data-act=setAccent | verified [x] WIRED -> live settings.js:82 (real accent + persist)
 2026-06-23 02:37 | new-wiring data-act=setCaptureType | verified [x] WIRED -> mobile-app.js:63
+2026-06-23 02:37 | new-wiring data-act=setMode | verified [x] WIRED -> app.js:133 (mode reaches backend, verified :1276)

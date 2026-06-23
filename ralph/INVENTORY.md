@@ -234,7 +234,7 @@ legacy `js/*.js` module.
 - [x] data-act=`send` — mobile/mobile-surfaces.js:65 → WIRED & functional. Handler: LIVE chat.js:309 (optimistic user msg, POST /api/chat_stream {message,session,mode}, streams tool/think/prose into the activity trail). Bound to send buttons desktop (surfaces.js:103) + mobile + Enter-to-send (app.js keydown). Core chat send — verified end-to-end earlier.
 - [x] data-act=`setAccent` — surfaces.js:461 → WIRED & functional. Handler: mock app.js:179 + LIVE override settings.js:82 (setAccentVars sets real --accent + --red CSS vars; persists via POST /api/auth/settings {accent}). Bound to accent swatches. Verified at rail-theme:843. Real theme change + persistence. (NOTE: this is the ONLY wired control on the otherwise-dead Settings surface.)
 - [x] data-act=`setCaptureType` — mobile/mobile-sheets.js:64 → WIRED. Handler mobile-app.js:63 (sets state.captureType — remind/note/task selector in the quick-capture sheet). Real state change + re-render. (The capture not being submitted on Send is the separate logged FINDINGS issue, not this action.)
-- [ ] data-act=`setMode` — surfaces.js:100
+- [x] data-act=`setMode` — surfaces.js:100 → WIRED & functional. Handler app.js:133 (sets state.chatMode). Verified at mode-agent-btn:1276 — the mode is transmitted to the backend on send (POST /api/chat_stream {mode}, chat.js:436). Bound to the Agent/Chat toggle (surfaces.js:100/101).
 - [ ] data-act=`setSection` — surfaces.js:422
 - [ ] data-act=`startResearch` — surfaces.js:307
 - [ ] data-act=`stopRun` — chat-activity.js:96

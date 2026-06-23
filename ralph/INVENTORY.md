@@ -133,7 +133,7 @@ legacy `js/*.js` module.
 - [!] id=we-new-folder ("New folder") — index.html:1383 → PARITY GAP (missing). No folder-creation in the redesign browse-only Files tab. Covered by FINDINGS "Workspace explorer is browse-only."
 - [!] id=we-upload ("Upload" files to workspace) — index.html:1384 → PARITY GAP (missing). No file-upload affordance in the redesign browse-only Files tab. Covered by FINDINGS "Workspace explorer is browse-only."
 - [!] id=we-prefs ("Explorer preferences/options") — index.html:1385 → PARITY GAP (missing). No explorer-prefs control in the redesign browse-only Files tab. Covered by FINDINGS "Workspace explorer is browse-only."
-- [ ] id=we-refresh  `<button>` — index.html:1386
+- [!] id=we-refresh ("Refresh" file tree) — index.html:1386 → PARITY GAP (missing). No manual refresh control in the redesign browse-only Files tab (the tree is loaded via fsOpen state; no refresh button). Covered by FINDINGS "Workspace explorer is browse-only."
 - [ ] id=we-collapse  `<button>` — index.html:1387
 - [ ] id=we-tab-files  `<button>` — index.html:1390
 - [ ] id=we-tab-artifacts  `<button>` — index.html:1391

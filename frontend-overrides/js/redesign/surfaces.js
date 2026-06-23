@@ -10,6 +10,7 @@ import {
   CAL_MONTH, CAL_CELLS, CAL_BAR_TONE,
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
+import { renderActivity, MOCK_CHAT_THREAD } from './chat-activity.js';
 
 // ===========================================================================
 // CHAT
@@ -45,33 +46,18 @@ function convListBody(s) {
 }
 
 // one chat message → html (assistant prose / user bubble). Live thread items:
-// { role:'assistant'|'user', time, model, text }  (text rendered as paragraphs)
-function chatMsg(m) {
-  const paras = String(m.text || '').split(/\n\n+/).filter(Boolean)
-    .map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('') || '<p></p>';
+// { role:'assistant'|'user', time, model, text, activity? }
+function chatMsg(m, s) {
+  const hasText = String(m.text || '').trim().length > 0;
+  const paras = hasText
+    ? String(m.text).split(/\n\n+/).filter(Boolean).map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('')
+    : '';
   if (m.role === 'user') {
-    return `<div class="msg-user-wrap"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${paras}</div></div>`;
+    return `<div class="msg-user-wrap"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${paras || '<p></p>'}</div></div>`;
   }
-  return `<div class="msg-asst"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${paras}</div></div>`;
+  return `<div class="msg-asst"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${renderActivity(m, s)}${paras}</div></div>`;
 }
 
-const STATIC_THREAD = `
-    <div class="msg-asst">
-      <div class="msg-av"><img src="${AVATAR}" alt="Gary"></div>
-      <div class="msg-body">
-        <div class="msg-meta"><span class="name">Gary</span><span class="model">opus-4</span><span class="time">09:48 PM</span></div>
-        <p>On thread switch, call <code class="code-inline">StreamManager.activate(newKey, handleEvent, badge)</code> instead of rebuilding the connection from scratch — it replays missed events first, then reopens the live SSE.</p>
-        <div class="code-card">
-          <div class="bar"><span>javascript</span><span class="copy">copy</span></div>
-          <pre><span class="tok-kw">const</span> tree = <span class="tok-kw">new</span> <span class="tok-fn">ActivityTree</span>(document.<span class="tok-prop">getElementById</span>(<span class="tok-str">'activity-pane'</span>));</pre>
-        </div>
-        <p>The tree handles <code class="code-inline gold">tool_call</code> <code class="code-inline gold">status</code> and <code class="code-inline gold">error</code> events.</p>
-      </div>
-    </div>
-    <div class="msg-user-wrap"><div class="msg-user">
-      <div class="meta"><span class="time">09:50 PM</span><span class="you">You</span></div>
-      <p>now have subagent(s) implement all of this and confirm when it's live</p>
-    </div></div>`;
 
 function chatSurface(s) {
   const d = s.draft || '';
@@ -86,7 +72,7 @@ function chatSurface(s) {
   const subtitle = chat.subtitle ?? '12 messages · claude-opus-4';
   const model = chat.model ?? 'opus-4';
   const pct = chat.usagePct != null ? chat.usagePct : 4.4;
-  const thread = chat.thread ? map(chat.thread, chatMsg) : STATIC_THREAD;
+  const thread = map(chat.thread || MOCK_CHAT_THREAD, (msg) => chatMsg(msg, s));
 
   return `
   <div class="chat-head">

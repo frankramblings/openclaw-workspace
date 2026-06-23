@@ -19,6 +19,7 @@ const state = {
   railExpanded: true,
   // chat
   draft: '', forceSlash: false, chatMode: 'agent',
+  chatUI: { trail: {}, step: {} }, // activity-trail collapse state (per msg/step)
   // companion (collapsed to the reveal strip by default)
   compTab: null, compSplit: false, compHidden: true,
   fsOpen: { data: true, 'data/skills': false, documents: true, notes: false, research: false },
@@ -130,6 +131,11 @@ const actions = {
   toggleSlash: () => { state.forceSlash = !state.forceSlash; },
   pickSlash: (name) => { state.draft = name + ' '; state.forceSlash = false; },
   setMode: (mode) => { state.chatMode = mode; },
+
+  // chat activity trail (UI-only collapse; default trail open, steps closed)
+  toggleTrail: (id) => { const t = state.chatUI.trail; t[id] = t[id] === false ? true : false; },
+  toggleStep: (id) => { const st = state.chatUI.step; st[id] = !st[id]; },
+  stopRun: () => { /* overridden by the live chat module to abort the stream */ },
 
   // companion
   compTab: (tab) => { state.compTab = tab; state.compSplit = false; state.compHidden = false; },

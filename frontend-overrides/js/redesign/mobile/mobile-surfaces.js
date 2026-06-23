@@ -5,6 +5,7 @@ import { I, icon } from '../icons.js';
 import { esc, map, when } from '../dom.js';
 import { AVATAR, EMAILS, INBOX } from '../data.js';
 import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
+import { renderActivity, MOCK_CHAT_THREAD } from '../chat-activity.js';
 
 const ic = {
   mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
@@ -32,27 +33,15 @@ export function renderTabBar(s) {
   </div>`;
 }
 
-// one mobile chat message → html (live thread item: {role,time,model,text})
-function mChatMsg(m) {
-  const paras = String(m.text || '').split(/\n\n+/).filter(Boolean)
-    .map((p) => `<p style="margin:0 0 8px">${esc(p).replace(/\n/g, '<br>')}</p>`).join('') || '<p style="margin:0"></p>';
+// one mobile chat message → html (live thread item: {role,time,model,text,activity?})
+function mChatMsg(m, s) {
+  const hasText = String(m.text || '').trim().length > 0;
+  const paras = hasText
+    ? String(m.text).split(/\n\n+/).filter(Boolean).map((p) => `<p style="margin:0 0 8px">${esc(p).replace(/\n/g, '<br>')}</p>`).join('')
+    : '';
   if (m.role === 'user') return `<div class="m-msg-user-wrap"><div class="m-msg-user">${esc(m.text || '')}</div></div>`;
-  return `<div class="m-msg-asst"><div class="m-msg-av"><img src="${AVATAR}" alt="Gary"></div><div style="min-width:0">${paras}</div></div>`;
+  return `<div class="m-msg-asst"><div class="m-msg-av"><img src="${AVATAR}" alt="Gary"></div><div style="min-width:0">${renderActivity(m, s)}${paras}</div></div>`;
 }
-
-const M_STATIC_THREAD = `
-    <div class="m-msg-asst">
-      <div class="m-msg-av"><img src="${AVATAR}" alt="Gary"></div>
-      <div style="min-width:0">
-        <p>On thread switch, call <code class="code-inline">StreamManager.activate()</code> — it replays missed events, then reopens the live SSE.</p>
-        <div class="m-code-card">
-          <div class="bar"><span>javascript</span><span>copy</span></div>
-          <pre><span class="tok-kw">const</span> tree = <span class="tok-kw">new</span> <span class="tok-fn">ActivityTree</span>(<span class="tok-str">'#pane'</span>);</pre>
-        </div>
-      </div>
-    </div>
-    <div class="m-toolchip"><span class="d"></span><span class="nm">ActivityTree</span><span class="tc">tool_call</span><div class="m-spacer"></div><span class="done">done · 1.2s</span></div>
-    <div class="m-msg-user-wrap"><div class="m-msg-user">now have subagent(s) implement all of this &amp; confirm when it's live</div></div>`;
 
 // ---- chat -----------------------------------------------------------------
 export function mChat(s) {
@@ -67,7 +56,7 @@ export function mChat(s) {
     </div>
   </div>
   ${when(!focused, `<div class="m-comp-handle"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>`)}
-  <div class="m-scroll m-thread">${s.live?.chat?.thread ? map(s.live.chat.thread, mChatMsg) : M_STATIC_THREAD}</div>
+  <div class="m-scroll m-thread">${map(s.live?.chat?.thread || MOCK_CHAT_THREAD, (msg) => mChatMsg(msg, s))}</div>
   <div class="m-composer${focused ? ' focused' : ''}">
     <div class="bar">
       ${when(focused, `<button class="m-round-btn bordered">${I.plus(16)}</button>`)}

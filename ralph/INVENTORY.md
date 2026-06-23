@@ -124,7 +124,7 @@ legacy `js/*.js` module.
 - [-] id=char-new-btn ("new character") — index.html:1333 — character-builder control inside the removed custom-preset-modal; character/persona feature unported (see character-indicator-btn:1243 [!]). Removed with the modal.
 - [-] id=char-delete-template-btn ("delete character template") — index.html:1339 — character-builder control in the removed custom-preset-modal; character feature unported (:1243 [!]). Removed with the modal.
 - [-] id=reset-character-btn ("reset character") — index.html:1340 — character-builder control in the removed custom-preset-modal; character feature unported (:1243 [!]). Removed with the modal.
-- [ ] id=char-expand-btn  `<button>` — index.html:1346
+- [-] id=char-expand-btn ("expand character editor") — index.html:1346 — character-builder control in the removed custom-preset-modal; character feature unported (:1243 [!]). Removed with the modal.
 - [ ] id=group-mode-btn  `<button>` — index.html:1355
 - [ ] id=group-add-btn  `<button>` — index.html:1361
 - [ ] id=cancel-custom-preset  `<button>` — index.html:1367

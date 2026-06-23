@@ -110,3 +110,4 @@
 2026-06-23 01:45 | index.html:1333 char-new-btn | verified [-] character-builder control in removed preset modal (char feature unported)
 2026-06-23 01:45 | index.html:1339 char-delete-template-btn | verified [-] character-builder control in removed preset modal
 2026-06-23 01:45 | index.html:1340 reset-character-btn | verified [-] character-builder control in removed preset modal
+2026-06-23 01:45 | index.html:1346 char-expand-btn | verified [-] character-builder control in removed preset modal

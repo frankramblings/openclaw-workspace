@@ -14,3 +14,4 @@
 2026-06-23 00:52 | index.html:415 memory-bulk-cancel | verified [-] (memory-modal multi-select bar)
 2026-06-23 00:53 | index.html:427 memory-import-btn | verified [-] (memory-modal I/O; no redesign memory import)
 2026-06-23 00:53 | index.html:428 memory-export-btn | verified [-] (memory-modal I/O; no redesign export). Noted modal spans :373-562.
+2026-06-23 00:55 | index.html:463 add-skill-btn | verified [-] (memory-modal Skills tab; skills now data/skills files+Brain card). Broadened FINDINGS: all settings set-btn/set-launcher/Wipe buttons dead.

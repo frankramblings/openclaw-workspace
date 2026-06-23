@@ -28,7 +28,7 @@ legacy `js/*.js` module.
 - [-] id=memory-bulk-cancel ("Cancel (Esc)", exits multi-select) — index.html:415 — sibling of memory-bulk-delete:414 in the removed memory-modal multi-select bar. Removed with the modal.
 - [-] id=memory-import-btn ("Import memories from a file") — index.html:427 — memory-modal footer I/O button; no memory import UI in redesign (only JS `import` keywords match). Removed with the modal.
 - [-] id=memory-export-btn ("Export all memories as JSON") — index.html:428 — memory-modal footer I/O button (export sibling of import:427); no redesign equivalent. Removed with the modal. (NOTE: memory-modal spans :373–~:562; the theme-modal opens at :563, so rows :463–:509 below are the memory-modal's Skills-tab panel.)
-- [ ] id=add-skill-btn  `<button>` — index.html:463
+- [-] id=add-skill-btn ("Add Skill") — index.html:463 — in removed memory-modal Skills-tab panel. Redesign surfaces skills as `data/skills/*.md` files in the workspace explorer (data.js:79) + the Brain card ("memories and skills"); no dedicated Add-Skill button (adding a skill = creating a SKILL.md file). Removed with the modal.
 - [ ] id=skills-select-btn  `<button>` — index.html:497
 - [ ] id=skills-audit-btn  `<button>` — index.html:498
 - [ ] id=skills-bulk-publish  `<button>` — index.html:506
@@ -257,3 +257,5 @@ legacy `js/*.js` module.
 
 ### non-data-act clickables (found during audit; missed at seed)
 - [!] `<button class="set-launcher">` (settings card launcher: "Open Brain" / "Open Scheduled jobs" / "Open theme picker") — surfaces.js:479 — NO `data-act`, no class handler → dead. See FINDINGS.
+- [!] `<button class="set-btn">` via `btns()` ("Export Data" / "Import Data", settings-data.js:143) — surfaces.js:441 — NO `data-act` → dead. See FINDINGS.
+- [!] `<button class="set-btn danger">` "Wipe" (Danger-Zone: wipe memory/skills/all, settings-data.js:144–147) — surfaces.js:455 — NO `data-act` → dead (also needs a confirm guard). See FINDINGS.

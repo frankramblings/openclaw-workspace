@@ -116,3 +116,4 @@
 2026-06-23 01:47 | index.html:1367 cancel-custom-preset | verified [-] removed custom-preset-modal footer
 2026-06-23 01:47 | index.html:1368 save-custom-preset | verified [-] removed custom-preset-modal footer; preset-modal cluster :1291-1368 done
 2026-06-23 01:48 | index.html:1382 we-new-file | verified [!] PARITY GAP — explorer browse-only, no file mgmt; logged workspace-explorer FINDINGS
+2026-06-23 01:48 | index.html:1383 we-new-folder | verified [!] PARITY GAP — no folder create; workspace-explorer FINDINGS

@@ -147,3 +147,4 @@
 2026-06-23 02:04 | index.html:1583 settings-nav-item system (admin) | verified [x] parity OK -> setSection system; settings category nav complete (14 tabs)
 2026-06-23 02:06 | index.html:1606 set-defaultAddFallback | verified [!] dead set-add (+ add) on chips; dead-settings FINDINGS extended
 2026-06-23 02:06 | index.html:1623 set-utilityAddFallback | verified [!] dead chips +add (same as :1606); dead-settings FINDINGS
+2026-06-23 02:06 | index.html:1636 set-visionAddFallback | verified [!] dead chips +add (same as :1606); dead-settings FINDINGS

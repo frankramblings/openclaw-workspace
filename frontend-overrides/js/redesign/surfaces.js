@@ -536,8 +536,11 @@ function settingsSurface(s) {
         return `<div class="set-chips"><span class="k">${esc(r.label)}</span>${map(r.chips, (ch) => `<span class="set-chip">${esc(ch)}</span>`)}<span class="set-add">+ add</span></div>`;
       case 'buttons':
         return `<div class="set-buttons">${map(r.buttons, (b) => `<button class="set-btn${b.primary ? ' primary' : ''}${b.danger ? ' danger' : ''}"${b.act ? ` data-act="${b.act}"${b.arg != null ? ` data-arg="${esc(String(b.arg))}"` : ''}` : ''}>${esc(b.label)}</button>`)}</div>`;
-      case 'provider':
-        return `<div class="set-providers">${map(r.names, (n) => `<span class="set-provider${n === r.cur ? ' active' : ''}">${esc(n)}</span>`)}</div>`;
+      case 'provider': {
+        const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const cur = s.searchProvider || r.cur;
+        return `<div class="set-providers">${map(r.names, (n) => `<span class="set-provider${norm(n) === norm(cur) ? ' active' : ''}" data-act="setSearchProvider" data-arg="${esc(n)}" style="cursor:pointer">${esc(n)}</span>`)}</div>`;
+      }
       case 'endpoint':
         return `<div class="set-endpoint"><span class="ico" style="background:${r.iconBg};color:${r.iconColor}">${esc(r.glyph)}</span><div style="min-width:0;flex:1"><div class="nm">${esc(r.name)}</div><div class="det">${esc(r.detail)}</div></div><span class="st" style="color:${r.statusColor}"><span class="d" style="background:${r.statusColor}"></span>${esc(r.status)}</span></div>`;
       case 'toggleRow':

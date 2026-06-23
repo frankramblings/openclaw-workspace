@@ -73,6 +73,9 @@ export async function load(state) {
         }
       }
       if (changed) state.ui = next;
+      // Search config (the only writable model/search settings — provider + result count).
+      if (typeof bag.search_provider === 'string') state.searchProvider = bag.search_provider;
+      if (bag.search_result_count != null) state.searchResultCount = Number(bag.search_result_count);
     }
   } catch (_) { /* keep default ui */ }
 }
@@ -184,6 +187,17 @@ export const actions = {
       };
       input.click();
     } catch (_) {}
+  },
+
+  // Search → provider selector. Persists search_provider (the writable search
+  // setting; result-count is read-only display). Stores the normalized id.
+  setSearchProvider: (name) => {
+    const s = runtime.state;
+    if (!s || !name) return;
+    const id = String(name).toLowerCase().replace(/[^a-z0-9]/g, '');
+    s.searchProvider = id;
+    runtime.render();
+    apiJson('/api/auth/settings', { search_provider: id }, 'POST').catch(() => {});
   },
 
   // Brain → "Open Brain": load memories + skills into state.live.brain.

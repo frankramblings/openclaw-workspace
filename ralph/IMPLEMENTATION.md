@@ -131,3 +131,13 @@ Done: P0 (orphaned data-act + capture bug), P1 (logout/password/adduser/wipe), P
 - **Per-row Archive** added beside the delete ✕ → `archiveSession(id)` (live/chat.js) → `POST /api/session/{id}/archive` → reload (resets chat if the archived one was active).
 - (Per choice: skipped multi-select bulk mode.)
 - Verified: node --check; synced; deployed.
+
+## Settings config forms — ⚠️ PARTIAL (backend-constrained)
+You chose "Full config forms," but the backend only supports a slice:
+- **Search provider** → WIRED. Provider row is now clickable (`setSearchProvider`), reflects the live value (loaded from `/api/auth/settings.search_provider`), and persists `POST /api/auth/settings {search_provider}`. Normalized id (works for serpapi/disabled/brave/tavily/serper/searxng/duckduckgo; multi-word providers best-effort).
+- **NOT wirable without backend work (reported):**
+  - **AI model roles** (default/utility/vision endpoint+model+fallbacks) — backend reads these from the env var `OPENCLAW_DEFAULT_MODEL` (config.py:48/58); there is **no write API**. Left read-only.
+  - **Model-endpoints add/test** — `/api/model-endpoints` is **GET-only**; no add/test/delete route exists.
+  - **Search "Test"** — no search-test endpoint exists (search runs server-side during chat).
+  - **Search result-count / URL / fallbacks** — only `search_result_count` is stored (kept read-only display); URL/fallbacks aren't in the settings schema.
+- **To make model config editable, the backend needs:** write endpoints for model roles (or a settable default-model API) and POST/PUT/DELETE on `/api/model-endpoints`, plus a search-test endpoint. Flagged for a backend pass.

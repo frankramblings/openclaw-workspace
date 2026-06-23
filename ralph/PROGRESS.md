@@ -87,3 +87,4 @@
 2026-06-23 01:30 | index.html:1106 incognito-btn | verified [!] PARITY GAP — incognito toggle; same missing feature as :1100 (FINDINGS). Also fixed export-dl-btn note (export-* are <div>s, not rows).
 2026-06-23 01:31 | index.html:1166 overflow-plus-btn | verified [x] parity (reimagined) -> "+" toggleSlash palette (surfaces.js:94); contents differ, child tools in :1173+
 2026-06-23 01:32 | index.html:1173 overflow-attach-btn | verified [!] PARITY GAP — no composer file-attach; logged Chat Bar FINDINGS (advertises nonexistent tools)
+2026-06-23 01:33 | index.html:1177 overflow-doc-btn | verified [!] composer doc-editor button gone; partial via Notes+/note,/split; Chat Bar FINDINGS

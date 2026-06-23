@@ -190,7 +190,7 @@ legacy `js/*.js` module.
 - [!] id=adm-epApiTestBtn ("Test" an API model endpoint, admin) — index.html:2304 → PARITY GAP (missing). No per-endpoint Test in the redesign (Added Models read-only, non-interactive settings). Same as adm-epLocalTestBtn:2245. See FINDINGS (dead Settings / no endpoint management).
 - [!] id=adm-epApiCancelTestBtn ("Cancel" the endpoint test, admin) — index.html:2305 → PARITY GAP (missing). Sub-control of the absent per-endpoint Test flow (adm-epApiTestBtn:2304). No endpoint testing in the redesign. See FINDINGS (no endpoint management).
 - [!] id=adm-epAddBtn ("Add" an API model endpoint, admin) — index.html:2306 → PARITY GAP (missing). No add-endpoint control in the redesign (Added Models read-only). Same as adm-epLocalAddBtn:2246 / model-picker-add-models-btn:1267. See FINDINGS (no endpoint management).
-- [ ] id=unified-intg-add-btn  `<button>` — index.html:2341
+- [!] id=unified-intg-add-btn ("+ Add Integration" — connect a new external service) — index.html:2341 → PARITY GAP (dead affordance). Redesign Connections card (settings-data.js:84) renders "+ Add Integration" via `btns([...])` → dead `set-btn` (no data-act, no add-integration flow). Feature shown but non-functional. Part of the dead Settings surface — see FINDINGS.
 - [ ] id=adm-exportDataBtn  `<button>` — index.html:2362
 - [ ] id=adm-importDataBtn  `<button>` — index.html:2363
 - [ ] class=admin-btn-delete  `<button>` — index.html:2377

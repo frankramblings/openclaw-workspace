@@ -83,3 +83,4 @@
 2026-06-23 01:26 | index.html:1036 library-new-doc-btn | verified [!] PARITY GAP — no New-document in redesign Library (read-only artifacts); plausibly intentional, deferred
 2026-06-23 01:27 | index.html:1085 user-bar-settings | verified [-] redundant settings shortcut; settings reachable via rail-settings ([x])
 2026-06-23 01:28 | index.html:1100 incognito-indicator | verified [!] PARITY GAP — no incognito mode; shortcuts card decorative (no kbd handlers). Logged FINDINGS.
+2026-06-23 01:29 | index.html:1101 export-dl-btn | verified [!] PARITY GAP — no chat conversation-actions/More menu; logged cluster FINDINGS

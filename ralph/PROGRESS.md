@@ -6,3 +6,4 @@
 2026-06-23 00:49 | index.html:381 memory-tab browse | verified [-] (internal tab of removed memory-modal; no redesign sibling)
 2026-06-23 00:50 | index.html:382 memory-tab skills | verified [-] (internal tab of removed memory-modal)
 2026-06-23 00:50 | index.html:383 memory-tab add | verified [-] (internal tab of removed memory-modal)
+2026-06-23 00:50 | index.html:384 memory-tab settings | verified [-] (internal tab of removed memory-modal)

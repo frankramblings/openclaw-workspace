@@ -20,7 +20,7 @@ legacy `js/*.js` module.
 - [-] class=memory-tab active (data-memory-tab="browse", the "Memories" tab) — index.html:381 — internal tab of the removed memory-modal; whole modal replaced by Settings → Brain card (no internal tabs in redesign). Same disposition as close-memory-modal:377. Brain launcher gap already tracked in FINDINGS.
 - [-] class=memory-tab (data-memory-tab="skills") — index.html:382 — internal tab of removed memory-modal; replaced by Settings → Brain card ("memories and skills"). No redesign sibling. Same disposition as :377/:381.
 - [-] class=memory-tab (data-memory-tab="add") — index.html:383 — internal "Add memory" tab of removed memory-modal; folded into Settings → Brain card. No redesign sibling. Same disposition as :377/:381/:382.
-- [ ] class=memory-tab  `<button>` — index.html:384
+- [-] class=memory-tab (data-memory-tab="settings") — index.html:384 — internal "memory settings" tab of removed memory-modal; folded into Settings → Brain card (and global Settings surface). No redesign sibling. Last of the 4 memory-modal tabs (:381–:384).
 - [ ] id=memory-select-btn  `<button>` — index.html:403
 - [ ] id=memory-tidy-btn  `<button>` — index.html:404
 - [ ] class=memory-cat-chip active  `<button>` — index.html:408

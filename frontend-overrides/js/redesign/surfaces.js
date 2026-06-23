@@ -341,7 +341,7 @@ function researchSurface(s) {
           <span class="lbl">Defaults — click any to override:</span>
           ${ctlPills}
           <div class="oc-spacer"></div>
-          <button class="btn btn-ghost">+ Queue</button>
+          <button class="btn btn-ghost" data-act="startResearch">+ Queue</button>
           <button class="res-start" data-act="startResearch">${I.play()}Start</button>
         </div>
       </div>
@@ -361,7 +361,7 @@ function researchSurface(s) {
       <div class="res-card done">
         <div class="row1"><span class="res-done-ico">✓</span><span class="t">Report ready</span><span class="meta">3 rounds · 8 sources · 2:14</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:30px" data-act="resetResearch">New research</button></div>
         <p class="res-summary">${s.live?.research?.summary ?? '<strong>Transistor</strong> wins on price-per-show and unlimited podcasts; <strong>Buzzsprout</strong> leads on ease + analytics polish; <strong>Captivate</strong> is strongest for growth/marketing tools. None has a first-party Wistia integration — all support it via RSS + embed.'}</p>
-        <div class="card-actions"><button class="btn-sm">↗ Visual Report</button><button class="btn-sm ghost">Discuss in chat</button><button class="btn-sm ghost">Save to Library</button></div>
+        <div class="card-actions"><button class="btn-sm" data-act="resReport" data-arg="${esc(s.live?.research?.lastRid || '')}">↗ Visual Report</button><button class="btn-sm ghost" data-act="resDiscuss" data-arg="${esc(s.live?.research?.lastRid || '')}">Discuss in chat</button><button class="btn-sm ghost" data-act="go" data-arg="library">Save to Library</button></div>
       </div>`)}
 
       <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past ?? PAST_RESEARCH).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer">Library, Research →</span></div>

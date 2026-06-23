@@ -45,3 +45,9 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - Contracts verified against backend/email_himalaya.py (send/summarize/ai-reply payloads).
 - Verified: node --check; synced; deployed.
 - TODO P3 remainder: research "+ Queue"; library "New document".
+
+## P3 — research actions — ✅ DONE (P3 complete)
+- **"+ Queue"** → `data-act="startResearch"` (POST /api/research/start).
+- **Done-card actions**: research.js `finish()` now stores `state.live.research.lastRid`; "↗ Visual Report" → `resReport(lastRid)`, "Discuss in chat" → `resDiscuss(lastRid)`, "Save to Library" → `go('library')` (results already auto-save to /api/research/library).
+- **Library "New document"**: DEFERRED — the redesign Library is a read-only artifact browser with no editor; adding doc creation needs a new editor surface (a real build, not a no-op wiring). Noted for a future surface build.
+- Verified: node --check; synced; deployed.

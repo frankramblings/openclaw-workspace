@@ -232,5 +232,9 @@ async function finish(rid) {
   } catch (_) { /* keep mock summary */ }
 
   // Refresh the past-runs list so the just-finished run appears.
-  try { await load(state); runtime.render(); } catch (_) {}
+  try { await load(state); } catch (_) {}
+  // Remember the finished run id so the done-card actions (report/discuss) work.
+  state.live = state.live || {};
+  state.live.research = { ...(state.live.research || {}), lastRid: rid };
+  runtime.render();
 }

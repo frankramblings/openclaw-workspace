@@ -142,3 +142,4 @@
 2026-06-23 02:01 | index.html:1559 settings-nav-item appearance | verified [x] parity OK -> setSection appearance
 2026-06-23 02:01 | index.html:1563 settings-nav-item shortcuts | verified [x] parity OK -> setSection shortcuts (nav works; shortcut content unwired per FINDINGS)
 2026-06-23 02:02 | index.html:1569 settings-nav-item account | verified [x] parity OK -> setSection account
+2026-06-23 02:02 | index.html:1575 settings-nav-item tools (admin) | verified [x] parity OK -> setSection tools (ADMIN group)

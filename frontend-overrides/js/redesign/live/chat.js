@@ -486,7 +486,7 @@ export const actions = {
         for (const it of items) {
           const mids = it.models || [];
           const disp = it.models_display || it.models || [];
-          mids.forEach((mid, i) => list.push({ mid, name: disp[i] || mid, ep: it.endpoint_name }));
+          mids.forEach((mid, i) => list.push({ mid, name: disp[i] || mid, ep: it.endpoint_name, endpointId: it.endpoint_id }));
         }
         state.live = state.live || {};
         state.live.modelList = list;
@@ -495,13 +495,24 @@ export const actions = {
     }
   },
 
-  // Pick the chat model (used by createSession on the next new chat). Closes menu.
+  // Pick the chat model. For a NEW chat, createSession() uses it. For the ACTIVE
+  // session, PATCH the session record so the gateway applies it on the next turn
+  // (chat_stream reads the session's model via _model_ref — backend already wired).
   setModel: (mid) => {
     const state = runtime.state;
     if (!state || !mid) return;
-    ensureChat(state).model = mid;
+    const chat = ensureChat(state);
+    chat.model = mid;
+    const item = (state.live && state.live.modelList || []).find((m) => m.mid === mid);
+    chat.endpointId = item ? item.endpointId : chat.endpointId;
+    chat.subtitle = `${Array.isArray(chat.thread) ? chat.thread.length : 0} messages · ${mid}`;
     state.modelMenuOpen = false;
     runtime.render();
+    if (chat.activeId) {
+      const fields = { model: mid };
+      if (chat.endpointId) fields.endpoint_id = chat.endpointId;
+      apiForm(`/api/session/${chat.activeId}`, fields, { method: 'PATCH' }).catch(() => {});
+    }
   },
 
   // Composer attach: upload picked files, keep ids as pending chips; send()

@@ -111,3 +111,4 @@
 2026-06-23 01:45 | index.html:1339 char-delete-template-btn | verified [-] character-builder control in removed preset modal
 2026-06-23 01:45 | index.html:1340 reset-character-btn | verified [-] character-builder control in removed preset modal
 2026-06-23 01:45 | index.html:1346 char-expand-btn | verified [-] character-builder control in removed preset modal
+2026-06-23 01:46 | index.html:1355 group-mode-btn | verified [-] group-chat builder control in removed preset modal (group unported)

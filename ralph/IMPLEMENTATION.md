@@ -99,3 +99,15 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - (with P8 prior: "Open Scheduled jobs" → live cron panel.)
 - All three dead `set-launcher` buttons are now either functional or honestly removed.
 - Verified: node --check; synced; deployed.
+
+## P9 — cleanups — partial (global shortcuts done)
+- **Global keyboard shortcuts** wired in app.js (the Shortcuts card advertised these; nothing handled them before):
+  - **⌘K / Ctrl-K** → focus the active surface's search/filter input (conv/notes/library/email). Pairs with the P7 filters.
+  - **"/"** → focus the chat composer (when not already in a field).
+- Remaining P9 (cosmetic / product-judgment — DEFERRED, flagged for Frank, not no-op bugs):
+  - Trim Settings → Sidebar toggles for surfaces that don't exist (Compare/Cookbook/Gallery/Tasks) and Chat-Bar toggles for absent controls (cb-web/doc/shell). Harmless (persist an unused pref) but misleading. Left intact to avoid unilateral product-UX removal — Frank may intend to build those surfaces.
+  - Incognito: `ca-incognito` toggle + ⌘⇧I shortcut card entry still reference an unimplemented feature. Remove or build (privacy feature) — product decision.
+  - Scroll-to-bottom chat button — pure nice-to-have, skipped.
+
+## Summary — P0→P9
+Done: P0 (orphaned data-act + capture bug), P1 (logout/password/adduser/wipe), P2 (model picker + attach), P3 (notes/calendar/email cluster/research), P4 (delete + rename/copy/export conversation), P5 (workspace file CRUD), P6 (data backup), P7 (search filters), P8 (all 3 launchers), P9 (⌘K + "/" shortcuts). Deferred with reasons: model-endpoint/fallback/provider settings forms (P6), library doc-editor (P3), bulk session-manage (P4), reasoning-effort pill (P2), incognito + visibility-list trims + scroll-to-bottom (P9). Every deferral is a surface/forms BUILD or a product decision — not a remaining no-op.

@@ -242,6 +242,23 @@ root.addEventListener('keydown', (e) => {
   }
 });
 
+// Global keyboard shortcuts (the Settings → Shortcuts card advertises these):
+//   ⌘K / Ctrl-K → focus the active surface's search/filter input
+//   "/"         → focus the chat composer (when not already typing in a field)
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    const el = root.querySelector('[data-model="convFilter"],[data-model="notesFilter"],[data-model="libQuery"],[data-model="emailQuery"]');
+    if (el) { e.preventDefault(); el.focus(); }
+    return;
+  }
+  if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const tag = (e.target && e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
+    const ta = root.querySelector('[data-focus="draft"]');
+    if (ta) { e.preventDefault(); ta.focus(); }
+  }
+});
+
 // mobile keyboard: focusing the chat composer raises the keyboard (frame 9 —
 // tab bar hides, composer lifts). Guarded so the focus-restore loop is a no-op.
 root.addEventListener('focusin', (e) => {

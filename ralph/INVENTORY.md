@@ -67,7 +67,7 @@ legacy `js/*.js` module.
 - [-] id=theme-import-go ("Apply" — confirms theme-JSON import) — index.html:797 — sub-control of the theme-popup import flow (theme-import-btn:792). No theme import in redesign. Removed with the theme-popup.
 - [-] id=theme-import-cancel ("Cancel" — cancels theme-JSON import) — index.html:798 — sub-control of the theme-popup import flow (paired with theme-import-go:797). No theme import in redesign. Removed with the theme-popup.
 - [-] id=theme-reset-btn ("Reset to Default" — resets the whole theme) — index.html:801 — last interactive control of the theme popup; redesign has no dedicated theme-reset (only inline accent selection via setAccent). Removed with the theme-popup. (Ends the theme-modal cluster :563–:801; main app chrome begins ~:807.)
-- [ ] id=mobile-menu-btn  `<button>` — index.html:807
+- [-] id=mobile-menu-btn ("Toggle sidebar" ☰, mobile) — index.html:807 — mobile nav paradigm intentionally replaced: redesign mobile uses a persistent **bottom tab bar + "More" hub** (mobile-app.js renderTabBar / `mGo` action, data-act=`mGo`), not a slide-out sidebar. No hamburger-toggles-sidebar on mobile ⇒ no 1:1 sibling; function (reach any surface) covered by the tab bar. (Old id has 0 refs in frontend/js — wired by class/elsewhere or vestigial.)
 - [ ] id=hamburger-btn  `<button>` — index.html:809
 - [ ] id=sidebar-toggle-btn  `<button>` — index.html:816
 - [ ] id=rail-search-btn  `<button>` — index.html:825

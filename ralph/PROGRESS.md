@@ -12,3 +12,4 @@
 2026-06-23 00:52 | index.html:408 memory-cat-chip | verified [-] (memory-modal browse filter; no redesign browse list)
 2026-06-23 00:52 | index.html:414 memory-bulk-delete | verified [-] (memory-modal multi-select bar; no redesign equivalent)
 2026-06-23 00:52 | index.html:415 memory-bulk-cancel | verified [-] (memory-modal multi-select bar)
+2026-06-23 00:53 | index.html:427 memory-import-btn | verified [-] (memory-modal I/O; no redesign memory import)

@@ -459,6 +459,22 @@ function notesSurface(s) {
 // ===========================================================================
 // SETTINGS
 // ===========================================================================
+
+// Inline scheduled-jobs panel (rendered in the Scheduled card after openScheduled
+// loads state.live.cron from GET /api/cron).
+function cronPanel(cron) {
+  const jobs = (cron && cron.jobs) || [];
+  if (cron && cron.error) return `<div style="padding:8px 2px;color:var(--faint);font-size:12px">Scheduler unavailable.</div>`;
+  if (!jobs.length) return `<div style="padding:8px 2px;color:var(--faint);font-size:12px">No scheduled jobs.</div>`;
+  return `<div class="cron-list" style="margin-top:10px;display:flex;flex-direction:column;gap:6px">${jobs.map((j) => `
+    <div class="cron-job" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#1e2025;border-radius:8px">
+      <span style="width:7px;height:7px;border-radius:50%;flex:none;background:${j.enabled ? 'var(--green)' : 'var(--faint)'}"></span>
+      <div style="min-width:0;flex:1"><div style="font-size:13px">${esc(j.name || j.id)}</div><div class="mono" style="font-size:11px;color:var(--faint)">${esc(j.schedule_expr || j.schedule || '')}</div></div>
+      <button class="set-btn" data-act="cronRun" data-arg="${esc(j.id)}" style="height:26px">Run</button>
+      <button class="set-btn" data-act="cronToggle" data-arg="${esc(j.id)}" style="height:26px">${j.enabled ? 'Disable' : 'Enable'}</button>
+    </div>`).join('')}</div>`;
+}
+
 function settingsSurface(s) {
   const sec = TAB[s.setSection] ? s.setSection : 'services';
   const ui = s.ui;
@@ -533,7 +549,8 @@ function settingsSurface(s) {
       </div>
       ${c.sub ? `<div class="set-sub">${esc(c.sub)}</div>` : ''}
       ${(c.rows || []).map(renderRow).join('')}
-      ${c.launcher ? `<button class="set-launcher">${esc(c.launcher)}</button>` : ''}
+      ${c.launcher ? `<button class="set-launcher"${c.launcherAct ? ` data-act="${c.launcherAct}"` : ''}>${esc(c.launcher)}</button>` : ''}
+      ${(c.scheduledPanel && s.live && s.live.cron) ? cronPanel(s.live.cron) : ''}
     </div>`;
   };
 

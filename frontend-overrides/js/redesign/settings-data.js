@@ -104,7 +104,7 @@ export const PANELS = {
     card({ title: 'Test', icon: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>', sub: 'Fire a test reminder using your current settings.', rows: [btns([{ label: 'Send Test Reminder', primary: true }])] }),
   ],
   brain: [card({ title: 'Brain', icon: TAB.brain[2], sub: "Gary's long-term memories and skills — browse, edit, pin, and audit them.", launcher: 'Open Brain' })],
-  scheduled: [card({ title: 'Scheduled', icon: TAB.scheduled[2], sub: 'Recurring jobs — run now, enable/disable, and inspect run history.', launcher: 'Open Scheduled jobs' })],
+  scheduled: [card({ title: 'Scheduled', icon: TAB.scheduled[2], sub: 'Recurring jobs — run now, enable/disable, and inspect run history.', launcher: 'Open Scheduled jobs', launcherAct: 'openScheduled', scheduledPanel: true })],
   appearance: [
     card({ title: 'Theme', icon: TAB.appearance[2], sub: 'Colorways, fonts, density and background effects. Pick an accent below or open the full picker.', rows: [accents()], launcher: 'Open theme picker' }),
     card({ title: 'Sidebar', icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>', rows: [vis([['sb-brand', 'Gary', 'Brand'], ['sb-search', 'Search'], ['sb-newchat', 'New Chat'], ['sb-chats', 'Chats'], ['sb-email', 'Email'], ['sb-tools', 'Tools'], ['sb-brain', 'Brain'], ['sb-cal', 'Calendar'], ['sb-compare', 'Compare'], ['sb-cookbook', 'Cookbook'], ['sb-research', 'Deep Research'], ['sb-gallery', 'Gallery'], ['sb-library', 'Library'], ['sb-notes', 'Notes'], ['sb-tasks', 'Tasks'], ['sb-theme', 'Theme'], ['sb-user', 'User'], ['sb-settings', 'Settings']])] }),

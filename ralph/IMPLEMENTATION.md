@@ -86,3 +86,9 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - No backend needed (mirrors the `libFilter` pattern). 
 - DEFERRED: global ⌘K shortcut (needs a global keydown dispatcher in app.js — same gap as incognito shortcuts, P9) and server-side `/api/email/search` (client filter covers the loaded page).
 - Verified: node --check; synced; deployed.
+
+## P8 — dead launchers — partial (Scheduled jobs built; Brain/theme = P9)
+- Extended the `set-launcher` render to emit `data-act` from `c.launcherAct`, and to render an inline panel when `c.scheduledPanel` + loaded data.
+- **"Open Scheduled jobs"** (`launcherAct:'openScheduled'`) → `openScheduled` fetches `GET /api/cron` → `cronPanel()` lists jobs with status + schedule + **Run** (`cronRun` → `POST /api/cron/{id}/run`) and **Enable/Disable** (`cronToggle` → `POST /api/cron/{id}/{enable|disable}`, then refresh). The launcher now opens a real, actionable jobs view.
+- TODO (fold into P9): "Open theme picker" → remove (redundant; inline accent already works). "Open Brain" → either build a minimal memory/skills list (`GET /api/memory`,`/api/skills`) or remove the launcher. These are surface-builds/cleanups, not no-op wirings.
+- Verified: node --check; synced; deployed.

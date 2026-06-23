@@ -185,4 +185,34 @@ export const actions = {
       input.click();
     } catch (_) {}
   },
+
+  // Scheduled → "Open Scheduled jobs": load the cron list into state.live.cron.
+  openScheduled: async () => {
+    const s = runtime.state;
+    if (!s) return;
+    try {
+      const data = await apiGet('/api/cron');
+      s.live = s.live || {};
+      s.live.cron = data && Array.isArray(data.jobs) ? data : { jobs: [], error: true };
+    } catch (_) { s.live = s.live || {}; s.live.cron = { jobs: [], error: true }; }
+    runtime.render();
+  },
+  cronRun: async (id) => {
+    if (!id) return;
+    try { await apiJson(`/api/cron/${id}/run`, {}); } catch (_) {}
+    try { window.alert('Job triggered.'); } catch (_) {}
+  },
+  cronToggle: async (id) => {
+    const s = runtime.state;
+    if (!s || !id) return;
+    const jobs = (s.live && s.live.cron && s.live.cron.jobs) || [];
+    const job = jobs.find((j) => String(j.id) === String(id));
+    const action = job && job.enabled ? 'disable' : 'enable';
+    try { await apiJson(`/api/cron/${id}/${action}`, {}); } catch (_) {}
+    try {
+      const data = await apiGet('/api/cron');
+      if (data && Array.isArray(data.jobs)) s.live.cron = data;
+    } catch (_) {}
+    runtime.render();
+  },
 };

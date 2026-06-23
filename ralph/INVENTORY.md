@@ -33,7 +33,7 @@ legacy `js/*.js` module.
 - [-] id=skills-audit-btn ("Test every skill, auto-fix the weak ones, flag what still fails") — index.html:498 — Skills-tab toolbar in removed memory-modal. The "audit" concept survives only as Brain-card sub-text ("browse, edit, pin, and audit them", settings-data.js:106), with no actionable button (Brain launcher itself dead — see FINDINGS). Removed with the modal.
 - [-] id=skills-bulk-publish — index.html:506 — Skills-tab multi-select bulk-action bar in the removed memory-modal (with skills-select-btn:497). No bulk-skills UI in redesign. Removed with the modal.
 - [-] id=skills-bulk-audit — index.html:507 — Skills-tab multi-select bulk-action bar in the removed memory-modal (sibling of skills-bulk-publish:506). No bulk-skills UI in redesign. Removed with the modal.
-- [ ] id=skills-bulk-delete-nonpassing  `<button>` — index.html:508
+- [-] id=skills-bulk-delete-nonpassing — index.html:508 — Skills-tab multi-select bulk-action bar in the removed memory-modal (sibling of :506/:507). No bulk-skills UI in redesign. Removed with the modal.
 - [ ] id=skills-bulk-delete  `<button>` — index.html:509
 - [ ] id=skills-bulk-cancel  `<button>` — index.html:510
 - [ ] id=theme-opacity-wrap  `<button>` — index.html:567

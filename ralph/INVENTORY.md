@@ -232,7 +232,7 @@ legacy `js/*.js` module.
 - [x] data-act=`selEmail` — surfaces.js:128 → WIRED & functional. Handler: mock app.js:164 + LIVE override email.js:176 (openAt(i) → loads the full message body). Bound to desktop email list rows. Real data load + re-render.
 - [x] data-act=`selectSession` — surfaces.js:45 → WIRED & functional. Handler: LIVE chat.js:264 (sets chat.activeId, marks active row, re-renders, then GET /api/sessions + loads the session's thread via fetchThread). Bound to conv-row session list items. Real data load.
 - [x] data-act=`send` — mobile/mobile-surfaces.js:65 → WIRED & functional. Handler: LIVE chat.js:309 (optimistic user msg, POST /api/chat_stream {message,session,mode}, streams tool/think/prose into the activity trail). Bound to send buttons desktop (surfaces.js:103) + mobile + Enter-to-send (app.js keydown). Core chat send — verified end-to-end earlier.
-- [ ] data-act=`setAccent` — surfaces.js:461
+- [x] data-act=`setAccent` — surfaces.js:461 → WIRED & functional. Handler: mock app.js:179 + LIVE override settings.js:82 (setAccentVars sets real --accent + --red CSS vars; persists via POST /api/auth/settings {accent}). Bound to accent swatches. Verified at rail-theme:843. Real theme change + persistence. (NOTE: this is the ONLY wired control on the otherwise-dead Settings surface.)
 - [ ] data-act=`setCaptureType` — mobile/mobile-sheets.js:64
 - [ ] data-act=`setMode` — surfaces.js:100
 - [ ] data-act=`setSection` — surfaces.js:422

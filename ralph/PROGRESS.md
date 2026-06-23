@@ -212,3 +212,4 @@
 2026-06-23 02:35 | new-wiring data-act=selEmail | verified [x] WIRED -> live email.js:176 (openAt loads message)
 2026-06-23 02:35 | new-wiring data-act=selectSession | verified [x] WIRED -> live chat.js:264 (loads session thread)
 2026-06-23 02:36 | new-wiring data-act=send | verified [x] WIRED -> live chat.js:309 (POST /api/chat_stream + activity trail)
+2026-06-23 02:36 | new-wiring data-act=setAccent | verified [x] WIRED -> live settings.js:82 (real accent + persist)

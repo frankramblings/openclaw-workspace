@@ -137,7 +137,7 @@ legacy `js/*.js` module.
 - [x] id=we-collapse ("Hide panel" — hides the workspace explorer/right panel) — index.html:1387 → PARITY OK. Redesign sibling: `toggleComp` action ("Hide panel", companion.js:108, data-act=`toggleComp`), with a reveal-btn ("Show panel", companion.js:118) to restore. Real wiring.
 - [x] id=we-tab-files ("Files" tab of the workspace explorer) — index.html:1390 → PARITY OK. Redesign sibling: the companion "Files" tab button (companion.js:104, data-act=`compTab` data-arg=`files`) → compTab action switches the companion to the file tree. Real wiring.
 - [-] id=we-tab-artifacts ("Artifacts" tab of the workspace explorer) — index.html:1391 — relocated, not lost. The redesign companion tabs are Terminal/Files/Gary (companion.js:103–105), no Artifacts tab; artifacts moved to the dedicated **Library** nav surface ("artifacts Gary has produced", reachable via rail-documents/archive, [x]). Function preserved on a first-class surface.
-- [ ] id=we-reopen  `<button>` — index.html:1397
+- [x] id=we-reopen ("Workspace files" — collapsed-state reveal to reopen the explorer panel) — index.html:1397 → PARITY OK. Redesign sibling: the companion collapsed reveal strip — `reveal-btn` ("Show panel", data-act=`toggleComp`, companion.js:118) + reveal-icon (compTab, :120). Real wiring. Pairs with we-collapse:1387.
 - [ ] id=scroll-bottom-btn  `<button>` — index.html:1398
 - [ ] id=close-rename-session  `<button>` — index.html:1473
 - [ ] id=cancel-rename-session  `<button>` — index.html:1486

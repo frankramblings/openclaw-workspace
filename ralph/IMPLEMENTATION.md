@@ -120,3 +120,8 @@ Done: P0 (orphaned data-act + capture bug), P1 (logout/password/adduser/wipe), P
 - **Incognito / Nobody mode** (borrowed from Odysseus) → composer toggle button (`toggleIncognito`, eye-off icon, violet when on) + ⌘⇧I shortcut; `send()` appends `incognito:'true'` to the stream body when on (backend honors it, same as legacy chat.js:782). State-only, no new endpoint.
 - **Scroll-to-bottom** → floating ↓ button in composer-wrap; a capture-phase `scroll` listener on `.chat-thread` shows it only when scrolled up (>80px from bottom); `scrollChatBottom` jumps to latest. No re-render thrash.
 - Verified: node --check (surfaces/app/chat); synced; deployed.
+
+## Visibility toggles — ✅ DONE (removed dead ones)
+- **Sidebar** vis list: removed Compare/Cookbook/Gallery/Tasks (no such surfaces). Kept the real ones.
+- **Chat Bar** vis list: removed Web Search/Document Editor/Shell/Deep Research/Characters (no such composer controls). Kept More Tools / Agent-Chat / Attach Files (these controls exist).
+- (DEFAULT_UI keys left intact — harmless unused entries.)

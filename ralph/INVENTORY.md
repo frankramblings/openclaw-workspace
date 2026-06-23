@@ -211,7 +211,7 @@ legacy `js/*.js` module.
 - [x] data-act=`closeCapture` — mobile/mobile-sheets.js:57 → WIRED. Handler mobile-app.js:62 (sets quickCaptureOpen=false). Correct for the scrim (:57) and Cancel (:60). BUT note: the "Send to Gary" button (:66) is ALSO wired to closeCapture — so it just dismisses without submitting; `captureDraft` is never read/sent. The closeCapture data-act itself is wired; the Send-to-Gary no-op is logged separately. See FINDINGS "Mobile quick-capture discards input."
 - [x] data-act=`closeCompanion` — mobile/mobile-sheets.js:34 → WIRED. Handler mobile-app.js:59 (sets companionSheetOpen=false, closes the mobile companion sheet). Bound to scrim (:34) + close-X (:42). Real state change + re-render.
 - [x] data-act=`compTab` — companion.js:103 → WIRED. Handler app.js:141 (sets state.compTab, compSplit=false, compHidden=false — switches the companion panel to Terminal/Files/Gary). Bound to tab buttons (companion.js:103–105) + collapsed reveal icons (:120–122). Real state change + re-render.
-- [ ] data-act=`companionTab` — mobile/mobile-sheets.js:39
+- [x] data-act=`companionTab` — mobile/mobile-sheets.js:39 → WIRED. Handler mobile-app.js:60 (sets state.companionTab — switches the mobile companion sheet between Terminal/Files). Bound mobile-sheets.js:39/40. Real state change + re-render.
 - [ ] data-act=`dismiss` — mobile/mobile-surfaces.js:87
 - [ ] data-act=`go` — app.js:52
 - [ ] data-act=`libFilter` — surfaces.js:346

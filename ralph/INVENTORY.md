@@ -146,7 +146,7 @@ legacy `js/*.js` module.
 - [-] id=settings-opacity-wrap ("Fade this window to preview the page behind it" — settings-modal Peek toggle) — index.html:1510 — modal-only affordance. The redesign replaces the settings *modal* with a full settings *surface* (rail-settings:846 [x], go→settings) — no overlay, so no peek-behind. Removed with the modal pattern. (Settings surface's own buttons being dead is the separate FINDINGS issue.)
 - [-] class=close-btn (✖ closes the settings modal) — index.html:1514 — chrome of the settings-modal (opens :1506). Redesign settings is a full nav surface (rail-settings:846 [x], go→settings), not a modal ⇒ no close button. Removed with the modal pattern.
 - [x] class=settings-nav-item active (data-settings-tab="services" — "Services" category) — index.html:1520 → PARITY OK. Redesign sibling: the settings-surface section nav `set-nav-item` (surfaces.js:422, data-act=`setSection` data-arg=`services`), driven by NAV_GROUPS (settings-data.js:159, includes 'services'). Section navigation is wired (the card action buttons inside are the separate dead-settings FINDINGS issue).
-- [ ] class=settings-nav-item  `<button>` — index.html:1524
+- [x] class=settings-nav-item (data-settings-tab="ai" — "Add Models"/AI category) — index.html:1524 → PARITY OK. Redesign sibling: set-nav-item setSection `ai` (surfaces.js:422; 'ai' in NAV_GROUPS settings-data.js:159). Section nav wired.
 - [ ] class=settings-nav-item  `<button>` — index.html:1528
 - [ ] class=settings-nav-item  `<button>` — index.html:1536
 - [ ] class=settings-nav-item  `<button>` — index.html:1540

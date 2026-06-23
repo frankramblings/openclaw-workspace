@@ -132,3 +132,4 @@
 2026-06-23 01:54 | index.html:1510 settings-opacity-wrap | verified [-] settings-modal Peek toggle; redesign settings is a surface (no overlay)
 2026-06-23 01:55 | index.html:1514 settings close-btn | verified [-] settings-modal chrome; settings is a surface now
 2026-06-23 01:56 | index.html:1520 settings-nav-item services | verified [x] parity OK -> setSection services (surfaces.js:422)
+2026-06-23 01:57 | index.html:1524 settings-nav-item ai | verified [x] parity OK -> setSection ai

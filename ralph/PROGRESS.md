@@ -74,3 +74,4 @@
 2026-06-23 01:20 | index.html:843 rail-theme | verified [x] parity OK (reduced) -> Settings accent swatches setAccent live-wired (live/settings.js:82); full picker dead (FINDINGS)
 2026-06-23 01:21 | index.html:846 rail-settings | verified [x] parity OK -> go:settings (live/settings.js); surface nav wired (internal buttons dead per FINDINGS)
 2026-06-23 01:22 | index.html:871 chats-library-btn | verified [!] PARITY GAP — no session-management view; logged consolidated FINDINGS for the :871-916 cluster
+2026-06-23 01:22 | index.html:878 session-sort-btn | verified [!] PARITY GAP — no session sort; covered by session-management FINDINGS

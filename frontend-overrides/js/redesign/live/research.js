@@ -185,6 +185,31 @@ export const actions = {
       try { await apiJson(`/api/research/cancel/${rid}`, {}); } catch (_) {}
     }
   },
+
+  // Past-run chip: spin a research run off into a chat session and open it.
+  resDiscuss: async (rid) => {
+    const state = runtime.state;
+    if (!state || !rid) return;
+    try {
+      const res = await apiJson(`/api/research/spinoff/${rid}`, {});
+      const sid = res?.session_id || res?.id || res?.session;
+      state.surface = 'chat';
+      state.resOpenCtl = null;
+      runtime.render();
+      // selectSession (live/chat.js) loads the new session's thread itself.
+      if (sid && runtime.actions && typeof runtime.actions.selectSession === 'function') {
+        await runtime.actions.selectSession(sid);
+      } else if (runtime.actions && typeof runtime.actions.go === 'function') {
+        runtime.actions.go('chat');
+      }
+    } catch (_) { /* soft-fail: stay put */ }
+  },
+
+  // Past-run chip: open the visual report for that run in a new tab.
+  resReport: (rid) => {
+    if (!rid) return;
+    try { window.open(`/api/research/report/${rid}`, '_blank', 'noopener'); } catch (_) {}
+  },
 };
 
 /** On stream completion: close ES, mark done, peek the result, reload library. */

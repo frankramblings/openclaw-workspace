@@ -7,6 +7,8 @@ import { icon } from '../icons.js';
 import { renderCenter } from '../surfaces.js';
 import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore } from './mobile-surfaces.js';
 import { renderCompanionSheet, renderCaptureSheet } from './mobile-sheets.js';
+import { runtime } from '../live/runtime.js';
+import { apiJson } from '../live/api.js';
 
 const PUSHED_SURFACES = new Set(['research', 'library', 'notes', 'settings']);
 
@@ -61,6 +63,25 @@ export function mobileActions(state) {
     openCapture: () => { state.quickCaptureOpen = true; state.captureType = state.captureType || 'remind'; },
     closeCapture: () => { state.quickCaptureOpen = false; },
     setCaptureType: (t) => { state.captureType = t; },
+    // Quick-capture submit: persist the draft as a note (kind = remind/note/task),
+    // optimistically close, restore on failure so the capture is never lost.
+    sendCapture: async () => {
+      const text = (state.captureDraft || '').trim();
+      if (!text) { state.quickCaptureOpen = false; return; }
+      const kind = state.captureType || 'remind';
+      const title = text.split('\n')[0].slice(0, 80);
+      state.quickCaptureOpen = false;
+      state.captureDraft = '';
+      try { runtime.render(); } catch (_) {}
+      try {
+        await apiJson('/api/notes', { title, body: text, kind });
+      } catch (_) {
+        // restore so the user doesn't lose what they typed
+        state.captureDraft = text;
+        state.quickCaptureOpen = true;
+        try { runtime.render(); } catch (_) {}
+      }
+    },
   };
 }
 

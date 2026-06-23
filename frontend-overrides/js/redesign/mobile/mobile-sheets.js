@@ -63,7 +63,7 @@ export function renderCaptureSheet(s) {
     <div class="m-cap-types">
       ${map(CAPTURE_TYPES, (t) => `<span class="m-cap-type${type === t.id ? ' active' : ''}" data-act="setCaptureType" data-arg="${t.id}">${t.glyph} ${esc(t.label)}</span>`)}
     </div>
-    <button class="m-cap-send" data-act="closeCapture">${I.send(17)}Send to Gary</button>
+    <button class="m-cap-send" data-act="sendCapture">${I.send(17)}Send to Gary</button>
     <div class="m-cap-recent-lbl">RECENT CAPTURES</div>
     ${map(RECENT_CAPTURES, (r) => `<div class="m-cap-recent"><span class="g" style="color:${r.color}">${r.glyph}</span><span class="tx">${esc(r.text)}</span><span class="ty">${esc(r.type)}</span></div>`)}
   </div>`;

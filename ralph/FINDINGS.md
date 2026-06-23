@@ -3,6 +3,41 @@
 Append-only. One bullet per issue: `file:line` + the fix made, or `deferred — needs human: <what decision is missing>`.
 Note in a bullet if a fix also requires Frank to re-run `scripts/sync-frontend.sh` (audit target is `frontend/`, deployed copy is `frontend-overrides/`).
 
+---
+
+## STATUS — reconciled after the P0→P9 implementation (see `IMPLEMENTATION.md`)
+
+The detailed findings below are the **audit-time** record (kept as written). Most were since **fixed**. Current status per finding:
+
+| Finding (below) | Status |
+|---|---|
+| Settings surface non-interactive | ✅ **Mostly fixed** (P1 logout/password/adduser/wipe; P6 export/import; P8 launchers). ⏳ Deferred: model-endpoint/fallback/provider config **forms** (display-only select/provider/chips rows). |
+| Search decorative | ✅ **Fixed** (P7 client filters; P9 ⌘K). ⏳ minor: server-side `/api/email/search`. |
+| No way to delete a conversation | ✅ **Fixed** (P4, per-row ✕ → DELETE). |
+| No session-management UI | ✅ **Partial** (P4 delete+rename). ⏳ Deferred: bulk multi-select/sort ("manage mode" build). |
+| Per-surface action buttons unwired | ✅ **Fixed** (P3 email cluster / notes / calendar / research). |
+| Incognito gone + shortcuts unwired | ✅ **Partial** (P9 ⌘K + "/" wired). ⏳ Deferred: incognito feature + ⌘⇧I (product decision). |
+| No conversation-actions menu | ✅ **Fixed** (P4 ⋯ menu: rename/copy/export). |
+| Composer chat-bar tools gone | ✅ **Partial** (P2 attach wired; web/shell via slash). ⏳ Deferred: RAG/TTS/doc-editor/presets + trim cb-* toggles. |
+| Composer model picker + effort dead | ✅ **Model picker fixed** (P2). ⏳ Deferred: reasoning-effort pill. |
+| Workspace explorer browse-only | ✅ **Fixed** (P5 new file/folder/upload/refresh). |
+| Past-research actions unwired | ✅ **Fixed** (P0 resDiscuss/resReport). |
+| Mobile quick-capture discards input | ✅ **Fixed** (P0 sendCapture → POST /api/notes). |
+| (Minor) scroll-to-bottom button | ⏳ Deferred (nice-to-have). |
+| Sidebar visibility advertises nonexistent surfaces | ⏳ Deferred (Compare/Cookbook/Gallery/Tasks surfaces still missing; toggle-trim is a product decision). |
+
+**Still needs a human (all are surface/forms builds or product decisions — no remaining dead buttons):**
+1. Settings config forms (model-endpoint add/test, fallback editing, search provider/Test).
+2. Library "New document" (needs a doc-editor surface).
+3. Bulk session management (multi-select/sort).
+4. Reasoning-effort pill.
+5. Incognito feature + ⌘⇧I.
+6. Trim the "lying" visibility toggles (Sidebar Compare/Cookbook/Gallery/Tasks; Chat-Bar cb-web/doc/shell).
+7. Scroll-to-bottom button.
+8. (minor) server-side `/api/email/search`.
+
+---
+
 - **The entire redesigned Settings surface is non-interactive — every action button is dead.** None of the buttons rendered by `frontend/js/redesign/surfaces.js` for settings cards carry a `data-act` (or any class-based click handler — grep of `frontend/js/redesign/` finds none). Affected, all in surfaces.js:
     - `set-launcher` (surfaces.js:479) — **"Open Brain"** (settings-data.js:106), **"Open Scheduled jobs"** (:107), **"Open theme picker"** (:109).
     - `set-btn` via `btns()` (surfaces.js:441) — **"Export Data" / "Import Data"** (Data Backup, settings-data.js:143), plus any other `btns([...])` rows.

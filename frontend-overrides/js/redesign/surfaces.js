@@ -42,7 +42,7 @@ function convListBody(s) {
   }
   return map(groups, (g, gi) => `
     <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
-    ${map(g.rows, (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span></div>`)}`);
+    ${map(g.rows, (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span><span class="conv-del" data-act="deleteSession" data-arg="${esc(r.id)}" title="Delete conversation" style="margin-left:auto;padding:0 4px;color:var(--faint);opacity:.55;cursor:pointer">✕</span></div>`)}`);
 }
 
 // one chat message → html (assistant prose / user bubble). Live thread items:

@@ -11,7 +11,7 @@
 //   }
 
 import { runtime } from './runtime.js';
-import { apiGet, apiForm, postStream } from './api.js';
+import { apiGet, apiForm, apiDelete, postStream } from './api.js';
 
 // ---- helpers --------------------------------------------------------------
 
@@ -526,6 +526,21 @@ export const actions = {
     const state = runtime.state;
     if (!state || !id) return;
     state.pendingAttach = (state.pendingAttach || []).filter((a) => a.id !== id);
+    runtime.render();
+  },
+
+  // Session list: delete a conversation (confirm-guarded) → DELETE /api/session/{id}.
+  deleteSession: async (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    let ok = false;
+    try { ok = window.confirm('Delete this conversation? This cannot be undone.'); } catch (_) { ok = false; }
+    if (!ok) return;
+    const chat = ensureChat(state);
+    const wasActive = chat.activeId === id;
+    try { await apiDelete(`/api/session/${id}`); } catch (_) {}
+    if (wasActive) { chat.activeId = null; chat.thread = []; chat.title = 'New chat'; chat.subtitle = ''; }
+    try { await load(state); } catch (_) {}
     runtime.render();
   },
 };

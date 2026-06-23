@@ -493,6 +493,26 @@ export const actions = {
         runtime.render();
       } catch (_) { /* leave the menu empty; soft-fail */ }
     }
+    // Reflect the current default-for-new-chats so the ★ shows correctly.
+    if (open) {
+      try {
+        const dc = await apiGet('/api/default-chat');
+        state.live = state.live || {};
+        state.live.defaultModel = dc && dc.model;
+        runtime.render();
+      } catch (_) { /* ignore */ }
+    }
+  },
+
+  // ★ Set a model as the default for NEW chats (persists via POST /api/default-chat).
+  setDefaultModel: async (mid) => {
+    const state = runtime.state;
+    if (!state || !mid) return;
+    const item = (state.live && state.live.modelList || []).find((m) => m.mid === mid);
+    state.live = state.live || {};
+    state.live.defaultModel = mid;
+    runtime.render();
+    try { await apiJson('/api/default-chat', { model: mid, endpoint_id: item ? (item.endpointId || '') : '' }); } catch (_) {}
   },
 
   // Pick the chat model. For a NEW chat, createSession() uses it. For the ACTIVE

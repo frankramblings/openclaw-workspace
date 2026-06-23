@@ -111,9 +111,9 @@ function chatSurface(s) {
     </div>`)}
     ${when(s.modelMenuOpen, `
     <div class="slash-menu model-menu">
-      <div class="hd">MODEL</div>
+      <div class="hd">MODEL <span style="float:right;font-weight:400;text-transform:none;color:var(--faint)">★ = default for new chats</span></div>
       ${(s.live && s.live.modelList && s.live.modelList.length)
-        ? map(s.live.modelList, (m) => `<div class="slash-cmd" data-act="setModel" data-arg="${esc(m.mid)}"><span class="name">${esc(m.name)}</span><span class="desc">${esc(m.ep || '')}</span>${m.mid === model ? '<span class="glyph" style="color:var(--green)">✓</span>' : ''}</div>`).join('')
+        ? map(s.live.modelList, (m) => `<div class="slash-cmd" data-act="setModel" data-arg="${esc(m.mid)}"><span class="name">${esc(m.name)}</span><span class="desc">${esc(m.ep || '')}</span>${m.mid === model ? '<span class="glyph" style="color:var(--green)">✓</span>' : ''}<span data-act="setDefaultModel" data-arg="${esc(m.mid)}" title="Set as default for new chats" style="cursor:pointer;padding:0 4px;color:${m.mid === (s.live && s.live.defaultModel) ? 'var(--gold,#e8c268)' : 'var(--faint)'}">★</span></div>`).join('')
         : '<div class="slash-cmd"><span class="desc">Loading…</span></div>'}
     </div>`)}
     <div class="composer${slashOpen ? ' slash' : ''}">

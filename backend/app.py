@@ -749,10 +749,30 @@ async def default_chat():
     # endpoint_url is REQUIRED: chat.js auto-creates the session only when both
     # endpoint_url and model are truthy. It's stored + echoed back to /api/session
     # but never used to route — every turn goes through the bridge regardless.
-    # Land on the primary agent's configured model so the picker opens on it.
-    provider, model = config.default_model()
+    # A user-set preference (POST /api/default-chat → .data/settings.json) wins;
+    # otherwise we land on the primary agent's configured model from openclaw.json.
+    pref = (websearch.load_settings().get("default_chat_model") or {})
+    if pref.get("model"):
+        provider = pref.get("endpoint_id") or config.default_model()[0]
+        model = pref["model"]
+    else:
+        provider, model = config.default_model()
     return {"endpoint_id": provider, "endpoint_url": config.gateway_ws_url(),
             "model": model}
+
+
+@app.post("/api/default-chat")
+async def set_default_chat(payload: dict = Body(default=None)):
+    """Persist the user's preferred default model for NEW web chats. Stored in
+    .data/settings.json (workspace-owned) — does NOT touch the gateway's
+    openclaw.json. Per-chat overrides still go through PATCH /api/session."""
+    payload = payload or {}
+    model = (payload.get("model") or "").strip()
+    if not model:
+        return JSONResponse(status_code=400, content={"error": "model required"})
+    pref = {"model": model, "endpoint_id": (payload.get("endpoint_id") or "").strip()}
+    websearch.save_settings({"default_chat_model": pref})
+    return {"ok": True, **pref}
 
 
 # Auth stubs: single-user/no-auth deployment behind Tailscale. Return a logged-in
@@ -788,6 +808,19 @@ async def auth_settings():
 @app.post("/api/auth/settings")
 async def save_auth_settings(payload: dict = Body(default=None)):
     return websearch.save_settings(payload or {})
+
+
+@app.post("/api/search/test")
+async def search_test(payload: dict = Body(default=None)):
+    """One-shot probe of the configured web-search provider so Settings → Search
+    can show a live OK/error. Runs a real query via websearch.py."""
+    query = ((payload or {}).get("query") or "OpenClaw connectivity test").strip()
+    try:
+        results = await websearch.search(query, count=3)
+        return {"ok": True, "count": len(results or []),
+                "provider": websearch.load_settings().get("search_provider")}
+    except Exception as exc:  # noqa: BLE001 — surface any provider/network error
+        return {"ok": False, "error": f"{exc!r}"}
 
 
 # --- Catch-all for Odysseus feature tabs v1 doesn't implement yet ------------

@@ -160,3 +160,19 @@ You chose "Full config forms," but the backend only supports a slice:
 7. Scroll-to-bottom → **DONE**.
 8. Email search → already client-side (no change).
 The only carry-over is a BACKEND task: write APIs for model-role/model-endpoint config (+ search test) to make the Settings model cards editable.
+
+---
+# Backend A + B (workspace API additions; "C" left to gateway config)
+
+## A — persisted default model — ✅ (backend + frontend; needs restart)
+- **Backend** (`backend/app.py`): `GET /api/default-chat` now honors a user preference from `.data/settings.json` (`default_chat_model`), falling back to `config.default_model()` (openclaw.json). New `POST /api/default-chat {model, endpoint_id}` persists the preference (workspace-owned — does NOT touch the gateway's openclaw.json).
+- **Frontend**: composer model menu shows a ★ per model ("default for new chats"); `setDefaultModel(mid)` → `POST /api/default-chat`; menu loads the current default on open. Per-chat switching unchanged (PATCH session).
+
+## B — search "Test" — ✅ (backend + frontend; needs restart)
+- **Backend**: `POST /api/search/test {query?}` runs a one-shot `websearch.search()` and returns `{ok, count, provider}` or `{ok:false, error}`.
+- **Frontend**: Settings → Web Search "Test" button (`act:'searchTest'`) → POST → alert with OK/count or the error.
+
+## C — provider/endpoint config — left to the gateway (per decision)
+Model providers/endpoints live in the gateway's `openclaw.json` + model registry; the workspace app reflects them read-only. Configure new providers in the gateway, not here.
+
+NOTE: backend routes need a workspace-service restart (`systemctl --user restart openclaw-workspace`) — prod runs without `--reload`.

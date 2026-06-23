@@ -78,7 +78,7 @@ export const PANELS = {
     card({ title: 'Web Search', icon: TAB.search[2], sub: 'Search API used for web search and deep research.', rows: [
       provider('SerpAPI', ['SerpAPI', 'SearXNG', 'DuckDuckGo', 'Brave', 'Google PSE', 'Tavily', 'Serper', 'Disabled']),
       sel('Results', '5'), inp('URL', 'http://localhost:8080'), chips('Fallbacks', ['DuckDuckGo', 'Brave']),
-      btns([{ label: 'Test' }]),
+      btns([{ label: 'Test', act: 'searchTest' }]),
     ] }),
   ],
   integrations: [

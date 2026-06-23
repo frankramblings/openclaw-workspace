@@ -200,6 +200,15 @@ export const actions = {
     apiJson('/api/auth/settings', { search_provider: id }, 'POST').catch(() => {});
   },
 
+  // Search → "Test": one-shot probe of the configured provider (POST /api/search/test).
+  searchTest: async () => {
+    try {
+      const r = await apiJson('/api/search/test', { query: 'OpenClaw connectivity test' });
+      if (r && r.ok) { try { window.alert(`Search OK — ${r.count} results via ${r.provider || 'provider'}.`); } catch (_) {} }
+      else { try { window.alert(`Search test failed: ${(r && r.error) || 'unknown error'}`); } catch (_) {} }
+    } catch (_) { try { window.alert('Search test request failed.'); } catch (e) {} }
+  },
+
   // Brain → "Open Brain": load memories + skills into state.live.brain.
   openBrain: async () => {
     const s = runtime.state;

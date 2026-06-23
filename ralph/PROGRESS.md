@@ -46,3 +46,4 @@
 2026-06-23 01:04 | index.html:642 Reset-this-color (18/18) | verified [-] (theme-popup per-color reset; run :596-642 complete)
 2026-06-23 01:05 | index.html:649 theme-adv-clear | verified [-] (advanced theme-popup override control; not ported)
 2026-06-23 01:05 | index.html:681 harmony-generate-btn | verified [-] (theme-popup harmony generator; not ported)
+2026-06-23 01:05 | index.html:769 Reset-to-text-color | verified [-] (theme-popup effect-color reset; not ported)

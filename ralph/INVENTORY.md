@@ -60,7 +60,7 @@ legacy `js/*.js` module.
 - [-] title="Reset this color" (18 of 18, last) — index.html:642 — theme-popup per-color reset; no per-color customizer in redesign. Removed with the theme-popup. Completes the per-color reset run :596–:642. Same disposition as :596.
 - [-] id=theme-adv-clear ("Clear Advanced Overrides") — index.html:649 — advanced-customize control in the unported theme popup; redesign has no advanced per-element override system (only a single accent). Removed with the theme-popup.
 - [-] id=harmony-generate-btn ("Generate" — color-harmony generator) — index.html:681 — theme-popup customize tool; no harmony/palette-generation feature in redesign. Removed with the theme-popup.
-- [ ] title=Reset to text color  `<button>` — index.html:769
+- [-] title="Reset to text color" (data-reset-effect — effect-color reset) — index.html:769 — theme-popup customize control; no effect-color customizer in redesign (single accent only). Removed with the theme-popup.
 - [ ] id=theme-save-go  `<button>` — index.html:788
 - [ ] id=theme-import-btn  `<button>` — index.html:792
 - [ ] id=theme-export-btn  `<button>` — index.html:793

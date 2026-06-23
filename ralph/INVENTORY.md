@@ -182,7 +182,7 @@ legacy `js/*.js` module.
 - [-] role="button" aria-expanded (class="adm-ep-section-head adm-section-toggle" — admin endpoint accordion header) — index.html:2230 — collapsible-section layout pattern not ported. The redesign settings uses flat cards (no accordion anywhere, surfaces.js); endpoints are shown as a flat list in the Added Models card (settings-data.js:56). Layout simplification. (The endpoint controls themselves being non-interactive is the dead-Settings FINDINGS issue.)
 - [!] id=adm-epLocalTestBtn ("Test" a local model endpoint, admin) — index.html:2245 → PARITY GAP (dead affordance). The redesign Added Models card (settings-data.js:56) lists endpoints read-only — no per-endpoint Test control, and the settings surface is non-interactive anyway. Part of the dead Settings surface / no endpoint management — see FINDINGS (model-picker-add-models-btn:1267, dead Settings).
 - [!] id=adm-epLocalAddBtn ("Add" a local model endpoint, admin) — index.html:2246 → PARITY GAP (missing). No add-endpoint control in the redesign (Added Models card is read-only, settings-data.js:56; settings surface non-interactive). Same as model-picker-add-models-btn:1267. See FINDINGS (dead Settings / no endpoint management).
-- [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2249
+- [-] role="button" aria-expanded (admin endpoint accordion section header, adm-section-toggle) — index.html:2249 — collapsible-section layout pattern not ported (same as :2230). Redesign settings use flat cards; endpoints shown flat in Added Models. Layout simplification.
 - [ ] id=adm-epDiscoverBtn  `<button>` — index.html:2254
 - [ ] id=adm-epOllamaBtn  `<button>` — index.html:2257
 - [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2266

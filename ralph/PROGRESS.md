@@ -70,3 +70,4 @@
 2026-06-23 01:17 | index.html:839 rail-archive | verified [x] parity OK -> Library surface (title=Library/doclib; same as rail-documents)
 2026-06-23 01:18 | index.html:840 rail-memory | verified [!] Brain relocated to Settings card but Open-Brain launcher dead (unreachable); covered by FINDINGS
 2026-06-23 01:19 | index.html:841 rail-notes | verified [x] parity OK -> go:notes (live/notes.js)
+2026-06-23 01:19 | index.html:842 rail-tasks | verified [!] PARITY GAP — no Tasks surface (Inbox is triage, not tasks); covered by FINDINGS

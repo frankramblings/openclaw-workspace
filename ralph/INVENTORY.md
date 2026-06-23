@@ -84,7 +84,7 @@ legacy `js/*.js` module.
 - [x] id=rail-archive (title="Library" — legacy doclib-modal / document archive; modalManager.js:1383) — index.html:839 → PARITY OK. Redesign sibling: the **Library** nav surface (railItem('library') app.js:73 → data-act=`go`/`library`, live/library.js). Same target as rail-documents:831. (NB: not an email-archive — the redesign's dismiss/aiArchive is separate inbox triage.) Real wiring.
 - [!] id=rail-memory ("Brain" — opens legacy memory-modal) — index.html:840 → PARTIAL/BROKEN. No Brain rail item or surface in the redesign; the feature is relocated to the Settings → Brain card (settings-data.js:106), but that card's "Open Brain" launcher is DEAD (no data-act) — so the Brain is unreachable. Present-but-non-functional. Covered by FINDINGS "entire Settings surface buttons unwired" (set-launcher). (Related: close-memory-modal:377 marked [-] for the modal-chrome itself.)
 - [x] id=rail-notes ("Notes") — index.html:841 → PARITY OK. Direct sibling: railItem('notes') (app.js:74) → data-act=`go`/`notes` → `go` action, backed by live/notes.js. Real wiring.
-- [ ] id=rail-tasks  `<button>` — index.html:842
+- [!] id=rail-tasks ("Tasks" — legacy tasks.js) — index.html:842 → PARITY GAP (missing). No tasks railItem or surface in the redesign; only the dangling `sb-tasks` visibility label (settings-data.js:110). The redesign Inbox is notification/email triage, not a task manager. Covered by FINDINGS "Sidebar visibility list advertises surfaces that don't exist."
 - [ ] id=rail-theme  `<button>` — index.html:843
 - [ ] id=rail-settings  `<button>` — index.html:846
 - [ ] id=chats-library-btn  `<button>` — index.html:871

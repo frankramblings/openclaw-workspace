@@ -139,3 +139,4 @@
 2026-06-23 01:59 | index.html:1544 settings-nav-item reminders | verified [x] parity OK -> setSection reminders
 2026-06-23 02:00 | index.html:1549 settings-nav-item brain | verified [x] parity OK -> setSection brain (old tabs map 1:1 to NAV_GROUPS)
 2026-06-23 02:00 | index.html:1553 settings-nav-item scheduled | verified [x] parity OK -> setSection scheduled
+2026-06-23 02:01 | index.html:1559 settings-nav-item appearance | verified [x] parity OK -> setSection appearance

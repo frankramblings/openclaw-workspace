@@ -155,6 +155,8 @@ export async function load(state) {
 
 let streamCtrl = null;       // active POST-stream controller
 let renderTimer = null;      // throttle handle for stream deltas
+let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
+let turn = null;             // per-send activity state (see send())
 
 function throttledRender() {
   if (renderTimer) return;
@@ -169,25 +171,71 @@ function flushRender() {
   runtime.render();
 }
 
-// refresh just the active session's thread/usage from the backend
-async function refreshActive(state) {
+// ---- activity-trail mapping (live SSE → step model) -----------------------
+// Map a tool name to a step kind; present/past-tense labels per state.
+function toolKind(name) {
+  const n = String(name || '').toLowerCase();
+  if (/grep|search|find|\brg\b|glob|ripgrep/.test(n)) return 'grep';
+  if (/web|fetch|browse|http|url|google/.test(n)) return 'web';
+  if (/read|cat|open|view|get_file|load/.test(n)) return 'read';
+  if (/edit|write|patch|str_replace|create|apply|insert|append/.test(n)) return 'edit';
+  if (/bash|shell|run|exec|terminal|command|npm|sh\b/.test(n)) return 'run';
+  return 'generic';
+}
+const PRESENT = { read: 'Reading', grep: 'Searching', edit: 'Editing', run: 'Running', web: 'Searching the web', generic: 'Working' };
+const PAST = { read: 'Read', grep: 'Searched', edit: 'Edited', run: 'Ran', web: 'Searched the web', generic: 'Ran tool' };
+
+function fmtElapsed(ms) { return `${Math.max(0, Math.round((Date.now() - ms) / 1000))}s`; }
+
+function lineColor(line) {
+  const t = String(line).trim();
+  if (t.startsWith('✓')) return 'var(--green)';
+  if (/\b(error|fatal|failed|exception)\b/i.test(t)) return 'var(--red)';
+  if (t.startsWith('#') || t.startsWith('//')) return 'var(--faint)';
+  return '#cfd3da';
+}
+
+function stopElapsed() { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; } }
+function startElapsed() {
+  stopElapsed();
+  elapsedTimer = setInterval(() => {
+    if (turn && turn.activity && turn.activity.status === 'working') {
+      turn.activity.elapsed = fmtElapsed(turn.activity.startMs);
+      runtime.render();
+    } else stopElapsed();
+  }, 500);
+}
+
+function finalizeStep(st) {
+  if (!st || st.state !== 'running') return;
+  st.state = 'done';
+  st.cursor = false;
+  if (st.kind === 'think') {
+    st.label = `Thought for ${Math.max(1, Math.round((Date.now() - st.startMs) / 1000))}s`;
+  } else {
+    st.label = PAST[st.kind] || 'Ran tool';
+    if (st.kind === 'run' && !st.meta) {
+      st.meta = `✓ ${((Date.now() - st.startMs) / 1000).toFixed(1)}s`;
+      st.metaColor = 'var(--green)';
+    }
+  }
+}
+function finalizeTools(a) { if (a) for (const st of a.steps) if (st.kind !== 'think') finalizeStep(st); }
+function finalizeAll(a) { if (a) for (const st of a.steps) finalizeStep(st); }
+
+// after a turn completes, refresh the sidebar + usage but KEEP the optimistic
+// thread (it carries the live activity trail, which history doesn't store).
+async function refreshSidebarUsage(state) {
   const chat = ensureChat(state);
   const id = chat.activeId;
-  if (!id) return;
-  let name;
   try {
     const sessions = await apiGet('/api/sessions');
     const list = Array.isArray(sessions) ? sessions : [];
-    name = list.find((s) => s.id === id)?.name;
     chat.groups = buildGroups(list, id);
-  } catch (_) { /* keep existing groups */ }
-  try {
-    const t = await fetchThread(id, chat.model, name);
-    chat.thread = t.thread;
-    if (t.title) chat.title = t.title;
-    chat.subtitle = t.subtitle;
-    if (t.model) chat.model = t.model;
-  } catch (_) { /* keep existing thread */ }
+    const name = list.find((s) => s.id === id)?.name;
+    if (name) chat.title = name;
+  } catch (_) { /* keep */ }
+  if (Array.isArray(chat.thread)) chat.subtitle = `${chat.thread.length} messages · ${chat.model || ''}`;
   const pct = await fetchUsage(id);
   if (pct != null) chat.usagePct = pct;
   runtime.render();
@@ -285,33 +333,102 @@ export const actions = {
 
     // abort any in-flight send
     if (streamCtrl) { try { streamCtrl.abort(); } catch (_) {} streamCtrl = null; }
+    stopElapsed();
 
-    let asstMsg = null;
-    let got404 = false;
+    // per-turn activity state — an assistant message that accrues the trail
+    turn = { asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), got404: false };
+
+    const ensureAsst = () => {
+      if (!turn.asstMsg) {
+        turn.asstMsg = { id: turn.msgId, role: 'assistant', text: '', time: fmtTime(Date.now()), model: chat.model };
+        chat.thread.push(turn.asstMsg);
+      }
+      return turn.asstMsg;
+    };
+    const ensureActivity = () => {
+      ensureAsst();
+      if (!turn.asstMsg.activity) {
+        turn.asstMsg.activity = { status: 'working', steps: [], startMs: Date.now(), elapsed: '0s' };
+        turn.activity = turn.asstMsg.activity;
+        startElapsed();
+      }
+      return turn.asstMsg.activity;
+    };
+    const newStep = (kind, file, tid) => {
+      const a = ensureActivity();
+      const st = { id: `${turn.msgId}-s${turn.stepN++}`, kind, label: PRESENT[kind] || 'Working', file: file || '', state: 'running', lines: [], startMs: Date.now() };
+      if (kind === 'think') st.label = 'Thinking';
+      a.steps.push(st);
+      if (tid != null) turn.byTid[tid] = st;
+      return st;
+    };
 
     const onEvent = (ev) => {
       if (!ev) return;
+
       if (ev.type === 'done') {
-        flushRender();
-        if (got404) { actions.reloadSessions(); return; }
-        refreshActive(state);
-        return;
-      }
-      if (ev.type === 'error') {
-        if (ev.status === 404) got404 = true;
-        return;
-      }
-      // streamed text delta (skip thinking)
-      if (typeof ev.delta === 'string' && ev.thinking !== true) {
-        if (!asstMsg) {
-          asstMsg = { role: 'assistant', text: '', time: fmtTime(Date.now()), model: chat.model };
-          chat.thread.push(asstMsg);
+        if (turn.thinkStep) finalizeStep(turn.thinkStep);
+        const a = turn.activity;
+        if (a) {
+          finalizeAll(a);
+          a.status = 'done';
+          a.elapsed = fmtElapsed(a.startMs);
+          a.worked = `Worked for ${a.elapsed} · ${a.steps.length} steps`;
         }
-        asstMsg.text += ev.delta;
-        throttledRender();
+        stopElapsed();
+        flushRender();
+        if (turn.got404) { actions.reloadSessions(); turn = null; return; }
+        refreshSidebarUsage(state);
+        turn = null;
+        return;
       }
-      // tool_start / tool_output / agent_step / metrics: not rendered in this
-      // surface — ignored here; the Activity pane handles those elsewhere.
+      if (ev.type === 'error') { if (ev.status === 404) turn.got404 = true; return; }
+
+      // thinking delta → a 'think' step whose body is the reasoning
+      if (typeof ev.delta === 'string' && ev.thinking === true) {
+        ensureActivity();
+        if (!turn.thinkStep || turn.thinkStep.state !== 'running') turn.thinkStep = newStep('think');
+        turn.thinkStep.body = (turn.thinkStep.body || '') + ev.delta;
+        throttledRender();
+        return;
+      }
+      // prose delta → the assistant's answer (tools/thinking are done by now)
+      if (typeof ev.delta === 'string') {
+        if (turn.thinkStep) finalizeStep(turn.thinkStep);
+        if (turn.activity) finalizeTools(turn.activity);
+        ensureAsst();
+        turn.asstMsg.text += ev.delta;
+        throttledRender();
+        return;
+      }
+      // tool start → a running tool step (prior running tools check off)
+      if (ev.type === 'tool_start') {
+        if (turn.thinkStep) finalizeStep(turn.thinkStep);
+        if (turn.activity) finalizeTools(turn.activity);
+        const kind = toolKind(ev.tool);
+        const st = newStep(kind, ev.command || ev.file || ev.path || ev.tool || '', ev.tool_id);
+        st.cursor = true;
+        throttledRender();
+        return;
+      }
+      // tool output → append to the step's detail; exit_code finalizes it
+      if (ev.type === 'tool_output') {
+        let st = (ev.tool_id != null && turn.byTid[ev.tool_id]);
+        if (!st) { for (let i = (turn.activity?.steps.length || 0) - 1; i >= 0; i--) { const c = turn.activity.steps[i]; if (c.kind !== 'think' && c.state === 'running') { st = c; break; } } }
+        if (st) {
+          if (typeof ev.output === 'string' && ev.output) {
+            for (const line of ev.output.split('\n')) st.lines.push({ t: line, c: lineColor(line) });
+          }
+          if (ev.exit_code != null) {
+            if (ev.exit_code !== 0) { st.meta = `exit ${ev.exit_code}`; st.metaColor = 'var(--red)'; }
+            finalizeStep(st);
+            if (ev.exit_code !== 0) st.state = 'error';
+          }
+          throttledRender();
+        }
+        return;
+      }
+      // agent_step / metrics / run_alive / stall: ignored
     };
 
     streamCtrl = postStream(
@@ -319,6 +436,20 @@ export const actions = {
       { message: text, session: sessionId, mode: state.chatMode || 'agent' },
       onEvent,
     );
+  },
+
+  stopRun: () => {
+    if (streamCtrl) { try { streamCtrl.abort(); } catch (_) {} streamCtrl = null; }
+    stopElapsed();
+    if (turn && turn.activity) {
+      const a = turn.activity;
+      finalizeAll(a);
+      a.status = 'done';
+      a.elapsed = fmtElapsed(a.startMs);
+      a.worked = `Stopped after ${a.elapsed} · ${a.steps.length} steps`;
+    }
+    turn = null;
+    runtime.render();
   },
 
   // re-fetch the session list and active thread (used after a 404 on send)

@@ -201,3 +201,4 @@
 2026-06-23 02:29 | new-wiring data-act=mOpenReader | verified [x] WIRED -> live email.js:178 (openAt loads message)
 2026-06-23 02:30 | new-wiring data-act=mOpenSub | verified [x] WIRED -> mobile-app.js:50 (push sub-surface)
 2026-06-23 02:30 | new-wiring data-act=newChat | verified [x] WIRED -> live chat.js:295 (same as rail-new-session)
+2026-06-23 02:31 | new-wiring data-act=openCapture | verified [x] WIRED -> mobile-app.js:61 (opens capture sheet)

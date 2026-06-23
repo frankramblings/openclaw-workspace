@@ -34,7 +34,7 @@ legacy `js/*.js` module.
 - [-] id=skills-bulk-publish — index.html:506 — Skills-tab multi-select bulk-action bar in the removed memory-modal (with skills-select-btn:497). No bulk-skills UI in redesign. Removed with the modal.
 - [-] id=skills-bulk-audit — index.html:507 — Skills-tab multi-select bulk-action bar in the removed memory-modal (sibling of skills-bulk-publish:506). No bulk-skills UI in redesign. Removed with the modal.
 - [-] id=skills-bulk-delete-nonpassing — index.html:508 — Skills-tab multi-select bulk-action bar in the removed memory-modal (sibling of :506/:507). No bulk-skills UI in redesign. Removed with the modal.
-- [ ] id=skills-bulk-delete  `<button>` — index.html:509
+- [-] id=skills-bulk-delete — index.html:509 — last button of the Skills-tab multi-select bulk-action bar in the removed memory-modal (:506–:509). No bulk-skills UI in redesign. Removed with the modal. (Completes the memory-modal cluster :377–:509.)
 - [ ] id=skills-bulk-cancel  `<button>` — index.html:510
 - [ ] id=theme-opacity-wrap  `<button>` — index.html:567
 - [ ] id=close-theme-popup  `<button>` — index.html:571

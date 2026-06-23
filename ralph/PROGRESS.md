@@ -11,3 +11,4 @@
 2026-06-23 00:51 | index.html:404 memory-tidy-btn | verified [-] (memory-modal toolbar; no dedupe sibling)
 2026-06-23 00:52 | index.html:408 memory-cat-chip | verified [-] (memory-modal browse filter; no redesign browse list)
 2026-06-23 00:52 | index.html:414 memory-bulk-delete | verified [-] (memory-modal multi-select bar; no redesign equivalent)
+2026-06-23 00:52 | index.html:415 memory-bulk-cancel | verified [-] (memory-modal multi-select bar)

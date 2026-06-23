@@ -25,7 +25,7 @@ legacy `js/*.js` module.
 - [-] id=memory-tidy-btn ("AI tidy: deduplicate and clean up memories") — index.html:404 — inside removed memory-modal toolbar; no tidy/dedupe sibling in redesign Brain card. Removed with the modal.
 - [-] class=memory-cat-chip active (data-cat="all", category filter) — index.html:408 — category-filter chip in the removed memory-modal browse list; no browse list in redesign Brain card, so no sibling. (The only redesign "category" ref is an unrelated Danger-Zone wipe note, settings-data.js:144.) Removed with the modal.
 - [-] id=memory-bulk-delete (bulk-action bar) — index.html:414 — appears only in the removed memory-modal's multi-select bar (paired with memory-select-btn:403). No browse/select UI in redesign Brain card. Removed with the modal.
-- [ ] id=memory-bulk-cancel  `<button>` — index.html:415
+- [-] id=memory-bulk-cancel ("Cancel (Esc)", exits multi-select) — index.html:415 — sibling of memory-bulk-delete:414 in the removed memory-modal multi-select bar. Removed with the modal.
 - [ ] id=memory-import-btn  `<button>` — index.html:427
 - [ ] id=memory-export-btn  `<button>` — index.html:428
 - [ ] id=add-skill-btn  `<button>` — index.html:463

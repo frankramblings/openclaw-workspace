@@ -50,3 +50,4 @@
 2026-06-23 01:06 | index.html:788 theme-save-go | verified [-] (theme-popup preset-save; no custom-theme save in redesign)
 2026-06-23 01:06 | index.html:792 theme-import-btn | verified [-] (theme-popup JSON import; no theme-only import in redesign)
 2026-06-23 01:06 | index.html:793 theme-export-btn | verified [-] (theme-popup JSON export; no theme-only export in redesign)
+2026-06-23 01:06 | index.html:797 theme-import-go | verified [-] (theme-popup import Apply; not ported)

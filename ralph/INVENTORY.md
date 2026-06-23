@@ -64,7 +64,7 @@ legacy `js/*.js` module.
 - [-] id=theme-save-go ("Save" — saves a custom theme/preset) — index.html:788 — theme-popup preset-save flow; redesign has no custom-theme save (accent is applied/persisted inline via live/settings setAccent, no named presets). Removed with the theme-popup.
 - [-] id=theme-import-btn ("Import a theme from JSON") — index.html:792 — theme-popup-specific I/O. Redesign has no theme-only import; the general Settings "Data Backup → Import Data" (settings-data.js:143) covers all user data (and is itself dead — FINDINGS), not a theme-JSON import. Removed with the theme-popup.
 - [-] id=theme-export-btn ("Export current colors as JSON") — index.html:793 — theme-popup-specific I/O (export sibling of theme-import-btn:792). No theme-only export in redesign (general Data Backup Export covers all-data, is dead). Removed with the theme-popup.
-- [ ] id=theme-import-go  `<button>` — index.html:797
+- [-] id=theme-import-go ("Apply" — confirms theme-JSON import) — index.html:797 — sub-control of the theme-popup import flow (theme-import-btn:792). No theme import in redesign. Removed with the theme-popup.
 - [ ] id=theme-import-cancel  `<button>` — index.html:798
 - [ ] id=theme-reset-btn  `<button>` — index.html:801
 - [ ] id=mobile-menu-btn  `<button>` — index.html:807

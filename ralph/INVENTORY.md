@@ -179,7 +179,7 @@ legacy `js/*.js` module.
 - [!] id=set-reminders-open-integrations (`<a href="#">Integrations</a>` — cross-link from Reminders settings to the Integrations section) — index.html:2164 → PARITY GAP (missing, MINOR). The redesign reminders panel (settings-data.js:100) has cards but no Integrations cross-link. No setSection cross-nav from card content anyway (dead Settings surface). Low-priority convenience. See FINDINGS (dead Settings surface).
 - [!] id=set-reminder-test-btn ("Fire a test reminder") — index.html:2187 → PARITY GAP (dead affordance). Redesign reminders panel has a "Test" card (settings-data.js:103) but its button is a dead `set-btn` (no data-act, no test action). Part of the dead Settings surface — see FINDINGS.
 - [!] id=adm-addBtn ("Add User" — admin user management) — index.html:2216 → PARITY GAP (dead affordance). Redesign Users section "Add User" card (settings-data.js:140) renders inp() fields + a dead `set-btn` "Add User" (no data-act, no add-user handler). Part of the dead Settings surface — see FINDINGS.
-- [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2230
+- [-] role="button" aria-expanded (class="adm-ep-section-head adm-section-toggle" — admin endpoint accordion header) — index.html:2230 — collapsible-section layout pattern not ported. The redesign settings uses flat cards (no accordion anywhere, surfaces.js); endpoints are shown as a flat list in the Added Models card (settings-data.js:56). Layout simplification. (The endpoint controls themselves being non-interactive is the dead-Settings FINDINGS issue.)
 - [ ] id=adm-epLocalTestBtn  `<button>` — index.html:2245
 - [ ] id=adm-epLocalAddBtn  `<button>` — index.html:2246
 - [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2249

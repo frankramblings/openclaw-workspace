@@ -165,3 +165,4 @@
 2026-06-23 02:15 | index.html:2164 set-reminders-open-integrations | verified [!] minor — no Integrations cross-link in redesign reminders
 2026-06-23 02:15 | index.html:2187 set-reminder-test-btn | verified [!] dead reminders Test btn; dead-settings FINDINGS
 2026-06-23 02:15 | index.html:2216 adm-addBtn | verified [!] dead Add-User btn; dead-settings FINDINGS
+2026-06-23 02:16 | index.html:2230 adm-ep accordion toggle | verified [-] accordion layout not ported (flat cards in redesign)

@@ -151,3 +151,4 @@
 2026-06-23 02:07 | index.html:1767 set-ttsPreviewBtn | verified [-] TTS not ported (no TTS settings; consistent with vestigial composer TTS :1196)
 2026-06-23 02:08 | index.html:1800 search-provider-btn | verified [!] provider/select rows display-only; dead-settings FINDINGS extended
 2026-06-23 02:09 | index.html:1816 set-searchTestBtn | verified [!] dead set-btn Test; dead-settings FINDINGS
+2026-06-23 02:09 | index.html:1855 settings-open-brain | verified [!] dead Open-Brain launcher (set-launcher); FINDINGS

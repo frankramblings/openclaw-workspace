@@ -251,7 +251,7 @@ legacy `js/*.js` module.
 
 ### data-model inputs
 - [x] data-model=`captureDraft` — mobile/mobile-sheets.js:61 → WIRED (binding). Two-way bound via the delegated input listener (app.js:211: state[field]=t.value). Typing updates state.captureDraft + re-renders. CAVEAT: the value is never *consumed* — the "Send to Gary" button discards it (see FINDINGS "Mobile quick-capture discards input"). The data-model binding itself is correct.
-- [ ] data-model=`draft` — mobile/mobile-surfaces.js:63
+- [x] data-model=`draft` — mobile/mobile-surfaces.js:63 → WIRED & functional. Two-way bound via the delegated input listener (app.js:211: state.draft=t.value, clears forceSlash on typing). state.draft is consumed by send() (chat.js:309) → POST /api/chat_stream. Bound on the chat composer textarea (desktop surfaces.js:92 + mobile :63). Real + consumed.
 - [ ] data-model=`quick` — mobile/mobile-surfaces.js:178
 - [ ] data-model=`researchQuery` — surfaces.js:300
 

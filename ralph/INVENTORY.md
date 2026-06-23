@@ -157,7 +157,7 @@ legacy `js/*.js` module.
 - [x] class=settings-nav-item (data-settings-tab="shortcuts") — index.html:1563 → PARITY OK. Redesign sibling: set-nav-item setSection `shortcuts` (surfaces.js:422; in NAV_GROUPS). Section nav wired. (NB: the shortcuts *content* card lists keybindings that aren't wired — see incognito/shortcuts FINDINGS — but the nav item itself works.)
 - [x] class=settings-nav-item (data-settings-tab="account") — index.html:1569 → PARITY OK. Redesign sibling: set-nav-item setSection `account` (surfaces.js:422; in NAV_GROUPS). Section nav wired.
 - [x] class=settings-nav-item admin-only (data-settings-tab="tools") — index.html:1575 → PARITY OK. Redesign sibling: set-nav-item setSection `tools` in the ADMIN NAV_GROUP (settings-data.js:162 `{label:'ADMIN', ids:['tools','users','system']}`, surfaces.js:422). Section nav wired.
-- [ ] class=settings-nav-item admin-only  `<button>` — index.html:1579
+- [x] class=settings-nav-item admin-only (data-settings-tab="users") — index.html:1579 → PARITY OK. Redesign sibling: set-nav-item setSection `users` in the ADMIN NAV_GROUP (settings-data.js:162). Section nav wired.
 - [ ] class=settings-nav-item admin-only  `<button>` — index.html:1583
 - [ ] id=set-defaultAddFallback  `<button>` — index.html:1606
 - [ ] id=set-utilityAddFallback  `<button>` — index.html:1623

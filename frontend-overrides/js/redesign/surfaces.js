@@ -88,6 +88,13 @@ function chatSurface(s) {
       <div class="hd">COMMANDS</div>
       ${map(filtered, (c) => `<div class="slash-cmd" data-act="pickSlash" data-arg="${esc(c.name)}"><span class="glyph" style="color:${c.color}">${c.glyph}</span><span class="name">${esc(c.name)}</span><span class="desc">${esc(c.desc)}</span></div>`)}
     </div>`)}
+    ${when(s.modelMenuOpen, `
+    <div class="slash-menu model-menu">
+      <div class="hd">MODEL</div>
+      ${(s.live && s.live.modelList && s.live.modelList.length)
+        ? map(s.live.modelList, (m) => `<div class="slash-cmd" data-act="setModel" data-arg="${esc(m.mid)}"><span class="name">${esc(m.name)}</span><span class="desc">${esc(m.ep || '')}</span>${m.mid === model ? '<span class="glyph" style="color:var(--green)">✓</span>' : ''}</div>`).join('')
+        : '<div class="slash-cmd"><span class="desc">Loading…</span></div>'}
+    </div>`)}
     <div class="composer${slashOpen ? ' slash' : ''}">
       <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message Gary…   ( type / for commands )">${esc(d)}</textarea>
       <div class="composer-row">
@@ -95,7 +102,7 @@ function chatSurface(s) {
         <div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
         <div class="oc-spacer"></div>
         <button class="pill-btn ocbtn" title="Reasoning effort">Normal</button>
-        <button class="model-btn ocbtn" title="Switch model"><span class="glyph">A\\</span>${esc(model)}${I.chevDownSm()}</button>
+        <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="glyph">A\\</span>${esc(model)}${I.chevDownSm()}</button>
         <div class="mode-toggle">
           <button class="${agent ? 'active-agent' : ''}" data-act="setMode" data-arg="agent">Agent</button>
           <button class="${!agent ? 'active-chat' : ''}" data-act="setMode" data-arg="chat">Chat</button>

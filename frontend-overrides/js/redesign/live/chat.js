@@ -461,4 +461,38 @@ export const actions = {
     } catch (_) { /* keep current */ }
     runtime.render();
   },
+
+  // Composer model picker: open/close the menu, lazily loading the catalog
+  // from /api/models (items → flattened {mid, name}).
+  toggleModelMenu: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    const open = !state.modelMenuOpen;
+    state.modelMenuOpen = open;
+    runtime.render();
+    if (open && !(state.live && state.live.modelList)) {
+      try {
+        const data = await apiGet('/api/models');
+        const items = (data && data.items) || [];
+        const list = [];
+        for (const it of items) {
+          const mids = it.models || [];
+          const disp = it.models_display || it.models || [];
+          mids.forEach((mid, i) => list.push({ mid, name: disp[i] || mid, ep: it.endpoint_name }));
+        }
+        state.live = state.live || {};
+        state.live.modelList = list;
+        runtime.render();
+      } catch (_) { /* leave the menu empty; soft-fail */ }
+    }
+  },
+
+  // Pick the chat model (used by createSession on the next new chat). Closes menu.
+  setModel: (mid) => {
+    const state = runtime.state;
+    if (!state || !mid) return;
+    ensureChat(state).model = mid;
+    state.modelMenuOpen = false;
+    runtime.render();
+  },
 };

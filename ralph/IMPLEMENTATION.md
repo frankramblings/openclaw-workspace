@@ -20,3 +20,7 @@ Tracks the build-out from `RECOMMENDATIONS.md`. Each entry: what was wired + the
 - **Update Password** — Change Password card fields bound to `pwCurrent/pwNew/pwConfirm` (type=password); button `act:'changePassword'` → `live/settings.js` validates (≥8, match) → `POST /api/auth/change-password {current_password, new_password}` (body matches legacy) → clears fields.
 - **Add User** — Username/Password bound (`newUsername/newPassword`); admin from the `newAdmin` toggle; button `act:'addUser'` → `POST /api/auth/users {username, password, is_admin}` (matches legacy admin.js:289).
 - Verified: node --check; synced; deployed output carries handlers + bound inputs.
+
+## P2 — core composer — partial (model picker done; effort + attach next)
+- **Model picker** — composer `.model-btn` now `data-act="toggleModelMenu"`; a popover (reusing `.slash-menu` styling) lists models. Handlers in `live/chat.js`: `toggleModelMenu` lazily fetches `GET /api/models` and flattens `items[].models`/`models_display` → `state.live.modelList=[{mid,name,ep}]`; `setModel(mid)` sets `state.live.chat.model` (used by `createSession` on next new chat) + closes. Soft-fails to an empty menu.
+- TODO next: reasoning-effort pill, and **Attach Files** (`POST /api/upload` → attach to next send).

@@ -180,7 +180,7 @@ legacy `js/*.js` module.
 - [!] id=set-reminder-test-btn ("Fire a test reminder") — index.html:2187 → PARITY GAP (dead affordance). Redesign reminders panel has a "Test" card (settings-data.js:103) but its button is a dead `set-btn` (no data-act, no test action). Part of the dead Settings surface — see FINDINGS.
 - [!] id=adm-addBtn ("Add User" — admin user management) — index.html:2216 → PARITY GAP (dead affordance). Redesign Users section "Add User" card (settings-data.js:140) renders inp() fields + a dead `set-btn` "Add User" (no data-act, no add-user handler). Part of the dead Settings surface — see FINDINGS.
 - [-] role="button" aria-expanded (class="adm-ep-section-head adm-section-toggle" — admin endpoint accordion header) — index.html:2230 — collapsible-section layout pattern not ported. The redesign settings uses flat cards (no accordion anywhere, surfaces.js); endpoints are shown as a flat list in the Added Models card (settings-data.js:56). Layout simplification. (The endpoint controls themselves being non-interactive is the dead-Settings FINDINGS issue.)
-- [ ] id=adm-epLocalTestBtn  `<button>` — index.html:2245
+- [!] id=adm-epLocalTestBtn ("Test" a local model endpoint, admin) — index.html:2245 → PARITY GAP (dead affordance). The redesign Added Models card (settings-data.js:56) lists endpoints read-only — no per-endpoint Test control, and the settings surface is non-interactive anyway. Part of the dead Settings surface / no endpoint management — see FINDINGS (model-picker-add-models-btn:1267, dead Settings).
 - [ ] id=adm-epLocalAddBtn  `<button>` — index.html:2246
 - [ ] role="button" tabindex="0" aria-expanded  `<role=">` — index.html:2249
 - [ ] id=adm-epDiscoverBtn  `<button>` — index.html:2254

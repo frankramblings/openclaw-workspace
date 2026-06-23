@@ -241,7 +241,7 @@ legacy `js/*.js` module.
 - [x] data-act=`toggleComp` — companion.js:108 → WIRED. Handler app.js:143 (toggles state.compHidden — hide/show the companion panel). Bound to the panel "Hide" ctl (companion.js:108) + collapsed "Show" reveal (:118). Verified at we-collapse:1387 / we-reopen:1397.
 - [x] data-act=`toggleFs` — companion.js:38 → WIRED. Handler app.js:144 (toggles state.fsOpen[path] — expand/collapse a workspace file-tree folder). The tree flattener honors fsOpen (companion.js:14–22). Bound to fs-dir rows. Real expand/collapse.
 - [x] data-act=`toggleRail` — app.js:62 → WIRED. Handler app.js:126 (toggles state.railExpanded — collapse/expand the left sidebar). Bound to the avatar (app.js:62) + rail collapse button (app.js:66). Verified at hamburger-btn:809 / sidebar-toggle-btn:816.
-- [ ] data-act=`toggleResCtl` — surfaces.js:287
+- [x] data-act=`toggleResCtl` — surfaces.js:287 → WIRED. Handler app.js:147 (toggles state.resOpenCtl for a given key — opens/closes a Deep Research config dropdown). Bound to the research control headers; pairs with pickResOpt. Real open/close.
 - [ ] data-act=`toggleSlash` — surfaces.js:94
 - [ ] data-act=`toggleSplit` — companion.js:107
 - [ ] data-act=`toggleStep` — chat-activity.js:63

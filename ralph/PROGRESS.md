@@ -221,3 +221,4 @@
 2026-06-23 02:39 | new-wiring data-act=toggleComp | verified [x] WIRED -> app.js:143
 2026-06-23 02:39 | new-wiring data-act=toggleFs | verified [x] WIRED -> app.js:144 (expand/collapse folder)
 2026-06-23 02:40 | new-wiring data-act=toggleRail | verified [x] WIRED -> app.js:126 (verified at hamburger-btn)
+2026-06-23 02:40 | new-wiring data-act=toggleResCtl | verified [x] WIRED -> app.js:147

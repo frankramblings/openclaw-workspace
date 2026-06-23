@@ -81,3 +81,4 @@
 2026-06-23 01:24 | index.html:917 session-bulk-cancel | verified [!] PARITY GAP — session multi-select cancel; covered by session-management FINDINGS
 2026-06-23 01:25 | index.html:955 email-compose-btn | verified [!] PARITY GAP — +New email dead (no data-act). Logged SYSTEMIC FINDINGS: ~16 per-surface action buttons unwired.
 2026-06-23 01:26 | index.html:1036 library-new-doc-btn | verified [!] PARITY GAP — no New-document in redesign Library (read-only artifacts); plausibly intentional, deferred
+2026-06-23 01:27 | index.html:1085 user-bar-settings | verified [-] redundant settings shortcut; settings reachable via rail-settings ([x])

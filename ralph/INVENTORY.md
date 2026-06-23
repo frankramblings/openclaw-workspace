@@ -41,7 +41,7 @@ legacy `js/*.js` module.
 - [-] data-tab="theme-tab-browse" (Browse-presets tab of the theme popup) — index.html:575 — internal tab of the unported theme popup. Redesign has no preset browser (only inline accent swatches). Removed with the theme-popup. See FINDINGS (theme picker unbuilt).
 - [-] data-tab="theme-tab-customize" (Customize tab of the theme popup) — index.html:576 — internal tab of the unported theme popup. The redesign keeps a *reduced* slice of "customize" as inline accent swatches in settings (setAccent / accents()), but not the full per-color customize panel or the tabbed popup. Removed with the theme-popup. See FINDINGS.
 - [-] title="Reset this color" (Background, 1 of 18 per-color resets at :596–:642) — index.html:596 — per-color reset in the theme popup's Customize "Colors" panel. Redesign has only a single inline **accent** swatch (setAccent / accents()), not a per-color customizer (bg/text/panel/sidebar/border/…), so no sibling. Removed with the theme-popup.
-- [ ] title=Reset this color  `<button>` — index.html:597
+- [-] title="Reset this color" (Text, 2 of 18) — index.html:597 — theme-popup per-color reset; no per-color customizer in redesign (single accent swatch only). Removed with the theme-popup. Same disposition as :596.
 - [ ] title=Reset this color  `<button>` — index.html:598
 - [ ] title=Reset this color  `<button>` — index.html:599
 - [ ] title=Reset this color  `<button>` — index.html:600

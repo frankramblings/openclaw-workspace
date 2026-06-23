@@ -89,3 +89,4 @@
 2026-06-23 01:32 | index.html:1173 overflow-attach-btn | verified [!] PARITY GAP — no composer file-attach; logged Chat Bar FINDINGS (advertises nonexistent tools)
 2026-06-23 01:33 | index.html:1177 overflow-doc-btn | verified [!] composer doc-editor button gone; partial via Notes+/note,/split; Chat Bar FINDINGS
 2026-06-23 01:33 | index.html:1183 overflow-rag-btn | verified [!] PARITY GAP — no RAG tool in redesign (vector store persists server-side); Chat Bar FINDINGS
+2026-06-23 01:34 | index.html:1196 overflow-tts-btn | verified [-] old button already hidden(display:none) in baseline; no active feature; redesign has no TTS

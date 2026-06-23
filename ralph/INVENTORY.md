@@ -80,7 +80,7 @@ legacy `js/*.js` module.
 - [!] id=rail-cookbook ("Cookbook" — legacy cookbook*.js suite) — index.html:835 → PARITY GAP (missing). No cookbook railItem or surface in the redesign; only the dangling `sb-cookbook` visibility label (settings-data.js:110). Covered by the FINDINGS entry "Sidebar visibility list advertises surfaces that don't exist."
 - [x] id=rail-research ("Deep Research") — index.html:836 → PARITY OK. Direct sibling: railItem('research') (app.js:72) → data-act=`go`/`research` → `go` action, backed by live/research.js (+ startResearch/resetResearch actions). Real wiring.
 - [x] id=rail-email ("Email") — index.html:837 → PARITY OK. Direct sibling: railItem('email') (app.js:70, with unread nav-count badge) → data-act=`go`/`email` → `go` action, backed by live/email.js. Real wiring.
-- [ ] id=rail-gallery  `<button>` — index.html:838
+- [!] id=rail-gallery ("Gallery" — legacy gallery.js/galleryEditor.js) — index.html:838 → PARITY GAP (missing). No gallery railItem or image-browse surface in the redesign; only the dangling `sb-gallery` visibility label + a "Wipe all gallery" danger button (settings-data.js:151 — so gallery DATA persists server-side but has no browse UI). Library surface is artifacts/docs, not an image gallery. Covered by FINDINGS "Sidebar visibility list advertises surfaces that don't exist."
 - [ ] id=rail-archive  `<button>` — index.html:839
 - [ ] id=rail-memory  `<button>` — index.html:840
 - [ ] id=rail-notes  `<button>` — index.html:841

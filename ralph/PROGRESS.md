@@ -66,3 +66,4 @@
 2026-06-23 01:15 | index.html:835 rail-cookbook | verified [!] PARITY GAP — no Cookbook surface (only sb-cookbook label); covered by existing FINDINGS
 2026-06-23 01:16 | index.html:836 rail-research | verified [x] parity OK -> go:research (live/research.js)
 2026-06-23 01:16 | index.html:837 rail-email | verified [x] parity OK -> go:email (live/email.js)
+2026-06-23 01:17 | index.html:838 rail-gallery | verified [!] PARITY GAP — no Gallery browse surface (data persists via Wipe-gallery); covered by FINDINGS

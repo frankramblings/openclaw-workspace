@@ -177,3 +177,4 @@
 2026-06-23 02:19 | index.html:2305 adm-epApiCancelTestBtn | verified [!] no endpoint test flow in redesign; FINDINGS
 2026-06-23 02:20 | index.html:2306 adm-epAddBtn | verified [!] no add-API-endpoint in redesign; FINDINGS
 2026-06-23 02:20 | index.html:2341 unified-intg-add-btn | verified [!] dead "+ Add Integration" set-btn; dead-settings FINDINGS
+2026-06-23 02:21 | index.html:2362 adm-exportDataBtn | verified [!] dead Export Data set-btn; dead-settings FINDINGS

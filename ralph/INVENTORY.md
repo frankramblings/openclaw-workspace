@@ -220,7 +220,7 @@ legacy `js/*.js` module.
 - [x] data-act=`mGo` — mobile/mobile-surfaces.js:23 → WIRED. Handler mobile-app.js:49 (sets state.mTab, clears mSub/mReader/keyboard, closeSheets()). The primary mobile nav — bound to the bottom tab bar (renderTabBar) + More-hub items. Real state change + re-render.
 - [x] data-act=`mOpenReader` — mobile/mobile-surfaces.js:127 → WIRED & functional. Handler: mock mobile-app.js:56 (selEmail + mReader=true) + LIVE override email.js:178 (sets mReader, calls openAt(i) → loads the full message body). Bound to mobile email rows. Real data load.
 - [x] data-act=`mOpenSub` — mobile/mobile-surfaces.js:188 → WIRED. Handler mobile-app.js:50 (pushes a More-hub sub-surface via state.mSub=id; special-cases 'scheduled' → settings + setSection). Bound to the More-hub grid cards. PUSHED_SURFACES (research/library/notes/settings) then render via renderCenter. Real nav.
-- [ ] data-act=`newChat` — mobile/mobile-surfaces.js:55
+- [x] data-act=`newChat` — mobile/mobile-surfaces.js:55 → WIRED & functional. Same handler verified at rail-new-session:826 — mock app.js:128 + LIVE override chat.js:295 (resets activeId/thread/title for a fresh conversation; server session created on first send). Mobile binding: m-icon-btn "New chat".
 - [ ] data-act=`openCapture` — mobile/mobile-surfaces.js:30
 - [ ] data-act=`openCompanion` — mobile/mobile-surfaces.js:58
 - [ ] data-act=`pickResOpt` — surfaces.js:284

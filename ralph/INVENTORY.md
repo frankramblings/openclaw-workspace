@@ -16,7 +16,7 @@ legacy `js/*.js` module.
 ## Old → New parity
 
 - [-] <a href="tel:..."> — index.html:23 — false positive: regex matched text *inside an HTML comment* (not a live element). The real functional intent nearby — the `format-detection` telephone=no meta — HAS parity in index-redesign.html:9.
-- [ ] id=close-memory-modal  `<button>` — index.html:377
+- [-] id=close-memory-modal — index.html:377 — modal UX intentionally replaced: the Brain feature is reified as a Settings → Brain card (settings-data.js:106), so the standalone modal + its ✖ close button are gone by design. BUT the card's "Open Brain" launcher is unwired — see FINDINGS + new-wiring row `set-launcher`.
 - [ ] class=memory-tab active  `<button>` — index.html:381
 - [ ] class=memory-tab  `<button>` — index.html:382
 - [ ] class=memory-tab  `<button>` — index.html:383
@@ -254,3 +254,6 @@ legacy `js/*.js` module.
 - [ ] data-model=`draft` — mobile/mobile-surfaces.js:63
 - [ ] data-model=`quick` — mobile/mobile-surfaces.js:178
 - [ ] data-model=`researchQuery` — surfaces.js:300
+
+### non-data-act clickables (found during audit; missed at seed)
+- [!] `<button class="set-launcher">` (settings card launcher: "Open Brain" / "Open Scheduled jobs" / "Open theme picker") — surfaces.js:479 — NO `data-act`, no class handler → dead. See FINDINGS.

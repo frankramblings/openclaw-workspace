@@ -209,7 +209,7 @@ legacy `js/*.js` module.
 ### data-act handlers
 - [x] data-act=`clearQuick` — mobile/mobile-surfaces.js:178 → WIRED & functional. Handler: mock app.js:174 + LIVE override calendar.js:310 (parses quick-add via /api/calendar/quick-parse, creates event via POST /api/calendar/events, clears input, reloads). Bound desktop (surfaces.js:260 "↵ Add") + mobile quickadd.
 - [x] data-act=`closeCapture` — mobile/mobile-sheets.js:57 → WIRED. Handler mobile-app.js:62 (sets quickCaptureOpen=false). Correct for the scrim (:57) and Cancel (:60). BUT note: the "Send to Gary" button (:66) is ALSO wired to closeCapture — so it just dismisses without submitting; `captureDraft` is never read/sent. The closeCapture data-act itself is wired; the Send-to-Gary no-op is logged separately. See FINDINGS "Mobile quick-capture discards input."
-- [ ] data-act=`closeCompanion` — mobile/mobile-sheets.js:34
+- [x] data-act=`closeCompanion` — mobile/mobile-sheets.js:34 → WIRED. Handler mobile-app.js:59 (sets companionSheetOpen=false, closes the mobile companion sheet). Bound to scrim (:34) + close-X (:42). Real state change + re-render.
 - [ ] data-act=`compTab` — companion.js:103
 - [ ] data-act=`companionTab` — mobile/mobile-sheets.js:39
 - [ ] data-act=`dismiss` — mobile/mobile-surfaces.js:87

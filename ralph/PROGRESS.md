@@ -125,3 +125,4 @@
 2026-06-23 01:51 | index.html:1391 we-tab-artifacts | verified [-] Artifacts tab relocated to Library surface
 2026-06-23 01:51 | index.html:1397 we-reopen | verified [x] parity OK -> toggleComp reveal (companion.js:118)
 2026-06-23 01:52 | index.html:1398 scroll-bottom-btn | verified [!] minor PARITY GAP — no scroll-to-bottom in redesign; logged FINDINGS (low priority)
+2026-06-23 01:53 | index.html:1473 close-rename-session | verified [-] rename-session-modal chrome removed with unported rename feature

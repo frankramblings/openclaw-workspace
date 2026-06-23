@@ -19,8 +19,8 @@ const state = {
   railExpanded: true,
   // chat
   draft: '', forceSlash: false, chatMode: 'agent',
-  // companion
-  compTab: null, compSplit: false, compHidden: false,
+  // companion (collapsed to the reveal strip by default)
+  compTab: null, compSplit: false, compHidden: true,
   fsOpen: { data: true, 'data/skills': false, documents: true, notes: false, research: false },
   // research
   researchQuery: '', research: 'idle', resOpenCtl: null,

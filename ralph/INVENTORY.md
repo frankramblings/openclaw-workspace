@@ -43,7 +43,7 @@ legacy `js/*.js` module.
 - [-] title="Reset this color" (Background, 1 of 18 per-color resets at :596–:642) — index.html:596 — per-color reset in the theme popup's Customize "Colors" panel. Redesign has only a single inline **accent** swatch (setAccent / accents()), not a per-color customizer (bg/text/panel/sidebar/border/…), so no sibling. Removed with the theme-popup.
 - [-] title="Reset this color" (Text, 2 of 18) — index.html:597 — theme-popup per-color reset; no per-color customizer in redesign (single accent swatch only). Removed with the theme-popup. Same disposition as :596.
 - [-] title="Reset this color" (Panel, 3 of 18) — index.html:598 — theme-popup per-color reset; no per-color customizer in redesign. Removed with the theme-popup. Same disposition as :596.
-- [ ] title=Reset this color  `<button>` — index.html:599
+- [-] title="Reset this color" (Sidebar, 4 of 18) — index.html:599 — theme-popup per-color reset; no per-color customizer in redesign. Removed with the theme-popup. Same disposition as :596.
 - [ ] title=Reset this color  `<button>` — index.html:600
 - [ ] title=Reset this color  `<button>` — index.html:601
 - [ ] title=Reset this color  `<button>` — index.html:611

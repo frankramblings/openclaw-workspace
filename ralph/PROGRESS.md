@@ -29,3 +29,4 @@
 2026-06-23 01:00 | index.html:596 Reset-this-color (Background, 1/18) | verified [-] (theme-popup per-color reset; redesign has single accent swatch only)
 2026-06-23 01:00 | index.html:597 Reset-this-color (Text, 2/18) | verified [-] (theme-popup per-color reset)
 2026-06-23 01:00 | index.html:598 Reset-this-color (Panel, 3/18) | verified [-] (theme-popup per-color reset)
+2026-06-23 01:01 | index.html:599 Reset-this-color (Sidebar, 4/18) | verified [-] (theme-popup per-color reset)

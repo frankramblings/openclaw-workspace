@@ -243,7 +243,7 @@ legacy `js/*.js` module.
 - [x] data-act=`toggleRail` — app.js:62 → WIRED. Handler app.js:126 (toggles state.railExpanded — collapse/expand the left sidebar). Bound to the avatar (app.js:62) + rail collapse button (app.js:66). Verified at hamburger-btn:809 / sidebar-toggle-btn:816.
 - [x] data-act=`toggleResCtl` — surfaces.js:287 → WIRED. Handler app.js:147 (toggles state.resOpenCtl for a given key — opens/closes a Deep Research config dropdown). Bound to the research control headers; pairs with pickResOpt. Real open/close.
 - [x] data-act=`toggleSlash` — surfaces.js:94 → WIRED. Handler app.js:131 (toggles state.forceSlash — opens/closes the slash-command palette). Bound to the composer "+" / "More tools" button; pairs with pickSlash. Verified at overflow-plus-btn:1166.
-- [ ] data-act=`toggleSplit` — companion.js:107
+- [x] data-act=`toggleSplit` — companion.js:107 → WIRED. Handler app.js:142 (toggles state.compSplit — the companion split layout, terminal over files). Bound to the comp-ctl split button. Real layout toggle.
 - [ ] data-act=`toggleStep` — chat-activity.js:63
 - [ ] data-act=`toggleTrail` — chat-activity.js:112
 - [ ] data-act=`toggleUi` — surfaces.js:447

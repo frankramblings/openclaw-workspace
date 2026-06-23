@@ -203,3 +203,4 @@
 2026-06-23 02:30 | new-wiring data-act=newChat | verified [x] WIRED -> live chat.js:295 (same as rail-new-session)
 2026-06-23 02:31 | new-wiring data-act=openCapture | verified [x] WIRED -> mobile-app.js:61 (opens capture sheet)
 2026-06-23 02:31 | new-wiring data-act=openCompanion | verified [x] WIRED -> mobile-app.js:58
+2026-06-23 02:32 | new-wiring data-act=pickResOpt | verified [x] WIRED -> app.js:148 (sets resCfg)

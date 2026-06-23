@@ -223,7 +223,7 @@ legacy `js/*.js` module.
 - [x] data-act=`newChat` — mobile/mobile-surfaces.js:55 → WIRED & functional. Same handler verified at rail-new-session:826 — mock app.js:128 + LIVE override chat.js:295 (resets activeId/thread/title for a fresh conversation; server session created on first send). Mobile binding: m-icon-btn "New chat".
 - [x] data-act=`openCapture` — mobile/mobile-surfaces.js:30 → WIRED. Handler mobile-app.js:61 (opens the quick-capture sheet: quickCaptureOpen=true, default captureType='remind'). Real state change + re-render. (The sheet's "Send to Gary" being a no-op is a separate logged FINDINGS issue, not this action.)
 - [x] data-act=`openCompanion` — mobile/mobile-surfaces.js:58 → WIRED. Handler mobile-app.js:58 (sets companionSheetOpen=true — opens the mobile companion sheet w/ Terminal/Files tabs). Real state change + re-render. (Pairs with closeCompanion.)
-- [ ] data-act=`pickResOpt` — surfaces.js:284
+- [x] data-act=`pickResOpt` — surfaces.js:284 → WIRED. Handler app.js:148 (parses `key:value` arg, sets state.resCfg[key]=val — the Deep Research config option — then closes the control). Bound to research option rows. Real state change.
 - [ ] data-act=`pickSlash` — surfaces.js:89
 - [ ] data-act=`resDiscuss` — surfaces.js:330
 - [ ] data-act=`resReport` — surfaces.js:330

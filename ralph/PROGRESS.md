@@ -158,3 +158,4 @@
 2026-06-23 02:11 | index.html:2061 shortcuts-reset-btn | verified [!] no shortcut customization/reset (shortcuts decorative); shortcuts FINDINGS
 2026-06-23 02:12 | index.html:2079 settings-logout-btn | verified [!] NOTABLE — Logout button dead (no data-act); cannot sign out. Flagged high-priority in FINDINGS.
 2026-06-23 02:12 | index.html:2093 settings-pw-save | verified [!] NOTABLE — Update Password dead; cannot change password. FINDINGS (high-priority).
+2026-06-23 02:12 | index.html:2111 set-email-open-integrations | verified [!] dead "Manage in Integrations" set-btn; dead-settings FINDINGS

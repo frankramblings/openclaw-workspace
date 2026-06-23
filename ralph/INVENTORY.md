@@ -218,7 +218,7 @@ legacy `js/*.js` module.
 - [x] data-act=`mBackToHub` — mobile/mobile-app.js:17 → WIRED. Handler mobile-app.js:55 (sets state.mSub=null — pops a pushed sub-surface back to the mobile "More" hub). Bound to the m-back button (:17) + other back affordances (mobile-surfaces.js). Real state change + re-render.
 - [x] data-act=`mCloseReader` — mobile/mobile-surfaces.js:144 → WIRED. Handler mobile-app.js:57 (sets state.mReader=false — exits the mobile email reader back to the list). Bound to the reader's m-back button. Real state change + re-render.
 - [x] data-act=`mGo` — mobile/mobile-surfaces.js:23 → WIRED. Handler mobile-app.js:49 (sets state.mTab, clears mSub/mReader/keyboard, closeSheets()). The primary mobile nav — bound to the bottom tab bar (renderTabBar) + More-hub items. Real state change + re-render.
-- [ ] data-act=`mOpenReader` — mobile/mobile-surfaces.js:127
+- [x] data-act=`mOpenReader` — mobile/mobile-surfaces.js:127 → WIRED & functional. Handler: mock mobile-app.js:56 (selEmail + mReader=true) + LIVE override email.js:178 (sets mReader, calls openAt(i) → loads the full message body). Bound to mobile email rows. Real data load.
 - [ ] data-act=`mOpenSub` — mobile/mobile-surfaces.js:188
 - [ ] data-act=`newChat` — mobile/mobile-surfaces.js:55
 - [ ] data-act=`openCapture` — mobile/mobile-surfaces.js:30

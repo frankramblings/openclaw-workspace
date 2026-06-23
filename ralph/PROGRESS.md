@@ -198,3 +198,4 @@
 2026-06-23 02:28 | new-wiring data-act=mBackToHub | verified [x] WIRED -> mobile-app.js:55
 2026-06-23 02:29 | new-wiring data-act=mCloseReader | verified [x] WIRED -> mobile-app.js:57
 2026-06-23 02:29 | new-wiring data-act=mGo | verified [x] WIRED -> mobile-app.js:49 (mobile tab nav)
+2026-06-23 02:29 | new-wiring data-act=mOpenReader | verified [x] WIRED -> live email.js:178 (openAt loads message)

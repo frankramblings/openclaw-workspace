@@ -33,3 +33,5 @@ node_modules/
 .superpowers/
 /tmp/
 OVERNIGHT-REPORT.md
+
+.claude/settings.local.json

@@ -73,3 +73,18 @@ test('working state shows a single completed step with a check, not a group', ()
   assert.doesNotMatch(html, /toggleGroup/);  // lone read not grouped
   assert.match(html, /data-act="toggleStep" data-arg="a"/);
 });
+
+test('working state shows the spinner immediately, before any step lands', () => {
+  // Instant send feedback: a working turn with zero steps must still render the
+  // "Working…" spinner (model warmup) rather than collapsing to nothing.
+  const html = renderActivity(workingMsg([]), ui());
+  assert.match(html, /act-working/);
+  assert.match(html, /Working/);
+  assert.match(html, /Stop/);
+});
+
+test('a done turn with no steps renders nothing (pure-text reply)', () => {
+  // The immediate working spinner must vanish at turn end when no tools ran,
+  // leaving just the assistant's text.
+  assert.strictEqual(renderActivity(doneMsg([]), ui()), '');
+});

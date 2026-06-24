@@ -478,7 +478,8 @@ def _map_history(messages: list) -> dict:
             isinstance(m, dict) and (
                 m.get("role") == "toolResult"
                 or (isinstance(m.get("content"), list)
-                    and any(isinstance(b, dict) and b.get("type") == "toolCall"
+                    and any(isinstance(b, dict)
+                            and b.get("type") in ("toolCall", "toolcall")
                             for b in m["content"])))
             for m in pending)
         if not has_tools:
@@ -498,6 +499,7 @@ def _map_history(messages: list) -> dict:
         round_texts = [""]
         tool_events: list = []
         calls: dict = {}                # toolCallId → its tool_event
+        reply_text = None               # claude-cli mcp__openclaw__message payload
         cur_round_has_tools = False
         meta: dict = {"timestamp": None}
         for m in pending:
@@ -521,17 +523,40 @@ def _map_history(messages: list) -> dict:
                         round_texts[-1] = text
                 if isinstance(blocks, list):
                     for b in blocks:
-                        if not isinstance(b, dict) or b.get("type") != "toolCall":
+                        if not isinstance(b, dict):
                             continue
-                        ev = {"round": len(round_texts),  # 1-indexed for renderer
-                              "tool": b.get("name") or "tool",
-                              "command": _tool_command(b),
-                              "exit_code": None}            # None until result lands
-                        cid = b.get("id")
-                        if cid is not None:
-                            calls[cid] = ev
-                        tool_events.append(ev)
-                        cur_round_has_tools = True
+                        btype = b.get("type")
+                        if btype in ("toolCall", "toolcall"):
+                            name = b.get("name") or "tool"
+                            if name == "mcp__openclaw__message":
+                                # claude-cli delivers Gary's canonical reply through
+                                # this tool; the live view shows ITS content (the
+                                # trailing text block is reply_reset away). Capture
+                                # it so reload shows the same reply. Scoped to this
+                                # name — gpt's plain `message` tool is untouched.
+                                _a = b.get("arguments")
+                                if not isinstance(_a, dict):
+                                    _a = b.get("input")
+                                if isinstance(_a, dict) and isinstance(_a.get("message"), str):
+                                    reply_text = _a["message"]
+                            ev = {"round": len(round_texts),  # 1-indexed for renderer
+                                  "tool": name,
+                                  "command": _tool_command(b),
+                                  "exit_code": None}        # None until result lands
+                            cid = b.get("id")
+                            if cid is not None:
+                                calls[cid] = ev
+                            tool_events.append(ev)
+                            cur_round_has_tools = True
+                        elif btype == "tool_result":
+                            # claude-cli stores the result INLINE in the assistant
+                            # message (keyed by tool_use_id, is_error flag), rather
+                            # than as a separate role:"toolResult" message.
+                            cid = b.get("tool_use_id") or b.get("id")
+                            ev = calls.get(cid)
+                            if ev is not None:
+                                ev["output"] = _tool_output(b)
+                                ev["exit_code"] = 1 if b.get("is_error") else 0
             elif m.get("role") == "toolResult":
                 cid = m.get("toolCallId") or m.get("id")
                 ev = calls.get(cid)
@@ -539,8 +564,18 @@ def _map_history(messages: list) -> dict:
                     ev["output"] = _tool_output(m)
                     ev["exit_code"] = 1 if m.get("isError") else 0
         meta["tool_events"] = tool_events
+        # If Gary delivered a reply via mcp__openclaw__message, that's the canonical
+        # answer (matching the live view). Make it the final round — the redesign
+        # renders the last round_text as the reply bubble — unless it's already the
+        # trailing text, so the terse "Done — …" note no longer wins on reload.
+        last_nonempty = next((t for t in reversed(round_texts) if t.strip()), "")
+        if reply_text and reply_text.strip() and reply_text != last_nonempty:
+            round_texts.append(reply_text)
         meta["round_texts"] = round_texts
-        content = next((t for t in round_texts if t.strip()), "")
+        if reply_text and reply_text.strip():
+            content = reply_text
+        else:
+            content = next((t for t in round_texts if t.strip()), "")
         history.append({"role": "assistant", "content": content, "metadata": meta})
 
     for msg in messages:
@@ -1066,6 +1101,11 @@ async def _await_response(ws, req_id: str) -> dict:
 # skipped — it's not a tool call.
 _TOOL_ITEM_KINDS = {"command", "tool"}
 
+# Reply-delivery tools (Gary's message channel) carry the assistant's reply as a
+# chat delta, so their tool card is blank/noise — hidden in BOTH the live relay
+# and the reload renderer (frontend historySteps skips the same names).
+_REPLY_DELIVERY_TOOLS = {"message", "mcp__openclaw__message"}
+
 
 async def _relay_events(ws, run_id, run_info: dict | None = None,
                         session_key: str | None = None):
@@ -1231,6 +1271,33 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                 yield _sse({"type": "tool_output", "tool": label,
                             "tool_id": tool_id, "output": detail,
                             "exit_code": 0 if data.get("status") == "completed" else 1})
+
+        elif stream == "tool":
+            # claude-cli (Claude Code agent) tool frames. Unlike OpenAI's
+            # stream:"item" shape, the call id is data.toolCallId, the input is
+            # data.args, the result is data.result with an isError flag, and the
+            # end phase is "result" (not "end"). Map to the same SSE cards.
+            name = data.get("name") or "tool"
+            if name in _REPLY_DELIVERY_TOOLS:
+                continue  # reply-delivery channel, not a user-facing action
+            tool_id = data.get("toolCallId")
+            phase = data.get("phase")
+            if phase == "start":
+                tool_since_text = True
+                if session_key:
+                    try:
+                        session_context.bump_tool_calls(session_key)
+                    except Exception:  # noqa: BLE001
+                        pass
+                command = _tool_command({"arguments": data.get("args")})
+                yield _sse({"type": "tool_start", "tool": name,
+                            "tool_id": tool_id, "command": command, "round": 1})
+            elif phase == "result":
+                tool_since_text = True
+                yield _sse({"type": "tool_output", "tool": name,
+                            "tool_id": tool_id,
+                            "output": _tool_output({"content": data.get("result")}),
+                            "exit_code": 1 if data.get("isError") else 0})
 
         elif stream == "fallback":
             # Provider fallback on this run's own stream (primary unavailable →

@@ -133,8 +133,11 @@ function renderWorking(m, s) {
 /** Render the activity trail for a message (returns '' when there's none). */
 export function renderActivity(m, s) {
   const act = m.activity;
-  if (!act || !act.steps || !act.steps.length) return '';
+  if (!act) return '';
+  // While working, show the spinner immediately — even before the first step
+  // lands — so a turn never sits with no feedback during model warmup.
   if (act.status === 'working') return renderWorking(m, s);
+  if (!act.steps || !act.steps.length) return '';
 
   const trailOpen = !!((s.chatUI && s.chatUI.trail) || {})[m.id]; // default COLLAPSED
   const { txt, failed } = summaryText(act);

@@ -15,7 +15,9 @@
   position: relative;
   overflow: hidden;
 }
-.m-scroll { flex: 1; overflow: auto; min-height: 0; -webkit-overflow-scrolling: touch; }
+/* Vertical scroll only: `overflow: auto` let a wide code card or message drag
+   the whole surface sideways. Lock the X axis and kill horizontal rubber-band. */
+.m-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; min-height: 0; -webkit-overflow-scrolling: touch; }
 .m-scroll::-webkit-scrollbar { display: none; }
 .m-spacer { flex: 1; }
 
@@ -89,7 +91,9 @@
 .m-composer { flex: none; padding: 8px 12px; background: var(--bg); }
 .m-composer .bar { border: 1px solid var(--bd); background: var(--panel); border-radius: 22px; display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 14px; }
 .m-composer.focused .bar { border-color: var(--teal2); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
-.m-composer textarea { flex: 1; background: transparent; border: none; resize: none; font-size: 14px; line-height: 1.45; color: var(--fg); padding: 6px 0; max-height: 120px; }
+/* font-size must be >= 16px: iOS Safari zooms the page when focusing an input
+   smaller than that, which is the "it zooms in/out on the text field" bug. */
+.m-composer textarea { flex: 1; background: transparent; border: none; resize: none; font-size: 16px; line-height: 1.4; color: var(--fg); padding: 6px 0; max-height: 120px; }
 .m-composer textarea::placeholder { color: var(--faint); }
 .m-round-btn { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--mut); flex: none; background: none; border: none; cursor: pointer; }
 .m-round-btn.bordered { width: 30px; height: 30px; border: 1px solid var(--bd); }
@@ -192,7 +196,7 @@
 .m-quickadd { flex: none; padding: 8px 14px; background: var(--bg); }
 .m-quickadd .box { border: 1px solid var(--teal2); background: var(--panel); border-radius: 14px; display: flex; align-items: center; gap: 9px; padding: 10px 12px; }
 .m-quickadd .star { font-size: 14px; color: var(--gold); }
-.m-quickadd input { flex: 1; background: transparent; border: none; font-size: 13.5px; color: var(--fg); }
+.m-quickadd input { flex: 1; background: transparent; border: none; font-size: 16px; color: var(--fg); }
 .m-quickadd .add { width: 30px; height: 30px; border-radius: 9px; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; flex: none; }
 
 /* More hub */
@@ -235,7 +239,7 @@
 .m-cap-head .t { font-size: 16px; font-weight: 600; }
 .m-cap-head .cancel { font-size: 13px; color: var(--faint); cursor: pointer; background: none; border: none; }
 .m-cap-input { border: 1px solid var(--teal2); background: var(--bg); border-radius: 14px; padding: 14px; margin-bottom: 13px; min-height: 96px; }
-.m-cap-input textarea { width: 100%; background: transparent; border: none; resize: none; font-size: 15px; line-height: 1.5; color: var(--fg); min-height: 66px; }
+.m-cap-input textarea { width: 100%; background: transparent; border: none; resize: none; font-size: 16px; line-height: 1.5; color: var(--fg); min-height: 66px; }
 .m-cap-parse { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--mut); background: var(--bg); border: 1px dashed var(--teal2); border-radius: 8px; padding: 7px 11px; margin-bottom: 14px; }
 .m-cap-parse .k { color: var(--teal); font-weight: 600; }
 .m-cap-types { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }

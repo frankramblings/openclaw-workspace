@@ -144,6 +144,154 @@ def test_map_history_non_string_tool_input_serialized():
     assert "python 3.14" in ev["command"]      # structured input rendered
 
 
+# --- claude-cli (Claude Code agent) transcript shape ---
+# Unlike OpenAI, claude-cli stores blocks with LOWERCASE types (`toolcall`,
+# `tool_result`, `thinking`, `text`) and puts the tool_result INLINE in the
+# assistant message content (same list as its toolcall), keyed by `tool_use_id`
+# with an `is_error` flag — NOT as a separate role:"toolResult" message. The
+# mapper must reconstruct the same tool_events/round_texts from this shape.
+
+def test_map_history_reconstructs_claude_cli_inline_tool_card():
+    msgs = [
+        {"role": "user", "content": "run echo", "timestamp": 200},
+        {"role": "assistant", "timestamp": 201, "model": "claude-opus-4-8",
+         "provider": "anthropic", "content": [
+             {"type": "toolcall", "id": "toolu_1", "name": "Bash",
+              "arguments": {"command": "echo hi"}},
+             {"type": "tool_result", "tool_use_id": "toolu_1", "name": "Bash",
+              "is_error": False, "content": "hi\n"}]},
+        {"role": "assistant", "timestamp": 202,
+         "content": [{"type": "text", "text": "Done — printed hi."}]},
+    ]
+    out = _map_history(msgs)
+    h = out["history"]
+    assert h[0]["role"] == "user"
+    turn = h[1]
+    te = turn["metadata"]["tool_events"]
+    assert len(te) == 1
+    ev = te[0]
+    assert ev["tool"] == "Bash"
+    assert ev["command"] == "echo hi"         # arguments.command lifted verbatim
+    assert ev["output"] == "hi\n"             # inline tool_result body restored
+    assert ev["exit_code"] == 0               # is_error False -> success
+    assert ev["round"] == 1
+    rt = turn["metadata"]["round_texts"]
+    assert rt[ev["round"]].strip() == "Done — printed hi."
+    assert turn["metadata"]["timestamp"] == 201
+    assert out["model"] == "claude-opus-4-8"
+
+
+def test_map_history_claude_cli_marks_is_error():
+    msgs = [
+        {"role": "assistant", "content": [
+            {"type": "toolcall", "id": "toolu_9", "name": "Bash",
+             "arguments": {"command": "false"}},
+            {"type": "tool_result", "tool_use_id": "toolu_9", "name": "Bash",
+             "is_error": True, "content": "boom"}]},
+    ]
+    ev = _map_history(msgs)["history"][0]["metadata"]["tool_events"][0]
+    assert ev["exit_code"] == 1               # is_error True -> failed card
+    assert ev["output"] == "boom"
+
+
+def test_map_history_claude_cli_tool_result_block_list_content():
+    # claude-cli tool_result content can be a block list, e.g. ToolSearch's
+    # tool_reference or a text block — flatten it the same as a string body.
+    msgs = [
+        {"role": "assistant", "content": [
+            {"type": "toolcall", "id": "toolu_a", "name": "mcp__openclaw__message",
+             "arguments": {"action": "send", "message": "hello"}},
+            {"type": "tool_result", "tool_use_id": "toolu_a",
+             "name": "mcp__openclaw__message", "content": [
+                 {"type": "text", "text": "Sent visible reply."}]}]},
+    ]
+    ev = _map_history(msgs)["history"][0]["metadata"]["tool_events"][0]
+    assert ev["tool"] == "mcp__openclaw__message"
+    assert ev["output"] == "Sent visible reply."
+
+
+def test_map_history_claude_cli_groups_multi_round_turn():
+    # text -> [toolcall+tool_result] -> text -> [toolcall+tool_result] -> text,
+    # with inline results, still collapses into 3 rounds in one bubble.
+    msgs = [
+        {"role": "assistant", "content": [{"type": "text", "text": "Let me check."}]},
+        {"role": "assistant", "content": [
+            {"type": "toolcall", "id": "a", "name": "Bash",
+             "arguments": {"command": "step1"}},
+            {"type": "tool_result", "tool_use_id": "a", "content": "ok1"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Now step 2."}]},
+        {"role": "assistant", "content": [
+            {"type": "toolcall", "id": "b", "name": "Bash",
+             "arguments": {"command": "step2"}},
+            {"type": "tool_result", "tool_use_id": "b", "content": "ok2"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "All done."}]},
+    ]
+    meta = _map_history(msgs)["history"][0]["metadata"]
+    assert [t.strip() for t in meta["round_texts"]] == \
+        ["Let me check.", "Now step 2.", "All done."]
+    rounds = {e["command"]: e["round"] for e in meta["tool_events"]}
+    assert rounds == {"step1": 1, "step2": 2}
+    outputs = {e["command"]: e["output"] for e in meta["tool_events"]}
+    assert outputs == {"step1": "ok1", "step2": "ok2"}
+
+
+def test_map_history_claude_cli_message_tool_is_canonical_reply():
+    # claude-cli delivers Gary's real reply via mcp__openclaw__message; the live
+    # view shows that (the trailing text block is reply_reset away). Reload must
+    # show the SAME reply — not the terse trailing note — so a refresh doesn't
+    # swap the answer for a differently-worded one.
+    msgs = [
+        {"role": "user", "content": "disk?", "timestamp": 1},
+        {"role": "assistant", "model": "claude-opus-4-8", "content": [
+            {"type": "toolcall", "id": "t1", "name": "Bash",
+             "arguments": {"command": "df -h /"}},
+            {"type": "tool_result", "tool_use_id": "t1", "content": "ok", "name": "Bash"}]},
+        {"role": "assistant", "content": [
+            {"type": "toolcall", "id": "t2", "name": "mcp__openclaw__message",
+             "arguments": {"action": "send", "message": "**Disk**: 61 GB free."}},
+            {"type": "tool_result", "tool_use_id": "t2", "name": "mcp__openclaw__message",
+             "content": [{"type": "text", "text": "Sent."}]}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Done — 61 GB free."}]},
+    ]
+    turn = _map_history(msgs)["history"][1]
+    rts = [t for t in turn["metadata"]["round_texts"] if t.strip()]
+    # the LAST round text (what the redesign renders as the reply bubble) and the
+    # backend content are the message-tool reply, not the terse trailing note.
+    assert rts[-1] == "**Disk**: 61 GB free."
+    assert turn["content"] == "**Disk**: 61 GB free."
+    # the trailing note is preserved as an earlier round (not lost), just not last.
+    assert any("Done — 61 GB free." in t for t in turn["metadata"]["round_texts"])
+
+
+def test_map_history_gpt_message_tool_not_treated_as_reply():
+    # gpt's reply-delivery tool is plain `message` — the claude-cli override is
+    # scoped to mcp__openclaw__message, so this path is UNCHANGED: the trailing
+    # text block stays the reply.
+    msgs = [
+        {"role": "assistant", "content": [{"type": "toolCall", "id": "c1",
+            "name": "message", "arguments": {"message": "delivered version"}}]},
+        {"role": "toolResult", "toolCallId": "c1",
+         "content": [{"type": "toolResult", "content": "Sent."}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "final text reply"}]},
+    ]
+    turn = _map_history(msgs)["history"][0]
+    rts = [t for t in turn["metadata"]["round_texts"] if t.strip()]
+    assert rts[-1] == "final text reply"  # unchanged: the text note is the reply
+
+
+def test_map_history_claude_cli_message_reply_falls_back_to_text():
+    # No message tool (pure text answer after a tool) → keep the text block.
+    msgs = [
+        {"role": "assistant", "content": [
+            {"type": "toolcall", "id": "t1", "name": "Bash",
+             "arguments": {"command": "ls"}},
+            {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Here are the files."}]},
+    ]
+    turn = _map_history(msgs)["history"][0]
+    assert turn["content"] == "Here are the files."
+
+
 def test_map_history_plaintext_turns_unchanged():
     # Regression: a turn with NO tools still emits one entry per assistant
     # message (legacy behavior the chat drawer/metrics rely on).

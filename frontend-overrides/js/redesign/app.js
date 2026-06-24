@@ -96,12 +96,32 @@ function renderDesktop(s) {
 }
 
 // ---- shell assembly (breakpoint dispatch) ---------------------------------
+// Scroll containers whose position must survive a re-render. render() rebuilds
+// root.innerHTML wholesale, which would otherwise reset every scrollable region
+// to the top — jumping the chat back up on every action (expanding a tool card)
+// and pinning the live stream above the fold so new output never came into view.
+const SCROLL_SELECTORS = ['.chat-thread', '.m-scroll'];
+
 function render() {
   // capture focus + caret before rebuild
   const act = document.activeElement;
   const focusKey = act && act.getAttribute ? act.getAttribute('data-focus') : null;
   const selStart = focusKey ? act.selectionStart : null;
   const selEnd = focusKey ? act.selectionEnd : null;
+
+  // capture scroll position. If the user was at the bottom (watching the live
+  // stream), STICK to the bottom as content grows; otherwise preserve the exact
+  // offset so expanding a card mid-thread keeps their place.
+  const scrollState = {};
+  for (const sel of SCROLL_SELECTORS) {
+    const el = root.querySelector(sel);
+    if (el) {
+      scrollState[sel] = {
+        top: el.scrollTop,
+        atBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 80,
+      };
+    }
+  }
 
   const s = state;
   root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
@@ -115,6 +135,14 @@ function render() {
         try { el.setSelectionRange(selStart, selEnd); } catch (_) { /* non-text input */ }
       }
     }
+  }
+
+  // restore scroll (after focus — focusing an input can itself scroll a region)
+  for (const sel of SCROLL_SELECTORS) {
+    const saved = scrollState[sel];
+    if (!saved) continue;
+    const el = root.querySelector(sel);
+    if (el) el.scrollTop = saved.atBottom ? el.scrollHeight : saved.top;
   }
 
   // post-render hook (the live terminal overlay repositions itself here)

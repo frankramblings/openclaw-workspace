@@ -71,6 +71,8 @@ function convListBody(s) {
   const convRow = (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}" data-act="selectSession" data-arg="${esc(r.id)}">`
     + `<span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span>`
     + `<span class="conv-title">${esc(r.title)}</span>`
+    + (r.notify ? `<span class="conv-dot notify" title="Reply finished"></span>`
+        : r.working ? `<span class="conv-dot working" title="Working…"></span>` : '')
     + (r.important ? `<span class="conv-fav" aria-hidden="true">${I.star(13, true)}</span>` : '')
     + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
     + (rowMenuOpen === r.id ? convMenu(r) : '')

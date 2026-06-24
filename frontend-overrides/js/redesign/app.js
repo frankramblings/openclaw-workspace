@@ -54,6 +54,14 @@ function railItem(surface, label, iconHtml, badge) {
     <span class="bar"></span>${iconHtml}<span class="label">${esc(label)}</span>${badge || ''}</div>`;
 }
 
+// A dot on the Chat nav item when a reply finished in a thread you weren't
+// viewing (classic-interface parity). Cleared when you open that thread.
+function chatNotifyBadge() {
+  const n = (state.live && state.live.chat && state.live.chat.notified)
+    ? state.live.chat.notified.size : 0;
+  return n > 0 ? '<span class="nav-dot" title="A reply finished while you were away"></span>' : '';
+}
+
 function renderRail() {
   const collapsed = !state.railExpanded;
   const inboxVisible = 6 - state.dismissed.length; // live rail badge
@@ -66,7 +74,7 @@ function renderRail() {
       <div class="oc-spacer"></div>
       <button class="oc-rail-collapse" data-act="toggleRail" title="Collapse sidebar"><span style="display:inline-flex;transform:rotate(${collapsed ? '180deg' : '0deg'})">${I.chevLeft()}</span></button>
     </div>
-    ${railItem('chat', 'Chat', I.chat())}
+    ${railItem('chat', 'Chat', I.chat(), chatNotifyBadge())}
     ${railItem('inbox', 'Inbox', I.inbox(), `<span class="nav-badge">${inboxVisible}</span>`)}
     ${railItem('email', 'Email', I.email(), '<span class="nav-count">1</span>')}
     ${railItem('calendar', 'Calendar', I.calendar())}

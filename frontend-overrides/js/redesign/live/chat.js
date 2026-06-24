@@ -212,6 +212,8 @@ export async function load(state) {
   } catch (_) { /* ignore */ }
 
   chat.groups = buildGroups(list, activeId);
+  annotateConvRows(chat);     // reflect any known working/finished dots
+  startNotifier();            // begin cross-session turn polling (singleton)
 
   const activeSession = list.find((s) => s.id === activeId);
 
@@ -569,6 +571,68 @@ async function resumeIfActive(chat, state, sessionId) {
   return true;
 }
 
+// ---- cross-session turn notifier ------------------------------------------
+// Poll which sessions have a turn in flight. When one FINISHES while you're not
+// viewing it, flag it (sidebar + Chats-nav dot, plus a haptic buzz) — classic-
+// interface parity for "a reply landed while I was elsewhere". Cleared when you
+// open that thread. Also marks still-running sessions with a 'working' dot.
+let _notifyTimer = null;
+let _prevActive = new Set();
+
+function _isViewing(state, id) {
+  return !!(state && state.surface === 'chat'
+    && state.live && state.live.chat && state.live.chat.activeId === id);
+}
+
+// Stamp notify/working flags onto the already-built sidebar rows so a re-render
+// shows the dots without rebuilding the whole list.
+function annotateConvRows(chat) {
+  const notified = chat.notified || new Set();
+  const working = chat.activeTurns || new Set();
+  for (const g of (chat.groups || [])) {
+    for (const r of (g.rows || [])) {
+      r.notify = notified.has(r.id) && !r.active;
+      r.working = working.has(r.id) && !r.active;
+    }
+  }
+}
+
+async function _notifyTick() {
+  const state = runtime.state;
+  if (!state) return;
+  let data;
+  try { data = await apiGet('/api/chat/active_sessions'); } catch (_) { return; }
+  const now = new Set((data && data.active) || []);
+  const chat = ensureChat(state);
+  chat.notified = chat.notified || new Set();
+  let changed = false;
+
+  // A session that WAS running and now isn't — and that you aren't looking at —
+  // just finished while you were elsewhere: notify.
+  for (const id of _prevActive) {
+    if (!now.has(id) && !_isViewing(state, id) && !chat.notified.has(id)) {
+      chat.notified.add(id);
+      changed = true;
+      try { if (navigator.vibrate) navigator.vibrate(30); } catch (_) { /* no haptics */ }
+    }
+  }
+  // Re-render if the running set changed too (working dots).
+  const prevWorking = chat.activeTurns || new Set();
+  if (!changed && (now.size !== prevWorking.size
+      || [...now].some((id) => !prevWorking.has(id)))) changed = true;
+
+  chat.activeTurns = now;
+  _prevActive = now;
+  if (changed) { annotateConvRows(chat); runtime.render(); }
+}
+
+// Start the poller once (singleton). Called from load() at boot.
+function startNotifier() {
+  if (_notifyTimer) return;
+  _notifyTimer = setInterval(_notifyTick, 4000);
+  _notifyTick();
+}
+
 export const actions = {
   selectSession: async (id) => {
     const state = runtime.state;
@@ -582,6 +646,7 @@ export const actions = {
     turn = null;
     chat.rowMenuOpen = null;
     chat.activeId = id;
+    if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
     storeActiveId(id);
     if (Array.isArray(chat.groups)) {
       for (const g of chat.groups) {

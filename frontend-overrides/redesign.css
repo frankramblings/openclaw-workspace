@@ -90,6 +90,12 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .oc-rail.collapsed .oc-user .uname{display:none}
 .nav-badge{margin-left:auto;font-size:11px;color:var(--teal);background:var(--tealtint);padding:1px 7px;border-radius:999px}
 .nav-count{margin-left:auto;font-size:11px;color:var(--faint)}
+/* Cross-session turn notifier: a reply finished while you were elsewhere. */
+.nav-dot{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 22%,transparent);animation:pulse 1.6s ease-in-out infinite}
+.oc-rail.collapsed .ocnav .nav-dot{margin-left:0}
+.conv-dot{flex:none;width:7px;height:7px;border-radius:50%}
+.conv-dot.notify{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 20%,transparent);animation:pulse 1.6s ease-in-out infinite}
+.conv-dot.working{background:var(--teal);animation:pulse 1.2s ease-in-out infinite}
 .oc-rail-fill{flex:1}
 .oc-user{display:flex;align-items:center;gap:11px;padding:6px 9px}
 .oc-rail.collapsed .oc-user{justify-content:center}

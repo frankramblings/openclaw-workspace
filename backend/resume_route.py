@@ -82,6 +82,23 @@ async def chat_current_turn(request: Request, session: str = ""):
     return JSONResponse(event_store.current_turn(session_key))
 
 
+@router.get("/api/chat/active_sessions")
+async def chat_active_sessions(request: Request):
+    """SPA session ids (not gateway keys) that currently have a turn in flight.
+
+    The frontend polls this to drive cross-session indicators: a 'working' dot on
+    sessions still running, and — the visible win — a 'finished while you were
+    elsewhere' notification when a session drops out of this set while you're not
+    viewing it (cleared when you open it). Read-only; initiates nothing.
+    """
+    ids = []
+    for key in event_store.active_session_keys():
+        sid = sessions_store.id_for_session_key(key)
+        if sid:
+            ids.append(sid)
+    return JSONResponse({"active": ids})
+
+
 @router.get("/api/chat/stream")
 async def chat_stream_tail(request: Request, session: str = "", last_event_id: str = ""):
     """Live tail of a session's event log (EventSource-compatible, GET).

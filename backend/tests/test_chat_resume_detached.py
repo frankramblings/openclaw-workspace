@@ -156,6 +156,37 @@ def test_current_turn_exposes_elapsed_ms():
     assert event_store.current_turn(key)["elapsed_ms"] >= snap["elapsed_ms"]
 
 
+def test_active_sessions_endpoint_maps_keys_to_ids():
+    """GET /api/chat/active_sessions returns SPA session ids (not gateway keys)
+    whose turn is in flight — what the frontend notifier polls."""
+    from fastapi.testclient import TestClient
+    from backend import sessions_store
+    rec = sessions_store.create(name="notify-test", model=None)
+    try:
+        event_store.begin_turn(rec["sessionKey"])
+        client = TestClient(app_module.app)
+        r = client.get("/api/chat/active_sessions")
+        assert r.status_code == 200
+        assert rec["id"] in r.json()["active"]
+        event_store.end_turn(rec["sessionKey"])
+        assert rec["id"] not in client.get("/api/chat/active_sessions").json()["active"]
+    finally:
+        sessions_store.delete(rec["id"])
+
+
+def test_active_session_keys_tracks_running_turns():
+    """active_session_keys() lists exactly the sessions with a turn in flight —
+    the source for the cross-session 'working' / 'finished-while-away' notifier."""
+    k1, k2 = "test:active:one", "test:active:two"
+    event_store.begin_turn(k1)
+    event_store.begin_turn(k2)
+    keys = set(event_store.active_session_keys())
+    assert k1 in keys and k2 in keys
+    event_store.end_turn(k1)
+    keys = set(event_store.active_session_keys())
+    assert k1 not in keys and k2 in keys
+
+
 def test_turn_active_then_inactive_across_recorder_lifetime():
     """current_turn flips active at begin and inactive at end — this is what the
     reload path (`/api/chat/turn`) reads to decide whether to resume."""

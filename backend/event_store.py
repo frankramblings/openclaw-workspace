@@ -121,6 +121,13 @@ def end_turn(session_key: str) -> None:
         _TURN_ACTIVE[session_key] = False
 
 
+def active_session_keys() -> list[str]:
+    """Session keys with a turn streaming right now. Source for the cross-session
+    notifier (sidebar/nav 'working' + 'finished-while-away' indicators)."""
+    with _LOCK:
+        return [k for k, v in _TURN_ACTIVE.items() if v]
+
+
 def current_turn(session_key: str) -> dict:
     """Snapshot of the latest turn for a reloaded client:
         {"active": bool, "turn_start_id": str|None,

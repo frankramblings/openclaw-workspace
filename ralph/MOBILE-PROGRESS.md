@@ -13,3 +13,4 @@
 2026-06-24 | built reusable harness.mjs to screenshot hash-unreachable surfaces (reader/sheets); verified 3 backlog items as non-bugs (tab-badge, quick-add +, reader border) | found
 2026-06-24 | email reader: wire ✦ Summarize → summarizeEmail + inline .m-email-summary render + ✕ clear (verified via harness) | fixed
 2026-06-24 | built mobile email compose sheet (renderComposeSheet) + wired reader AI reply/Draft/reply-box/send → composeAiDraft/composeReply/sendEmail (verified via harness) | fixed
+2026-06-24 | REGRESSION (white screen on mobile): in-progress attach feature called map(s.pendingAttach) unguarded at mChat — when() evals args eagerly so falsy pendingAttach threw, blanking the app. Fixed mChat to map(...||[]) (matches desktop surfaces.js:195) AND hardened dom.js map() to be null-safe. Verified app loads, no console errors | fixed

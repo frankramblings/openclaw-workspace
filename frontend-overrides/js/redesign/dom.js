@@ -10,8 +10,9 @@ export function esc(s) {
 /** Escape for an HTML attribute value. */
 export function attr(s) { return esc(s); }
 
-/** Join an array of html strings. */
-export function map(arr, fn) { return arr.map(fn).join(''); }
+/** Join an array of html strings. Null-safe: `when(cond, `…${map(x)}…`)` evaluates
+ *  its arguments eagerly, so a falsy `x` must not throw and blank the whole app. */
+export function map(arr, fn) { return (arr || []).map(fn).join(''); }
 
 /** Conditionally render. */
 export function when(cond, html) { return cond ? html : ''; }

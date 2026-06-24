@@ -24,8 +24,8 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
 ## Backlog (concrete, observed)
 - [ ] Dead decorative controls with `cursor:pointer` but no `data-act`: email reader `✦ AI reply` / `✦ Summarize` (`mobile-surfaces.js:152`), `✦ Draft` + reply send button (`:156`), `.m-gary-card` in More hub (`:186`), calendar `Day/Agenda` seg (`:172`). Either wire them or drop the pointer affordance so they don't promise interactivity. — needs decision on wiring vs. stub.
 - [x] `.m-mail.active` only highlighted when `e.unread` was truthy (`mobile-surfaces.js:127`) — a read, selected email showed no active state. Fixed: highlight on selection (`i === s.selEmail`) regardless of unread.
-- [ ] Reduced-motion: sheet slide-up (`@keyframes m-sheet-up`, `mobile.css:228-229`) and pulse/blink dot animations aren't disabled under `prefers-reduced-motion`. Add guards.
-- [ ] No `:focus-visible` styling anywhere in mobile.css — keyboard/switch-control users get no focus ring on buttons/tabs.
+- [x] Reduced-motion: sheet slide-up (`m-sheet-up`), status-dot `pulse` (both `.m-gary .status .dot` and `.m-gary-card .st .dot`), and terminal-cursor `blink` are now disabled under `prefers-reduced-motion`. The pull-to-refresh `spin` is intentionally kept — it conveys progress; freezing it reads as broken.
+- [x] `:focus-visible` ring added (`.m-app button/textarea/input:focus-visible` → 2px teal outline, 2px offset). Scoped to keyboard/switch focus so it never shows on tap (pointer presses use `:active`). Proven with an autofocus harness: focused control shows the ring, others don't.
 - [ ] `.m-tab-badge` position uses a hardcoded `right: calc(50% - 19px)` (`mobile.css:68`) — fragile if label width changes; verify it sits correctly over each tab icon.
 - [ ] Quick-add calendar button is `data-act="clearQuick"` showing a `+` (`mobile-surfaces.js:178`) — a plus glyph that clears reads wrong; confirm icon vs. action intent.
 - [ ] Email reader archive/dots icon buttons (`mobile-surfaces.js:146-147`) have `border:none` inline override — inconsistent with `.m-icon-btn` elsewhere; confirm intentional.

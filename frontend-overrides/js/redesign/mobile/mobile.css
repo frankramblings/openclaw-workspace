@@ -22,6 +22,20 @@
 .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: scale(.93); }
 @media (prefers-reduced-motion: reduce) {
   .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: none; }
+  /* still pulse-free / slide-free for vestibular safety; the loading spinner
+     (.m-ptr .spin) stays — it conveys progress, freezing it reads as broken */
+  .m-gary .status .dot, .m-gary-card .st .dot { animation: none; }
+  .m-sheet { animation: none; }
+  .m-term-cursor { animation: none; }
+}
+/* Keyboard / switch-control focus ring. Pointer presses use :active (above);
+   :focus-visible scopes the ring to non-pointer focus so it never shows on tap.
+   Mobile.css had no focus styling at all — switch/keyboard users were blind. */
+.m-app button:focus-visible,
+.m-app textarea:focus-visible,
+.m-app input:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
 }
 /* large tap targets: scaling a full-width card looks wrong, so settle the
    background instead — restores the press feedback the killed tap-highlight lost */

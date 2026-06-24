@@ -16,6 +16,7 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
 6. Mark the item `[x]`/`[!]`, append a PROGRESS line, commit `mobile: <one-line>` (note: `frontend/` is gitignored — only `frontend-overrides/` + `ralph/` files get committed), exit.
 
 ## Tooling
+- `ralph/mobile-guard.sh [surfaces…]` — regression guard. Per surface: asserts HTTP 200, the SPA shell actually rendered (`.m-app`/`.oc-app` in the post-load DOM via `--dump-dom`), NO server error page, and NO console errors. Built after a console-only check false-passed during a transient 502 (a server error page has no console errors, so "clean" was wrong). Run it after any change/sync.
 - Surfaces unreachable by URL hash (email **reader**, **companion**/**capture** sheets) can be screenshotted via `/home/frank/ralph-shots/harness.mjs` — it imports the real renderers, emits standalone HTML linking the LIVE served `redesign.css` + `mobile.css`, and chromium screenshots the `file://`. Set any state field (e.g. `emailSummary`) to exercise conditional branches.
 
 ## Done

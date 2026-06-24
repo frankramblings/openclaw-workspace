@@ -46,6 +46,12 @@ function mChatMsg(m, s) {
 // ---- chat -----------------------------------------------------------------
 export function mChat(s) {
   const focused = s.keyboard;
+  const thread = s.live?.chat?.thread || [];
+  // Empty thread (new/cold chat) used to render a fully blank screen — show a
+  // centered prompt instead, reusing the shared .inbox-zero empty-state shell.
+  const threadHtml = thread.length
+    ? map(thread, (msg) => mChatMsg(msg, s))
+    : `<div class="inbox-zero m-chat-zero"><div class="ico"><img src="${AVATAR}" alt="Gary"></div><div class="t">Message Gary to start</div><div class="d">Ask anything — or pull up Terminal · Files above.</div></div>`;
   // composing layout: keyboard up, tab bar hidden (handled by shell), composer lifts
   return `
   <div class="m-head">
@@ -56,7 +62,7 @@ export function mChat(s) {
     </div>
   </div>
   ${when(!focused, `<div class="m-comp-handle"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>`)}
-  <div class="m-scroll m-thread">${map(s.live?.chat?.thread || [], (msg) => mChatMsg(msg, s))}</div>
+  <div class="m-scroll m-thread${thread.length ? '' : ' empty'}">${threadHtml}</div>
   <div class="m-composer${focused ? ' focused' : ''}">
     <div class="bar">
       ${when(focused, `<button class="m-round-btn bordered">${I.plus(16)}</button>`)}

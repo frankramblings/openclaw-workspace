@@ -81,6 +81,9 @@
 
 /* ---- chat thread ---------------------------------------------------------- */
 .m-thread { padding: 14px 16px 16px; }
+.m-thread.empty { display: flex; align-items: center; justify-content: center; }
+.m-chat-zero .ico { overflow: hidden; padding: 0; }
+.m-chat-zero .ico img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .m-msg-asst { display: flex; gap: 9px; margin-bottom: 16px; }
 .m-msg-av { width: 24px; height: 24px; border-radius: 6px; overflow: hidden; background: var(--teal); display: flex; align-items: center; justify-content: center; flex: none; }
 .m-msg-av img { width: 100%; height: 100%; object-fit: contain; padding: 2px; display: block; }

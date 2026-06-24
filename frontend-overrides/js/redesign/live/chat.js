@@ -230,6 +230,9 @@ export async function load(state) {
     // fall back to the default-chat endpoint. Needed so the picker's active
     // check lands on the right (endpoint·model) row, not every same-named copy.
     chat.endpointId = activeSession?.endpoint_id || fallbackEndpointId || chat.endpointId || '';
+    // Re-attach to an in-flight turn after a page refresh — the live answer
+    // keeps streaming instead of vanishing until the turn fully finishes.
+    try { await resumeIfActive(chat, state, activeId); } catch (_) { /* non-fatal */ }
     const pct = await fetchUsage(activeId);
     if (pct != null) chat.usagePct = pct;
   } else {
@@ -245,7 +248,8 @@ export async function load(state) {
 
 // ---- actions --------------------------------------------------------------
 
-let streamCtrl = null;       // active POST-stream controller
+let streamCtrl = null;       // active POST-stream controller (fresh send)
+let liveES = null;           // active EventSource tail (resume / re-attach)
 let renderTimer = null;      // throttle handle for stream deltas
 let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
@@ -363,11 +367,212 @@ async function createSession(model) {
   return res && res.id;
 }
 
+// ---- live turn controller (shared by send + resume) -----------------------
+// Exactly one in-flight assistant turn renders at a time, tracked in module
+// `turn`. The reducer is identical whether frames arrive from POST
+// /api/chat_stream (a fresh send) or from replay + the EventSource tail of
+// /api/chat/stream (re-attaching to a turn still running server-side after a
+// reload / thread-switch — see backend event_store + resume_route).
+
+// Stop whichever live source is attached. Safe to call anytime: aborting the
+// reader no longer stops the turn (the server-side recorder owns it), so
+// switching threads / closing only detaches this client.
+function stopLive() {
+  if (streamCtrl) { try { streamCtrl.abort(); } catch (_) {} streamCtrl = null; }
+  if (liveES) { try { liveES.close(); } catch (_) {} liveES = null; }
+}
+
+// Build a fresh per-turn reducer bound to `chat`. Returns { onEvent,
+// ensureActivity }. `onEvent` is fed the same {delta|type|...} objects whether
+// they came live or from replay, so a rebuilt turn looks identical to a live one.
+function beginTurn(chat, modelLabel) {
+  turn = { asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), got404: false };
+
+  const ensureAsst = () => {
+    if (!turn.asstMsg) {
+      turn.asstMsg = { id: turn.msgId, role: 'assistant', text: '', time: fmtTime(Date.now()), model: modelLabel };
+      if (!Array.isArray(chat.thread)) chat.thread = [];
+      chat.thread.push(turn.asstMsg);
+    }
+    return turn.asstMsg;
+  };
+  const ensureActivity = () => {
+    ensureAsst();
+    if (!turn.asstMsg.activity) {
+      turn.asstMsg.activity = { status: 'working', steps: [], startMs: Date.now(), elapsed: '0s' };
+      turn.activity = turn.asstMsg.activity;
+      startElapsed();
+    }
+    return turn.asstMsg.activity;
+  };
+  const newStep = (kind, file, tid) => {
+    const a = ensureActivity();
+    const st = { id: `${turn.msgId}-s${turn.stepN++}`, kind, label: PRESENT[kind] || 'Working', file: file || '', state: 'running', lines: [], startMs: Date.now() };
+    if (kind === 'think') st.label = 'Thinking';
+    a.steps.push(st);
+    if (tid != null) turn.byTid[tid] = st;
+    return st;
+  };
+
+  const onEvent = (ev) => {
+    if (!ev) return;
+
+    if (ev.type === 'done') {
+      if (turn.thinkStep) finalizeStep(turn.thinkStep);
+      const a = turn.activity;
+      if (a) {
+        finalizeAll(a);
+        a.status = 'done';
+        a.elapsed = fmtElapsed(a.startMs);
+        a.worked = `Worked for ${a.elapsed} · ${a.steps.length} steps`;
+      }
+      stopElapsed();
+      const hadText = turn.asstMsg && String(turn.asstMsg.text || '').trim();
+      const hadWork = turn.activity && (turn.activity.steps || []).some((st) => st.kind !== 'think');
+      if (!hadText && !hadWork && !turn.got404) {
+        const m = ensureAsst();
+        m.error = true;
+        m.notice = 'No response from this model — it may not be available on your plan or endpoint. Try another model from the picker.';
+      }
+      flushRender();
+      if (turn.got404) { actions.reloadSessions(); turn = null; return; }
+      refreshSidebarUsage(runtime.state);
+      turn = null;
+      return;
+    }
+    if (ev.type === 'error') {
+      if (ev.status === 404) { turn.got404 = true; return; }
+      const m = ensureAsst();
+      m.error = true;
+      m.notice = ev.status
+        ? `Couldn’t get a response (HTTP ${ev.status}). Try again, or pick another model.`
+        : 'The connection dropped before a response arrived. Try again.';
+      stopElapsed();
+      flushRender();
+      turn = null;
+      return;
+    }
+
+    // reply_reset → the agent began a NEW message mid-turn (its real reply after
+    // a message-tool delivery). Drop the text shown so far so the final reply
+    // isn't doubled ("Sent…Hey 👋"). Tool/thinking steps are kept.
+    if (ev.type === 'reply_reset') {
+      if (turn.asstMsg) turn.asstMsg.text = '';
+      throttledRender();
+      return;
+    }
+    // thinking delta → a 'think' step whose body is the reasoning
+    if (typeof ev.delta === 'string' && ev.thinking === true) {
+      ensureActivity();
+      if (!turn.thinkStep || turn.thinkStep.state !== 'running') turn.thinkStep = newStep('think');
+      turn.thinkStep.body = (turn.thinkStep.body || '') + ev.delta;
+      throttledRender();
+      return;
+    }
+    // prose delta → the assistant's answer (tools/thinking are done by now)
+    if (typeof ev.delta === 'string') {
+      if (turn.thinkStep) finalizeStep(turn.thinkStep);
+      if (turn.activity) finalizeTools(turn.activity);
+      ensureAsst();
+      turn.asstMsg.text += ev.delta;
+      throttledRender();
+      return;
+    }
+    // tool start → a running tool step (prior running tools check off)
+    if (ev.type === 'tool_start') {
+      if (turn.thinkStep) finalizeStep(turn.thinkStep);
+      if (turn.activity) finalizeTools(turn.activity);
+      const kind = toolKind(ev.tool);
+      const st = newStep(kind, ev.command || ev.file || ev.path || ev.tool || '', ev.tool_id);
+      st.cursor = true;
+      throttledRender();
+      return;
+    }
+    // tool output → append to the step's detail; exit_code finalizes it
+    if (ev.type === 'tool_output') {
+      let st = (ev.tool_id != null && turn.byTid[ev.tool_id]);
+      if (!st) { for (let i = (turn.activity?.steps.length || 0) - 1; i >= 0; i--) { const c = turn.activity.steps[i]; if (c.kind !== 'think' && c.state === 'running') { st = c; break; } } }
+      if (st) {
+        if (typeof ev.output === 'string' && ev.output) {
+          for (const line of ev.output.split('\n')) st.lines.push({ t: line, c: lineColor(line) });
+        }
+        if (ev.exit_code != null) {
+          if (ev.exit_code !== 0) { st.meta = `exit ${ev.exit_code}`; st.metaColor = 'var(--red)'; }
+          finalizeStep(st);
+          if (ev.exit_code !== 0) st.state = 'error';
+        }
+        throttledRender();
+      }
+      return;
+    }
+    // agent_step / metrics / run_alive / stall: ignored
+  };
+
+  return { onEvent, ensureActivity };
+}
+
+// Parse one stored SSE payload (the raw string event_store kept, e.g.
+// "data: {...}\n\n" or "data: [DONE]\n\n") into a reducer event, or null.
+function parseStoredSSE(raw) {
+  for (const line of String(raw || '').split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (payload === '[DONE]') return { type: 'done' };
+    try { return JSON.parse(payload); } catch (_) { return null; }
+  }
+  return null;
+}
+
+// Re-attach to a turn that's still running server-side for `sessionId` (the
+// visible win: refresh / switch-away-and-back keeps streaming). Returns true if
+// it attached. Replays the turn's events to rebuild the in-flight answer, then
+// EventSource-tails the remainder from last_event_id until [DONE].
+async function resumeIfActive(chat, state, sessionId) {
+  if (!sessionId) return false;
+  let snap;
+  try {
+    snap = await apiGet(`/api/chat/turn?session=${encodeURIComponent(sessionId)}`);
+  } catch (_) { return false; }
+  if (!snap || !snap.active) return false;
+  // Guard against a thread-switch that raced this fetch.
+  if (chat.activeId !== sessionId) return false;
+
+  stopLive();
+  stopElapsed();
+  const { onEvent, ensureActivity } = beginTurn(chat, chat.model);
+  ensureActivity();            // immediate "Working…" while we rebuild + tail
+  for (const e of (snap.events || [])) {
+    const ev = parseStoredSSE(e.data);
+    if (ev) onEvent(ev);
+  }
+  flushRender();
+
+  const cursor = snap.last_event_id || '';
+  const url = `/api/chat/stream?session=${encodeURIComponent(sessionId)}` +
+    (cursor ? `&last_event_id=${encodeURIComponent(cursor)}` : '');
+  const es = new EventSource(location.origin + url, { withCredentials: true });
+  liveES = es;
+  es.onmessage = (e) => {
+    if (liveES !== es) return;                 // superseded by a newer attach
+    if (e.data === '[DONE]') { onEvent({ type: 'done' }); es.close(); if (liveES === es) liveES = null; return; }
+    let ev = null; try { ev = JSON.parse(e.data); } catch (_) {}
+    if (ev) onEvent(ev);
+  };
+  es.onerror = () => { /* EventSource auto-reconnects with Last-Event-ID */ };
+  return true;
+}
+
 export const actions = {
   selectSession: async (id) => {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
+    // Leaving the current thread: detach this client's live reader. The turn
+    // keeps running + recording server-side, so nothing is lost — we re-attach
+    // below if the thread we're opening has its own in-flight turn.
+    stopLive();
+    stopElapsed();
+    turn = null;
     chat.rowMenuOpen = null;
     chat.activeId = id;
     storeActiveId(id);
@@ -392,6 +597,9 @@ export const actions = {
       chat.subtitle = t.subtitle;
       if (t.model) chat.model = t.model;
     } catch (_) { /* keep prior */ }
+    // Re-attach to an in-flight turn for this thread, if one is still running
+    // server-side (returning to a thread you left mid-answer).
+    try { await resumeIfActive(chat, state, id); } catch (_) { /* non-fatal */ }
     const pct = await fetchUsage(id);
     if (pct != null) chat.usagePct = pct;
     runtime.render();
@@ -449,143 +657,17 @@ export const actions = {
     state.draft = '';
     runtime.render();
 
-    // abort any in-flight send
-    if (streamCtrl) { try { streamCtrl.abort(); } catch (_) {} streamCtrl = null; }
+    // Detach any prior live reader. Safe now: the server-side recorder owns the
+    // turn, so aborting the reader only drops THIS client's stream.
+    stopLive();
     stopElapsed();
 
-    // per-turn activity state — an assistant message that accrues the trail
-    turn = { asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), got404: false };
-
-    const ensureAsst = () => {
-      if (!turn.asstMsg) {
-        turn.asstMsg = { id: turn.msgId, role: 'assistant', text: '', time: fmtTime(Date.now()), model: chat.model };
-        chat.thread.push(turn.asstMsg);
-      }
-      return turn.asstMsg;
-    };
-    const ensureActivity = () => {
-      ensureAsst();
-      if (!turn.asstMsg.activity) {
-        turn.asstMsg.activity = { status: 'working', steps: [], startMs: Date.now(), elapsed: '0s' };
-        turn.activity = turn.asstMsg.activity;
-        startElapsed();
-      }
-      return turn.asstMsg.activity;
-    };
-    const newStep = (kind, file, tid) => {
-      const a = ensureActivity();
-      const st = { id: `${turn.msgId}-s${turn.stepN++}`, kind, label: PRESENT[kind] || 'Working', file: file || '', state: 'running', lines: [], startMs: Date.now() };
-      if (kind === 'think') st.label = 'Thinking';
-      a.steps.push(st);
-      if (tid != null) turn.byTid[tid] = st;
-      return st;
-    };
-
+    const { onEvent, ensureActivity } = beginTurn(chat, chat.model);
     // Immediate feedback: show the "Working…" spinner the moment we send, so the
     // model's warmup (claude-cli can take a few seconds before its first frame)
     // never looks like a dead, unresponsive turn.
     ensureActivity();
     flushRender();
-
-    const onEvent = (ev) => {
-      if (!ev) return;
-
-      if (ev.type === 'done') {
-        if (turn.thinkStep) finalizeStep(turn.thinkStep);
-        const a = turn.activity;
-        if (a) {
-          finalizeAll(a);
-          a.status = 'done';
-          a.elapsed = fmtElapsed(a.startMs);
-          a.worked = `Worked for ${a.elapsed} · ${a.steps.length} steps`;
-        }
-        stopElapsed();
-        // Empty-turn safeguard: the turn ended with no assistant text and no
-        // tool work (e.g. the model isn't served on this plan/endpoint, so the
-        // gateway streamed an empty reply). Surface that instead of a blank.
-        const hadText = turn.asstMsg && String(turn.asstMsg.text || '').trim();
-        const hadWork = turn.activity && (turn.activity.steps || []).some((st) => st.kind !== 'think');
-        if (!hadText && !hadWork && !turn.got404) {
-          const m = ensureAsst();
-          m.error = true;
-          m.notice = 'No response from this model — it may not be available on your plan or endpoint. Try another model from the picker.';
-        }
-        flushRender();
-        if (turn.got404) { actions.reloadSessions(); turn = null; return; }
-        refreshSidebarUsage(state);
-        turn = null;
-        return;
-      }
-      if (ev.type === 'error') {
-        if (ev.status === 404) { turn.got404 = true; return; }
-        // Non-404 failure (the stream never opened, or dropped): show why rather
-        // than leaving the user staring at their own message with no reply.
-        const m = ensureAsst();
-        m.error = true;
-        m.notice = ev.status
-          ? `Couldn’t get a response (HTTP ${ev.status}). Try again, or pick another model.`
-          : 'The connection dropped before a response arrived. Try again.';
-        stopElapsed();
-        flushRender();
-        turn = null;
-        return;
-      }
-
-      // reply_reset → the agent began a NEW message mid-turn (its real reply
-      // after a message-tool delivery). Drop the text shown so far so the final
-      // reply isn't doubled ("Sent…Hey 👋"). Tool/thinking steps are kept.
-      if (ev.type === 'reply_reset') {
-        if (turn.asstMsg) turn.asstMsg.text = '';
-        throttledRender();
-        return;
-      }
-
-      // thinking delta → a 'think' step whose body is the reasoning
-      if (typeof ev.delta === 'string' && ev.thinking === true) {
-        ensureActivity();
-        if (!turn.thinkStep || turn.thinkStep.state !== 'running') turn.thinkStep = newStep('think');
-        turn.thinkStep.body = (turn.thinkStep.body || '') + ev.delta;
-        throttledRender();
-        return;
-      }
-      // prose delta → the assistant's answer (tools/thinking are done by now)
-      if (typeof ev.delta === 'string') {
-        if (turn.thinkStep) finalizeStep(turn.thinkStep);
-        if (turn.activity) finalizeTools(turn.activity);
-        ensureAsst();
-        turn.asstMsg.text += ev.delta;
-        throttledRender();
-        return;
-      }
-      // tool start → a running tool step (prior running tools check off)
-      if (ev.type === 'tool_start') {
-        if (turn.thinkStep) finalizeStep(turn.thinkStep);
-        if (turn.activity) finalizeTools(turn.activity);
-        const kind = toolKind(ev.tool);
-        const st = newStep(kind, ev.command || ev.file || ev.path || ev.tool || '', ev.tool_id);
-        st.cursor = true;
-        throttledRender();
-        return;
-      }
-      // tool output → append to the step's detail; exit_code finalizes it
-      if (ev.type === 'tool_output') {
-        let st = (ev.tool_id != null && turn.byTid[ev.tool_id]);
-        if (!st) { for (let i = (turn.activity?.steps.length || 0) - 1; i >= 0; i--) { const c = turn.activity.steps[i]; if (c.kind !== 'think' && c.state === 'running') { st = c; break; } } }
-        if (st) {
-          if (typeof ev.output === 'string' && ev.output) {
-            for (const line of ev.output.split('\n')) st.lines.push({ t: line, c: lineColor(line) });
-          }
-          if (ev.exit_code != null) {
-            if (ev.exit_code !== 0) { st.meta = `exit ${ev.exit_code}`; st.metaColor = 'var(--red)'; }
-            finalizeStep(st);
-            if (ev.exit_code !== 0) st.state = 'error';
-          }
-          throttledRender();
-        }
-        return;
-      }
-      // agent_step / metrics / run_alive / stall: ignored
-    };
 
     streamCtrl = postStream(
       '/api/chat_stream',
@@ -602,8 +684,13 @@ export const actions = {
   },
 
   stopRun: () => {
-    if (streamCtrl) { try { streamCtrl.abort(); } catch (_) {} streamCtrl = null; }
+    // Detach this client's reader AND abort the run server-side. With the
+    // detached recorder, aborting the reader alone no longer stops the gateway
+    // run — Stop must explicitly POST /api/chat/stop/{id} (chat.abort).
+    const sid = runtime.state && ensureChat(runtime.state).activeId;
+    stopLive();
     stopElapsed();
+    if (sid) { apiForm(`/api/chat/stop/${sid}`, {}).catch(() => {}); }
     if (turn && turn.activity) {
       const a = turn.activity;
       finalizeAll(a);

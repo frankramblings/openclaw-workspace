@@ -614,6 +614,7 @@ async function _notifyTick() {
       chat.notified.add(id);
       changed = true;
       try { if (navigator.vibrate) navigator.vibrate(30); } catch (_) { /* no haptics */ }
+      notifyTurnDone(chat, id);   // in-app toast + OS notification (if permitted)
     }
   }
   // Re-render if the running set changed too (working dots).
@@ -631,6 +632,58 @@ function startNotifier() {
   if (_notifyTimer) return;
   _notifyTimer = setInterval(_notifyTick, 4000);
   _notifyTick();
+}
+
+// --- notification surfacing (in-app toast + OS notification) ----------------
+function _titleFor(chat, id) {
+  for (const g of (chat.groups || [])) for (const r of (g.rows || [])) if (r.id === id) return r.title;
+  return null;
+}
+
+// Switch to the chat surface and open a thread (toast / OS-notification click).
+function openNotified(id) {
+  const state = runtime.state;
+  if (state) { state.surface = 'chat'; state.mTab = 'chat'; state.mSub = null; }
+  try { if (location.hash !== '#chat') history.replaceState(null, '', '#chat'); } catch (_) {}
+  actions.selectSession(id);
+}
+
+// Lazily request OS-notification permission on a user gesture (called from send).
+function ensureNotifyPermission() {
+  try {
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  } catch (_) { /* unsupported */ }
+}
+
+// Transient in-app toast appended to <body> (outside the render() root so it
+// survives re-renders); click to open the thread, auto-dismiss after 6s.
+function showChatToast(text, id) {
+  try {
+    let host = document.getElementById('oc-toast-host');
+    if (!host) { host = document.createElement('div'); host.id = 'oc-toast-host'; document.body.appendChild(host); }
+    const el = document.createElement('div');
+    el.className = 'oc-toast';
+    el.innerHTML = '<span class="oc-toast-dot"></span><span class="oc-toast-msg"></span><span class="oc-toast-go">Open</span>';
+    el.querySelector('.oc-toast-msg').textContent = text;
+    const close = () => { el.classList.remove('in'); setTimeout(() => el.remove(), 220); };
+    el.addEventListener('click', () => { openNotified(id); close(); });
+    host.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('in'));
+    setTimeout(close, 6000);
+  } catch (_) { /* DOM unavailable */ }
+}
+
+// A reply finished in a thread you weren't viewing — surface it: in-app toast
+// always, plus an OS notification when the user has granted permission.
+function notifyTurnDone(chat, id) {
+  const title = _titleFor(chat, id) || 'a chat';
+  showChatToast(`Gary finished replying · ${title}`, id);
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification('Gary finished replying', { body: title, tag: 'oc-turn-' + id });
+      n.onclick = () => { try { window.focus(); } catch (_) {} openNotified(id); n.close(); };
+    }
+  } catch (_) { /* OS notifications unavailable */ }
 }
 
 export const actions = {
@@ -653,6 +706,7 @@ export const actions = {
         for (const r of g.rows) r.active = r.id === id;
       }
     }
+    annotateConvRows(chat);     // refresh row dots NOW so the green one clears
     runtime.render();
 
     let name;
@@ -709,6 +763,9 @@ export const actions = {
     const attachIds = (state.pendingAttach || []).map((a) => a.id);
     if (!text && !attachIds.length) return;
     const chat = ensureChat(state);
+    // Sending is a user gesture — a good moment to ask for OS-notification
+    // permission so a reply finishing while you're elsewhere can notify you.
+    ensureNotifyPermission();
 
     // ensure we have a session
     if (!chat.activeId) {

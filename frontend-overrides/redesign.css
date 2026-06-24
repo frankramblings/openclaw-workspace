@@ -96,6 +96,14 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .conv-dot{flex:none;width:7px;height:7px;border-radius:50%}
 .conv-dot.notify{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 20%,transparent);animation:pulse 1.6s ease-in-out infinite}
 .conv-dot.working{background:var(--teal);animation:pulse 1.2s ease-in-out infinite}
+/* In-app turn-finished toast (appended to <body>, outside the render root). */
+#oc-toast-host{position:fixed;z-index:9999;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.oc-toast{pointer-events:auto;display:flex;align-items:center;gap:10px;max-width:340px;padding:11px 14px;border-radius:12px;background:var(--panel2);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent);box-shadow:0 8px 28px rgba(0,0,0,.45);color:var(--fg);font-size:13px;cursor:pointer;transform:translateY(12px);opacity:0;transition:opacity .2s ease,transform .2s ease}
+.oc-toast.in{opacity:1;transform:translateY(0)}
+.oc-toast-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 22%,transparent)}
+.oc-toast-msg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oc-toast-go{flex:none;font-weight:600;color:var(--teal);font-size:12px}
+@media (max-width:768px){#oc-toast-host{left:12px;right:12px;bottom:76px}.oc-toast{max-width:none}}
 .oc-rail-fill{flex:1}
 .oc-user{display:flex;align-items:center;gap:11px;padding:6px 9px}
 .oc-rail.collapsed .oc-user{justify-content:center}

@@ -153,7 +153,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-asst{display:flex;gap:13px;margin-bottom:24px}
 .msg-av{width:30px;height:30px;flex:none;border-radius:8px;overflow:hidden;background:var(--teal);display:flex;align-items:center;justify-content:center}
 .msg-av img{width:100%;height:100%;object-fit:contain;padding:2px;box-sizing:border-box;display:block}
-.msg-body{min-width:0;max-width:760px}
+.msg-body{min-width:0;max-width:760px;overflow-wrap:anywhere}
 .msg-meta{display:flex;align-items:baseline;gap:9px;margin-bottom:7px}
 .msg-meta .name{font-size:13.5px;font-weight:600;color:var(--fg)}
 .msg-meta .model{font-family:var(--mono);font-size:10.5px;color:var(--teal);background:var(--tealtint);padding:1px 7px;border-radius:999px}
@@ -173,7 +173,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-user .meta{display:flex;align-items:baseline;gap:8px;justify-content:flex-end;margin-bottom:5px}
 .msg-user .meta .time{font-size:11.5px;color:var(--faint)}
 .msg-user .meta .you{font-size:13px;font-weight:600;color:var(--teal)}
-.msg-user p{margin:0;font-size:14.5px;line-height:1.58;color:#dfe4ea}
+.msg-user p{margin:0;font-size:14.5px;line-height:1.58;color:#dfe4ea;overflow-wrap:anywhere}
 
 /* rendered markdown inside chat messages (renderMarkdown output) */
 .msg-body strong,.msg-user strong{font-weight:700;color:var(--fg)}

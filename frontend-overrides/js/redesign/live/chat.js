@@ -69,6 +69,7 @@ function buildGroups(sessions, activeId) {
       title: s.name || 'New chat',
       term: !!s.gary_terminal,
       active: s.id === activeId,
+      important: !!s.important,
     });
     count++;
   }
@@ -408,7 +409,7 @@ export const actions = {
 
     // optimistic user message
     if (!Array.isArray(chat.thread)) chat.thread = [];
-    chat.thread.push({ role: 'user', text, time: fmtTime(Date.now()) });
+    chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()) });
     state.draft = '';
     runtime.render();
 
@@ -687,30 +688,46 @@ export const actions = {
     runtime.render();
   },
   // Rename the active conversation → PATCH /api/session/{id} (FormData name).
-  renameSession: async () => {
+  renameSession: async (id) => {
     const state = runtime.state;
     if (!state) return;
-    state.chatMenuOpen = false;
     const chat = ensureChat(state);
-    if (!chat.activeId) { runtime.render(); return; }
+    state.chatMenuOpen = false;
+    chat.rowMenuOpen = null;
+    const target = id || chat.activeId;
+    if (!target) { runtime.render(); return; }
+    let cur = chat.title || '';
+    if (target !== chat.activeId) {
+      const rows = (chat.groups || []).flatMap((g) => g.rows || []);
+      cur = (rows.find((r) => r.id === target) || {}).title || '';
+    }
     let name = null;
-    try { name = window.prompt('Rename conversation', chat.title || ''); } catch (_) { name = null; }
+    try { name = window.prompt('Rename conversation', cur); } catch (_) { name = null; }
     if (name == null) { runtime.render(); return; }
     name = name.trim();
     if (!name) { runtime.render(); return; }
-    chat.title = name;
+    if (target === chat.activeId) chat.title = name;
     runtime.render();
-    try { await apiForm(`/api/session/${chat.activeId}`, { name }, { method: 'PATCH' }); } catch (_) {}
+    try { await apiForm(`/api/session/${target}`, { name }, { method: 'PATCH' }); } catch (_) {}
     try { await load(state); } catch (_) {}
     runtime.render();
   },
   // Copy the transcript to the clipboard.
-  copyTranscript: async () => {
+  copyTranscript: async (id) => {
     const state = runtime.state;
     if (!state) return;
-    state.chatMenuOpen = false;
     const chat = ensureChat(state);
-    const text = (chat.thread || []).map((m) => `${m.role === 'user' ? 'You' : 'Gary'}: ${m.text || ''}`).join('\n\n');
+    state.chatMenuOpen = false;
+    chat.rowMenuOpen = null;
+    let thread = chat.thread || [];
+    if (id && id !== chat.activeId) {
+      try {
+        const hist = await apiGet(`/api/history/${id}?limit=200`);
+        const list = Array.isArray(hist?.history) ? hist.history : [];
+        thread = list.map((h) => ({ role: h.role === 'user' ? 'user' : 'assistant', text: h.content || '' }));
+      } catch (_) { thread = []; }
+    }
+    const text = thread.map((m) => `${m.role === 'user' ? 'You' : 'Gary'}: ${m.text || ''}`).join('\n\n');
     try { await navigator.clipboard.writeText(text); } catch (_) {}
     runtime.render();
   },
@@ -759,4 +776,62 @@ export const actions = {
     try { await load(state); } catch (_) {}
     runtime.render();
   },
+
+  // Sidebar: open/close a single row's actions menu.
+  toggleConvMenu: (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    chat.rowMenuOpen = chat.rowMenuOpen === id ? null : id;
+    state.chatMenuOpen = false;
+    runtime.render();
+  },
+
+  // Sidebar: toggle a conversation's favorite flag → POST /api/session/{id}/important.
+  toggleFavorite: async (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    chat.rowMenuOpen = null;
+    const rows = (chat.groups || []).flatMap((g) => g.rows || []);
+    const row = rows.find((r) => r.id === id);
+    const next = !(row && row.important);
+    if (row) row.important = next; // optimistic
+    runtime.render();
+    try { await apiForm(`/api/session/${id}/important`, { important: String(next) }); } catch (_) {}
+    try { await load(state); } catch (_) {}
+    runtime.render();
+  },
+
+  // Message toolbar: copy one message's text to the clipboard.
+  copyMessage: async (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    const msg = (chat.thread || []).find((m) => m.id === id);
+    if (!msg || !msg.text) return;
+    try { await navigator.clipboard.writeText(msg.text); } catch (_) {}
+  },
+
+  // Message toolbar: download one message's text as a .md file (client-side).
+  downloadMessage: (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    const msg = (chat.thread || []).find((m) => m.id === id);
+    if (!msg || !msg.text) return;
+    const who = msg.role === 'user' ? 'you' : 'gary';
+    const slug = (msg.text.split('\n')[0] || 'message').slice(0, 40).replace(/[^\w.-]+/g, '_');
+    try {
+      const blob = new Blob([msg.text], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${who}-${slug}.md`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
+    } catch (_) {}
+  },
+
+  // Swallow clicks on menu chrome so they neither select the row nor close the menu.
+  noop: () => {},
 };

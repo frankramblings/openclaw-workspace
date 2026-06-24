@@ -334,6 +334,7 @@ export const actions = {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
+    chat.rowMenuOpen = null;
     chat.activeId = id;
     storeActiveId(id);
     if (Array.isArray(chat.groups)) {

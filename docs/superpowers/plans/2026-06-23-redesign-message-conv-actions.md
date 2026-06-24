@@ -18,7 +18,7 @@
 - **Quality floor:** all triggers are real `<button>`s with `title`/`aria-label`; toolbar reveals on `:hover` AND `:focus-within`; menus close on outside-click and Escape; `prefers-reduced-motion` removes motion.
 - **Import-safety reality:** `surfaces.js` and `icons.js` import cleanly in Node (unit-testable). `live/chat.js` and `app.js` are NOT import-safe (`api.js` reads `location.origin` at module load). Per the existing codebase, runtime handlers and CSS are verified manually, not via `node:test`.
 - **Run a single test file:** `cd /home/frank/openclaw-workspace && node --test frontend-overrides/js/__tests__/<file>.test.js`
-- **Run all redesign tests:** `cd /home/frank/openclaw-workspace && node --test frontend-overrides/js/__tests__/`
+- **Run all redesign tests:** `cd /home/frank/openclaw-workspace && node --test 'frontend-overrides/js/__tests__/*.test.js'` (this Node needs the glob; a bare directory path is treated as a module and errors)
 
 ---
 

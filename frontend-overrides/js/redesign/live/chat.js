@@ -224,6 +224,7 @@ export async function load(state) {
       chat.title = t.title || chat.title;
       chat.subtitle = t.subtitle;
       chat.model = t.model || fallbackModel;
+      runtime.wantChatBottom = true;   // land on the latest message after refresh
     } catch (_) {
       chat.thread = chat.thread || [];
       chat.model = chat.model || fallbackModel;
@@ -722,6 +723,7 @@ export const actions = {
       if (t.title) chat.title = t.title;
       chat.subtitle = t.subtitle;
       if (t.model) chat.model = t.model;
+      runtime.wantChatBottom = true;   // land on the latest message once loaded
     } catch (_) { /* keep prior */ }
     // Re-attach to an in-flight turn for this thread, if one is still running
     // server-side (returning to a thread you left mid-answer).
@@ -784,6 +786,7 @@ export const actions = {
     if (!Array.isArray(chat.thread)) chat.thread = [];
     chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()) });
     state.draft = '';
+    runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
     runtime.render();
 
     // Detach any prior live reader. Safe now: the server-side recorder owns the

@@ -170,15 +170,21 @@ function render() {
   const isChatNow = !!chatEl;
   const curActiveId = (state.live && state.live.chat && state.live.chat.activeId) || null;
   const justEnteredChat = isChatNow && (!_prevChatMounted || curActiveId !== _prevActiveId);
+  // Jump to the latest message on (re)entry. justEnteredChat catches the simple
+  // case; runtime.wantChatBottom (set by the chat loader once content is in)
+  // catches the open/switch sequence where an early pre-fetch render would
+  // otherwise consume the "just entered" state before the thread is loaded.
+  const wantBottom = justEnteredChat || runtime.wantChatBottom;
   for (const sel of SCROLL_SELECTORS) {
     const el = root.querySelector(sel);
     if (!el) continue;
     const isChat = sel === '.chat-thread' || el.classList.contains('m-thread');
-    if (isChat && justEnteredChat) { el.scrollTop = el.scrollHeight; continue; }
+    if (isChat && wantBottom) { el.scrollTop = el.scrollHeight; continue; }
     const saved = scrollState[sel];
     if (!saved) continue;
     el.scrollTop = saved.stick ? el.scrollHeight : saved.top;
   }
+  if (runtime.wantChatBottom && isChatNow) runtime.wantChatBottom = false;
   _prevChatMounted = isChatNow;
   _prevActiveId = curActiveId;
 

@@ -28,6 +28,20 @@ export function renderChatList(s) {
   </div>`;
 }
 
+// Per-row conversation actions menu (5 items). Rendered inline when this row's
+// menu is open. The wrapper's data-act="noop" swallows clicks on menu chrome so
+// they neither select the row nor close the menu.
+function convMenu(r) {
+  const fav = r.important ? 'Unfavorite' : 'Favorite';
+  return `<div class="conv-menu" data-act="noop" role="menu">`
+    + `<button class="cm-item" data-act="renameSession" data-arg="${esc(r.id)}" role="menuitem">Rename</button>`
+    + `<button class="cm-item" data-act="toggleFavorite" data-arg="${esc(r.id)}" role="menuitem">${fav}</button>`
+    + `<button class="cm-item" data-act="copyTranscript" data-arg="${esc(r.id)}" role="menuitem">Copy chat</button>`
+    + `<button class="cm-item" data-act="archiveSession" data-arg="${esc(r.id)}" role="menuitem">Archive</button>`
+    + `<button class="cm-item cm-danger" data-act="deleteSession" data-arg="${esc(r.id)}" role="menuitem">Delete</button>`
+    + `</div>`;
+}
+
 // conversation rows: live sessions (grouped) with mock fallback
 function convListBody(s) {
   const groups = s.live?.chat?.groups; // [{ label, rows:[{id,title,glyph,term,active}] }]
@@ -50,7 +64,14 @@ function convListBody(s) {
   const sorted = s.convSort === 'alpha'
     ? [{ label: 'A–Z', rows: groups2.flatMap((g) => g.rows || []).slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' })) }]
     : groups2;
-  const convRow = (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}" data-act="selectSession" data-arg="${esc(r.id)}"><span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span><span class="conv-title">${esc(r.title)}</span><span class="conv-arch" data-act="archiveSession" data-arg="${esc(r.id)}" title="Archive conversation" style="margin-left:auto;padding:0 4px;color:var(--faint);opacity:.5;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span><span class="conv-del" data-act="deleteSession" data-arg="${esc(r.id)}" title="Delete conversation" style="padding:0 4px;color:var(--faint);opacity:.5;cursor:pointer">✕</span></div>`;
+  const rowMenuOpen = s.live?.chat?.rowMenuOpen;
+  const convRow = (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}" data-act="selectSession" data-arg="${esc(r.id)}">`
+    + `<span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span>`
+    + `<span class="conv-title">${esc(r.title)}</span>`
+    + (r.important ? `<span class="conv-fav" aria-hidden="true">${I.star(13, true)}</span>` : '')
+    + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
+    + (rowMenuOpen === r.id ? convMenu(r) : '')
+    + `</div>`;
   return map(sorted, (g, gi) => `
     <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
     ${map(g.rows, convRow)}`);

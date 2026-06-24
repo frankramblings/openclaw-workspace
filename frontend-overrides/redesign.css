@@ -188,6 +188,26 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .pill-btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--mut);font-family:var(--sans);font-size:12.5px;cursor:pointer;flex:none;white-space:nowrap}
 .model-btn{height:32px;padding:0 11px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--fg);display:inline-flex;align-items:center;gap:7px;font-family:var(--sans);font-size:12.5px;cursor:pointer;white-space:nowrap;flex:none}
 .model-btn .glyph{font-family:var(--mono);color:var(--teal)}
+.model-btn-name{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* compact, endpoint-grouped model picker (design_handoff_model_selector) */
+.model-pop{position:absolute;right:22px;bottom:100%;margin-bottom:8px;width:300px;max-height:380px;overflow-y:auto;z-index:40;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:6px}
+.model-grp{display:flex;align-items:center;gap:7px;padding:9px 9px 4px}
+.model-ep{font-size:10px;font-weight:700;letter-spacing:.09em;color:var(--faint)}
+.model-tag{font-size:9.5px;color:var(--faint);background:var(--bg);border:1px solid var(--bd);padding:1px 6px;border-radius:999px}
+.model-row{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer}
+.model-row:hover{background:#1d1f24}
+.model-row.sel{background:var(--tealtint)}
+.model-name{font-family:var(--mono);font-size:12.5px;color:var(--fg);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-row.sel .model-name{color:var(--teal)}
+.model-check{flex:none}
+.mstar{font-size:13px;line-height:1;color:var(--faint);opacity:0;flex:none;padding:0 2px;transition:opacity .12s ease,transform .12s ease}
+.model-row:hover .mstar{opacity:.5}
+.mstar:hover{opacity:1 !important;transform:scale(1.15)}
+.mstar-def{opacity:1 !important;color:var(--gold)}
+.model-foot{font-size:10.5px;color:var(--faint);padding:8px 9px 5px;border-top:1px solid var(--bd2);margin-top:5px}
+.model-empty{padding:10px 9px;color:var(--faint);font-size:12px}
+@media (prefers-reduced-motion:reduce){.mstar{transition:none}}
 .mode-toggle{display:flex;background:var(--bg);border:1px solid var(--bd);border-radius:9px;padding:3px;gap:2px;flex:none}
 .mode-toggle button{height:26px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:var(--mut);font-family:var(--sans);font-size:12px;font-weight:600;cursor:pointer}
 .mode-toggle button.active-agent{background:var(--teal);color:var(--ink)}

@@ -107,6 +107,48 @@ export function chatMsg(m, s) {
 }
 
 
+// Composite model identity (endpoint·model) — must match live/chat.js MODEL_SEP.
+const MODEL_SEP = '·';
+
+// The compact, endpoint-grouped model picker popover. Endpoint is named once per
+// group header (the de-duplication); rows carry only the bare model name. The
+// active check and gold default star key on the composite id, so the same model
+// offered by two endpoints no longer co-selects. Wrapper carries data-act="noop"
+// so clicks on chrome don't fall through to the outside-click close.
+export function modelPopover(s) {
+  const chat = (s.live && s.live.chat) || {};
+  const groups = s.live && s.live.modelGroups;
+  if (!groups || !groups.length) {
+    return `<div class="model-pop" data-act="noop"><div class="model-empty">Loading…</div></div>`;
+  }
+  const curId = (chat.endpointId || '') + MODEL_SEP + (chat.model || '');
+  const defId = (s.live && s.live.defaultModel) || '';
+  const row = (m) => {
+    const active = m.id === curId;
+    const isDef = m.id === defId;
+    return `<div class="model-row${active ? ' sel' : ''}" data-act="setModel" data-arg="${esc(m.id)}">`
+      + `<span class="model-name">${esc(m.name)}</span>`
+      + (active ? `<svg class="model-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : '')
+      + `<span class="mstar${isDef ? ' mstar-def' : ''}" data-act="setDefaultModel" data-arg="${esc(m.id)}" title="Set as default for new chats">★</span>`
+      + `</div>`;
+  };
+  const group = (g) => `<div class="model-grp"><span class="model-ep">${esc(g.ep)}</span>${g.hasTag ? `<span class="model-tag">${esc(g.tag)}</span>` : ''}</div>${map(g.models, row)}`;
+  return `<div class="model-pop" data-act="noop">${map(groups, group)}<div class="model-foot">★ sets the default for new chats</div></div>`;
+}
+
+// Trigger-button label: prefer the loaded list's bare name for the current
+// (endpoint·model) selection; fall back to the raw model id before the list loads.
+function currentModelLabel(s, model) {
+  const list = s.live && s.live.modelList;
+  const chat = (s.live && s.live.chat) || {};
+  if (list && list.length) {
+    const curId = (chat.endpointId || '') + MODEL_SEP + (chat.model || '');
+    const hit = list.find((m) => m.id === curId) || list.find((m) => m.mid === model);
+    if (hit) return hit.name;
+  }
+  return model;
+}
+
 function chatSurface(s) {
   const d = s.draft || '';
   const typedSlash = d.startsWith('/');
@@ -146,13 +188,7 @@ function chatSurface(s) {
       <div class="hd">COMMANDS</div>
       ${map(filtered, (c) => `<div class="slash-cmd" data-act="pickSlash" data-arg="${esc(c.name)}"><span class="glyph" style="color:${c.color}">${c.glyph}</span><span class="name">${esc(c.name)}</span><span class="desc">${esc(c.desc)}</span></div>`)}
     </div>`)}
-    ${when(s.modelMenuOpen, `
-    <div class="slash-menu model-menu">
-      <div class="hd">MODEL <span style="float:right;font-weight:400;text-transform:none;color:var(--faint)">★ = default for new chats</span></div>
-      ${(s.live && s.live.modelList && s.live.modelList.length)
-        ? map(s.live.modelList, (m) => `<div class="slash-cmd" data-act="setModel" data-arg="${esc(m.mid)}"><span class="name">${esc(m.name)}</span><span class="desc">${esc(m.ep || '')}</span>${m.mid === model ? '<span class="glyph" style="color:var(--green)">✓</span>' : ''}<span data-act="setDefaultModel" data-arg="${esc(m.mid)}" title="Set as default for new chats" style="cursor:pointer;padding:0 4px;color:${m.mid === (s.live && s.live.defaultModel) ? 'var(--gold,#e8c268)' : 'var(--faint)'}">★</span></div>`)
-        : '<div class="slash-cmd"><span class="desc">Loading…</span></div>'}
-    </div>`)}
+    ${when(s.modelMenuOpen, modelPopover(s))}
     <div class="composer${slashOpen ? ' slash' : ''}">
       <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message Gary…   ( type / for commands )">${esc(d)}</textarea>
       ${when(s.pendingAttach && s.pendingAttach.length, `
@@ -165,7 +201,7 @@ function chatSurface(s) {
         <div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
         <div class="oc-spacer"></div>
         <button class="icon-btn ocbtn" data-act="toggleIncognito" title="${s.incognito ? 'Incognito ON — this chat is not saved' : 'Incognito — don’t save this chat'}" style="${s.incognito ? 'color:var(--violet)' : ''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7"/><path d="M2 12s3 7 10 7 10-7 10-7"/><circle cx="12" cy="12" r="2.5"/>${s.incognito ? '<line x1="3" y1="3" x2="21" y2="21"/>' : ''}</svg></button>
-        <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="glyph">A\\</span>${esc(model)}${I.chevDownSm()}</button>
+        <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="glyph">A\\</span><span class="model-btn-name">${esc(currentModelLabel(s, model))}</span>${I.chevDownSm()}</button>
         <div class="mode-toggle">
           <button class="${agent ? 'active-agent' : ''}" data-act="setMode" data-arg="agent">Agent</button>
           <button class="${!agent ? 'active-chat' : ''}" data-act="setMode" data-arg="chat">Chat</button>

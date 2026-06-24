@@ -30,6 +30,22 @@ function readActiveId() {
   try { return localStorage.getItem(ACTIVE_KEY) || null; } catch (_) { return null; }
 }
 
+// Model identity = endpoint·model. The separator (middle dot) is absent from
+// endpoint ids and model names, so a plain split round-trips cleanly.
+const MODEL_SEP = '·';
+// Prettify a backend endpoint name for a group header: "Claude-Cli" → "Claude
+// CLI", "Perplexity-Web" → "Perplexity", "ChatGPT" → "ChatGPT".
+function prettyEndpoint(name) {
+  return String(name || '').replace(/-web$/i, '').replace(/-cli$/i, ' CLI').replace(/-/g, ' ').trim();
+}
+// Strip the endpoint suffix the API bakes into model_display so rows carry only
+// the bare name: "Claude Opus 4.8 (Claude CLI)" → "Claude Opus 4.8";
+// "Claude Sonnet 4.6 via Perplexity (chat only)" → "Claude Sonnet 4.6".
+function bareModelName(display) {
+  const s = String(display || '');
+  return s.replace(/\s+via\s+.*$/i, '').replace(/\s*\([^)]*\)\s*$/, '').trim() || s;
+}
+
 function fmtTime(ts) {
   if (ts == null) return '';
   const d = new Date(typeof ts === 'number' ? ts : Number(ts) || Date.parse(ts));
@@ -184,9 +200,11 @@ export async function load(state) {
 
   // fallback model + cwd (best-effort)
   let fallbackModel = '';
+  let fallbackEndpointId = '';
   try {
     const dc = await apiGet('/api/default-chat');
     fallbackModel = dc?.model || '';
+    fallbackEndpointId = dc?.endpoint_id || '';
   } catch (_) { /* ignore */ }
   try {
     const cfg = await apiGet('/api/config');
@@ -208,11 +226,16 @@ export async function load(state) {
       chat.thread = chat.thread || [];
       chat.model = chat.model || fallbackModel;
     }
+    // Endpoint half of the model identity — the session record carries it, else
+    // fall back to the default-chat endpoint. Needed so the picker's active
+    // check lands on the right (endpoint·model) row, not every same-named copy.
+    chat.endpointId = activeSession?.endpoint_id || fallbackEndpointId || chat.endpointId || '';
     const pct = await fetchUsage(activeId);
     if (pct != null) chat.usagePct = pct;
   } else {
     chat.thread = [];
     chat.model = fallbackModel;
+    chat.endpointId = fallbackEndpointId || '';
     chat.title = 'New chat';
     chat.subtitle = `0 messages · ${fallbackModel}`;
   }
@@ -381,6 +404,7 @@ export const actions = {
     apiGet('/api/default-chat').then((dc) => {
       if (dc && dc.model && dc.model !== chat.model && !chat.activeId) {
         chat.model = dc.model;
+        chat.endpointId = dc.endpoint_id || '';
         chat.subtitle = `0 messages · ${chat.model || ''}`;
         runtime.render();
       }
@@ -598,54 +622,70 @@ export const actions = {
     const open = !state.modelMenuOpen;
     state.modelMenuOpen = open;
     runtime.render();
-    if (open && !(state.live && state.live.modelList)) {
+    if (open && !(state.live && state.live.modelGroups)) {
       try {
         const data = await apiGet('/api/models');
         const items = (data && data.items) || [];
-        const list = [];
+        const groups = [];
+        const flat = [];
         for (const it of items) {
           const mids = it.models || [];
           const disp = it.models_display || it.models || [];
-          mids.forEach((mid, i) => list.push({ mid, name: disp[i] || mid, ep: it.endpoint_name, endpointId: it.endpoint_id }));
+          const epId = it.endpoint_id || '';
+          const ep = prettyEndpoint(it.endpoint_name || epId);
+          const models = mids.map((mid, i) => {
+            // Composite identity: the SAME model id is offered by multiple
+            // endpoints (e.g. claude-sonnet-4-6 via Claude CLI AND Perplexity).
+            // Key selection on endpoint·model so the copies don't co-select.
+            const row = { id: epId + MODEL_SEP + mid, mid, name: bareModelName(disp[i] || mid), endpointId: epId, ep };
+            flat.push(row);
+            return row;
+          });
+          const tag = disp.some((d) => /\(chat only\)/i.test(String(d))) ? 'chat only' : '';
+          groups.push({ ep, endpointId: epId, hasTag: !!tag, tag, models });
         }
         state.live = state.live || {};
-        state.live.modelList = list;
+        state.live.modelGroups = groups;
+        state.live.modelList = flat;
         runtime.render();
       } catch (_) { /* leave the menu empty; soft-fail */ }
     }
-    // Reflect the current default-for-new-chats so the ★ shows correctly.
+    // Reflect the current default-for-new-chats (as a composite id) so the ★ lands
+    // on exactly one row.
     if (open) {
       try {
         const dc = await apiGet('/api/default-chat');
         state.live = state.live || {};
-        state.live.defaultModel = dc && dc.model;
+        state.live.defaultModel = ((dc && dc.endpoint_id) || '') + MODEL_SEP + ((dc && dc.model) || '');
         runtime.render();
       } catch (_) { /* ignore */ }
     }
   },
 
   // ★ Set a model as the default for NEW chats (persists via POST /api/default-chat).
-  setDefaultModel: async (mid) => {
+  // `id` is the composite endpoint·model id from the picker.
+  setDefaultModel: async (id) => {
     const state = runtime.state;
-    if (!state || !mid) return;
-    const item = (state.live && state.live.modelList || []).find((m) => m.mid === mid);
+    if (!state || !id) return;
+    const item = (state.live && state.live.modelList || []).find((m) => m.id === id);
     state.live = state.live || {};
-    state.live.defaultModel = mid;
+    state.live.defaultModel = id;
     runtime.render();
-    try { await apiJson('/api/default-chat', { model: mid, endpoint_id: item ? (item.endpointId || '') : '' }); } catch (_) {}
+    try { await apiJson('/api/default-chat', { model: item ? item.mid : id, endpoint_id: item ? (item.endpointId || '') : '' }); } catch (_) {}
   },
 
-  // Pick the chat model. For a NEW chat, createSession() uses it. For the ACTIVE
-  // session, PATCH the session record so the gateway applies it on the next turn
-  // (chat_stream reads the session's model via _model_ref — backend already wired).
-  setModel: (mid) => {
+  // Pick the chat model. `id` is the composite endpoint·model id. For a NEW chat,
+  // createSession() uses chat.model/endpointId. For the ACTIVE session, PATCH the
+  // record so the gateway applies it next turn (chat_stream reads it via _model_ref).
+  setModel: (id) => {
     const state = runtime.state;
-    if (!state || !mid) return;
+    if (!state || !id) return;
     const chat = ensureChat(state);
+    const item = (state.live && state.live.modelList || []).find((m) => m.id === id);
+    const mid = item ? item.mid : id;
     chat.model = mid;
-    const item = (state.live && state.live.modelList || []).find((m) => m.mid === mid);
     chat.endpointId = item ? item.endpointId : chat.endpointId;
-    chat.subtitle = `${Array.isArray(chat.thread) ? chat.thread.length : 0} messages · ${mid}`;
+    chat.subtitle = `${Array.isArray(chat.thread) ? chat.thread.length : 0} messages · ${item ? item.name : mid}`;
     state.modelMenuOpen = false;
     runtime.render();
     if (chat.activeId) {

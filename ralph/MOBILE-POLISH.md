@@ -21,7 +21,7 @@ CSS-only changes aren't covered by the node tests (renderers only) — Frank ver
 
 ## Backlog (concrete, observed)
 - [ ] Dead decorative controls with `cursor:pointer` but no `data-act`: email reader `✦ AI reply` / `✦ Summarize` (`mobile-surfaces.js:152`), `✦ Draft` + reply send button (`:156`), `.m-gary-card` in More hub (`:186`), calendar `Day/Agenda` seg (`:172`). Either wire them or drop the pointer affordance so they don't promise interactivity. — needs decision on wiring vs. stub.
-- [ ] `.m-mail.active` only highlights when `e.unread` is truthy (`mobile-surfaces.js:127`) — a read, selected email shows no active state. Confirm intended; likely should highlight on selection regardless of unread.
+- [x] `.m-mail.active` only highlighted when `e.unread` was truthy (`mobile-surfaces.js:127`) — a read, selected email showed no active state. Fixed: highlight on selection (`i === s.selEmail`) regardless of unread.
 - [ ] Reduced-motion: sheet slide-up (`@keyframes m-sheet-up`, `mobile.css:228-229`) and pulse/blink dot animations aren't disabled under `prefers-reduced-motion`. Add guards.
 - [ ] No `:focus-visible` styling anywhere in mobile.css — keyboard/switch-control users get no focus ring on buttons/tabs.
 - [ ] `.m-tab-badge` position uses a hardcoded `right: calc(50% - 19px)` (`mobile.css:68`) — fragile if label width changes; verify it sits correctly over each tab icon.
@@ -30,6 +30,6 @@ CSS-only changes aren't covered by the node tests (renderers only) — Frank ver
 
 ## Found via mobile screenshot survey (2026-06-24)
 Captured each surface at 390×844 via hash routes (`#inbox/#email/#more/#calendar/#notes/#settings`) using one-shot chromium screenshots (`/home/frank/ralph-shots/`).
-- [ ] Email list: dangling `·` separator — `mobile-surfaces.js:130` renders `${e.from} · ${snippet}`, so when an email has no body the snip line shows "Sender · " with a trailing middot and nothing after. Make the separator conditional on a non-empty snippet. (Contained, 1 line.)
+- [x] Email list: dangling `·` separator — `mobile-surfaces.js:130` rendered `${e.from} · ${snippet}`, so an email with no body showed "Sender · " with a trailing middot. Fixed: separator now conditional on a non-empty snippet (`${snippet ? ' · '+snippet : ''}`). Verified both branches via direct import.
 - [ ] Top-of-list clipping: on Email (`.m-mail-list`) and Calendar (`.m-agenda`) the first row scrolls partially under the sticky `.m-head` — first item is visually cut off. Likely needs `scroll-padding-top` or a small top pad on the scroller. Verify against `.m-head` height + safe-area. (CSS-only.)
 - [ ] Settings pushed surface (`#settings` under More): the desktop settings tab-nav grid squeezed through `.m-pushed` orphans the "ADMIN" group label into its own grid cell and columns wrap unevenly — looks broken on phone width. Needs a mobile-specific tab-nav layout or a section dropdown. (Likely needs decision — desktop renderer reused as-is.)

@@ -130,10 +130,10 @@ export function mEmailList(s) {
   <div class="m-scroll m-mail-list">
     ${map(emails, (e, i) => {
       const snippet = (e.body && e.body[0]) ? e.body[0] : '';
-      return `<div class="m-mail${i === s.selEmail && e.unread ? ' active' : ''}" data-act="mOpenReader" data-arg="${i}">
+      return `<div class="m-mail${i === s.selEmail ? ' active' : ''}" data-act="mOpenReader" data-arg="${i}">
         <div class="top"><span class="m-src" style="color:${e.srcColor};background:${e.srcBg}">${esc(e.src)}</span>${when(e.unread, '<span class="udot"></span>')}<span class="time">${esc(e.time)}</span></div>
         <div class="subj${e.unread ? ' bold' : ''}">${esc(e.subj)}</div>
-        <div class="snip">${esc(e.from)} · ${esc(snippet)}</div>
+        <div class="snip">${esc(e.from)}${snippet ? ` · ${esc(snippet)}` : ''}</div>
       </div>`;
     })}
   </div>`;

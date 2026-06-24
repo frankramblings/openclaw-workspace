@@ -6,7 +6,7 @@
 import { icon } from '../icons.js';
 import { renderCenter } from '../surfaces.js';
 import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore } from './mobile-surfaces.js';
-import { renderCompanionSheet, renderCaptureSheet } from './mobile-sheets.js';
+import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet } from './mobile-sheets.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
 
@@ -39,7 +39,8 @@ export function renderMobile(s) {
 
   const sheets =
     (s.companionSheetOpen ? renderCompanionSheet(s) : '') +
-    (s.quickCaptureOpen ? renderCaptureSheet(s) : '');
+    (s.quickCaptureOpen ? renderCaptureSheet(s) : '') +
+    (s.composeOpen ? renderComposeSheet(s) : '');
 
   return `<div class="m-app">${body}${showTabBar ? renderTabBar(s) : ''}${sheets}</div>`;
 }
@@ -99,7 +100,11 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     const card = e.target.closest('[data-swipe-card]');
     const feed = e.target.closest('[data-ptr]');
     if (card) {
-      drag = { mode: 'pending', card, id: card.getAttribute('data-swipe-card'), startX: e.clientX, startY: e.clientY };
+      // Carry the feed scroller too: the top of the list is covered by swipe
+      // cards, so a downward pull almost always *starts* on a card. Tracking the
+      // scroller lets a vertical-down drag at the top convert into pull-to-refresh
+      // (horizontal stays swipe-to-archive) instead of being dropped.
+      drag = { mode: 'pending', card, id: card.getAttribute('data-swipe-card'), startX: e.clientX, startY: e.clientY, scroller: feed, ptr: feed && feed.querySelector('.m-ptr') };
     } else if (feed && feed.scrollTop <= 0) {
       drag = { mode: 'pending-pull', scroller: feed, startY: e.clientY, ptr: feed.querySelector('.m-ptr') };
     }
@@ -112,6 +117,7 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
 
     if (drag.mode === 'pending') {
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6) { drag.mode = 'swipe'; drag.card.classList.add('swiping'); drag.card.classList.remove('snap'); }
+      else if (dy > 8 && drag.scroller && drag.scroller.scrollTop <= 0) { drag.mode = 'pull'; } // pull-down at top → refresh
       else if (Math.abs(dy) > 8) drag = null; // vertical scroll wins
       return;
     }

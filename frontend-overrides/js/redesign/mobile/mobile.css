@@ -291,6 +291,16 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-cap-recent .tx { font-size: 13px; color: var(--mut); flex: 1; }
 .m-cap-recent .ty { font-size: 11px; color: var(--faint); }
 
+/* email compose / reply sheet (reuses .m-cap-head + .m-cap-send) */
+.m-sheet.compose { max-height: 92%; padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 22px); }
+.m-compose-fields { display: flex; flex-direction: column; gap: 9px; }
+.m-compose-in, .m-compose-body { width: 100%; background: var(--bg); border: 1px solid var(--bd); border-radius: 11px; padding: 11px 13px; color: var(--fg); font-family: var(--sans); font-size: 15px; }
+.m-compose-body { resize: none; line-height: 1.5; min-height: 150px; }
+.m-compose-in::placeholder, .m-compose-body::placeholder { color: var(--faint); }
+.m-sheet.compose .m-cap-send { margin-top: 14px; }
+/* .m-draft is a <button> now — keep it identical to its former <span> look */
+button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none; appearance: none; }
+
 /* pushed reuse of desktop surfaces (research/library/notes/etc. under More).
    Collapse desktop multi-column layouts into a single mobile column. */
 .m-pushed { flex: 1; overflow: auto; min-height: 0; }

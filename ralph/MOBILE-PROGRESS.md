@@ -12,3 +12,4 @@
 2026-06-24 | a11y: :focus-visible teal ring (buttons/inputs) + reduced-motion guards (pulse/sheet-slide/blink; keep spinner) | fixed
 2026-06-24 | built reusable harness.mjs to screenshot hash-unreachable surfaces (reader/sheets); verified 3 backlog items as non-bugs (tab-badge, quick-add +, reader border) | found
 2026-06-24 | email reader: wire ✦ Summarize → summarizeEmail + inline .m-email-summary render + ✕ clear (verified via harness) | fixed
+2026-06-24 | built mobile email compose sheet (renderComposeSheet) + wired reader AI reply/Draft/reply-box/send → composeAiDraft/composeReply/sendEmail (verified via harness) | fixed

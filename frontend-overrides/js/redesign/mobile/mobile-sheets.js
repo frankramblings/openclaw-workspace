@@ -49,6 +49,26 @@ export function renderCompanionSheet(s) {
   </div>`;
 }
 
+// Email compose/reply sheet. Bound to the same state + handlers the desktop
+// overlay uses (composeTo/Subject/Body → sendEmail). Opened by the reader's
+// AI-reply / Draft / reply-bar buttons; without this sheet those fired silently
+// because only the desktop rendered a compose surface.
+export function renderComposeSheet(s) {
+  const busy = !!s.emailBusy;
+  return `
+  <div class="m-scrim" data-act="closeCompose"></div>
+  <div class="m-sheet compose">
+    <div class="m-grab"><div class="h"></div></div>
+    <div class="m-cap-head"><span class="t">${s.composeInReplyTo ? 'Reply' : 'New message'}</span><div class="m-spacer"></div><button class="cancel" data-act="closeCompose">Cancel</button></div>
+    <div class="m-compose-fields">
+      <input class="m-compose-in" data-model="composeTo" data-focus="composeTo" placeholder="To" value="${esc(s.composeTo || '')}" autocomplete="off" inputmode="email">
+      <input class="m-compose-in" data-model="composeSubject" data-focus="composeSubject" placeholder="Subject" value="${esc(s.composeSubject || '')}" autocomplete="off">
+      <textarea class="m-compose-body" data-model="composeBody" data-focus="composeBody" rows="7" placeholder="Write your message…">${esc(s.composeBody || '')}</textarea>
+    </div>
+    <button class="m-cap-send" data-act="sendEmail"${busy ? ' disabled' : ''}>${busy ? 'Sending…' : `${I.send(17)}Send`}</button>
+  </div>`;
+}
+
 export function renderCaptureSheet(s) {
   const type = s.captureType || 'remind';
   const draft = s.captureDraft || '';

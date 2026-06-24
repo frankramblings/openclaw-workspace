@@ -14,7 +14,19 @@
   font-family: var(--sans);
   position: relative;
   overflow: hidden;
+  /* kill the grey iOS tap-flash so presses feel native, not web */
+  -webkit-tap-highlight-color: transparent;
 }
+/* tactile: a subtle press-in on every interactive control */
+.m-round-btn, .m-send, .m-icon-btn, .m-tab, .m-add-btn, .m-pill, .m-chip, .m-triage, .m-back, .m-cap-type { transition: transform .1s ease; }
+.m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: scale(.93); }
+@media (prefers-reduced-motion: reduce) {
+  .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: none; }
+}
+/* large tap targets: scaling a full-width card looks wrong, so settle the
+   background instead — restores the press feedback the killed tap-highlight lost */
+.m-mail, .m-grid-card, .m-comp-handle .pill { transition: background-color .12s ease, border-color .12s ease; }
+.m-mail:active, .m-grid-card:active, .m-comp-handle .pill:active { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 /* Vertical scroll only: `overflow: auto` let a wide code card or message drag
    the whole surface sideways. Lock the X axis and kill horizontal rubber-band. */
 .m-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; min-height: 0; -webkit-overflow-scrolling: touch; }
@@ -89,7 +101,7 @@
 
 /* ---- chat composer -------------------------------------------------------- */
 .m-composer { flex: none; padding: 8px 12px; background: var(--bg); }
-.m-composer .bar { border: 1px solid var(--bd); background: var(--panel); border-radius: 22px; display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 14px; }
+.m-composer .bar { border: 1px solid var(--bd); background: var(--panel); border-radius: 22px; display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 14px; transition: border-color .18s ease, border-radius .18s ease, padding .18s ease; }
 .m-composer.focused .bar { border-color: var(--teal2); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
 /* font-size must be >= 16px: iOS Safari zooms the page when focusing an input
    smaller than that, which is the "it zooms in/out on the text field" bug. */
@@ -97,7 +109,9 @@
 .m-composer textarea::placeholder { color: var(--faint); }
 .m-round-btn { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--mut); flex: none; background: none; border: none; cursor: pointer; }
 .m-round-btn.bordered { width: 30px; height: 30px; border: 1px solid var(--bd); }
-.m-send { width: 34px; height: 34px; border-radius: 50%; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; flex: none; border: none; cursor: pointer; }
+.m-send { width: 34px; height: 34px; border-radius: 50%; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; flex: none; border: none; cursor: pointer; transition: background .15s ease, color .15s ease, opacity .15s ease, transform .1s ease; }
+/* Send stays dim + inert until there's something to send; lights up live as you type. */
+.m-composer .bar:has(textarea:placeholder-shown) .m-send { background: var(--bd); color: var(--mut); opacity: .55; pointer-events: none; }
 
 /* ---- search row ----------------------------------------------------------- */
 .m-search { height: 36px; border-radius: 10px; border: 1px solid var(--bd); background: var(--bg); display: flex; align-items: center; padding: 0 11px; gap: 8px; margin-top: 12px; }

@@ -1,6 +1,6 @@
 # Handoff: Durable / Resumable Chat Streaming (Workspace PWA)
 
-**Status:** Investigated, not yet implemented. Ready to build on a branch.
+**Status:** Part 1 (backend) IMPLEMENTED + unit-tested on branch `chat-resume-detached` (commit `e4ba7c1`, pushed to origin; `backend/tests/test_chat_resume_detached.py` — 2 passed). The detached recorder (`_record_turn`/`_start_turn_recorder`) now owns the turn so it survives the reader leaving. STILL TODO: end-to-end manual verification (§7), Part 2 (frontend resume-on-mount) and Part 3 (per-session working indicator) are NOT done. Pick up from `git checkout chat-resume-detached`.
 **Owner asked for:** seamless "leave a thread / refresh / multitask and come back" behavior like Claude Code / Claude Cowork.
 **Risk level:** Touches the **core chat path** (the live agent conversation). Build on a branch, verify, then merge. Do **not** hot-patch on `main`.
 

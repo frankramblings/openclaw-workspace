@@ -91,6 +91,59 @@ app.include_router(resume_router)
 # only the browser-side fetch died, while the codex run kept burning.
 _ACTIVE_RUNS: dict[str, dict] = {}
 
+# session_key -> the detached asyncio.Task that drives ONE turn's frames into
+# the resumable event_store. The recorder is deliberately decoupled from any
+# browser: the gateway agent keeps working (and we keep recording) even after
+# the reader that started the turn refreshes, switches threads, or closes the
+# tab. Every reader — the original POST, a thread-switch return, a post-reload
+# resume — is just a tail of event_store, so a dropped reader can never stop a
+# turn or lose the work done while away.
+_TURN_TASKS: dict[str, asyncio.Task] = {}
+
+# Idle keepalive for the POST tail (seconds): a `: keepalive` comment keeps
+# proxies from killing the connection while the agent is thinking. Matches
+# resume_route's tail loop.
+_TURN_KEEPALIVE_S = 15.0
+
+
+async def _record_turn(session_key: str, source) -> None:
+    """The single writer. Drain `source` (the async generator of SSE frames for
+    one turn) into `event_store`, independent of any reader. Marks the turn
+    active on entry and inactive on exit, and ALWAYS lands a terminal `[DONE]`
+    frame so every tail closes cleanly — even on error or an explicit Stop
+    (CancelledError). Appending must never raise into the turn."""
+    event_store.begin_turn(session_key)
+    done_emitted = False
+    try:
+        async for chunk in source:
+            try:
+                event_store.append(session_key, chunk)
+            except Exception:  # noqa: BLE001 - event log issue can't break the turn
+                pass
+            if "[DONE]" in chunk:
+                done_emitted = True
+    finally:
+        if not done_emitted:
+            try:
+                event_store.append(session_key, _DONE_SSE)
+            except Exception:  # noqa: BLE001
+                pass
+        event_store.end_turn(session_key)
+        _TURN_TASKS.pop(session_key, None)
+
+
+def _start_turn_recorder(session_key: str, source_factory):
+    """Launch the detached recorder for a turn if one isn't already running for
+    this session. `source_factory` is a zero-arg callable returning the turn's
+    SSE async generator; it is invoked ONLY when we actually start, so a guarded
+    no-op never spins up a second gateway run. Returns the recorder Task."""
+    prev = _TURN_TASKS.get(session_key)
+    if prev is not None and not prev.done():
+        return prev  # a turn is already recording for this session
+    task = asyncio.create_task(_record_turn(session_key, source_factory()))
+    _TURN_TASKS[session_key] = task
+    return task
+
 
 @app.get("/api/health")
 async def health():
@@ -427,7 +480,23 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             sessions_store.update(rec["id"], name=snippet)
         title_task = asyncio.create_task(_generate_ai_title(message))
 
-    async def gen():
+    async def _drive_turn():
+        """Produce every SSE frame for this turn (web search, the gateway relay,
+        late reply, metrics, draft doc_update, DONE). This is the turn's source
+        of truth; the detached recorder (`_record_turn`) drains it into
+        event_store and owns the turn boundary + the event ids. Readers never
+        consume this directly — they tail event_store — so the turn survives any
+        reader leaving."""
+        def _teed(chunk: str) -> str:
+            """Append a frame to the per-session event log and id-tag it for
+            resume/tail, falling back to the bare frame if the store errors.
+            Mirrors the in-loop chokepoint so post-loop content (late reply,
+            metrics) is recoverable too. Never used for [DONE]."""
+            try:
+                eid = event_store.append(session_key, chunk)
+                return f"id: {eid}\n{chunk}"
+            except Exception:  # noqa: BLE001 - log issue can't break chat
+                return chunk
         brain_message = message
         text_seen = False    # any non-thinking {"delta"} relayed this turn?
         tools_seen = False   # any tool card relayed (fresh bubble needed)?
@@ -478,20 +547,6 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             if terminals.gary_mode_for_session(terminal_key):
                 brain_message = terminals.gary_capability_note(terminal_key) + brain_message
             _ACTIVE_RUNS[session_key] = run_info
-            # Mark the turn boundary in the resumable event log so a client that
-            # reloads mid-turn can replay just THIS answer from its start.
-            event_store.begin_turn(session_key)
-
-            def _teed(chunk: str) -> str:
-                """Append a frame to the per-session event log and id-tag it for
-                resume/tail, falling back to the bare frame if the store errors.
-                Mirrors the in-loop chokepoint so post-loop content (late reply,
-                metrics) is also recoverable. Never used for [DONE]."""
-                try:
-                    eid = event_store.append(session_key, chunk)
-                    return f"id: {eid}\n{chunk}"
-                except Exception:  # noqa: BLE001 - log issue can't break chat
-                    return chunk
 
             async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
                                                   model_ref=_model_ref(rec),
@@ -581,7 +636,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             asyncio.create_task(maybe_auto_extract(session_key))
             yield _DONE_SSE
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    return StreamingResponse(_drive_turn(), media_type="text/event-stream")
 
 
 # --- Session persistence: metadata here, message content from the brain ------

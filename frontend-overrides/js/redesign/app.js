@@ -234,7 +234,16 @@ function loadActive(force = false) {
 // ---- event delegation -----------------------------------------------------
 root.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');
-  if (!t) return;
+  if (!t) {
+    // A click outside any actionable element dismisses open menus.
+    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen) {
+      state.chatMenuOpen = false;
+      state.modelMenuOpen = false;
+      if (state.live?.chat) state.live.chat.rowMenuOpen = null;
+      render();
+    }
+    return;
+  }
   const name = t.getAttribute('data-act');
   const fn = actions[name];
   if (!fn) return;
@@ -293,6 +302,15 @@ root.addEventListener('scroll', (e) => {
 //   ⌘K / Ctrl-K → focus the active surface's search/filter input
 //   "/"         → focus the chat composer (when not already typing in a field)
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen) {
+      state.chatMenuOpen = false;
+      state.modelMenuOpen = false;
+      if (state.live?.chat) state.live.chat.rowMenuOpen = null;
+      render();
+      return;
+    }
+  }
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
     const el = root.querySelector('[data-model="convFilter"],[data-model="notesFilter"],[data-model="libQuery"],[data-model="emailQuery"]');
     if (el) { e.preventDefault(); el.focus(); }

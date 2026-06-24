@@ -9,9 +9,11 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
 1. Read this file. Pick the top `[ ]` item.
 2. Investigate at `file:line`. Fix if contained (≤ ~1 file, no design decision); else add a `needs human:` note and mark `[!]`.
 3. Run `node --test 'frontend-overrides/js/__tests__/*.test.js'` (must stay green — 53 tests).
-4. Mark the item `[x]`/`[!]`, append a PROGRESS line, commit `mobile: <one-line>`, exit.
-
-CSS-only changes aren't covered by the node tests (renderers only) — Frank verifies in-browser.
+4. **DEPLOY: run `bash scripts/sync-frontend.sh`.** `/static/` serves the generated `frontend/` dir (gitignored), NOT `frontend-overrides/`. Editing overrides alone changes NOTHING that users see until the sync layers them into `frontend/`. Skip this and every fix is invisible.
+5. **VERIFY in-browser** (renderers are HTML-string builders; node tests don't catch layout). Screenshot the live page at a mobile viewport and eyeball the change:
+   `chromium --headless --no-sandbox --ignore-certificate-errors --hide-scrollbars --force-device-scale-factor=2 --window-size=390,844 --virtual-time-budget=5000 --screenshot=/home/frank/ralph-shots/<name>.png "https://naboo.bicolor-triceratops.ts.net:8443/static/index-redesign.html#<surface>"`
+   Surfaces route off `location.hash`: `#chat #inbox #email #more #calendar #notes #settings` (also `#capture`). Snap chromium can only write under non-hidden `$HOME` dirs (e.g. `/home/frank/ralph-shots/`), not `/tmp`. A persistent `--remote-debugging-port` browser gets SIGTERM'd by the harness, so one-shot `--screenshot` per surface is the only reliable mode.
+6. Mark the item `[x]`/`[!]`, append a PROGRESS line, commit `mobile: <one-line>` (note: `frontend/` is gitignored — only `frontend-overrides/` + `ralph/` files get committed), exit.
 
 ## Done
 - [x] Kill grey iOS tap-flash + press-in scale on small controls (`mobile.css:17-25`) — with reduced-motion guard.
@@ -31,5 +33,5 @@ CSS-only changes aren't covered by the node tests (renderers only) — Frank ver
 ## Found via mobile screenshot survey (2026-06-24)
 Captured each surface at 390×844 via hash routes (`#inbox/#email/#more/#calendar/#notes/#settings`) using one-shot chromium screenshots (`/home/frank/ralph-shots/`).
 - [x] Email list: dangling `·` separator — `mobile-surfaces.js:130` rendered `${e.from} · ${snippet}`, so an email with no body showed "Sender · " with a trailing middot. Fixed: separator now conditional on a non-empty snippet (`${snippet ? ' · '+snippet : ''}`). Verified both branches via direct import.
-- [ ] Top-of-list clipping: on Email (`.m-mail-list`) and Calendar (`.m-agenda`) the first row scrolls partially under the sticky `.m-head` — first item is visually cut off. Likely needs `scroll-padding-top` or a small top pad on the scroller. Verify against `.m-head` height + safe-area. (CSS-only.)
+- [ ] Top-of-list clipping: on Email (`.m-mail-list`) and Calendar (`.m-agenda`) the first row is partially cut off at the top on load (badge sliced). NOT a padding bug — `.m-head` is `flex:none` and doesn't overlap `.m-scroll`. Root-cause hypothesis: the scroll-restore in `app.js:112-145` runs on every `render()`; its `atBottom = scrollHeight - scrollTop - clientHeight < 80` heuristic (line 121) is true for a short/empty list, and the restore then sets `scrollTop = scrollHeight` (line 145) — sticking to the BOTTOM. This is desired for `.chat-thread` (live stream) but WRONG for the other mobile `.m-scroll` surfaces (email/inbox/calendar/notes), which jump when live data grows the list. Fix idea: scope stick-to-bottom to the chat thread only (or require the element to have been genuinely scrolled, not just short). Shared-core change in `app.js` — verify desktop chat still sticks to bottom; check for tests. (Not contained → likely its own careful iteration.)
 - [ ] Settings pushed surface (`#settings` under More): the desktop settings tab-nav grid squeezed through `.m-pushed` orphans the "ADMIN" group label into its own grid cell and columns wrap unevenly — looks broken on phone width. Needs a mobile-specific tab-nav layout or a section dropdown. (Likely needs decision — desktop renderer reused as-is.)

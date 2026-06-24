@@ -499,6 +499,7 @@ def _map_history(messages: list) -> dict:
         round_texts = [""]
         tool_events: list = []
         calls: dict = {}                # toolCallId → its tool_event
+        reply_text = None               # claude-cli mcp__openclaw__message payload
         cur_round_has_tools = False
         meta: dict = {"timestamp": None}
         for m in pending:
@@ -526,8 +527,20 @@ def _map_history(messages: list) -> dict:
                             continue
                         btype = b.get("type")
                         if btype in ("toolCall", "toolcall"):
+                            name = b.get("name") or "tool"
+                            if name == "mcp__openclaw__message":
+                                # claude-cli delivers Gary's canonical reply through
+                                # this tool; the live view shows ITS content (the
+                                # trailing text block is reply_reset away). Capture
+                                # it so reload shows the same reply. Scoped to this
+                                # name — gpt's plain `message` tool is untouched.
+                                _a = b.get("arguments")
+                                if not isinstance(_a, dict):
+                                    _a = b.get("input")
+                                if isinstance(_a, dict) and isinstance(_a.get("message"), str):
+                                    reply_text = _a["message"]
                             ev = {"round": len(round_texts),  # 1-indexed for renderer
-                                  "tool": b.get("name") or "tool",
+                                  "tool": name,
                                   "command": _tool_command(b),
                                   "exit_code": None}        # None until result lands
                             cid = b.get("id")
@@ -551,8 +564,18 @@ def _map_history(messages: list) -> dict:
                     ev["output"] = _tool_output(m)
                     ev["exit_code"] = 1 if m.get("isError") else 0
         meta["tool_events"] = tool_events
+        # If Gary delivered a reply via mcp__openclaw__message, that's the canonical
+        # answer (matching the live view). Make it the final round — the redesign
+        # renders the last round_text as the reply bubble — unless it's already the
+        # trailing text, so the terse "Done — …" note no longer wins on reload.
+        last_nonempty = next((t for t in reversed(round_texts) if t.strip()), "")
+        if reply_text and reply_text.strip() and reply_text != last_nonempty:
+            round_texts.append(reply_text)
         meta["round_texts"] = round_texts
-        content = next((t for t in round_texts if t.strip()), "")
+        if reply_text and reply_text.strip():
+            content = reply_text
+        else:
+            content = next((t for t in round_texts if t.strip()), "")
         history.append({"role": "assistant", "content": content, "metadata": meta})
 
     for msg in messages:

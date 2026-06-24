@@ -235,6 +235,63 @@ def test_map_history_claude_cli_groups_multi_round_turn():
     assert outputs == {"step1": "ok1", "step2": "ok2"}
 
 
+def test_map_history_claude_cli_message_tool_is_canonical_reply():
+    # claude-cli delivers Gary's real reply via mcp__openclaw__message; the live
+    # view shows that (the trailing text block is reply_reset away). Reload must
+    # show the SAME reply — not the terse trailing note — so a refresh doesn't
+    # swap the answer for a differently-worded one.
+    msgs = [
+        {"role": "user", "content": "disk?", "timestamp": 1},
+        {"role": "assistant", "model": "claude-opus-4-8", "content": [
+            {"type": "toolcall", "id": "t1", "name": "Bash",
+             "arguments": {"command": "df -h /"}},
+            {"type": "tool_result", "tool_use_id": "t1", "content": "ok", "name": "Bash"}]},
+        {"role": "assistant", "content": [
+            {"type": "toolcall", "id": "t2", "name": "mcp__openclaw__message",
+             "arguments": {"action": "send", "message": "**Disk**: 61 GB free."}},
+            {"type": "tool_result", "tool_use_id": "t2", "name": "mcp__openclaw__message",
+             "content": [{"type": "text", "text": "Sent."}]}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Done — 61 GB free."}]},
+    ]
+    turn = _map_history(msgs)["history"][1]
+    rts = [t for t in turn["metadata"]["round_texts"] if t.strip()]
+    # the LAST round text (what the redesign renders as the reply bubble) and the
+    # backend content are the message-tool reply, not the terse trailing note.
+    assert rts[-1] == "**Disk**: 61 GB free."
+    assert turn["content"] == "**Disk**: 61 GB free."
+    # the trailing note is preserved as an earlier round (not lost), just not last.
+    assert any("Done — 61 GB free." in t for t in turn["metadata"]["round_texts"])
+
+
+def test_map_history_gpt_message_tool_not_treated_as_reply():
+    # gpt's reply-delivery tool is plain `message` — the claude-cli override is
+    # scoped to mcp__openclaw__message, so this path is UNCHANGED: the trailing
+    # text block stays the reply.
+    msgs = [
+        {"role": "assistant", "content": [{"type": "toolCall", "id": "c1",
+            "name": "message", "arguments": {"message": "delivered version"}}]},
+        {"role": "toolResult", "toolCallId": "c1",
+         "content": [{"type": "toolResult", "content": "Sent."}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "final text reply"}]},
+    ]
+    turn = _map_history(msgs)["history"][0]
+    rts = [t for t in turn["metadata"]["round_texts"] if t.strip()]
+    assert rts[-1] == "final text reply"  # unchanged: the text note is the reply
+
+
+def test_map_history_claude_cli_message_reply_falls_back_to_text():
+    # No message tool (pure text answer after a tool) → keep the text block.
+    msgs = [
+        {"role": "assistant", "content": [
+            {"type": "toolcall", "id": "t1", "name": "Bash",
+             "arguments": {"command": "ls"}},
+            {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]},
+        {"role": "assistant", "content": [{"type": "text", "text": "Here are the files."}]},
+    ]
+    turn = _map_history(msgs)["history"][0]
+    assert turn["content"] == "Here are the files."
+
+
 def test_map_history_plaintext_turns_unchanged():
     # Regression: a turn with NO tools still emits one entry per assistant
     # message (legacy behavior the chat drawer/metrics rely on).

@@ -7,7 +7,8 @@ import { I } from './icons.js';
 import { esc, when } from './dom.js';
 import { AVATAR } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
-import { renderCenter, renderChatList } from './surfaces.js';
+import { renderCenter, renderChatList, chatMsg } from './surfaces.js';
+import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 import { loadSurface } from './live/index.js';
@@ -102,6 +103,12 @@ function renderDesktop(s) {
 // and pinning the live stream above the fold so new output never came into view.
 const SCROLL_SELECTORS = ['.chat-thread', '.m-scroll'];
 
+// Track chat mount/session across renders so we can jump to the newest message
+// when a chat is first opened (or you switch sessions) instead of leaving it
+// parked at the top — without disturbing the stick-to-bottom-while-streaming case.
+let _prevChatMounted = false;
+let _prevActiveId = null;
+
 function render() {
   // capture focus + caret before rebuild
   const act = document.activeElement;
@@ -145,12 +152,31 @@ function render() {
     }
   }
 
-  // restore scroll (after focus — focusing an input can itself scroll a region)
+  // restore scroll (after focus — focusing an input can itself scroll a region).
+  // On first entry into a chat (or switching sessions) jump to the newest message
+  // rather than restoring/defaulting to the top.
+  const chatEl = root.querySelector('.chat-thread, .m-thread');
+  const isChatNow = !!chatEl;
+  const curActiveId = (state.live && state.live.chat && state.live.chat.activeId) || null;
+  const justEnteredChat = isChatNow && (!_prevChatMounted || curActiveId !== _prevActiveId);
   for (const sel of SCROLL_SELECTORS) {
+    const el = root.querySelector(sel);
+    if (!el) continue;
+    const isChat = sel === '.chat-thread' || el.classList.contains('m-thread');
+    if (isChat && justEnteredChat) { el.scrollTop = el.scrollHeight; continue; }
     const saved = scrollState[sel];
     if (!saved) continue;
-    const el = root.querySelector(sel);
-    if (el) el.scrollTop = saved.stick ? el.scrollHeight : saved.top;
+    el.scrollTop = saved.stick ? el.scrollHeight : saved.top;
+  }
+  _prevChatMounted = isChatNow;
+  _prevActiveId = curActiveId;
+
+  // Keep the "jump to latest" button in sync after every rebuild — it's recreated
+  // hidden each render, and the scroll listener only fires on real user scrolls.
+  const jumpBtn = root.querySelector('[data-act="scrollChatBottom"]');
+  if (jumpBtn && chatEl) {
+    const nb = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 80;
+    jumpBtn.style.display = nb ? 'none' : 'flex';
   }
 
   // post-render hook (the live terminal overlay repositions itself here)
@@ -171,7 +197,7 @@ const actions = {
   // incognito=true so the backend doesn't persist the turn.
   toggleIncognito: () => { state.incognito = !state.incognito; },
   // Jump the chat thread to the latest message (button shown by the scroll listener).
-  scrollChatBottom: () => { const el = document.querySelector('.chat-thread'); if (el) el.scrollTop = el.scrollHeight; },
+  scrollChatBottom: () => { const el = document.querySelector('.chat-thread, .m-thread'); if (el) el.scrollTop = el.scrollHeight; },
   // Session list sort order: Recent (date groups) ⇄ A–Z (flat alphabetical).
   cycleSessionSort: () => { state.convSort = state.convSort === 'alpha' ? 'recent' : 'alpha'; },
 
@@ -267,6 +293,22 @@ root.addEventListener('input', (e) => {
   const field = t.getAttribute('data-model');
   state[field] = t.value;
   if (field === 'draft') state.forceSlash = false; // typing manages the slash menu
+
+  const fk = t.getAttribute('data-focus');
+  // Auto-grow the chat composer to fit content (nothing else sets its height).
+  if (fk === 'draft' || fk === 'mdraft') {
+    t.style.height = 'auto';
+    t.style.height = Math.min(t.scrollHeight, 120) + 'px';
+  }
+
+  // The mobile composer must NOT re-render on every keystroke. render() rebuilds
+  // root.innerHTML wholesale, and doing that mid-type on a touch keyboard drops
+  // fast characters and wipes the native field state iOS relies on for
+  // double-space→period and autocorrect. The DOM already holds the typed value
+  // (state is synced above so send() sees it) and the Send button enables via
+  // pure CSS (:placeholder-shown), so skipping render here is safe. Desktop
+  // keeps its live render — it drives the slash-command palette as you type.
+  if (fk === 'mdraft') return;
   render();
 });
 
@@ -299,7 +341,7 @@ root.addEventListener('keydown', (e) => {
 // (scroll doesn't bubble → capture phase; toggles the button directly, no re-render.)
 root.addEventListener('scroll', (e) => {
   const t = e.target;
-  if (!t || !t.classList || !t.classList.contains('chat-thread')) return;
+  if (!t || !t.classList || !(t.classList.contains('chat-thread') || t.classList.contains('m-thread'))) return;
   const btn = root.querySelector('[data-act="scrollChatBottom"]');
   if (!btn) return;
   const nearBottom = t.scrollHeight - t.scrollTop - t.clientHeight < 80;
@@ -358,6 +400,7 @@ wireMobileGestures({
   refresh: () => {
     state.refreshing = true; render();
     clearTimeout(refreshTimer);
+    loadActive(true); // actually re-fetch the active surface's live data (inbox), not just spin
     refreshTimer = setTimeout(() => { state.refreshing = false; render(); }, 900);
   },
   render,
@@ -370,6 +413,26 @@ mq.addEventListener('change', () => { render(); loadActive(); });
 runtime.state = state;
 runtime.render = render;
 runtime.actions = actions;
+
+// Surgically re-render ONE chat message in place — used for streaming deltas so
+// we don't rebuild the whole document on every token (which wiped text selection,
+// scroll, and composer typing). Returns false if the node isn't mounted yet so
+// the caller can fall back to a full render.
+runtime.patchMessage = (msgId) => {
+  if (msgId == null) return false;
+  let el;
+  try { el = root.querySelector(`[data-msg-id="${CSS.escape(String(msgId))}"]`); } catch (_) { return false; }
+  if (!el) return false;
+  const m = (state.live && state.live.chat && state.live.chat.thread || []).find((x) => x.id === msgId);
+  if (!m) return false;
+  // stick to the bottom while streaming if the user is already there; otherwise
+  // leave their scroll position alone (they scrolled up to read).
+  const scroller = root.querySelector('.chat-thread, .m-thread');
+  const stick = scroller && (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80);
+  el.outerHTML = isMobile() ? mChatMsg(m, state) : chatMsg(m, state);
+  if (stick && scroller) scroller.scrollTop = scroller.scrollHeight;
+  return true;
+};
 
 // ---- boot -----------------------------------------------------------------
 // Deep-link the initial surface from the hash (e.g. #calendar), and keep the

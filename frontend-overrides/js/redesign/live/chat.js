@@ -254,7 +254,11 @@ function throttledRender() {
   if (renderTimer) return;
   renderTimer = setTimeout(() => {
     renderTimer = null;
-    runtime.render();
+    // Streaming deltas patch ONLY the active message in place (see
+    // runtime.patchMessage) so we don't rebuild the whole document per token —
+    // that's what killed text selection, scroll, and composer typing mid-stream.
+    // Fall back to a full render if the bubble isn't mounted yet.
+    if (!(turn && runtime.patchMessage && runtime.patchMessage(turn.msgId))) runtime.render();
   }, 60);
 }
 
@@ -293,7 +297,14 @@ function startElapsed() {
   elapsedTimer = setInterval(() => {
     if (turn && turn.activity && turn.activity.status === 'working') {
       turn.activity.elapsed = fmtElapsed(turn.activity.startMs);
-      runtime.render();
+      // Surgically patch ONLY the elapsed-clock text. A full runtime.render()
+      // here fired every 500ms for the entire turn, rebuilding root.innerHTML —
+      // which de-selected text, reset scroll, and made typing impossible. Update
+      // the single text node instead; fall back to a full render only if the
+      // clock isn't in the DOM yet (first tick before its initial paint).
+      const el = document.querySelector('.act-elapsed');
+      if (el) el.textContent = turn.activity.elapsed;
+      else runtime.render();
     } else stopElapsed();
   }, 500);
 }

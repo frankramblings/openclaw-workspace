@@ -94,7 +94,7 @@ export function chatMsg(m, s) {
   const hasText = String(m.text || '').trim().length > 0;
   const paras = hasText ? renderMarkdown(m.text) : '';
   if (m.role === 'user') {
-    return `<div class="msg-user-wrap"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${paras || '<p></p>'}</div>${hasText ? msgTools(m) : ''}</div>`;
+    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${paras || '<p></p>'}</div>${hasText ? msgTools(m) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an
@@ -102,7 +102,7 @@ export function chatMsg(m, s) {
   const notice = m.error
     ? `<div class="msg-error" style="margin-top:6px;display:flex;gap:7px;align-items:flex-start;color:var(--red,#e5616a);font-size:13px;line-height:1.45;background:rgba(229,97,106,.08);border:1px solid rgba(229,97,106,.28);border-radius:8px;padding:8px 11px"><span aria-hidden="true">⚠</span><span>${esc(m.notice || 'No response from this model.')}</span></div>`
     : '';
-  return `<div class="msg-asst"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${renderActivity(m, s)}${paras}${notice}${hasText && !m.error ? msgTools(m) : ''}</div></div>`;
+  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${renderActivity(m, s)}${paras}${notice}${hasText && !m.error ? msgTools(m) : ''}</div></div>`;
 }
 
 

@@ -56,7 +56,7 @@ export function mobileActions(state) {
       else state.mSub = id;
     },
     mBackToHub: () => { state.mSub = null; },
-    mOpenReader: (i) => { state.selEmail = Number(i); state.mReader = true; },
+    mOpenReader: (i) => { state.selEmail = Number(i); state.mReader = true; state.mEmailOpened = true; },
     mCloseReader: () => { state.mReader = false; },
     openCompanion: () => { state.companionSheetOpen = true; },
     closeCompanion: () => { state.companionSheetOpen = false; },
@@ -91,39 +91,25 @@ export function mobileActions(state) {
 export function wireMobileGestures({ root, state, commitArchive, refresh, render }) {
   const SWIPE_COMMIT = -84;   // px past which a left-swipe archives
   const SWIPE_MAX = -132;
-  const PULL_TRIGGER = 64;    // px pull-down to fire refresh
 
-  let drag = null; // { mode:'swipe'|'pull'|'pending', card, id, startX, startY, scroller }
+  // --- horizontal swipe-to-archive (pointer events) ------------------------
+  // touch-action:pan-y lets the browser own vertical scroll, so HORIZONTAL
+  // drags are ours to preventDefault — pointer events work cleanly here.
+  let drag = null; // { mode:'swipe'|'pending', card, id, startX, startY }
 
   root.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const card = e.target.closest('[data-swipe-card]');
-    const feed = e.target.closest('[data-ptr]');
-    if (card) {
-      // Carry the feed scroller too: the top of the list is covered by swipe
-      // cards, so a downward pull almost always *starts* on a card. Tracking the
-      // scroller lets a vertical-down drag at the top convert into pull-to-refresh
-      // (horizontal stays swipe-to-archive) instead of being dropped.
-      drag = { mode: 'pending', card, id: card.getAttribute('data-swipe-card'), startX: e.clientX, startY: e.clientY, scroller: feed, ptr: feed && feed.querySelector('.m-ptr') };
-    } else if (feed && feed.scrollTop <= 0) {
-      drag = { mode: 'pending-pull', scroller: feed, startY: e.clientY, ptr: feed.querySelector('.m-ptr') };
-    }
+    if (card) drag = { mode: 'pending', card, id: card.getAttribute('data-swipe-card'), startX: e.clientX, startY: e.clientY };
   });
 
   root.addEventListener('pointermove', (e) => {
     if (!drag) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
-
     if (drag.mode === 'pending') {
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6) { drag.mode = 'swipe'; drag.card.classList.add('swiping'); drag.card.classList.remove('snap'); }
-      else if (dy > 8 && drag.scroller && drag.scroller.scrollTop <= 0) { drag.mode = 'pull'; } // pull-down at top → refresh
-      else if (Math.abs(dy) > 8) drag = null; // vertical scroll wins
-      return;
-    }
-    if (drag.mode === 'pending-pull') {
-      if (dy > 8 && drag.scroller.scrollTop <= 0) drag.mode = 'pull';
-      else if (Math.abs(dy) > 8) drag = null;
+      else if (Math.abs(dy) > 8) drag = null; // vertical → let the pull/scroll handlers have it
       return;
     }
     if (drag.mode === 'swipe') {
@@ -131,25 +117,64 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
       drag.card.style.transform = `translateX(${t}px)`;
       drag.dx = t;
       e.preventDefault();
-    } else if (drag.mode === 'pull') {
-      const pull = Math.max(0, Math.min(90, dy));
-      if (drag.ptr) drag.ptr.style.height = pull + 'px';
-      drag.pull = pull;
-      e.preventDefault();
     }
   }, { passive: false });
 
-  const end = () => {
+  const endSwipe = () => {
     if (!drag) return;
     const d = drag; drag = null;
     if (d.mode === 'swipe') {
       if (d.dx <= SWIPE_COMMIT) { commitArchive(Number(d.id)); render(); }
       else { d.card.classList.remove('swiping'); d.card.classList.add('snap'); d.card.style.transform = 'translateX(0)'; }
-    } else if (d.mode === 'pull') {
-      if (d.pull >= PULL_TRIGGER) refresh();
-      else if (d.ptr) d.ptr.style.height = '0px';
     }
   };
-  root.addEventListener('pointerup', end);
-  root.addEventListener('pointercancel', end);
+  root.addEventListener('pointerup', endSwipe);
+  root.addEventListener('pointercancel', endSwipe);
+
+  // --- pull-to-refresh (touch events) --------------------------------------
+  // Pointer events lose this fight: under touch-action:pan-y iOS treats a
+  // vertical drag as a scroll and fires pointercancel before we can classify
+  // it, so the pull never starts. A non-passive touchmove with preventDefault
+  // DOES win over native scroll — that's the reliable way to build PTR. We only
+  // preventDefault while at the very top and pulling DOWN, so normal scrolling
+  // (and horizontal swipe) are untouched.
+  const PULL_TRIGGER = 60;    // px of indicator height that fires refresh
+  const PULL_MAX = 90;
+  const RESIST = 0.55;        // finger travel → indicator height (rubber-band feel)
+  let ptr = null; // { feed, el, startX, startY, active, h }
+
+  const ARM = 24; // px of deliberate downward travel before a pull is even armed
+
+  root.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1 || state.refreshing) { ptr = null; return; } // never stack a pull on an in-flight refresh
+    const feed = e.target.closest('[data-ptr]');
+    if (!feed || feed.scrollTop > 0) { ptr = null; return; }
+    const t = e.touches[0];
+    ptr = { feed, el: feed.querySelector('.m-ptr'), startX: t.clientX, startY: t.clientY, active: false, h: 0 };
+  }, { passive: true });
+
+  root.addEventListener('touchmove', (e) => {
+    if (!ptr) return;
+    const t = e.touches[0];
+    const dx = t.clientX - ptr.startX;
+    const dy = t.clientY - ptr.startY;
+    // bail (let native scroll / sideways swipe win) if not yet committed to a pull
+    if (!ptr.active && (ptr.feed.scrollTop > 0 || dy < ARM || Math.abs(dx) > dy)) {
+      if (dy < 0 || ptr.feed.scrollTop > 0 || Math.abs(dx) > dy) ptr = null; // clearly not a pull — release it
+      return; // otherwise keep waiting for a deliberate downward pull
+    }
+    ptr.active = true;
+    ptr.h = Math.max(0, Math.min((dy - ARM) * RESIST, PULL_MAX));
+    if (ptr.el) ptr.el.style.height = ptr.h + 'px';
+    e.preventDefault(); // beat native scroll/rubber-band — only once a real pull is armed
+  }, { passive: false });
+
+  const endPull = () => {
+    if (!ptr) return;
+    const p = ptr; ptr = null;
+    if (p.active && p.h >= PULL_TRIGGER) refresh();
+    else if (p.el) p.el.style.height = '0px';
+  };
+  root.addEventListener('touchend', endPull);
+  root.addEventListener('touchcancel', endPull);
 }

@@ -36,6 +36,10 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
 - [ ] Quick-add calendar button is `data-act="clearQuick"` showing a `+` (`mobile-surfaces.js:178`) — a plus glyph that clears reads wrong; confirm icon vs. action intent.
 - [x] Email reader archive/dots `border:none` — resolved above (verified intentional/clean via harness screenshot).
 
+## Found via narrow-viewport (320px) sweep (2026-06-24)
+- [x] Inbox cards showed raw markdown markers in previews (e.g. an Obsidian item rendered `**Schedule paid media…**` literally, asterisks and all) — `it.who`/`it.body` are plain-`esc`'d. Added a conservative `stripMd()` helper (dom.js) that unwraps `**`/`__`/`` ` ``/`[text](url)`/leading `#`/bullets and collapses whitespace for one-line previews, applied to both inbox card title + body. Verified: Obsidian card now reads "Schedule paid media strategy sync … (Allie)" cleanly. `stripMd('3*4=12')` left intact (no false strips).
+- [x] Swept chat/inbox/email at 320px (iPhone SE width) — no overflow or control cramping; composer (attach+textarea+mic+send) and cards all fit. Markdown chat renders fine. (Note: chat is the heaviest surface to load — needs ~10-11s virtual-time-budget to screenshot, else captures blank mid-load; not a bug.)
+
 ## Found via post-feature sweep (2026-06-24)
 - [x] Email list showed a prominent teal `.m-mail.active` border on the FIRST row on fresh load (default `selEmail:0`) — misleading on mobile, which is single-pane (tap → full reader), so there's no persistent list selection to advertise. Fixed: gate the highlight on a new `s.mEmailOpened` flag (set in `mOpenReader`), so nothing is highlighted until the user opens a reader; on return it marks the last-read row. Verified: fresh load uniform, post-open highlight present.
 - [x] Verified the new scroll-to-bottom button (`.m-scroll-btm`) is wired for mobile (`scrollChatBottom` now targets `.chat-thread, .m-thread`; scroll listener gates on those classes only — no misfire on email/inbox/calendar `.m-scroll`).

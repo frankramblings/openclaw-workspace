@@ -116,9 +116,17 @@ function render() {
   for (const sel of SCROLL_SELECTORS) {
     const el = root.querySelector(sel);
     if (el) {
+      // Only the chat thread should stick to the bottom as content streams in.
+      // The mobile shell reuses .m-scroll for EVERY surface (email/inbox/
+      // calendar/notes); those must preserve their exact offset and never jump
+      // to the bottom when live data grows the list. Also require genuine
+      // overflow — a short/empty list trivially satisfies the <80 test and
+      // would otherwise get yanked to scrollHeight on the next render.
+      const isChat = sel === '.chat-thread' || el.classList.contains('m-thread');
+      const scrollable = el.scrollHeight - el.clientHeight > 4;
       scrollState[sel] = {
         top: el.scrollTop,
-        atBottom: el.scrollHeight - el.scrollTop - el.clientHeight < 80,
+        stick: isChat && scrollable && (el.scrollHeight - el.scrollTop - el.clientHeight < 80),
       };
     }
   }
@@ -142,7 +150,7 @@ function render() {
     const saved = scrollState[sel];
     if (!saved) continue;
     const el = root.querySelector(sel);
-    if (el) el.scrollTop = saved.atBottom ? el.scrollHeight : saved.top;
+    if (el) el.scrollTop = saved.stick ? el.scrollHeight : saved.top;
   }
 
   // post-render hook (the live terminal overlay repositions itself here)

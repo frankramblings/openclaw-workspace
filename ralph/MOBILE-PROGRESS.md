@@ -8,3 +8,4 @@
 2026-06-24 | email list: drop dangling "·" when no snippet; active highlight on selection regardless of unread | fixed
 2026-06-24 | DEPLOY GAP found: /static serves generated frontend/ (not overrides); ran sync-frontend.sh — iterations 1-2 now live & verified; protocol hardened w/ deploy+screenshot steps | fixed
 2026-06-24 | root-caused top-of-list clipping to app.js atBottom stick-to-bottom applying to all .m-scroll (not just chat) | found
+2026-06-24 | scope stick-to-bottom to chat thread + require real overflow; email/calendar now anchor at top, chat still sticks | fixed

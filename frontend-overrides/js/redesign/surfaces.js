@@ -3,7 +3,7 @@
 // attributes handled by app.js event delegation.
 
 import { I, icon } from './icons.js';
-import { esc, map, when } from './dom.js';
+import { esc, map, when, stripMd } from './dom.js';
 import {
   AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES, PAST_RESEARCH,
   LIBRARY, KIND_STYLE, LIB_FILTERS, NOTES, EMAILS, INBOX,
@@ -313,14 +313,14 @@ function inboxSurface(s) {
 
   const needsCard = (it) => `
     <div class="inbox-card">
-      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(it.who)}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${it.id}">${I.x()}</span></div>
-      <div class="body">${esc(it.body)}</div>
+      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${it.id}">${I.x()}</span></div>
+      <div class="body">${esc(stripMd(it.body))}</div>
       <div class="card-actions"><button class="btn-sm" data-act="dismiss" data-arg="${it.id}">${esc(it.primary)}</button><button class="btn-sm ghost" data-act="dismiss" data-arg="${it.id}">${esc(it.secondary)}</button></div>
     </div>`;
   const fyiCard = (it) => `
     <div class="inbox-card fyi">
-      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(it.who)}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${it.id}">${I.x()}</span></div>
-      <div class="body">${esc(it.body)}</div>
+      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${it.id}">${I.x()}</span></div>
+      <div class="body">${esc(stripMd(it.body))}</div>
       <div class="ai-pill">✦ ${esc(it.suggest)}</div>
       <div class="card-actions"><button class="btn-sm" data-act="dismiss" data-arg="${it.id}">Archive</button><button class="btn-sm ghost" data-act="dismiss" data-arg="${it.id}">Keep</button></div>
     </div>`;

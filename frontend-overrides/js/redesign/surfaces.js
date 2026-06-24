@@ -33,12 +33,14 @@ export function renderChatList(s) {
 // they neither select the row nor close the menu.
 function convMenu(r) {
   const fav = r.important ? 'Unfavorite' : 'Favorite';
+  const item = (act, glyph, label, extra = '') =>
+    `<button class="cm-item${extra}" data-act="${act}" data-arg="${esc(r.id)}" role="menuitem"><span class="cm-ic">${glyph}</span>${label}</button>`;
   return `<div class="conv-menu" data-act="noop" role="menu">`
-    + `<button class="cm-item" data-act="renameSession" data-arg="${esc(r.id)}" role="menuitem">Rename</button>`
-    + `<button class="cm-item" data-act="toggleFavorite" data-arg="${esc(r.id)}" role="menuitem">${fav}</button>`
-    + `<button class="cm-item" data-act="copyTranscript" data-arg="${esc(r.id)}" role="menuitem">Copy chat</button>`
-    + `<button class="cm-item" data-act="archiveSession" data-arg="${esc(r.id)}" role="menuitem">Archive</button>`
-    + `<button class="cm-item cm-danger" data-act="deleteSession" data-arg="${esc(r.id)}" role="menuitem">Delete</button>`
+    + item('renameSession', I.pencil(14), 'Rename')
+    + item('toggleFavorite', I.star(14, !!r.important), fav)
+    + item('copyTranscript', I.copy(14), 'Copy chat')
+    + item('archiveSession', I.archive(14), 'Archive')
+    + item('deleteSession', I.trash(14), 'Delete', ' cm-danger')
     + `</div>`;
 }
 

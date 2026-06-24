@@ -616,6 +616,10 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 }
 
 .conv-row{position:relative}
+/* lift the open row above its later siblings — every row is position:relative,
+   so without this the menu's z-index stays trapped in this row's context and
+   following rows paint over the (opaque) dropdown */
+.conv-row.menu-open{z-index:30}
 /* favorite star — the one warm accent in this whole feature */
 .conv-fav{flex:none;display:inline-flex;align-items:center;color:var(--gold)}
 
@@ -632,6 +636,8 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 @keyframes cm-pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .cm-item{display:flex;align-items:center;width:100%;font-size:13px;line-height:1;color:var(--mut);padding:7px 9px;border-radius:6px;transition:background .1s ease,color .1s ease}
 .cm-item:hover,.cm-item:focus-visible{background:var(--row-hover);color:var(--fg);outline:none}
+/* leading glyph inherits the item's color, so it tracks hover + the red Delete */
+.cm-ic{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-right:9px;flex:none;color:inherit;opacity:.85}
 /* destructive action sits beneath a hairline — the separation IS the warning */
 .cm-danger{margin-top:4px;padding-top:9px;border-top:1px solid var(--bd2)}
 .cm-danger:hover,.cm-danger:focus-visible{background:rgba(240,114,106,.10);color:var(--red)}

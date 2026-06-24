@@ -42,6 +42,12 @@ test('open menu renders all five items with the row id', () => {
 });
 
 test('favorite label reflects the row state', () => {
-  assert.match(renderChatList(baseState({ rowMenuOpen: 's1' })), /data-act="toggleFavorite"[^>]*>Favorite</);
-  assert.match(renderChatList(baseState({ rowMenuOpen: 's2' })), /data-act="toggleFavorite"[^>]*>Unfavorite</);
+  assert.match(renderChatList(baseState({ rowMenuOpen: 's1' })), /data-act="toggleFavorite"[\s\S]*?Favorite<\/button>/);
+  assert.match(renderChatList(baseState({ rowMenuOpen: 's2' })), /data-act="toggleFavorite"[\s\S]*?Unfavorite<\/button>/);
+});
+
+test('every menu item carries a leading glyph', () => {
+  const html = renderChatList(baseState({ rowMenuOpen: 's1' }));
+  // one cm-ic span per menu item (5)
+  assert.equal((html.match(/class="cm-ic"/g) || []).length, 5);
 });

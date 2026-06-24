@@ -37,6 +37,9 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
 - [ ] Quick-add calendar button is `data-act="clearQuick"` showing a `+` (`mobile-surfaces.js:178`) — a plus glyph that clears reads wrong; confirm icon vs. action intent.
 - [x] Email reader archive/dots `border:none` — resolved above (verified intentional/clean via harness screenshot).
 
+## Found via content-overflow check (2026-06-24)
+- [x] Message bubbles had no `overflow-wrap` — a long unbroken URL/token (common in this technical chat, e.g. API tokens, deep-link URLs) would overflow `.m-msg-user` / `.m-md` and get CLIPPED (`.m-scroll` is overflow-x:hidden). Added `overflow-wrap: anywhere` to `.m-msg-user` and `.m-md`. Proven with a self-contained before/after harness (token clips off-edge → wraps cleanly). Note: desktop bubbles (`.msg-user`/`.msg-body` in redesign.css) have the same gap — candidate consistency fix if Frank wants it.
+
 ## Found via narrow-viewport (320px) sweep (2026-06-24)
 - [x] Inbox cards showed raw markdown markers in previews (e.g. an Obsidian item rendered `**Schedule paid media…**` literally, asterisks and all) — `it.who`/`it.body` are plain-`esc`'d. Added a conservative `stripMd()` helper (dom.js) that unwraps `**`/`__`/`` ` ``/`[text](url)`/leading `#`/bullets and collapses whitespace for one-line previews, applied to both inbox card title + body. Verified: Obsidian card now reads "Schedule paid media strategy sync … (Allie)" cleanly. `stripMd('3*4=12')` left intact (no false strips).
 - [x] Swept chat/inbox/email at 320px (iPhone SE width) — no overflow or control cramping; composer (attach+textarea+mic+send) and cards all fit. Markdown chat renders fine. (Note: chat is the heaviest surface to load — needs ~10-11s virtual-time-budget to screenshot, else captures blank mid-load; not a bug.)

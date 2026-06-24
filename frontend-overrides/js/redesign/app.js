@@ -540,3 +540,7 @@ window.addEventListener('hashchange', () => {
 
 render();
 loadActive(); // kick off live data for the initial surface
+// Prime the chat loader even when booting into another surface, so the
+// cross-session turn notifier (started in chat's load()) runs from the start —
+// a reply finishing while you're in Inbox/Email/etc. still notifies.
+if (activeSurface() !== 'chat') loadSurface('chat', { state, actions, render });

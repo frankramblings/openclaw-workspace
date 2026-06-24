@@ -487,16 +487,6 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
         event_store and owns the turn boundary + the event ids. Readers never
         consume this directly — they tail event_store — so the turn survives any
         reader leaving."""
-        def _teed(chunk: str) -> str:
-            """Append a frame to the per-session event log and id-tag it for
-            resume/tail, falling back to the bare frame if the store errors.
-            Mirrors the in-loop chokepoint so post-loop content (late reply,
-            metrics) is recoverable too. Never used for [DONE]."""
-            try:
-                eid = event_store.append(session_key, chunk)
-                return f"id: {eid}\n{chunk}"
-            except Exception:  # noqa: BLE001 - log issue can't break chat
-                return chunk
         brain_message = message
         text_seen = False    # any non-thinking {"delta"} relayed this turn?
         tools_seen = False   # any tool card relayed (fresh bubble needed)?
@@ -568,17 +558,11 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                             and frame.get("tool_id") != "stall") \
                             or frame.get("tool_id") == "abort":
                         failed = True
-                # Resumable streaming: tee every chunk into the per-session
-                # event log and tag the SSE record with its id so a dropped
-                # client can resume/tail via /api/chat/{events/resume,stream}.
-                # `chunk` already ends with "\n\n", so the record is a valid SSE
-                # frame ("id: <n>\ndata: ...\n\n"); the POST reader ignores the
-                # id: line. append failing must NEVER break the live turn.
-                try:
-                    eid = event_store.append(session_key, chunk)
-                    yield f"id: {eid}\n{chunk}"
-                except Exception:  # noqa: BLE001 - event log issue can't break chat
-                    yield chunk
+                # Pure source: just yield the frame. The detached recorder
+                # (`_record_turn`) is the single writer to event_store; the POST
+                # response and every other reader are tails of that log, so a
+                # dropped reader can't stop the turn or lose mid-flight frames.
+                yield chunk
             # Late delivery: the agent often replies via its `message` tool,
             # whose text lands in the transcript seconds AFTER the run's
             # lifecycle end — the live stream then carries no text at all and
@@ -589,8 +573,8 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                 if late:
                     run_info.setdefault("timing", {})["t_late"] = time.monotonic()
                     if tools_seen:
-                        yield _teed(bridge._sse({"type": "agent_step"}))  # fresh bubble
-                    yield _teed(bridge._sse({"delta": late}))
+                        yield bridge._sse({"type": "agent_step"})  # fresh bubble
+                    yield bridge._sse({"delta": late})
             # Final turn metrics: the vendor SPA renders a footer time from a
             # {type:"metrics"} frame (chatRenderer.displayMetrics) that its
             # original backends sent and we never did. response_time prefers
@@ -606,10 +590,11 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                         timing["t_first_text"] - timing["t_send"], 1)
                 if _model_ref(rec):
                     data["model"] = _model_ref(rec)
-                yield _teed(bridge._sse({"type": "metrics", "data": data}))
+                yield bridge._sse({"type": "metrics", "data": data})
         finally:
             _ACTIVE_RUNS.pop(session_key, None)
-            event_store.end_turn(session_key)
+            # begin_turn/end_turn + event_store.append are owned by the detached
+            # recorder (_record_turn), NOT this source generator.
             _log_turn_timing(_turn_timing_record(
                 run_info, session_key, _model_ref(rec),
                 text_seen=text_seen, failed=failed,
@@ -636,7 +621,53 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             asyncio.create_task(maybe_auto_extract(session_key))
             yield _DONE_SSE
 
-    return StreamingResponse(_drive_turn(), media_type="text/event-stream")
+    # Detach the turn from any single reader: a background recorder drains the
+    # gateway relay into event_store and owns the turn boundary (begin/end_turn),
+    # so a dropped POST reader (refresh / thread-switch / tab close) can never
+    # stop or lose the run. The POST response then just TAILS event_store —
+    # identical to GET /api/chat/stream — so the original POST, a thread-switch
+    # return, and a post-reload resume are all the same replay-then-subscribe.
+    cursor = event_store.latest_id(session_key)  # replay only THIS turn, not prior
+    queue = event_store.subscribe(session_key)   # subscribe before start: no gap
+    _start_turn_recorder(session_key, _drive_turn)
+
+    async def _post_tail():
+        """Replay this turn's events (everything after `cursor`), then live-tail
+        new events until [DONE]. Dedupes the replay/live overlap by seq, emits a
+        keepalive on idle, and always unsubscribes. Mirrors resume_route's tail
+        but terminates at [DONE] (the POST closes when the turn finishes)."""
+        replayed_max = -1
+        try:
+            for eid, payload in event_store.since(session_key, cursor):
+                yield f"id: {eid}\n{payload}"
+                try:
+                    replayed_max = max(replayed_max, int(eid))
+                except (TypeError, ValueError):
+                    pass
+                if "[DONE]" in payload:
+                    return
+            while True:
+                try:
+                    eid, payload = await asyncio.wait_for(
+                        queue.get(), timeout=_TURN_KEEPALIVE_S)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"  # keep proxies from killing the idle conn
+                    continue
+                try:
+                    seq = int(eid)
+                except (TypeError, ValueError):
+                    seq = None
+                if seq is not None and seq <= replayed_max:
+                    continue  # already sent during backlog replay
+                if seq is not None:
+                    replayed_max = seq
+                yield f"id: {eid}\n{payload}"
+                if "[DONE]" in payload:
+                    return
+        finally:
+            event_store.unsubscribe(session_key, queue)
+
+    return StreamingResponse(_post_tail(), media_type="text/event-stream")
 
 
 # --- Session persistence: metadata here, message content from the brain ------
@@ -773,11 +804,12 @@ async def session_usage(session_id: str):
     return await bridge.fetch_session_usage(session_id)
 
 
-@app.get("/api/chat/resume/{session_id}")
-async def resume(session_id: str):
-    return {"id": session_id, "messages": []}
-
-
+# NOTE: the real resume/tail endpoints live in resume_route.py
+# (/api/chat/events/resume, /api/chat/turn, /api/chat/stream). The old
+# /api/chat/resume/{id} stub (always {messages: []}) was dead and is removed.
+# /api/chat/stream_status/{id} is kept ONLY because legacy js/sessions.js still
+# polls it; it remains a {active:false} stub until that caller is migrated to
+# event_store.current_turn() (handoff Part 3).
 @app.get("/api/chat/stream_status/{session_id}")
 async def stream_status(session_id: str):
     return {"active": False}

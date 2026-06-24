@@ -78,6 +78,69 @@ def test_recorder_survives_reader_disconnect():
     anyio.run(main)
 
 
+def test_chat_stream_post_disconnect_keeps_recording(monkeypatch):
+    """HTTP contract: POST /api/chat_stream must drive the gateway relay through
+    the DETACHED recorder, not inside its own response generator. So when the
+    POST reader disconnects mid-turn (uvicorn cancels the response), the turn
+    keeps recording: a gateway frame produced AFTER the reader leaves is still
+    landed in event_store, and the turn settles inactive.
+
+    This is the end-to-end version of test_recorder_survives_reader_disconnect,
+    pinned at the real endpoint."""
+    key = "test:chatstream:disconnect"
+    # session="" resolves to web_session_key(); pin it to an isolated test key.
+    monkeypatch.setattr(config, "web_session_key", lambda: key)
+    # Don't touch the turn-timing log file from a unit test.
+    monkeypatch.setattr(app_module, "_log_turn_timing", lambda *a, **k: None)
+
+    async def main():
+        gate = anyio.Event()
+
+        async def fake_stream_turn(message, session_key=None, run_info=None, **kw):
+            yield bridge._sse({"delta": "before-disconnect"})
+            await gate.wait()                      # gateway still working post-disconnect
+            yield bridge._sse({"delta": "after-disconnect"})
+
+        monkeypatch.setattr(bridge, "stream_turn", fake_stream_turn)
+
+        resp = await app_module.chat_stream(
+            message="hi", session="", use_web="", allow_web_search="",
+            attachments="", active_doc_id="")
+
+        # A reader consumes the POST tail until the first frame, then disconnects
+        # (its task is cancelled — exactly what uvicorn does on client drop).
+        seen_first = anyio.Event()
+
+        async def reader():
+            async for chunk in resp.body_iterator:
+                s = chunk if isinstance(chunk, str) else chunk.decode()
+                if "before-disconnect" in s:
+                    seen_first.set()
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(reader)
+            with anyio.fail_after(5):
+                await seen_first.wait()
+            tg.cancel_scope.cancel()               # reader leaves mid-turn
+
+        # The recorder must own the turn independently of that reader.
+        task = app_module._TURN_TASKS.get(key)
+        assert task is not None, \
+            "chat_stream must start a detached recorder that outlives the reader"
+
+        gate.set()                                 # release the post-disconnect frame
+        with anyio.fail_after(5):
+            await task
+
+        text = _payloads(key)
+        assert "before-disconnect" in text
+        assert "after-disconnect" in text, \
+            "frame produced after the POST reader left must still be recorded"
+        assert event_store.current_turn(key)["active"] is False
+
+    anyio.run(main)
+
+
 def test_turn_active_then_inactive_across_recorder_lifetime():
     """current_turn flips active at begin and inactive at end — this is what the
     reload path (`/api/chat/turn`) reads to decide whether to resume."""

@@ -11,6 +11,7 @@ import {
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
 import { renderActivity } from './chat-activity.js';
+import { renderMarkdown } from './markdown.js';
 
 // ===========================================================================
 // CHAT
@@ -91,9 +92,7 @@ function msgTools(m) {
 // { role:'assistant'|'user', time, model, text, activity? }
 export function chatMsg(m, s) {
   const hasText = String(m.text || '').trim().length > 0;
-  const paras = hasText
-    ? String(m.text).split(/\n\n+/).filter(Boolean).map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join('')
-    : '';
+  const paras = hasText ? renderMarkdown(m.text) : '';
   if (m.role === 'user') {
     return `<div class="msg-user-wrap"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${paras || '<p></p>'}</div>${hasText ? msgTools(m) : ''}</div>`;
   }

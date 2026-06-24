@@ -128,7 +128,10 @@
 .m-toolchip .tc { font-family: var(--mono); font-size: 10.5px; color: var(--mut); }
 .m-toolchip .done { font-family: var(--mono); font-size: 10px; color: var(--green); background: rgba(91,217,127,.12); padding: 1px 7px; border-radius: 999px; }
 .m-msg-user-wrap { display: flex; justify-content: flex-end; }
-.m-msg-user { max-width: 74%; background: var(--tealtint); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); border-radius: 13px 13px 4px 13px; padding: 10px 13px; font-size: 14px; line-height: 1.5; color: #dfe4ea; }
+.m-msg-user { max-width: 74%; background: var(--tealtint); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); border-radius: 13px 13px 4px 13px; padding: 10px 13px; font-size: 14px; line-height: 1.5; color: #dfe4ea; overflow-wrap: anywhere; }
+/* long unbroken URLs/tokens must wrap, not overflow — .m-scroll is overflow-x:hidden
+   so an unwrapped string would be clipped off the edge of the bubble/column. */
+.m-md { overflow-wrap: anywhere; }
 .code-inline { font-family: var(--mono); font-size: 12px; background: #23252b; color: var(--teal); padding: 1px 5px; border-radius: 4px; }
 .tok-kw { color: var(--violet); } .tok-fn { color: var(--gold); } .tok-str { color: var(--green); }
 
@@ -142,7 +145,7 @@
 .m-composer.focused .bar { border-color: color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
 /* font-size must be >= 16px: iOS Safari zooms the page when focusing an input
    smaller than that, which is the "it zooms in/out on the text field" bug. */
-.m-composer textarea { flex: 1; background: transparent; border: none; resize: none; font-size: 16px; line-height: 1.4; color: var(--fg); padding: 6px 0; max-height: 120px; }
+.m-composer textarea { flex: 1; background: transparent; border: none; resize: none; font-size: 16px; line-height: 1.4; color: var(--fg); padding: 6px 0; max-height: 40vh; }
 .m-composer textarea::placeholder { color: var(--faint); }
 .m-round-btn { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--mut); flex: none; background: none; border: none; cursor: pointer; }
 /* composer attachments: the + opens the native photo/file picker; chips show what's queued */
@@ -331,7 +334,12 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-pushed { flex: 1; overflow: auto; min-height: 0; }
 .m-pushed .split-h { flex-direction: column; height: auto; min-height: 100%; }
 .m-pushed .oc-secondary, .m-pushed .set-nav { width: 100%; flex: none; border-right: none; border-bottom: 1px solid var(--bd2); }
-.m-pushed .set-nav { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+.m-pushed .set-nav { flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
+/* Group labels ("ADMIN") and dividers are vertical-sidebar furniture; in the
+   wrapped mobile nav they'd otherwise orphan mid-row. Force them full-width so
+   each acts as a clean section break with the items wrapping beneath it. */
+.m-pushed .set-nav-label { flex-basis: 100%; width: 100%; margin-top: 6px; }
+.m-pushed .set-nav-div { flex-basis: 100%; width: 100%; height: 0; margin: 2px 0; border-top: 1px solid var(--bd2); }
 .m-pushed .lib-grid { grid-template-columns: 1fr 1fr; }
 .m-pushed .oc-head { padding: 14px 16px; }
 .m-pushed .res-wrap, .m-pushed .lib-wrap { padding: 16px; }

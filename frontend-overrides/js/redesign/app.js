@@ -149,6 +149,9 @@ function render() {
       if (selStart != null && el.setSelectionRange) {
         try { el.setSelectionRange(selStart, selEnd); } catch (_) { /* non-text input */ }
       }
+      // render() rebuilds the textarea fresh (no inline height), so the height the
+      // input handler grew it to is gone. Re-apply it here or the box never grows.
+      if (focusKey === 'draft' || focusKey === 'mdraft') autoGrowComposer(el);
     }
   }
 
@@ -287,6 +290,16 @@ root.addEventListener('click', (e) => {
 });
 
 // live-bound inputs/textareas
+// Grow the composer to fit its text so you never have to scroll the field to
+// read what you're typing (newlines included). Caps at ~40% of the viewport so
+// a giant paste can't swallow the screen — past that it scrolls.
+function autoGrowComposer(t) {
+  if (!t) return;
+  t.style.height = 'auto';
+  const cap = Math.max(160, Math.round((window.innerHeight || 800) * 0.4));
+  t.style.height = Math.min(t.scrollHeight, cap) + 'px';
+}
+
 root.addEventListener('input', (e) => {
   const t = e.target.closest('[data-model]');
   if (!t) return;
@@ -296,10 +309,7 @@ root.addEventListener('input', (e) => {
 
   const fk = t.getAttribute('data-focus');
   // Auto-grow the chat composer to fit content (nothing else sets its height).
-  if (fk === 'draft' || fk === 'mdraft') {
-    t.style.height = 'auto';
-    t.style.height = Math.min(t.scrollHeight, 120) + 'px';
-  }
+  if (fk === 'draft' || fk === 'mdraft') autoGrowComposer(t);
 
   // The mobile composer must NOT re-render on every keystroke. render() rebuilds
   // root.innerHTML wholesale, and doing that mid-type on a touch keyboard drops
@@ -323,6 +333,63 @@ root.addEventListener('change', (e) => {
     if (actions.wsUpload && t.files && t.files.length) actions.wsUpload(t.files);
     t.value = '';
   }
+});
+
+// ---- attach images via paste + drag-and-drop (desktop & mobile) -----------
+// Both route through the same uploadAttachments flow as the composer "+".
+// Only fires in the chat context; text paste and other surfaces are untouched.
+function chatAttachContext(target) {
+  if (activeSurface() === 'chat') return true;
+  const fk = target && target.getAttribute && target.getAttribute('data-focus');
+  return fk === 'draft' || fk === 'mdraft';
+}
+function imagesFrom(list) {
+  const out = [];
+  for (const it of (list || [])) {
+    const f = (it && typeof it.getAsFile === 'function') ? it.getAsFile() : it; // DataTransferItem (paste) vs File (drop)
+    if (f && typeof f.type === 'string' && f.type.indexOf('image/') === 0) {
+      // pasted screenshots are often nameless — synthesize a name so the upload keeps an extension
+      out.push(f.name ? f : new File([f], `pasted-${Date.now()}.${(f.type.split('/')[1] || 'png')}`, { type: f.type }));
+    }
+  }
+  return out;
+}
+
+root.addEventListener('paste', (e) => {
+  if (!chatAttachContext(e.target)) return;
+  const imgs = imagesFrom(e.clipboardData && e.clipboardData.items);
+  if (!imgs.length) return;            // no image on the clipboard → let normal text paste happen
+  e.preventDefault();
+  if (actions.uploadAttachments) actions.uploadAttachments(imgs);
+});
+
+// Drop overlay (created once, toggled directly — outside the render cycle).
+let _dropOverlay = null;
+function showDrop(on) {
+  if (on && !_dropOverlay) {
+    _dropOverlay = document.createElement('div');
+    _dropOverlay.id = 'oc-drop-overlay';
+    _dropOverlay.innerHTML = '<div class="oc-drop-card">Drop image to attach</div>';
+    document.body.appendChild(_dropOverlay);
+  }
+  if (_dropOverlay) _dropOverlay.style.display = on ? 'flex' : 'none';
+}
+const dragHasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') !== -1);
+root.addEventListener('dragover', (e) => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault();                  // always block the browser from navigating to the dropped file
+  e.dataTransfer.dropEffect = 'copy';
+  if (chatAttachContext(e.target)) showDrop(true);
+});
+root.addEventListener('dragleave', (e) => { if (!e.relatedTarget) showDrop(false); }); // only on leaving the window
+root.addEventListener('dragend', () => showDrop(false));
+root.addEventListener('drop', (e) => {
+  if (!dragHasFiles(e)) return;
+  e.preventDefault();
+  showDrop(false);
+  if (!chatAttachContext(e.target)) return;
+  const imgs = imagesFrom(e.dataTransfer && e.dataTransfer.files);
+  if (imgs.length && actions.uploadAttachments) actions.uploadAttachments(imgs);
 });
 
 // Enter-to-send in the chat composer (Shift+Enter = newline). Calls the chat

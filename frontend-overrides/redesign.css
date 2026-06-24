@@ -261,6 +261,11 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .act-row .lbl.think{font-style:italic}
 .act-row .file{font-family:var(--mono);font-size:11.5px;color:#aab0ba;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .act-row .meta{font-family:var(--mono);font-size:11px;flex:none}
+.act-group{display:flex;align-items:center;gap:8px;padding:5px 8px;cursor:pointer;margin-left:-1px}
+.act-group .act-ic{display:flex;flex:none}
+.act-group .lbl{font-size:12.5px;color:var(--mut)}
+.act-group:hover .lbl{color:var(--fg)}
+.act-group .meta{font-family:var(--mono);font-size:11px;flex:none}
 .act-chev{transition:transform .15s;flex:none}
 .act-detail{margin:2px 0 8px 26px}
 .act-think{font-size:13px;line-height:1.6;color:var(--mut);font-style:italic;border-left:2px solid var(--bd);padding-left:11px}
@@ -280,7 +285,10 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .m-thread .act-worked{font-size:11.5px}
 .m-thread .act-spine{margin-left:5px}
 .m-thread .act-row,.m-thread .act-working{gap:7px;padding:4px 8px}
-.m-thread .act-row .lbl,.m-thread .act-shim{font-size:11.5px}
+.m-thread .act-row .lbl,.m-thread .act-group .lbl,.m-thread .act-shim{font-size:11.5px}
+.m-thread .act-group{gap:7px;padding:4px 8px}
+.m-thread .act-group .meta{font-size:10px}
+.m-thread .act-group .act-ic svg{width:12px;height:12px}
 .m-thread .act-row .file,.m-thread .act-working .file{font-size:10.5px}
 .m-thread .act-row .meta{font-size:10px}
 .m-thread .act-ic svg,.m-thread .act-row .act-ic svg{width:12px;height:12px}
@@ -698,3 +706,8 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
   .conv-kebab,.cm-item,.msg-tool{transition:none}
   .conv-menu{animation:none}
 }
+
+/* Drag-and-drop image attach overlay (chat). Toggled by app.js; pointer-events
+   none so the drop lands on the chat underneath and bubbles to the root handler. */
+#oc-drop-overlay { position: fixed; inset: 0; z-index: 9999; display: none; align-items: center; justify-content: center; background: rgba(8,9,11,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: none; }
+#oc-drop-overlay .oc-drop-card { border: 2px dashed var(--teal, #4fe3d1); color: var(--fg, #e8eaed); background: var(--panel, #1e2025); border-radius: 16px; padding: 22px 30px; font-size: 15px; font-weight: 600; box-shadow: 0 12px 40px rgba(0,0,0,.5); }

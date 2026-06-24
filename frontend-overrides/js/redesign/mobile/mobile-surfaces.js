@@ -2,7 +2,7 @@
 // only chrome/layout differs from desktop.
 
 import { I, icon } from '../icons.js';
-import { esc, map, when } from '../dom.js';
+import { esc, map, when, stripMd } from '../dom.js';
 import { AVATAR, EMAILS, INBOX } from '../data.js';
 import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
@@ -96,16 +96,16 @@ export function mInbox(s) {
     <div class="m-swipe" data-swipe-id="${it.id}">
       <div class="m-swipe-bg"><div class="act">${ic.archive()}<span>Archive</span></div></div>
       <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
-        <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(it.who)}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>
-        <div class="body">${esc(it.body)}</div>
+        <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>
+        <div class="body">${esc(stripMd(it.body))}</div>
         <div class="actions"><button class="m-pill" data-act="dismiss" data-arg="${it.id}">${esc(it.primary)}</button><button class="m-pill ghost" data-act="dismiss" data-arg="${it.id}">${esc(it.secondary)}</button></div>
       </div>
     </div>`;
   };
   const fyiCard = (it) => `
     <div class="m-card fyi">
-      <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(it.who)}</span><span class="ago">· ${esc(it.time)}</span></div>
-      <div class="body">${esc(it.body)}</div>
+      <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span></div>
+      <div class="body">${esc(stripMd(it.body))}</div>
       <div class="m-ai-pill">✦ ${esc(it.suggest)}</div>
       <div class="actions"><button class="m-pill" data-act="dismiss" data-arg="${it.id}">Archive</button><button class="m-pill ghost" data-act="dismiss" data-arg="${it.id}">Keep</button></div>
     </div>`;

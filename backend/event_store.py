@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from collections import deque
 
 # Per-session ring buffer cap. Old events past this are evicted (their ids are
@@ -42,6 +43,10 @@ _SUBSCRIBERS: dict[str, set] = {}
 _TURN_START: dict[str, int] = {}
 # session_key -> is a turn streaming right now (set by begin/end_turn).
 _TURN_ACTIVE: dict[str, bool] = {}
+# session_key -> wall-clock ms when the current turn began. Lets a resumed
+# client continue the "Working… Ns" clock from the true start (surfaced as
+# elapsed_ms in current_turn()) instead of restarting at 0 on re-attach.
+_TURN_START_MS: dict[str, float] = {}
 
 
 def append(session_key: str, payload: str) -> str:
@@ -105,6 +110,7 @@ def begin_turn(session_key: str) -> None:
     with _LOCK:
         _TURN_START[session_key] = _NEXT_SEQ.get(session_key, 1)
         _TURN_ACTIVE[session_key] = True
+        _TURN_START_MS[session_key] = time.time() * 1000
 
 
 def end_turn(session_key: str) -> None:
@@ -118,22 +124,28 @@ def end_turn(session_key: str) -> None:
 def current_turn(session_key: str) -> dict:
     """Snapshot of the latest turn for a reloaded client:
         {"active": bool, "turn_start_id": str|None,
-         "events": [{"id","data"}, ...], "last_event_id": str|None}
+         "events": [{"id","data"}, ...], "last_event_id": str|None,
+         "elapsed_ms": int|None}
     `events` are the retained events with seq >= the turn boundary (clamped to
     what's still buffered), in order — enough to rebuild the in-flight answer
-    from its start. Empty if no turn has ever started for the session."""
+    from its start. `elapsed_ms` is the server-computed time since the turn
+    began, so a resumed client continues the "Working… Ns" clock from the true
+    start (no client/server clock skew). Empty if no turn has ever started."""
     with _LOCK:
         active = bool(_TURN_ACTIVE.get(session_key))
         start = _TURN_START.get(session_key)
+        start_ms = _TURN_START_MS.get(session_key)
         buf = _EVENTS.get(session_key)
+        elapsed_ms = (max(0, int(time.time() * 1000 - start_ms))
+                      if start_ms is not None else None)
         if start is None or not buf:
-            return {"active": active, "turn_start_id": None,
-                    "events": [], "last_event_id": None}
+            return {"active": active, "turn_start_id": None, "events": [],
+                    "last_event_id": None, "elapsed_ms": elapsed_ms}
         events = [{"id": str(seq), "data": payload}
                   for seq, payload in buf if seq >= start]
         last_id = str(buf[-1][0])
-    return {"active": active, "turn_start_id": str(start),
-            "events": events, "last_event_id": last_id}
+    return {"active": active, "turn_start_id": str(start), "events": events,
+            "last_event_id": last_id, "elapsed_ms": elapsed_ms}
 
 
 def subscribe(session_key: str) -> "asyncio.Queue":

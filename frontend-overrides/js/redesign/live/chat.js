@@ -541,6 +541,13 @@ async function resumeIfActive(chat, state, sessionId) {
   stopElapsed();
   const { onEvent, ensureActivity } = beginTurn(chat, chat.model);
   ensureActivity();            // immediate "Working…" while we rebuild + tail
+  // Continue the "Working… Ns" clock from the turn's TRUE start (server-computed
+  // elapsed) instead of restarting at 0 on re-attach. Anchored to the client
+  // clock via Date.now() so there's no client/server skew.
+  if (typeof snap.elapsed_ms === 'number' && turn && turn.activity) {
+    turn.activity.startMs = Date.now() - snap.elapsed_ms;
+    turn.activity.elapsed = fmtElapsed(turn.activity.startMs);
+  }
   for (const e of (snap.events || [])) {
     const ev = parseStoredSSE(e.data);
     if (ev) onEvent(ev);

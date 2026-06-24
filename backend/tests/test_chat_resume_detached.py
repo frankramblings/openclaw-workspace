@@ -141,6 +141,21 @@ def test_chat_stream_post_disconnect_keeps_recording(monkeypatch):
     anyio.run(main)
 
 
+def test_current_turn_exposes_elapsed_ms():
+    """A resumed client needs the turn's true elapsed time so the "Working… Ns"
+    clock CONTINUES instead of restarting at 0. current_turn() must report
+    elapsed_ms (server-computed) for an active turn, and it must grow over time."""
+    import time as _t
+    key = "test:elapsed:ms"
+    event_store.begin_turn(key)
+    event_store.append(key, bridge._sse({"delta": "x"}))
+    snap = event_store.current_turn(key)
+    assert isinstance(snap.get("elapsed_ms"), int), "current_turn must report elapsed_ms"
+    assert snap["elapsed_ms"] >= 0
+    _t.sleep(0.03)
+    assert event_store.current_turn(key)["elapsed_ms"] >= snap["elapsed_ms"]
+
+
 def test_turn_active_then_inactive_across_recorder_lifetime():
     """current_turn flips active at begin and inactive at end — this is what the
     reload path (`/api/chat/turn`) reads to decide whether to resume."""

@@ -15,6 +15,9 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
    Surfaces route off `location.hash`: `#chat #inbox #email #more #calendar #notes #settings` (also `#capture`). Snap chromium can only write under non-hidden `$HOME` dirs (e.g. `/home/frank/ralph-shots/`), not `/tmp`. A persistent `--remote-debugging-port` browser gets SIGTERM'd by the harness, so one-shot `--screenshot` per surface is the only reliable mode.
 6. Mark the item `[x]`/`[!]`, append a PROGRESS line, commit `mobile: <one-line>` (note: `frontend/` is gitignored — only `frontend-overrides/` + `ralph/` files get committed), exit.
 
+## Tooling
+- Surfaces unreachable by URL hash (email **reader**, **companion**/**capture** sheets) can be screenshotted via `/home/frank/ralph-shots/harness.mjs` — it imports the real renderers, emits standalone HTML linking the LIVE served `redesign.css` + `mobile.css`, and chromium screenshots the `file://`. Set any state field (e.g. `emailSummary`) to exercise conditional branches.
+
 ## Done
 - [x] Kill grey iOS tap-flash + press-in scale on small controls (`mobile.css:17-25`) — with reduced-motion guard.
 - [x] Composer focus transition + send button dims/inert until text typed (`mobile.css:100-110`).
@@ -22,13 +25,16 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
 - [x] Chat empty/new-thread rendered a fully blank screen — added centered `.m-chat-zero` prompt ("Message Gary to start") reusing the shared `.inbox-zero` shell (`mobile-surfaces.js` mChat, `mobile.css` `.m-thread.empty`). New chats (`live/chat.js:801,816` set `thread=[]`) now get a friendly placeholder instead of void. Verified both branches render via direct import.
 
 ## Backlog (concrete, observed)
-- [ ] Dead decorative controls with `cursor:pointer` but no `data-act`: email reader `✦ AI reply` / `✦ Summarize` (`mobile-surfaces.js:152`), `✦ Draft` + reply send button (`:156`), `.m-gary-card` in More hub (`:186`), calendar `Day/Agenda` seg (`:172`). Either wire them or drop the pointer affordance so they don't promise interactivity. — needs decision on wiring vs. stub.
+- [~] Dead decorative controls with `cursor:pointer` but no `data-act`. PROGRESS: email reader `✦ Summarize` now wired → `summarizeEmail` + inline `.m-email-summary` render + `clearEmailSummary` ✕ (verified via harness). STILL DEAD (need a mobile **compose sheet** — `composeReply`/`composeAiDraft` set `s.composeOpen` and populate composeTo/Subject/Body, but only the DESKTOP renders a compose surface, so wiring them on mobile fires silently): `✦ AI reply`, `✦ Draft`, reply-bar send button. Also still dead: `.m-gary-card` in More hub (chevron implies nav — candidate: `openCompanion`, needs decision), calendar `Day` seg (no Day view; only Agenda implemented). → Next contained sub-task: build a mobile compose sheet (mirror `renderCaptureSheet` pattern) bound to composeOpen/sendEmail, then wire AI reply/Draft/send.
+- [x] `.m-tab-badge` hardcoded `right: calc(50% - 19px)` — VERIFIED OK via cropped screenshot. It's anchored to tab-center (50%) and the icon is centered too, so the badge sits correctly on the inbox icon's top-right regardless of tab/label width. Not fragile. No change.
+- [x] Quick-add `+` button (`data-act="clearQuick"`) — VERIFIED OK. `clearQuick` is overridden in `live/calendar.js:320` to parse the natural-language text and POST a calendar event; the mock's `state.quick=''` is only the no-backend fallback. So `+` = add (matches desktop's "↵ Add"). The name is a misnomer but behavior is correct. No change.
+- [x] Email reader archive/dots `border:none` — VERIFIED OK via harness screenshot. The borderless reader toolbar reads clean and intentional (back-text + two quiet icon glyphs); adding borders would look heavier/worse. Leave as-is.
 - [x] `.m-mail.active` only highlighted when `e.unread` was truthy (`mobile-surfaces.js:127`) — a read, selected email showed no active state. Fixed: highlight on selection (`i === s.selEmail`) regardless of unread.
 - [x] Reduced-motion: sheet slide-up (`m-sheet-up`), status-dot `pulse` (both `.m-gary .status .dot` and `.m-gary-card .st .dot`), and terminal-cursor `blink` are now disabled under `prefers-reduced-motion`. The pull-to-refresh `spin` is intentionally kept — it conveys progress; freezing it reads as broken.
 - [x] `:focus-visible` ring added (`.m-app button/textarea/input:focus-visible` → 2px teal outline, 2px offset). Scoped to keyboard/switch focus so it never shows on tap (pointer presses use `:active`). Proven with an autofocus harness: focused control shows the ring, others don't.
 - [ ] `.m-tab-badge` position uses a hardcoded `right: calc(50% - 19px)` (`mobile.css:68`) — fragile if label width changes; verify it sits correctly over each tab icon.
 - [ ] Quick-add calendar button is `data-act="clearQuick"` showing a `+` (`mobile-surfaces.js:178`) — a plus glyph that clears reads wrong; confirm icon vs. action intent.
-- [ ] Email reader archive/dots icon buttons (`mobile-surfaces.js:146-147`) have `border:none` inline override — inconsistent with `.m-icon-btn` elsewhere; confirm intentional.
+- [x] Email reader archive/dots `border:none` — resolved above (verified intentional/clean via harness screenshot).
 
 ## Found via mobile screenshot survey (2026-06-24)
 Captured each surface at 390×844 via hash routes (`#inbox/#email/#more/#calendar/#notes/#settings`) using one-shot chromium screenshots (`/home/frank/ralph-shots/`).

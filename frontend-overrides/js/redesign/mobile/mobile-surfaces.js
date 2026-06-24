@@ -155,7 +155,8 @@ export function mEmailReader(s) {
   <div class="m-scroll m-reader">
     <h1>${esc(m.subj)}</h1>
     <div class="m-reader-from"><div class="m-reader-av" style="background:${m.avBg};color:${m.avFg}">${esc(m.initials)}</div><div style="min-width:0"><div class="nm">${esc(m.from)}</div><div class="to">to me · ${esc(m.time)}</div></div></div>
-    <div class="m-ai-row"><span class="m-ai-btn teal">✦ AI reply</span><span class="m-ai-btn violet">✦ Summarize</span></div>
+    <div class="m-ai-row"><span class="m-ai-btn teal">✦ AI reply</span><button class="m-ai-btn violet" data-act="summarizeEmail">✦ Summarize</button></div>
+    ${when(s.emailSummary, `<div class="m-email-summary"><div class="hd"><span class="t">✦ Summary</span><button class="x" data-act="clearEmailSummary" aria-label="Dismiss summary">✕</button></div><div class="bd">${esc(s.emailSummary)}</div></div>`)}
     ${map(m.body || [], (p) => `<p>${esc(p)}</p>`)}
     ${when(!!attach, `<div class="m-attach"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(attach ? attach.name : '')}</div><div class="sz">${esc(attach ? attach.size : '')}</div></div></div>`)}
   </div>

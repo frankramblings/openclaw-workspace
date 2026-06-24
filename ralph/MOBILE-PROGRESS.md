@@ -10,3 +10,5 @@
 2026-06-24 | root-caused top-of-list clipping to app.js atBottom stick-to-bottom applying to all .m-scroll (not just chat) | found
 2026-06-24 | scope stick-to-bottom to chat thread + require real overflow; email/calendar now anchor at top, chat still sticks | fixed
 2026-06-24 | a11y: :focus-visible teal ring (buttons/inputs) + reduced-motion guards (pulse/sheet-slide/blink; keep spinner) | fixed
+2026-06-24 | built reusable harness.mjs to screenshot hash-unreachable surfaces (reader/sheets); verified 3 backlog items as non-bugs (tab-badge, quick-add +, reader border) | found
+2026-06-24 | email reader: wire ✦ Summarize → summarizeEmail + inline .m-email-summary render + ✕ clear (verified via harness) | fixed

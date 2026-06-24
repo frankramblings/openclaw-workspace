@@ -135,7 +135,7 @@
 .m-search .ph { font-size: 13.5px; color: var(--faint); }
 
 /* ---- inbox ---------------------------------------------------------------- */
-.m-feed { padding: 6px 14px 24px; }
+.m-feed { padding: 6px 14px 24px; overscroll-behavior-y: contain; }
 .m-ptr { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; overflow: hidden; transition: height .2s ease; }
 .m-ptr .spin { width: 22px; height: 22px; border: 2px solid var(--teal); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
 .m-ptr .lbl { font-size: 10.5px; color: var(--faint); }
@@ -191,6 +191,14 @@
 .m-ai-btn { height: 34px; padding: 0 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .m-ai-btn.teal { border: 1px solid var(--teal2); background: var(--tealtint); color: var(--teal); }
 .m-ai-btn.violet { border: 1px solid rgba(169,155,245,.3); background: rgba(169,155,245,.1); color: var(--violet); }
+/* Summarize is a real <button> now; keep it visually identical to the sibling span */
+button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: none; }
+/* inline AI summary, rendered when summarizeEmail populates s.emailSummary */
+.m-email-summary { border: 1px solid rgba(169,155,245,.28); background: rgba(169,155,245,.08); border-radius: 11px; padding: 11px 13px; margin: 0 0 18px; }
+.m-email-summary .hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.m-email-summary .hd .t { font-size: 12px; font-weight: 700; color: var(--violet); }
+.m-email-summary .hd .x { background: none; border: none; color: var(--faint); font-size: 14px; cursor: pointer; padding: 0 2px; font-family: inherit; }
+.m-email-summary .bd { font-size: 13px; line-height: 1.55; color: #d3d7de; white-space: pre-wrap; }
 .m-reader p { margin: 0 0 13px; font-size: 14.5px; line-height: 1.65; color: #d3d7de; }
 .m-attach { display: inline-flex; align-items: center; gap: 10px; border: 1px solid var(--bd); background: var(--panel); border-radius: 11px; padding: 9px 13px; margin-top: 3px; }
 .m-attach .ico { width: 30px; height: 30px; border-radius: 7px; background: rgba(240,114,106,.12); color: var(--red); display: flex; align-items: center; justify-content: center; }

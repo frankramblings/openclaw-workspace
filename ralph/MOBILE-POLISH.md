@@ -36,6 +36,11 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
 - [ ] Quick-add calendar button is `data-act="clearQuick"` showing a `+` (`mobile-surfaces.js:178`) — a plus glyph that clears reads wrong; confirm icon vs. action intent.
 - [x] Email reader archive/dots `border:none` — resolved above (verified intentional/clean via harness screenshot).
 
+## Found via post-feature sweep (2026-06-24)
+- [x] Email list showed a prominent teal `.m-mail.active` border on the FIRST row on fresh load (default `selEmail:0`) — misleading on mobile, which is single-pane (tap → full reader), so there's no persistent list selection to advertise. Fixed: gate the highlight on a new `s.mEmailOpened` flag (set in `mOpenReader`), so nothing is highlighted until the user opens a reader; on return it marks the last-read row. Verified: fresh load uniform, post-open highlight present.
+- [x] Verified the new scroll-to-bottom button (`.m-scroll-btm`) is wired for mobile (`scrollChatBottom` now targets `.chat-thread, .m-thread`; scroll listener gates on those classes only — no misfire on email/inbox/calendar `.m-scroll`).
+- [x] Verified markdown rendering in mobile chat (`.m-md`: headings/list/blockquote/inline-code/links) + focused composer (attach+textarea+send, no mic) render cleanly via live + harness screenshots.
+
 ## Found via mobile screenshot survey (2026-06-24)
 Captured each surface at 390×844 via hash routes (`#inbox/#email/#more/#calendar/#notes/#settings`) using one-shot chromium screenshots (`/home/frank/ralph-shots/`).
 - [x] Email list: dangling `·` separator — `mobile-surfaces.js:130` rendered `${e.from} · ${snippet}`, so an email with no body showed "Sender · " with a trailing middot. Fixed: separator now conditional on a non-empty snippet (`${snippet ? ' · '+snippet : ''}`). Verified both branches via direct import.

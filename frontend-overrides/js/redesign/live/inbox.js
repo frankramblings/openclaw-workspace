@@ -194,6 +194,29 @@ export const actions = {
   complete: (id) => runAction(id, 'complete'),
   reviewed: (id) => runAction(id, 'reviewed'),
 
+  // Hand item to Gary — mint a chat session seeded with this item's context.
+  gary: async (id) => {
+    const state = runtime.state;
+    const item = findItem(state, id);
+    if (!item) return;
+    try {
+      const r = await apiJson('/api/items/spinoff', {
+        item: { source: item.source, title: item.who, subtitle: item.body, snippet: item.body, meta: item.meta || {} },
+      });
+      const sid = r && r.session_id;
+      if (sid) {
+        location.hash = '#chat';
+        if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(String(sid));
+      } else {
+        state.inboxToast = { msg: "Couldn't hand to Gary", undoTs: null };
+        runtime.render();
+      }
+    } catch (_) {
+      state.inboxToast = { msg: "Couldn't hand to Gary", undoTs: null };
+      runtime.render();
+    }
+  },
+
   // Universal ✕ — tolerant of source/action mismatch (falls back to dismiss).
   dismiss: async (id) => {
     const state = runtime.state;

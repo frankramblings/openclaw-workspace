@@ -439,12 +439,24 @@ function inboxSurface(s) {
   const fyi = visible.filter((m) => m.group === 'fyi');
 
   const bodyAttr = (it) => detailEndpoint(it) ? ` data-act="openReader" data-arg="${esc(it.id)}" style="cursor:pointer"` : '';
+  // Snooze preset popover — rendered inline inside the card when open.
+  // Action naming: "snooze" (from cardButtonsHtml data-act) opens the menu;
+  // "snoozeFor" with arg "<id>:<preset>" commits and fires the real POST.
+  const snoozeMenu = (it) => when(s.inboxSnoozeFor === it.id, `
+    <div class="snooze-menu" style="display:flex;align-items:center;gap:6px;padding:6px 0 2px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--faint);margin-right:2px">Snooze:</span>
+      ${['later', 'tomorrow', 'nextweek'].map((p) =>
+        `<button class="btn-sm ghost" data-act="snoozeFor" data-arg="${esc(it.id + ':' + p)}">${p === 'later' ? '4 h' : p === 'tomorrow' ? 'Tomorrow' : 'Next week'}</button>`
+      ).join('')}
+      <button class="btn-sm ghost" data-act="closeSnooze" style="margin-left:auto">Cancel</button>
+    </div>`);
   const needsCard = (it) => `
     <div class="inbox-card">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
       <div class="body"${bodyAttr(it)}>${esc(stripMd(it.body))}</div>
       ${when(it.source === 'obsidian' && it.rec && it.rec.due, `<div class="ai-pill">✦ task · due ${esc((it.rec || {}).due || '')}</div>`)}
       ${cardButtonsHtml(it, esc)}
+      ${snoozeMenu(it)}
     </div>`;
   const fyiCard = (it) => `
     <div class="inbox-card fyi">
@@ -452,6 +464,7 @@ function inboxSurface(s) {
       <div class="body"${bodyAttr(it)}>${esc(stripMd(it.body))}</div>
       <button class="ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
       ${cardButtonsHtml(it, esc)}
+      ${snoozeMenu(it)}
     </div>`;
 
   return `

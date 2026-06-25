@@ -8,7 +8,7 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
-import { srcStyle, openUrlFor, dueChipToISO } from './inbox-logic.js';
+import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs } from './inbox-logic.js';
 import { detailEndpoint } from './inbox-detail.js';
 
 const ageLabel = (h) => {
@@ -249,6 +249,54 @@ export const actions = {
       } catch (_) { /* fall back to inbox */ }
       openExternal(link);
     }
+  },
+
+  // Snooze: open the preset menu for a card (action: "snooze" in cardButtonsHtml
+  // dispatches this). A second distinct action "snoozeFor" commits the selected
+  // preset so ⏰ opens the menu and a preset tap does the real POST.
+  snooze: (id) => {
+    const state = runtime.state;
+    // Toggle: tapping ⏰ again closes the menu.
+    state.inboxSnoozeFor = state.inboxSnoozeFor === String(id) ? null : String(id);
+    runtime.render();
+  },
+  openSnooze: (id) => {
+    runtime.state.inboxSnoozeFor = String(id);
+    runtime.render();
+  },
+  closeSnooze: () => {
+    runtime.state.inboxSnoozeFor = null;
+    runtime.render();
+  },
+
+  // Commit a snooze preset: optimistic dismiss + POST + revert on failure.
+  // arg format: "<id>:<preset>" e.g. "42:tomorrow"
+  snoozeFor: async (arg) => {
+    const state = runtime.state;
+    const sep = String(arg || '').indexOf(':');
+    const id = sep > -1 ? arg.slice(0, sep) : String(arg);
+    const preset = sep > -1 ? arg.slice(sep + 1) : 'later';
+    const item = findItem(state, id);
+    if (!item) return;
+    const source = item.source;
+    const until = snoozeUntilMs(preset, Date.now());
+
+    state.inboxSnoozeFor = null;
+    markDismissed(state, id);
+    runtime.render();
+    try {
+      const r = await apiJson('/api/items/action', { source, id: String(id), action: 'snooze', until });
+      if (r && r.ok === false) throw new Error(r.error || 'snooze failed');
+      if (r && r.undoTs) {
+        state._lastUndoTs = r.undoTs;
+        state.inboxToast = { msg: 'Snoozed', undoTs: r.undoTs };
+      }
+    } catch (e) {
+      unmarkDismissed(state, id);
+      runtime.render();
+      return;
+    }
+    runtime.render();
   },
 
   // Toggle the source-filter chip. arg is an uppercased src tag or 'ALL'.

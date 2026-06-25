@@ -154,6 +154,26 @@ export function cardButtonsHtml(item, esc) {
   return `<div class="card-actions">${btns.join('')}</div>`;
 }
 
+// --- snoozeUntilMs: maps a snooze preset to an absolute epoch-ms value ------
+// Pure helper — takes nowMs so it's deterministic/testable.
+// Presets: later = +4h; tomorrow = next calendar day 09:00 UTC;
+//          nextweek = +7 calendar days 09:00 UTC.
+export function snoozeUntilMs(preset, nowMs) {
+  const p = String(preset || '').toLowerCase();
+  if (p === 'later') return nowMs + 4 * 3600000;
+  const d = new Date(nowMs);
+  const y = d.getUTCFullYear(), m = d.getUTCMonth();
+  if (p === 'tomorrow') {
+    const day = d.getUTCDate() + 1;
+    return Date.UTC(y, m, day, 9, 0, 0);
+  }
+  if (p === 'nextweek') {
+    const day = d.getUTCDate() + 7;
+    return Date.UTC(y, m, day, 9, 0, 0);
+  }
+  return nowMs + 4 * 3600000; // fallback to later
+}
+
 // --- dueChipToISO: maps Add-to-Asana date chips to ISO YYYY-MM-DD ----------
 // Pure helper — takes nowMs so it's deterministic/testable regardless of TZ.
 // Chips: today | tomorrow | fri | nextweek | none (anything else → null).

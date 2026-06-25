@@ -142,4 +142,11 @@ assert.equal(obsPrim.label, 'Add to Asana');
 // reviewed remains available as a ghost (plain hide).
 assert.ok(obsA.some((a) => a.action === 'reviewed' && a.role === 'ghost'));
 
+// --- snoozeUntilMs: preset snooze epoch-ms relative to nowMs ----------------
+import { snoozeUntilMs } from '../../frontend-overrides/js/redesign/live/inbox-logic.js';
+const base = Date.UTC(2026, 5, 29, 12, 0, 0);
+assert.ok(snoozeUntilMs('later', base) > base, 'later today is in the future');
+assert.equal(new Date(snoozeUntilMs('tomorrow', base)).getUTCDate(), 30, 'tomorrow → next day');
+assert.ok(snoozeUntilMs('nextweek', base) - base >= 6 * 86400000, 'nextweek ≥ ~7 days');
+
 console.log('inbox-logic: all assertions OK');

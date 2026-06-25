@@ -4,6 +4,7 @@
 
 import { I, icon } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
+import { cardActions, filterVisible, sourceCounts, cardButtonsHtml } from './live/inbox-logic.js';
 import {
   AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES, PAST_RESEARCH,
   LIBRARY, KIND_STYLE, LIB_FILTERS, NOTES, EMAILS, INBOX,
@@ -91,13 +92,24 @@ function msgTools(m) {
     + `</div>`;
 }
 
+function renderAttachments(attach) {
+  if (!attach || !attach.length) return '';
+  const items = attach.map((a) => {
+    const isImg = /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(a.name || '');
+    if (isImg && a.url) return `<img class="msg-attach-img" src="${esc(a.url)}" alt="${esc(a.name || 'image')}">`;
+    return `<span class="msg-attach-chip">📎 ${esc(a.name || a.id)}</span>`;
+  }).join('');
+  return `<div class="msg-attachments">${items}</div>`;
+}
+
 // one chat message → html (assistant prose / user bubble). Live thread items:
 // { role:'assistant'|'user', time, model, text, activity? }
 export function chatMsg(m, s) {
   const hasText = String(m.text || '').trim().length > 0;
   const paras = hasText ? renderMarkdown(m.text) : '';
   if (m.role === 'user') {
-    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${paras || '<p></p>'}</div>${hasText ? msgTools(m) : ''}</div>`;
+    const attachHtml = renderAttachments(m.attach);
+    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an
@@ -227,7 +239,9 @@ function chatSurface(s) {
     </div>`)}
     ${when(s.modelMenuOpen, modelPopover(s))}
     <div class="composer${slashOpen ? ' slash' : ''}">
-      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message Gary…   ( type / for commands )">${esc(d)}</textarea>
+      ${when(s.live?.chat?.queued, `<div class="queued-msg" data-act="queueRecall" title="Click to edit"><span class="q-ico">⏳</span><span class="q-txt">Queued — sends when the reply finishes${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 90))}` : ' · (image)'}</span><button class="q-x ocbtn" data-act="queueCancel" title="Cancel">✕</button></div>`)}
+      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message Gary…   ( type / for commands )">
+${esc(d)}</textarea>
       ${when(s.pendingAttach && s.pendingAttach.length, `
       <div class="attach-pending">
         ${map(s.pendingAttach || [], attachChip)}
@@ -344,7 +358,7 @@ function composeOverlay(s) {
 // ===========================================================================
 function inboxSurface(s) {
   const items = s.live?.inbox?.items ?? INBOX;
-  const visible = items.filter((m) => !s.dismissed.includes(m.id));
+  const visible = filterVisible(items, { dismissed: s.dismissed, filter: s.inboxFilter });
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
   const cnt = (src) => visible.filter((m) => m.src === src).length;
@@ -353,14 +367,14 @@ function inboxSurface(s) {
     <div class="inbox-card">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${it.id}">${I.x()}</span></div>
       <div class="body">${esc(stripMd(it.body))}</div>
-      <div class="card-actions"><button class="btn-sm" data-act="dismiss" data-arg="${it.id}">${esc(it.primary)}</button><button class="btn-sm ghost" data-act="dismiss" data-arg="${it.id}">${esc(it.secondary)}</button></div>
+      ${cardButtonsHtml(it, esc)}
     </div>`;
   const fyiCard = (it) => `
     <div class="inbox-card fyi">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${it.id}">${I.x()}</span></div>
       <div class="body">${esc(stripMd(it.body))}</div>
       <div class="ai-pill">✦ ${esc(it.suggest)}</div>
-      <div class="card-actions"><button class="btn-sm" data-act="dismiss" data-arg="${it.id}">Archive</button><button class="btn-sm ghost" data-act="dismiss" data-arg="${it.id}">Keep</button></div>
+      ${cardButtonsHtml(it, esc)}
     </div>`;
 
   return `

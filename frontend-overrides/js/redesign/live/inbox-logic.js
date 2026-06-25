@@ -1,0 +1,135 @@
+// Pure inbox logic — no DOM, no fetch. Shared by live/inbox.js (wiring) and
+// surfaces.js (render), and unit-tested by scripts/test/inbox-logic.test.mjs.
+//
+// The redesign skeleton hardcoded `dismiss` on every button and only styled
+// gmail/slack/asana. This restores the classic behaviour: real per-source
+// actions driven off the backend's `actions[]` list, all five sources styled,
+// interactive source filtering, and backend-authoritative counts.
+
+// Per-source brand colors for the .src-tag. Covers every source the backend
+// emits (gmail, slack, asana, obsidian, documents); unknown → muted.
+const SRC_STYLE = {
+  GMAIL: { srcColor: 'var(--red)', srcBg: 'rgba(240,114,106,.12)' },
+  SLACK: { srcColor: 'var(--green)', srcBg: 'rgba(91,217,127,.12)' },
+  ASANA: { srcColor: 'var(--gold)', srcBg: 'rgba(232,194,104,.12)' },
+  OBSIDIAN: { srcColor: 'var(--purple, #b794f6)', srcBg: 'rgba(183,148,246,.12)' },
+  DOCUMENTS: { srcColor: 'var(--blue, #6aa6f0)', srcBg: 'rgba(106,166,240,.12)' },
+};
+const MUTED = { srcColor: 'var(--muted)', srcBg: 'rgba(255,255,255,.06)' };
+
+export function srcStyle(source) {
+  return SRC_STYLE[String(source || '').toUpperCase()] || MUTED;
+}
+
+// Human labels for backend action verbs. Unknown verbs are humanized
+// (snake_case → "Sentence case") so a new backend action still reads sanely.
+const ACTION_LABEL = {
+  archive: 'Archive',
+  delete: 'Delete',
+  mark_read: 'Mark read',
+  complete: 'Complete',
+  reviewed: 'Reviewed',
+  dismiss: 'Dismiss',
+  snooze: 'Snooze',
+  reply: 'Reply',
+  open: 'Open',
+  gary: 'Hand to Gary',
+};
+
+export function actionLabel(action) {
+  const k = String(action || '').toLowerCase();
+  if (ACTION_LABEL[k]) return ACTION_LABEL[k];
+  const words = k.replace(/_/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : '';
+}
+
+// The verb (if any) that "clears" an item from the feed for a given source.
+// This becomes the card's primary button. dismiss/snooze are universal and
+// never primary; dismiss is rendered as the ✕, snooze/open/gary as affordances.
+const CLEAR_VERBS = ['archive', 'mark_read', 'complete', 'reviewed'];
+
+// Produce the ordered button descriptors a card should render.
+// role: 'primary' (the clear-action), 'ghost' (secondary verbs like delete),
+//       'x' (dismiss → the ✕), 'icon' (snooze / open / gary affordances).
+export function cardActions(item) {
+  const allowed = Array.isArray(item && item.actions) ? item.actions.map((a) => String(a).toLowerCase()) : [];
+  const out = [];
+
+  // Primary clear-action: first allowed verb that clears the item.
+  const primary = CLEAR_VERBS.find((v) => allowed.includes(v));
+  if (primary) out.push({ action: primary, label: actionLabel(primary), role: 'primary' });
+
+  // Remaining clear-ish verbs (e.g. gmail delete) become ghost buttons.
+  for (const v of allowed) {
+    if (v === primary || v === 'dismiss' || v === 'snooze') continue;
+    if (out.some((a) => a.action === v)) continue;
+    out.push({ action: v, label: actionLabel(v), role: 'ghost' });
+  }
+
+  // Universal affordances, always offered regardless of the backend list.
+  out.push({ action: 'open', label: actionLabel('open'), role: 'icon' });
+  if (allowed.includes('snooze') || !allowed.length) {
+    out.push({ action: 'snooze', label: actionLabel('snooze'), role: 'icon' });
+  }
+  out.push({ action: 'gary', label: actionLabel('gary'), role: 'icon' });
+  out.push({ action: 'dismiss', label: actionLabel('dismiss'), role: 'x' });
+
+  return out;
+}
+
+// Visible-feed derivation: hide dismissed ids, apply an optional source filter.
+// filter is an uppercased src tag (e.g. 'GMAIL') or null/undefined for all.
+export function filterVisible(items, opts) {
+  const list = Array.isArray(items) ? items : [];
+  const dismissed = (opts && opts.dismissed) || [];
+  const filter = (opts && opts.filter) || null;
+  return list.filter((m) => {
+    if (dismissed.includes(m.id)) return false;
+    if (filter && String(m.src).toUpperCase() !== String(filter).toUpperCase()) return false;
+    return true;
+  });
+}
+
+// Counts for the chip row. Prefer the backend `sources` map (authoritative
+// totals across the whole feed, not just what's loaded); fall back to counting
+// the currently-visible items by src. `all` is always the visible length.
+export function sourceCounts(items, opts, backendSources) {
+  const visible = filterVisible(items, { dismissed: (opts && opts.dismissed) || [], filter: null });
+  const counts = { all: visible.length };
+  if (backendSources && typeof backendSources === 'object') {
+    for (const [src, n] of Object.entries(backendSources)) {
+      counts[String(src).toUpperCase()] = n;
+    }
+  } else {
+    for (const m of visible) {
+      const k = String(m.src).toUpperCase();
+      counts[k] = (counts[k] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+// Synchronous click-out URL. Returns the backend-provided deep link when
+// present. Gmail lacks a Message-ID in the envelope, so it resolves lazily via
+// the email reader elsewhere — here it returns null.
+export function openUrlFor(item) {
+  return (item && item.meta && item.meta.url) || null;
+}
+
+// Render the ordered action row for a card. `esc` is the caller's HTML-escaper.
+// primary → solid btn; ghost → ghost btn; icon → small affordance; x → the ✕.
+export function cardButtonsHtml(item, esc) {
+  const id = esc(String(item && item.id));
+  const btns = cardActions(item).map((b) => {
+    if (b.role === 'x') {
+      return `<button class="inbox-x" data-act="dismiss" data-arg="${id}" title="Dismiss">✕</button>`;
+    }
+    if (b.role === 'icon') {
+      const glyph = b.action === 'open' ? '↗' : b.action === 'snooze' ? '⏰' : '🤖';
+      return `<button class="ic-btn" data-act="${esc(b.action)}" data-arg="${id}" title="${esc(b.label)}">${glyph}</button>`;
+    }
+    const cls = b.role === 'primary' ? 'btn-sm' : 'btn-sm ghost';
+    return `<button class="${cls}" data-act="${esc(b.action)}" data-arg="${id}">${esc(b.label)}</button>`;
+  });
+  return `<div class="card-actions">${btns.join('')}</div>`;
+}

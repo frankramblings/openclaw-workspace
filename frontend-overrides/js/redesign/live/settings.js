@@ -63,15 +63,17 @@ async function persistSetting(realKey, value) {
 
 export async function load(state) {
   // Apply cached accent immediately (synchronous — no flash on reload).
+  let hasCached = false;
   try {
     const cached = localStorage.getItem(ACCENT_KEY);
-    if (cached) { state.accent = cached; setAccentVars(cached); }
+    if (cached) { state.accent = cached; setAccentVars(cached); hasCached = true; }
   } catch (_) {}
 
-  // 1) Accent from /api/config -> drives both --accent and --red.
+  // 1) Accent from /api/config — only seeds localStorage on first visit to this
+  // device (hasCached = false). Never overwrites a locally-stored choice.
   try {
     const cfg = await apiGet('/api/config');
-    if (cfg && typeof cfg.accent === 'string' && cfg.accent) {
+    if (cfg && typeof cfg.accent === 'string' && cfg.accent && !hasCached) {
       state.accent = cfg.accent;
       setAccentVars(cfg.accent);
       try { localStorage.setItem(ACCENT_KEY, cfg.accent); } catch (_) {}

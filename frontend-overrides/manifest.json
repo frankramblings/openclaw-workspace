@@ -7,7 +7,7 @@
   "display": "standalone",
   "orientation": "any",
   "background_color": "#15161a",
-  "theme_color": "#15161a",
+  "theme_color": "#0e8ef0",
   "icons": [
     { "src": "/static/favicon-16x16.png", "sizes": "16x16", "type": "image/png" },
     { "src": "/static/favicon-32x32.png", "sizes": "32x32", "type": "image/png" },

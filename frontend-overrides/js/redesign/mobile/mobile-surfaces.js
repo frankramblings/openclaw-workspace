@@ -122,7 +122,10 @@ export function mInbox(s) {
     const off = (s.swipe && s.swipe.id === it.id) ? s.swipe.dx : 0;
     return `
     <div class="m-swipe" data-swipe-id="${it.id}">
-      <div class="m-swipe-bg"><div class="act">${ic.archive()}<span>Archive</span></div></div>
+      <div class="m-swipe-bg">
+        <div class="act act-right">✓<span>Action</span></div>
+        <div class="act act-left">✕<span>Dismiss · ⏰</span></div>
+      </div>
       <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
         <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>
         <div class="body"${mBodyAttr(it)}>${esc(stripMd(it.body))}</div>

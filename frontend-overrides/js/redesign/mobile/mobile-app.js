@@ -9,6 +9,7 @@ import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore
 import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvSheet, renderModelSheet } from './mobile-sheets.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
+import { cardActions, swipeIntent } from '../live/inbox-logic.js';
 
 const PUSHED_SURFACES = new Set(['research', 'library', 'notes', 'settings']);
 
@@ -112,8 +113,10 @@ export function mobileActions(state) {
 // ---- touch gestures -------------------------------------------------------
 // Direct-DOM during drag (no re-render thrash); commit on release.
 export function wireMobileGestures({ root, state, commitArchive, refresh, render }) {
-  const SWIPE_COMMIT = -84;   // px past which a left-swipe archives
-  const SWIPE_MAX = -132;
+  // Swipe thresholds: right >+84 = primary, left <-84 = dismiss, left <-140 = snooze.
+  // SWIPE_COMMIT retained as the minimum magnitude that triggers any action.
+  const SWIPE_COMMIT = -84;   // (left) minimum commit threshold — any left intent
+  const SWIPE_MAX = -160;     // max visual travel on left; right travel capped below
 
   // --- horizontal swipe-to-archive (pointer events) ------------------------
   // touch-action:pan-y lets the browser own vertical scroll, so HORIZONTAL
@@ -136,7 +139,8 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
       return;
     }
     if (drag.mode === 'swipe') {
-      const t = Math.max(SWIPE_MAX, Math.min(0, dx));
+      // Allow both directions: left up to SWIPE_MAX, right up to +100px visual travel.
+      const t = Math.max(SWIPE_MAX, Math.min(100, dx));
       drag.card.style.transform = `translateX(${t}px)`;
       drag.dx = t;
       e.preventDefault();
@@ -146,9 +150,37 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   const endSwipe = () => {
     if (!drag) return;
     const d = drag; drag = null;
-    if (d.mode === 'swipe') {
-      if (d.dx <= SWIPE_COMMIT) { commitArchive(String(d.id)); render(); }
-      else { d.card.classList.remove('swiping'); d.card.classList.add('snap'); d.card.style.transform = 'translateX(0)'; }
+    if (d.mode !== 'swipe') return;
+    const cardWidth = d.card.offsetWidth || 360;
+    const intent = swipeIntent(d.dx, cardWidth);
+    if (intent) {
+      const id = String(d.id);
+      if (intent === 'primary') {
+        // Find the primary action for this item and call it.
+        const items = state.live && state.live.inbox && state.live.inbox.items;
+        const item = Array.isArray(items) ? items.find((m) => String(m.id) === id) : null;
+        const actions = item ? cardActions(item) : [];
+        const primary = actions.find((a) => a.role === 'primary');
+        if (primary && runtime.actions && runtime.actions[primary.action]) {
+          runtime.actions[primary.action](id);
+        } else {
+          // No primary action — fall back to dismiss.
+          if (runtime.actions && runtime.actions.dismiss) runtime.actions.dismiss(id);
+          else commitArchive(id);
+        }
+      } else if (intent === 'snooze') {
+        // Open the snooze menu (simpler/safer than committing a preset directly).
+        if (runtime.actions && runtime.actions.snooze) runtime.actions.snooze(id);
+      } else if (intent === 'dismiss') {
+        if (runtime.actions && runtime.actions.dismiss) runtime.actions.dismiss(id);
+        else commitArchive(id);
+      }
+      render();
+    } else {
+      // Below commit threshold — snap back.
+      d.card.classList.remove('swiping');
+      d.card.classList.add('snap');
+      d.card.style.transform = 'translateX(0)';
     }
   };
   root.addEventListener('pointerup', endSwipe);

@@ -149,4 +149,12 @@ assert.ok(snoozeUntilMs('later', base) > base, 'later today is in the future');
 assert.equal(new Date(snoozeUntilMs('tomorrow', base)).getUTCDate(), 30, 'tomorrow → next day');
 assert.ok(snoozeUntilMs('nextweek', base) - base >= 6.5 * 86400000, 'nextweek ≥ ~7 days');
 
+// --- swipeIntent: gesture classification for mobile swipe actions -----------
+import { swipeIntent } from '../../frontend-overrides/js/redesign/live/inbox-logic.js';
+assert.equal(swipeIntent(100, 360), 'primary',  'right swipe >84 → primary');
+assert.equal(swipeIntent(-150, 360), 'snooze',  'left swipe <-140 → snooze');
+assert.equal(swipeIntent(-100, 360), 'dismiss', 'left swipe -84..-140 → dismiss');
+assert.equal(swipeIntent(-40, 360), null,        'small left swipe → null');
+assert.equal(swipeIntent(40, 360), null,         'small right swipe → null');
+
 console.log('inbox-logic: all assertions OK');

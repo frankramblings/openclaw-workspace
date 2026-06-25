@@ -174,6 +174,17 @@ export function snoozeUntilMs(preset, nowMs) {
   return nowMs + 4 * 3600000; // fallback to later
 }
 
+// --- swipeIntent: classify a horizontal swipe gesture for mobile cards ------
+// dx > 0 = right-swipe (primary action); dx < 0 = left-swipe (snooze/dismiss).
+// width param is available for future proportional thresholds; fixed px used now.
+// Returns 'primary' | 'snooze' | 'dismiss' | null.
+export function swipeIntent(dx, width) { // eslint-disable-line no-unused-vars
+  if (dx > 84)  return 'primary';
+  if (dx < -140) return 'snooze';
+  if (dx < -84)  return 'dismiss';
+  return null;
+}
+
 // --- dueChipToISO: maps Add-to-Asana date chips to ISO YYYY-MM-DD ----------
 // Pure helper — takes nowMs so it's deterministic/testable regardless of TZ.
 // Chips: today | tomorrow | fri | nextweek | none (anything else → null).

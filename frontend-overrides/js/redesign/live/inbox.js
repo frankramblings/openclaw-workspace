@@ -347,6 +347,20 @@ export const actions = {
     runtime.render();
   },
 
+  undo: async () => {
+    const state = runtime.state;
+    const ts = state.inboxToast && state.inboxToast.undoTs;
+    if (!ts) return;
+    try {
+      const r = await apiJson('/api/items/undo', { ts });
+      if (r && r.ok) { await reloadInbox(state); }
+    } catch (_) {}
+    state.inboxToast = null;
+    runtime.render();
+  },
+
+  dismissToast: () => { runtime.state.inboxToast = null; runtime.render(); },
+
   // Tappable AI rec chip: run the item's recommended action.
   applyRec: (id) => {
     const state = runtime.state;

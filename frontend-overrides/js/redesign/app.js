@@ -46,6 +46,7 @@ const state = {
 
 let researchTimer = null;
 let refreshTimer = null;
+let toastTimer = null;
 const root = document.getElementById('oc-root');
 const mq = window.matchMedia('(max-width: 768px)');
 const isMobile = () => mq.matches;
@@ -151,6 +152,12 @@ function render() {
 
   const s = state;
   root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
+
+  // auto-dismiss toast after 8 s (re-arm on every render while toast is set)
+  clearTimeout(toastTimer);
+  if (state.inboxToast) {
+    toastTimer = setTimeout(() => { state.inboxToast = null; render(); }, 8000);
+  }
 
   // restore focus + caret
   if (focusKey) {

@@ -430,6 +430,44 @@ function inboxReaderOverlay(s) {
 }
 
 // ===========================================================================
+// INBOX HISTORY DRAWER
+// ===========================================================================
+function inboxHistoryDrawer(s) {
+  const entries = Array.isArray(s.inboxHistory) ? s.inboxHistory : [];
+  const now = Date.now();
+  const ageStr = (ts) => {
+    const diffMs = now - (ts || 0);
+    const diffM = Math.round(diffMs / 60000);
+    if (diffM < 2) return 'just now';
+    if (diffM < 60) return `${diffM}m ago`;
+    const diffH = Math.round(diffM / 60);
+    if (diffH < 24) return `${diffH}h ago`;
+    return `${Math.round(diffH / 24)}d ago`;
+  };
+  const rowHtml = (e) => {
+    const age = ageStr(e.ts);
+    const note = e.note ? ` · ${esc(e.note)}` : '';
+    return `<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="min-width:0;flex:1">
+        <span style="font-size:12px;color:var(--teal);text-transform:uppercase;margin-right:6px">${esc(e.action || '')}</span><span style="font-size:13px">${esc(e.title || e.id || '')}</span>
+        <div style="font-size:11px;color:var(--faint);margin-top:2px">${esc(age)}${note}</div>
+      </div>
+      ${e.undoable ? `<button class="btn-sm ghost" data-act="undoRow" data-arg="${esc(String(e.ts))}" title="Undo this action">Undo</button>` : ''}
+    </div>`;
+  };
+  return `
+    <div style="position:absolute;right:0;top:0;bottom:0;width:min(360px,100%);background:var(--panel,#1e2025);border-left:1px solid var(--border);display:flex;flex-direction:column;z-index:41;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <span style="font-weight:600;font-size:14px;flex:1">Recent Actions</span>
+        <span data-act="toggleHistory" style="cursor:pointer;color:var(--faint);font-size:18px;line-height:1;padding:2px 4px" title="Close">✕</span>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:0 16px 16px">
+        ${entries.length ? entries.map(rowHtml).join('') : '<div style="padding:16px 0;color:var(--faint);font-size:13px">No recent actions.</div>'}
+      </div>
+    </div>`;
+}
+
+// ===========================================================================
 // INBOX
 // ===========================================================================
 function inboxSurface(s) {
@@ -474,6 +512,7 @@ function inboxSurface(s) {
         <span class="ttl">Inbox</span><span class="cnt">${visible.length} to triage</span>
         <div class="oc-spacer"></div>
         <button class="triage-btn" data-act="triageAll">✦ Triage with Gary</button>
+        <button class="icon-btn ocbtn" data-act="toggleHistory" title="Recent actions" style="margin-left:6px;font-size:13px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:7px;color:${s.inboxHistoryOpen ? 'var(--teal)' : 'var(--faint)'};cursor:pointer">⏱ History</button>
       </div>
       ${chipRowHtml(
         sourceCounts(items, { dismissed: s.dismissed }, s.live?.inbox?.sources),
@@ -496,6 +535,7 @@ function inboxSurface(s) {
         <div class="ies-actions"><button class="btn-sm" data-act="confirmAddAsana">Add task</button><button class="btn-sm ghost" data-act="closeEdit">Cancel</button></div>
       </div>`)}
     ${when(!!s.inboxReader, inboxReaderOverlay(s))}
+    ${when(!!s.inboxHistoryOpen, inboxHistoryDrawer(s))}
     ${when(!!s.inboxToast, s.inboxToast ? `
       <div class="inbox-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:8px;padding:10px 14px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:80;white-space:nowrap">
         <span>${esc(s.inboxToast.msg)}</span>

@@ -361,6 +361,41 @@ export const actions = {
 
   dismissToast: () => { runtime.state.inboxToast = null; runtime.render(); },
 
+  // History drawer: toggle open/closed; load entries from /api/items/history.
+  toggleHistory: async () => {
+    const state = runtime.state;
+    state.inboxHistoryOpen = !state.inboxHistoryOpen;
+    if (state.inboxHistoryOpen) {
+      await actions.loadHistory();
+    } else {
+      runtime.render();
+    }
+  },
+
+  loadHistory: async () => {
+    const state = runtime.state;
+    try {
+      const r = await apiGet('/api/items/history?limit=20');
+      state.inboxHistory = (r && r.entries) || [];
+    } catch (_) {
+      state.inboxHistory = [];
+    }
+    runtime.render();
+  },
+
+  // Per-row undo from the history drawer. arg is the numeric ts of the entry.
+  undoRow: async (arg) => {
+    const state = runtime.state;
+    try {
+      const r = await apiJson('/api/items/undo', { ts: Number(arg) });
+      if (r && r.ok) {
+        await reloadInbox(state);
+        await actions.loadHistory();
+      }
+    } catch (_) {}
+    runtime.render();
+  },
+
   // Tappable AI rec chip: run the item's recommended action.
   applyRec: (id) => {
     const state = runtime.state;

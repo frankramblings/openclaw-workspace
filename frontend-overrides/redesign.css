@@ -313,6 +313,9 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .ocact{transition:background .12s ease;border-radius:7px}
 .ocact:hover{background:#1e2025}
 .act-wrap{margin:0 0 14px}
+.rnd-txt{margin:0}
+.rnd-txt + .act-wrap{margin-top:12px}
+.act-wrap + .rnd-txt{margin-top:20px;padding-top:12px;border-top:1px solid var(--bd2)}
 .act-summary{display:inline-flex;align-items:center;gap:7px;padding:4px 9px 4px 7px;cursor:pointer;color:var(--mut)}
 .act-worked{font-size:10px;font-weight:500}
 .act-spine{margin-top:4px;padding-left:5px;border-left:1.5px solid var(--bd2);margin-left:6px}

@@ -16,10 +16,10 @@ import time
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from .. import bridge, config, email_himalaya, sessions_store
+from .. import bridge, calendar_google, config, email_himalaya, sessions_store
 from ..research import _agent_turn
 from . import recommend, settings, state
-from .sources import asana, documents_stale, gmail, obsidian, slack
+from .sources import asana, calendar, documents_stale, gmail, obsidian, slack
 
 router = APIRouter()
 
@@ -29,6 +29,7 @@ SOURCES = {
     "asana": asana.fetch,
     "obsidian": obsidian.fetch,
     "documents": documents_stale.fetch,
+    "calendar": calendar.fetch,
 }
 
 # Per-source cache: (ts_ms, items). Cleared by actions on that source.
@@ -162,6 +163,18 @@ async def action(payload: dict):
             await asana.complete(item_id)
             state.dismiss(source, item_id, "completed")
             undo = {"asana_gid": item_id}
+        elif act == "rsvp" and source == "calendar":
+            response = payload.get("response")
+            event_id = meta.get("event_id") or item_id
+            cal = meta.get("calendar") or "primary"
+            try:
+                await calendar_google.rsvp(event_id, cal, response)
+            except ValueError as exc:        # bad response / not an attendee
+                return _bad(str(exc))
+            state.dismiss(source, item_id, f"rsvp_{response}")
+            # Undo restores the pending state by setting responseStatus back to
+            # needsAction (the organizer is re-notified via sendUpdates=all).
+            undo = {"rsvp_event": event_id, "rsvp_cal": cal}
         elif act == "add_asana":
             from datetime import datetime, timezone
             due = payload.get("due")
@@ -223,6 +236,10 @@ async def items_undo(payload: dict):
             await asana.uncomplete(undo["asana_gid"])
         elif "asana_delete_gid" in undo:            # add_asana → delete the task
             await asana.delete_task(undo["asana_delete_gid"])
+        elif "rsvp_event" in undo:                  # calendar RSVP → un-respond
+            await calendar_google.rsvp(
+                undo["rsvp_event"], undo.get("rsvp_cal") or "primary",
+                "needsAction")
         # 'local' undo (dismiss/snooze/reviewed/mark_read): nothing remote.
     except Exception as exc:  # noqa: BLE001
         # restore the history entry so the user can retry

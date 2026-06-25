@@ -14,6 +14,7 @@ const SRC_STYLE = {
   ASANA: { srcColor: 'var(--gold)', srcBg: 'rgba(232,194,104,.12)' },
   OBSIDIAN: { srcColor: 'var(--purple, #b794f6)', srcBg: 'rgba(183,148,246,.12)' },
   DOCUMENTS: { srcColor: 'var(--blue, #6aa6f0)', srcBg: 'rgba(106,166,240,.12)' },
+  CALENDAR: { srcColor: 'var(--teal, #45d3c7)', srcBg: 'rgba(69,211,199,.12)' },
 };
 const MUTED = { srcColor: 'var(--muted)', srcBg: 'rgba(255,255,255,.06)' };
 
@@ -54,6 +55,24 @@ const CLEAR_VERBS = ['add_asana', 'archive', 'mark_read', 'complete', 'reviewed'
 //       'x' (dismiss → the ✕), 'icon' (snooze / open / gary affordances).
 export function cardActions(item) {
   const allowed = Array.isArray(item && item.actions) ? item.actions.map((a) => String(a).toLowerCase()) : [];
+
+  // Calendar invite: Yes / Maybe / No write the RSVP straight to Google. There
+  // is no "clear verb" — the three responses ARE the actions. Dismiss stays the
+  // top-right ✕; open/snooze/gary remain as universal affordances.
+  const isInvite = (item && item.source === 'calendar')
+    || allowed.includes('rsvp')
+    || !!(item && item.meta && item.meta.isInvite);
+  if (isInvite) {
+    return [
+      { action: 'rsvpYes', label: 'Yes', role: 'primary' },
+      { action: 'rsvpMaybe', label: 'Maybe', role: 'ghost' },
+      { action: 'rsvpNo', label: 'No', role: 'ghost' },
+      { action: 'open', label: actionLabel('open'), role: 'icon' },
+      { action: 'snooze', label: actionLabel('snooze'), role: 'icon' },
+      { action: 'gary', label: actionLabel('gary'), role: 'icon' },
+    ];
+  }
+
   const out = [];
 
   // Primary clear-action: first allowed verb that clears the item.
@@ -120,7 +139,8 @@ export function openUrlFor(item) {
 
 // Chip-row color dots, one per known source.
 const CHIP_DOT = { GMAIL: 'var(--red)', SLACK: 'var(--green)', ASANA: 'var(--gold)',
-  OBSIDIAN: 'var(--purple, #b794f6)', DOCUMENTS: 'var(--blue, #6aa6f0)' };
+  OBSIDIAN: 'var(--purple, #b794f6)', DOCUMENTS: 'var(--blue, #6aa6f0)',
+  CALENDAR: 'var(--teal, #45d3c7)' };
 
 export function chipRowHtml(counts, opts, esc) {
   const filter = (opts && opts.filter) || null;
@@ -132,7 +152,7 @@ export function chipRowHtml(counts, opts, esc) {
     const warn = errUp[key] ? ' <span class="chip-warn" title="source error">⚠</span>' : '';
     return `<span class="src-chip${active ? ' active' : ''}" data-act="setFilter" data-arg="${key}">${dot}${esc(label)} ${n || 0}${warn}</span>`;
   };
-  const order = ['GMAIL', 'SLACK', 'ASANA', 'OBSIDIAN', 'DOCUMENTS'];
+  const order = ['GMAIL', 'SLACK', 'ASANA', 'OBSIDIAN', 'DOCUMENTS', 'CALENDAR'];
   const present = order.filter((k) => k in counts || errUp[k]);
   return `<div class="src-chips">${chip('ALL', 'All', counts.all)}${present.map((k) => chip(k, k.toLowerCase(), counts[k])).join('')}</div>`;
 }

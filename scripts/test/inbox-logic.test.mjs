@@ -67,6 +67,18 @@ const bare = cardActions({ source: 'slack' });
 assert.ok(Array.isArray(bare));
 assert.ok(bare.some((a) => a.action === 'gary'));
 
+// Calendar invite: Yes / Maybe / No replace the clear-verb, write the RSVP.
+const invite = cardActions({ source: 'calendar', actions: ['rsvp', 'dismiss', 'snooze'] });
+assert.equal(invite.find((a) => a.role === 'primary').action, 'rsvpYes', 'Yes is the primary RSVP');
+assert.deepEqual(invite.filter((a) => a.action.startsWith('rsvp')).map((a) => a.action),
+  ['rsvpYes', 'rsvpMaybe', 'rsvpNo'], 'three RSVP buttons in order');
+assert.ok(invite.some((a) => a.action === 'gary'), 'invite still offers hand-to-gary');
+assert.ok(!invite.some((a) => a.role === 'x'), 'invite has no row ✕ (dismiss is the corner X)');
+// isInvite via meta flag also triggers the RSVP layout, even without actions[].
+const inviteByMeta = cardActions({ source: 'gmail', meta: { isInvite: true } });
+assert.equal(inviteByMeta.find((a) => a.role === 'primary').action, 'rsvpYes',
+  'meta.isInvite alone triggers RSVP buttons');
+
 // --- filterVisible: dismissed hidden, source filter applied -----------------
 const items = [
   { id: '1', src: 'GMAIL' },

@@ -120,7 +120,40 @@ async function runAction(id, action) {
   runtime.render();
 }
 
+// Calendar RSVP: optimistic remove → POST action=rsvp with the Google
+// responseStatus → revert + toast on failure, undo-able toast on success.
+async function runRsvp(id, response) {
+  const state = runtime.state;
+  const item = findItem(state, id);
+  if (!item) return;
+  const LABEL = { accepted: 'Yes', tentative: 'Maybe', declined: 'No' };
+  markDismissed(state, id);
+  runtime.render();
+  try {
+    const r = await apiJson('/api/items/action', {
+      source: item.source, id: String(id), action: 'rsvp',
+      response, meta: item.meta || {},
+    });
+    if (r && r.ok === false) throw new Error(r.error || 'rsvp failed');
+    if (r && r.undoTs) {
+      state._lastUndoTs = r.undoTs;
+      state.inboxToast = { msg: `RSVP’d ${LABEL[response] || response}`, undoTs: r.undoTs };
+    }
+  } catch (e) {
+    unmarkDismissed(state, id);
+    state.inboxToast = { msg: "Couldn’t send RSVP — retry", undoTs: null };
+    runtime.render();
+    return;
+  }
+  runtime.render();
+}
+
 export const actions = {
+  // Calendar invite RSVP — write Yes/Maybe/No straight to Google Calendar.
+  rsvpYes: (id) => runRsvp(id, 'accepted'),
+  rsvpMaybe: (id) => runRsvp(id, 'tentative'),
+  rsvpNo: (id) => runRsvp(id, 'declined'),
+
   // Obsidian capture: create an Asana task from the surfaced commitment.
   addAsana: async (id) => {
     const state = runtime.state;

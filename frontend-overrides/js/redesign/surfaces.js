@@ -116,14 +116,14 @@ function renderRounds(m, s) {
   const maxRound = Object.keys(byRound).reduce((mx, r) => Math.max(mx, +r), 0);
   let html = '';
   const rt0 = rawRts[0];
-  if (rt0 && rt0.trim()) html += renderMarkdown(rt0);
+  if (rt0 && rt0.trim()) html += `<div class="rnd-txt">${renderMarkdown(rt0)}</div>`;
   for (let r = 1; r <= maxRound; r++) {
     const rSteps = byRound[r] || [];
     if (rSteps.length) {
       html += renderActivity({ id: `${m.id}-r${r}`, activity: { status: 'done', steps: rSteps } }, s);
     }
     const rt = rawRts[r];
-    if (rt && rt.trim()) html += renderMarkdown(rt);
+    if (rt && rt.trim()) html += `<div class="rnd-txt">${renderMarkdown(rt)}</div>`;
   }
   return html;
 }

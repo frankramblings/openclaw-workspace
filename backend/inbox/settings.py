@@ -227,6 +227,17 @@ def documents_enabled() -> bool:
     return val if val is not None else True   # default ON
 
 
+def calendar_enabled() -> bool:
+    """Calendar-invites collector. Env INBOX_CALENDAR_ENABLED > inbox.json > True.
+    Reuses the Google Calendar OAuth token; fails soft to [] when unauthed.
+    """
+    env = os.environ.get("INBOX_CALENDAR_ENABLED")
+    if env is not None:
+        return env.lower() not in ("0", "false", "no", "off")
+    val = _coll("calendar").get("enabled")
+    return val if val is not None else True   # default ON
+
+
 # ---------------------------------------------------------------------------
 # Enabled collector list
 # ---------------------------------------------------------------------------
@@ -253,4 +264,6 @@ def enabled_collectors() -> list[str]:
         out.append("obsidian")
     if documents_enabled():
         out.append("documents")
+    if calendar_enabled():
+        out.append("calendar")
     return out

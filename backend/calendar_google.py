@@ -195,3 +195,86 @@ def _ics_iso(v: str) -> str:
     if "T" in v:                          # 20260704T130000Z -> ISO
         return f"{v[:4]}-{v[4:6]}-{v[6:8]}T{v[9:11]}:{v[11:13]}:{v[13:15]}Z"
     return v
+
+
+# --- Calendar invites + RSVP (unified inbox) ---------------------------------
+# Gmail auto-adds incoming invites to the primary calendar with the user's own
+# attendee entry at responseStatus=needsAction. We surface those as inbox items
+# and let Yes/Maybe/No write the response straight back via the API (the
+# organizer is notified with sendUpdates=all). No email/.ics parsing needed.
+
+INVITE_WINDOW_DAYS = 60
+
+# Map the UI's friendly verbs (and Google's own) → Google responseStatus values.
+RESPONSE_MAP = {
+    "yes": "accepted", "accepted": "accepted",
+    "maybe": "tentative", "tentative": "tentative",
+    "no": "declined", "declined": "declined",
+    "needsaction": "needsAction", "needsAction": "needsAction",
+}
+
+
+def self_attendee(event: dict) -> dict | None:
+    """The user's own entry in an event's attendee list (Google flags it with
+    self=true), or None when the event has no such attendee (e.g. a personal
+    event the user created with no guests)."""
+    for a in (event or {}).get("attendees") or []:
+        if a.get("self"):
+            return a
+    return None
+
+
+def is_pending_invite(event: dict) -> bool:
+    """True when this is an invite the user still owes a response to: cancelled
+    events are skipped, and the user's own attendee entry must be needsAction."""
+    if (event or {}).get("status") == "cancelled":
+        return False
+    me = self_attendee(event)
+    return bool(me) and me.get("responseStatus") == "needsAction"
+
+
+def apply_rsvp(event: dict, response: str) -> dict:
+    """Pure: build the PATCH body that sets the user's responseStatus, leaving
+    every other attendee untouched. Raises ValueError on a bad response or when
+    the user isn't an attendee (nothing to RSVP)."""
+    status = RESPONSE_MAP.get(str(response or "").strip())
+    if not status:
+        raise ValueError(f"invalid RSVP response: {response!r}")
+    attendees = [dict(a) for a in (event or {}).get("attendees") or []]
+    mine = next((a for a in attendees if a.get("self")), None)
+    if mine is None:
+        raise ValueError("you are not an attendee of this event")
+    mine["responseStatus"] = status
+    return {"attendees": attendees}
+
+
+async def _patch(path: str, body: dict, params: dict | None = None) -> dict:
+    r = await _http().patch(f"{_API}{path}", json=body, headers=await _headers(),
+                            params=params or {})
+    r.raise_for_status()
+    return r.json()
+
+
+async def list_pending_invites(time_min: str, time_max: str) -> list[dict]:
+    """Raw Google events on the primary calendar that the user hasn't yet
+    answered, soonest first. Returns the Google event resources (the inbox
+    source maps them); empty on any API error so the collector fails soft."""
+    try:
+        data = await _get(
+            f"/calendars/{_cal_path('primary')}/events",
+            {"timeMin": time_min, "timeMax": time_max, "singleEvents": "true",
+             "orderBy": "startTime", "maxResults": 250, "showDeleted": "false"})
+    except Exception:  # noqa: BLE001 — per-source isolation upstream
+        return []
+    return [e for e in data.get("items", []) if is_pending_invite(e)]
+
+
+async def rsvp(event_id: str, calendar: str, response: str) -> dict:
+    """Respond to an invite: read the event, flip the user's responseStatus,
+    PATCH it back with sendUpdates=all so the organizer is notified."""
+    cal = _cal_path(calendar or "primary")
+    eid = urllib.parse.quote(event_id, safe="")
+    event = await _get(f"/calendars/{cal}/events/{eid}")
+    body = apply_rsvp(event, response)        # raises on bad input
+    return await _patch(f"/calendars/{cal}/events/{eid}", body,
+                        params={"sendUpdates": "all"})

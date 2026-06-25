@@ -38,6 +38,12 @@ def map_items(envelopes: list[dict], now_ms: int) -> list[dict]:
         important = "Flagged" in flags
         if not unread and not important:
             continue
+        # Calendar REQUEST invites surface as their own RSVP-able inbox items
+        # (the calendar collector), so drop the duplicate Gmail notification.
+        if _inbox_settings.calendar_enabled():
+            _subj = (env.get("subject") or "").lstrip().lower()
+            if _subj.startswith("invitation:") or _subj.startswith("updated invitation:"):
+                continue
         frm = env.get("from") or {}
         addr = frm.get("addr") or frm.get("address") or ""
         name = frm.get("name") or addr

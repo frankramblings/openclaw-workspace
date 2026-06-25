@@ -5,6 +5,20 @@
    Safe-area insets replace the prototype's hardcoded 56px/26px device chrome.
    ========================================================================== */
 
+/* Lock the document on mobile so the WHOLE PAGE can't rubber-band on a downward
+   drag (the "pull just pulls the page down, doesn't refresh" bug). With the body
+   pinned and overscroll contained, the only thing that scrolls is .m-scroll —
+   so a pull at the top of a feed arms pull-to-refresh instead of bouncing the
+   viewport. Scoped to the ≤768px breakpoint (matches isMobile) to leave desktop
+   body scrolling untouched. */
+@media (max-width: 768px) {
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+}
+
 .m-app {
   height: 100dvh;
   display: flex;
@@ -24,8 +38,7 @@
   .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: none; }
   /* still pulse-free / slide-free for vestibular safety; the loading spinner
      (.m-ptr .spin) stays — it conveys progress, freezing it reads as broken */
-  .m-gary .status .dot, .m-gary-card .st .dot { animation: none; }
-  .m-sheet { animation: none; }
+.m-sheet { animation: none; }
   .m-term-cursor { animation: none; }
 }
 /* Keyboard / switch-control focus ring. Pointer presses use :active (above);
@@ -66,13 +79,19 @@
 .m-back { display: flex; align-items: center; gap: 3px; color: var(--teal); cursor: pointer; background: none; border: none; padding: 0; font-family: var(--sans); }
 .m-back span { font-size: 14px; }
 
-/* chat header identity */
+/* chat header identity — conversation title is primary, "Gary · online" the
+   secondary identity line, model a tidy pill on the right. */
 .m-gary { display: flex; align-items: center; gap: 10px; }
-.m-gav { width: 30px; height: 30px; border-radius: 8px; overflow: hidden; background: var(--teal); display: flex; align-items: center; justify-content: center; flex: none; }
+.m-gav { width: 32px; height: 32px; border-radius: 9px; overflow: hidden; background: var(--teal); display: flex; align-items: center; justify-content: center; flex: none; }
 .m-gav img { width: 100%; height: 100%; object-fit: contain; padding: 2px; display: block; }
-.m-gary .nm { font-size: 15px; font-weight: 600; line-height: 1.1; }
-.m-gary .status { font-size: 11px; color: var(--green); display: flex; align-items: center; gap: 5px; margin-top: 1px; }
-.m-gary .status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2.4s infinite; }
+.m-gary-id { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: none; border: none; padding: 0; margin: 0; cursor: pointer; font-family: inherit; text-align: left; }
+.m-conv-title { display: flex; align-items: center; gap: 5px; max-width: 100%; }
+.m-conv-title .t { font-size: 15px; font-weight: 600; line-height: 1.15; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-conv-caret { flex: none; font-size: 9px; color: var(--mut); }
+.m-conv-sub { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--mut); }
+.m-conv-sub .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex: none; }
+.m-model-chip { flex: none; display: flex; align-items: center; gap: 5px; font-size: 10px; padding: 4px 10px; border: 1px solid var(--bd); border-radius: 999px; background: transparent; color: var(--mut); cursor: pointer; white-space: nowrap; max-width: 130px; }
+.m-model-chip .m-model-name { overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- bottom tab bar ------------------------------------------------------- */
 .m-tabbar {
@@ -90,7 +109,8 @@
 .m-tab.active .lbl { font-weight: 600; }
 .m-tab-badge { position: absolute; top: -3px; right: calc(50% - 19px); min-width: 16px; height: 16px; border-radius: 999px; background: var(--teal); color: var(--ink); font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
 .m-tab-add { flex: 1; display: flex; justify-content: center; }
-.m-add-btn { width: 46px; height: 46px; border-radius: 15px; background: linear-gradient(150deg, #4fe3d1, #2f8d83); display: flex; align-items: center; justify-content: center; color: var(--ink); margin-top: -12px; box-shadow: 0 6px 16px rgba(79, 227, 209, .3); border: none; cursor: pointer; }
+.m-add-btn { position: relative; width: 46px; height: 46px; border-radius: 15px; background: linear-gradient(150deg, #4fe3d1, #2f8d83); display: flex; align-items: center; justify-content: center; color: var(--ink); margin-top: -12px; box-shadow: 0 6px 16px rgba(79, 227, 209, .3); border: none; cursor: pointer; }
+.m-add-caret { position: absolute; top: 3px; right: 3px; display: flex; align-items: center; justify-content: center; color: var(--ink); opacity: .5; pointer-events: none; }
 
 /* ---- companion handle (chat) --------------------------------------------- */
 .m-comp-handle { flex: none; display: flex; justify-content: center; padding: 7px 0 3px; background: var(--bg); }
@@ -129,6 +149,9 @@
 .m-toolchip .done { font-family: var(--mono); font-size: 10px; color: var(--green); background: rgba(91,217,127,.12); padding: 1px 7px; border-radius: 999px; }
 .m-msg-user-wrap { display: flex; justify-content: flex-end; }
 .m-msg-user { max-width: 74%; background: var(--tealtint); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); border-radius: 13px 13px 4px 13px; padding: 10px 13px; font-size: 14px; line-height: 1.5; color: #dfe4ea; overflow-wrap: anywhere; }
+.m-msg-attachments { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 7px; }
+.m-attach-img { max-width: 100%; max-height: 220px; border-radius: 7px; display: block; object-fit: contain; }
+.m-attach-chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.07); border: 1px solid color-mix(in srgb,var(--teal) 22%,transparent); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--mut); }
 /* long unbroken URLs/tokens must wrap, not overflow — .m-scroll is overflow-x:hidden
    so an unwrapped string would be clipped off the edge of the bubble/column. */
 .m-md { overflow-wrap: anywhere; }
@@ -138,6 +161,23 @@
 /* jump-to-latest button (shown only when the thread is scrolled up; toggled by
    app.js render() + the scroll listener). Position is set inline per focus state. */
 .m-scroll-btm { position: absolute; right: 14px; z-index: 30; width: 38px; height: 38px; border-radius: 50%; background: var(--panel); border: 1px solid var(--bd); color: var(--fg); align-items: center; justify-content: center; box-shadow: 0 5px 16px rgba(0,0,0,.45); cursor: pointer; }
+
+/* ---- composing layout (keyboard up) --------------------------------------
+   Driven by a `.kb-up` class on .m-app toggled in app.js (setMobileKb) rather
+   than a re-render, so focusing the composer never rebuilds the DOM (which
+   dropped focus and swallowed the first Send tap). Hides the chrome the old
+   focused layout removed (tab bar, companion handle, new-chat, mic) and applies
+   the lifted composer styling. */
+.m-app.kb-up .m-tabbar,
+.m-app.kb-up .m-hide-kb { display: none; }
+.m-app.kb-up .m-composer .bar { border-color: color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
+.m-app.kb-up .m-scroll-btm { bottom: 78px; }
+
+/* queued message banner (a send fired while a turn was still streaming) */
+.m-queued { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 7px 9px 7px 12px; background: color-mix(in srgb, var(--gold, #e0b341) 13%, var(--panel)); border: 1px solid color-mix(in srgb, var(--gold, #e0b341) 35%, transparent); border-radius: 12px; font-size: 12.5px; color: var(--mut); }
+.m-queued .q-ico { flex: none; }
+.m-queued .q-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-queued .m-q-x { flex: none; width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--mut); font-size: 14px; cursor: pointer; }
 
 /* ---- chat composer -------------------------------------------------------- */
 .m-composer { flex: none; padding: 8px 12px; background: var(--bg); }
@@ -273,7 +313,7 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-gary-card .av img { width: 100%; height: 100%; object-fit: contain; padding: 3px; display: block; }
 .m-gary-card .nm { font-size: 15px; font-weight: 600; }
 .m-gary-card .st { font-size: 12px; color: var(--green); display: flex; align-items: center; gap: 5px; margin-top: 1px; }
-.m-gary-card .st .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2.4s infinite; }
+.m-gary-card .st .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
 .m-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
 .m-grid-card { background: var(--panel); border: 1px solid var(--bd); border-radius: 14px; padding: 15px 14px; cursor: pointer; }
 .m-grid-card .ico { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }

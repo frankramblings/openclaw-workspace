@@ -147,6 +147,11 @@ async function fetchThread(id, fallbackModel, name) {
       time: fmtTime(meta.timestamp),
       model: meta.model || model,
     };
+    // Image attachments persisted by the backend sidecar (the gateway transcript
+    // only keeps text) → rehydrate so sent images survive a refresh.
+    if (Array.isArray(h.attachments) && h.attachments.length) {
+      msg.attach = h.attachments.map((a) => ({ id: a.id, name: a.name || a.id, url: a.url }));
+    }
     if (msg.role === 'assistant') {
       const steps = historySteps(meta.tool_events, i);
       if (steps.length) {
@@ -390,8 +395,11 @@ function stopLive() {
 // Build a fresh per-turn reducer bound to `chat`. Returns { onEvent,
 // ensureActivity }. `onEvent` is fed the same {delta|type|...} objects whether
 // they came live or from replay, so a rebuilt turn looks identical to a live one.
-function beginTurn(chat, modelLabel) {
-  turn = { asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), got404: false };
+function beginTurn(chat, modelLabel, sessionId) {
+  // `sessionId` tags the turn with the thread it belongs to so the send-gate can
+  // distinguish "THIS thread is busy" (queue) from "another thread is busy"
+  // (send freely — that turn keeps streaming + recording server-side).
+  turn = { sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), got404: false };
 
   const ensureAsst = () => {
     if (!turn.asstMsg) {
@@ -443,6 +451,7 @@ function beginTurn(chat, modelLabel) {
       if (turn.got404) { actions.reloadSessions(); turn = null; return; }
       refreshSidebarUsage(runtime.state);
       turn = null;
+      flushQueued(chat);
       return;
     }
     if (ev.type === 'error') {
@@ -455,6 +464,10 @@ function beginTurn(chat, modelLabel) {
       stopElapsed();
       flushRender();
       turn = null;
+      // A turn that errored leaves the queued message intact — recall it to the
+      // composer so the user doesn't lose it (rather than auto-firing into a
+      // possibly-broken session).
+      if (chat.queued) { actions.queueRecall(); }
       return;
     }
 
@@ -516,6 +529,71 @@ function beginTurn(chat, modelLabel) {
   return { onEvent, ensureActivity };
 }
 
+// The actual send: optimistic user bubble + POST /api/chat_stream. Shared by the
+// composer `send` action and the queued-message auto-send (flushQueued). Assumes
+// the caller already cleared the draft/pendingAttach.
+async function dispatchSend(text, attachSnap) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  const attachIds = (attachSnap || []).map((a) => a.id);
+  if (!text && !attachIds.length) return;
+  // Sending is a user gesture — a good moment to ask for OS-notification
+  // permission so a reply finishing while you're elsewhere can notify you.
+  ensureNotifyPermission();
+
+  if (!chat.activeId) {
+    try {
+      const id = await createSession(chat.model);
+      if (!id) return;
+      chat.activeId = id;
+      storeActiveId(id);
+    } catch (_) {
+      return;
+    }
+  }
+  const sessionId = chat.activeId;
+
+  if (!Array.isArray(chat.thread)) chat.thread = [];
+  chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
+  runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
+  runtime.render();
+
+  // Detach any prior live reader. Safe now: the server-side recorder owns the
+  // turn, so aborting the reader only drops THIS client's stream.
+  stopLive();
+  stopElapsed();
+
+  const { onEvent, ensureActivity } = beginTurn(chat, chat.model, sessionId);
+  // Immediate feedback: show the "Working…" spinner the moment we send, so the
+  // model's warmup (claude-cli can take a few seconds before its first frame)
+  // never looks like a dead, unresponsive turn.
+  ensureActivity();
+  flushRender();
+
+  streamCtrl = postStream(
+    '/api/chat_stream',
+    {
+      message: text,
+      session: sessionId,
+      mode: state.chatMode || 'agent',
+      ...(attachIds.length ? { attachments: JSON.stringify(attachIds) } : {}),
+      ...(state.incognito ? { incognito: 'true' } : {}),
+    },
+    onEvent,
+  );
+}
+
+// When a turn ends, fire any message the user queued while it was streaming.
+// Deferred a microtask so the current turn teardown (turn = null) settles before
+// dispatchSend opens the next one.
+function flushQueued(chat) {
+  if (!chat || !chat.queued) return;
+  const q = chat.queued;
+  chat.queued = null;
+  Promise.resolve().then(() => dispatchSend(q.text, q.attachSnap));
+}
+
 // Parse one stored SSE payload (the raw string event_store kept, e.g.
 // "data: {...}\n\n" or "data: [DONE]\n\n") into a reducer event, or null.
 function parseStoredSSE(raw) {
@@ -544,7 +622,7 @@ async function resumeIfActive(chat, state, sessionId) {
 
   stopLive();
   stopElapsed();
-  const { onEvent, ensureActivity } = beginTurn(chat, chat.model);
+  const { onEvent, ensureActivity } = beginTurn(chat, chat.model, sessionId);
   ensureActivity();            // immediate "Working…" while we rebuild + tail
   // Continue the "Working… Ns" clock from the turn's TRUE start (server-computed
   // elapsed) instead of restarting at 0 on re-attach. Anchored to the client
@@ -739,6 +817,14 @@ export const actions = {
     const state = runtime.state;
     if (!state) return;
     const chat = ensureChat(state);
+    // Detach this client's live reader from whatever thread was streaming, same
+    // as selectSession(). The prior turn keeps running + recording server-side
+    // (re-attached via resumeIfActive on return); clearing `turn` here means the
+    // first message in this fresh thread sends immediately instead of queueing
+    // behind the thread we just left.
+    stopLive();
+    stopElapsed();
+    turn = null;
     chat.activeId = null;
     chat.thread = [];
     chat.title = 'New chat';
@@ -764,57 +850,49 @@ export const actions = {
     const state = runtime.state;
     if (!state) return;
     const text = (state.draft || '').trim();
-    const attachIds = (state.pendingAttach || []).map((a) => a.id);
-    if (!text && !attachIds.length) return;
+    const attachSnap = state.pendingAttach ? [...state.pendingAttach] : [];
+    if (!text && !attachSnap.length) return;
     const chat = ensureChat(state);
-    // Sending is a user gesture — a good moment to ask for OS-notification
-    // permission so a reply finishing while you're elsewhere can notify you.
-    ensureNotifyPermission();
 
-    // ensure we have a session
-    if (!chat.activeId) {
-      try {
-        const id = await createSession(chat.model);
-        if (!id) return;
-        chat.activeId = id;
-        storeActiveId(id);
-      } catch (_) {
-        return;
-      }
+    // A turn is already streaming FOR THIS THREAD → queue this message instead of
+    // starting a second turn against the same thread. It shows as a pending
+    // banner the user can edit (recall) or cancel; when the current turn ends it
+    // auto-sends (see flushQueued in the turn-end paths). A turn streaming in a
+    // DIFFERENT thread must NOT gate this send — that turn keeps running +
+    // recording server-side, and dispatchSend() detaches our reader from it.
+    if (turn && turn.sessionId === chat.activeId) {
+      chat.queued = { text, attachSnap };
+      state.draft = '';
+      state.pendingAttach = [];
+      runtime.render();
+      return;
     }
-    const sessionId = chat.activeId;
 
-    // optimistic user message
-    if (!Array.isArray(chat.thread)) chat.thread = [];
-    chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()) });
     state.draft = '';
-    runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
-    runtime.render();
-
-    // Detach any prior live reader. Safe now: the server-side recorder owns the
-    // turn, so aborting the reader only drops THIS client's stream.
-    stopLive();
-    stopElapsed();
-
-    const { onEvent, ensureActivity } = beginTurn(chat, chat.model);
-    // Immediate feedback: show the "Working…" spinner the moment we send, so the
-    // model's warmup (claude-cli can take a few seconds before its first frame)
-    // never looks like a dead, unresponsive turn.
-    ensureActivity();
-    flushRender();
-
-    streamCtrl = postStream(
-      '/api/chat_stream',
-      {
-        message: text,
-        session: sessionId,
-        mode: state.chatMode || 'agent',
-        ...(attachIds.length ? { attachments: JSON.stringify(attachIds) } : {}),
-        ...(state.incognito ? { incognito: 'true' } : {}),
-      },
-      onEvent,
-    );
     state.pendingAttach = []; // consumed by this turn
+    await dispatchSend(text, attachSnap);
+  },
+
+  // Pull a queued message back into the composer to edit/recall it.
+  queueRecall: () => {
+    const state = runtime.state;
+    if (!state) return;
+    const chat = ensureChat(state);
+    if (!chat.queued) return;
+    state.draft = chat.queued.text || '';
+    state.pendingAttach = chat.queued.attachSnap ? [...chat.queued.attachSnap] : [];
+    chat.queued = null;
+    runtime.render();
+    const ta = document.querySelector('[data-focus="draft"],[data-focus="mdraft"]');
+    if (ta) ta.focus();
+  },
+
+  // Drop a queued message without sending it.
+  queueCancel: () => {
+    const state = runtime.state;
+    if (!state) return;
+    ensureChat(state).queued = null;
+    runtime.render();
   },
 
   stopRun: () => {
@@ -833,6 +911,9 @@ export const actions = {
       a.worked = `Stopped after ${a.elapsed} · ${a.steps.length} steps`;
     }
     turn = null;
+    // Stop is a deliberate halt — don't auto-fire a queued follow-up. Hand it
+    // back to the composer so the user decides whether to send it.
+    if (runtime.state && ensureChat(runtime.state).queued) { actions.queueRecall(); }
     runtime.render();
   },
 
@@ -946,7 +1027,7 @@ export const actions = {
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       const saved = (data && data.files) || [];
-      state.pendingAttach = [...(state.pendingAttach || []), ...saved.map((s) => ({ id: s.id, name: s.name }))];
+      state.pendingAttach = [...(state.pendingAttach || []), ...saved.map((s) => ({ id: s.id, name: s.name, url: s.url }))];
       runtime.render();
     } catch (_) { /* soft-fail: nothing attached */ }
   },

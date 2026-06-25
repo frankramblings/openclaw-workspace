@@ -417,6 +417,82 @@ def _resolve_attachments(raw: str) -> list[dict]:
     return out
 
 
+_CHAT_ATTACH_DIR = ATTACH_DIR.parent / ".chat-attachments"
+
+
+def _attach_log_path(session_id: str) -> Path | None:
+    safe = "".join(c for c in (session_id or "") if c.isalnum() or c in "-_.")
+    return (_CHAT_ATTACH_DIR / f"{safe}.json") if safe else None
+
+
+def _persist_msg_attachments(session_id: str, message: str, attachments_raw: str) -> None:
+    """Record image attachments for a sent message so /api/history can rehydrate
+    them on reload — the gateway transcript keeps only text, so a sent image
+    otherwise vanishes on refresh. Appends one record per send-with-images:
+    {text, att:[{id,url}]}. Best-effort; never raises into the turn."""
+    if not session_id or not attachments_raw:
+        return
+    try:
+        ids = json.loads(attachments_raw)
+    except Exception:  # noqa: BLE001 - malformed field → nothing to persist
+        return
+    att: list[dict] = []
+    for fid in ids if isinstance(ids, list) else []:
+        if not isinstance(fid, str):
+            continue
+        safe = "".join(c for c in fid if c.isalnum() or c in "-_.")
+        path = ATTACH_DIR / safe
+        if not path.exists() or not path.is_file():
+            continue
+        mime = mimetypes.guess_type(str(path))[0] or ""
+        if not mime.startswith("image/"):
+            continue
+        att.append({"id": safe, "url": f"/api/upload/{safe}"})
+    if not att:
+        return
+    p = _attach_log_path(session_id)
+    if not p:
+        return
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        log = []
+        if p.exists():
+            try:
+                log = json.loads(p.read_text() or "[]")
+            except Exception:  # noqa: BLE001
+                log = []
+        log.append({"text": (message or "").strip(), "att": att})
+        p.write_text(json.dumps(log))
+    except Exception:  # noqa: BLE001 - persistence is best-effort
+        pass
+
+
+def _apply_msg_attachments(session_id: str, history: list[dict]) -> None:
+    """Assign persisted image attachments to user messages in `history`, matching
+    on (trimmed) text in send order. Mutates `history` in place; best-effort."""
+    p = _attach_log_path(session_id)
+    if not p or not p.exists():
+        return
+    try:
+        log = json.loads(p.read_text() or "[]")
+    except Exception:  # noqa: BLE001
+        return
+    if not isinstance(log, list) or not log:
+        return
+    used = [False] * len(log)
+    for m in history:
+        if m.get("role") != "user":
+            continue
+        text = (m.get("content") or "").strip()
+        for i, rec in enumerate(log):
+            if used[i]:
+                continue
+            if (rec.get("text") or "").strip() == text:
+                m["attachments"] = rec.get("att") or []
+                used[i] = True
+                break
+
+
 def _terminal_attachments(terminal_key: str) -> list[dict]:
     """Pending images the user dropped into this chat's terminal → chat.send
     image blocks, then mark them consumed so each rides exactly one turn. The
@@ -467,6 +543,10 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     session_key = rec["sessionKey"] if rec else config.web_session_key()
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
     chat_attachments = _resolve_attachments(attachments)  # image uploads → vision
+    # Persist the image refs (keyed by the SPA session id) so they survive a
+    # reload — the gateway transcript only keeps the user's text.
+    if session and attachments:
+        _persist_msg_attachments(session, message, attachments)
 
     # Draft mode: chat.js posts active_doc_id whenever the document panel is
     # open (auto-saving the doc first). Snapshot now (the user's undo), wrap
@@ -731,6 +811,8 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
             continue
         deduped.append(m)
     data["history"] = deduped
+    # Rehydrate image attachments persisted at send time (transcript is text-only).
+    _apply_msg_attachments(session_id, deduped)
     # Prefer the record's chosen model label; fall back to whatever the brain used.
     data["model"] = sess.get("model") or data.get("model")
     return data

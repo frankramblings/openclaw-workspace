@@ -217,6 +217,9 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .tok-kw{color:var(--violet)} .tok-fn{color:var(--gold)} .tok-str{color:var(--green)} .tok-com{color:var(--faint)} .tok-prop{color:var(--blue)}
 .msg-user-wrap{display:flex;justify-content:flex-end}
 .msg-user{max-width:520px;background:var(--tealtint);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent);border-radius:12px 12px 4px 12px;padding:13px 16px}
+.msg-attachments{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.msg-attach-img{max-width:100%;max-height:280px;border-radius:8px;display:block;object-fit:contain}
+.msg-attach-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.07);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent);border-radius:7px;padding:4px 10px;font-size:11.5px;color:var(--mut)}
 .msg-user .meta{display:flex;align-items:baseline;gap:8px;justify-content:flex-end;margin-bottom:5px}
 .msg-user .meta .time{font-size:10px;color:var(--faint)}
 .msg-user .meta .you{font-size:11px;font-weight:600;color:var(--teal)}
@@ -248,6 +251,13 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .composer-wrap{flex:none;padding:0 22px 18px;position:relative}
 .composer{border:1px solid var(--bd);background:var(--panel);border-radius:16px;padding:12px 14px 10px}
 .composer.slash{border-color:var(--teal2)}
+/* queued message banner (a send fired while a turn was still streaming) */
+.queued-msg{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:6px 8px 6px 11px;background:color-mix(in srgb,var(--gold,#e0b341) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--gold,#e0b341) 35%,transparent);border-radius:10px;cursor:pointer;font-size:11.5px;color:var(--mut)}
+.queued-msg:hover{background:color-mix(in srgb,var(--gold,#e0b341) 18%,var(--panel))}
+.queued-msg .q-ico{flex:none}
+.queued-msg .q-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.queued-msg .q-x{flex:none;width:20px;height:20px;border-radius:50%;border:none;background:transparent;color:var(--mut);cursor:pointer;font-size:12px;line-height:1}
+.queued-msg .q-x:hover{background:color-mix(in srgb,var(--fg) 10%,transparent);color:var(--fg)}
 .composer textarea{width:100%;background:transparent;border:none;resize:none;font-size:12px;line-height:1.5;padding:2px 2px 12px;min-height:24px}
 .composer-row{display:flex;align-items:center;gap:7px}
 .icon-btn{width:32px;height:32px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer}

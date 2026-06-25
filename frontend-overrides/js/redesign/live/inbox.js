@@ -272,4 +272,16 @@ export const actions = {
     }
     runtime.render();
   },
+
+  // Tappable AI rec chip: run the item's recommended action.
+  applyRec: (id) => {
+    const state = runtime.state;
+    const item = findItem(state, id);
+    const rec = item && item.rec;
+    if (!rec || !rec.action) return;
+    const fn = (rec.action === 'gary') ? actions.gary
+      : (rec.action === 'add_asana') ? actions.addAsana
+      : actions[rec.action];
+    if (fn) fn(String(id));
+  },
 };

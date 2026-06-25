@@ -373,7 +373,7 @@ function inboxSurface(s) {
     <div class="inbox-card fyi">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
       <div class="body">${esc(stripMd(it.body))}</div>
-      <div class="ai-pill">✦ ${esc(it.suggest)}</div>
+      <button class="ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
       ${cardButtonsHtml(it, esc)}
     </div>`;
 

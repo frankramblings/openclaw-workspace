@@ -132,7 +132,7 @@ export function mInbox(s) {
     <div class="m-card fyi">
       <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span></div>
       <div class="body">${esc(stripMd(it.body))}</div>
-      <div class="m-ai-pill">✦ ${esc(it.suggest)}</div>
+      <button class="m-ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
       <div class="actions">${cardButtonsHtml(it, esc)}</div>
     </div>`;
 

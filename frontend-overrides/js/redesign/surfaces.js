@@ -365,13 +365,13 @@ function inboxSurface(s) {
 
   const needsCard = (it) => `
     <div class="inbox-card">
-      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${it.id}">${I.x()}</span></div>
+      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
       <div class="body">${esc(stripMd(it.body))}</div>
       ${cardButtonsHtml(it, esc)}
     </div>`;
   const fyiCard = (it) => `
     <div class="inbox-card fyi">
-      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${it.id}">${I.x()}</span></div>
+      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
       <div class="body">${esc(stripMd(it.body))}</div>
       <div class="ai-pill">✦ ${esc(it.suggest)}</div>
       ${cardButtonsHtml(it, esc)}

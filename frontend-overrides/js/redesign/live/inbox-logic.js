@@ -84,7 +84,7 @@ export function filterVisible(items, opts) {
   const dismissed = (opts && opts.dismissed) || [];
   const filter = (opts && opts.filter) || null;
   return list.filter((m) => {
-    if (dismissed.includes(m.id)) return false;
+    if (dismissed.includes(String(m.id))) return false;
     if (filter && String(m.src).toUpperCase() !== String(filter).toUpperCase()) return false;
     return true;
   });

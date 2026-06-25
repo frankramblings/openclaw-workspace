@@ -8,6 +8,7 @@ import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
+import { cardButtonsHtml, chipRowHtml, filterVisible, sourceCounts } from '../live/inbox-logic.js';
 
 const ic = {
   mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
@@ -29,7 +30,7 @@ export function renderTabBar(s) {
   <div class="m-tabbar">
     ${tab('chat', 'Chat', I.chat(22))}
     ${tab('inbox', 'Inbox', I.inbox(22), inboxN ? `<span class="m-tab-badge">${inboxN}</span>` : '')}
-    <div class="m-tab-add"><button class="m-add-btn" data-act="openCapture">${icon('<path d="M12 5v14M5 12h14"/>', { size: 24, sw: 2.4 })}</button></div>
+    <div class="m-tab-add"><button class="m-add-btn" data-act="mNewChat" aria-label="New chat — hold for quick capture">${icon('<path d="M12 5v14M5 12h14"/>', { size: 24, sw: 2.4 })}<span class="m-add-caret">${icon('<path d="m18 15-6-6-6 6"/>', { size: 9, sw: 3.4 })}</span></button></div>
     ${tab('email', 'Email', I.email(22))}
     <button class="m-tab${s.mTab === 'more' ? ' active' : ''}" data-act="mGo" data-arg="more">${ic.dots()}<span class="lbl">More</span></button>
   </div>`;
@@ -41,7 +42,15 @@ export function mChatMsg(m, s) {
   // Assistant text is markdown — render it the same way the desktop thread does
   // (headings, lists, bold, links, code) instead of dumping raw markup as plain text.
   const paras = hasText ? renderMarkdown(m.text) : '';
-  if (m.role === 'user') return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${esc(m.text || '')}</div></div>`;
+  if (m.role === 'user') {
+    const attachHtml = (m.attach && m.attach.length) ? m.attach.map((a) => {
+      const isImg = /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(a.name || '');
+      return isImg && a.url
+        ? `<img class="m-attach-img" src="${esc(a.url)}" alt="${esc(a.name || 'image')}">`
+        : `<span class="m-attach-chip">📎 ${esc(a.name || a.id)}</span>`;
+    }).join('') : '';
+    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div></div>`;
+  }
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"><div class="m-msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}</div></div>`;
 }
 
@@ -56,6 +65,15 @@ export function mChat(s) {
   const thread = s.live?.chat?.thread || [];
   const model = s.live?.chat?.model || 'opus-4';
   const modelLogo = providerLogo(s.live?.chat?.endpointId, model);
+  // Friendly model name (e.g. "Opus 4.8") from the live model list, matching the
+  // desktop header's currentModelLabel; falls back to the raw id.
+  let modelLabel = model;
+  const _ml = s.live?.modelList;
+  if (_ml && _ml.length) {
+    const _curId = (s.live?.chat?.endpointId || '') + '·' + (model || '');
+    const _hit = _ml.find((m) => m.id === _curId) || _ml.find((m) => m.mid === model);
+    if (_hit && _hit.name) modelLabel = _hit.name;
+  }
   // Empty thread (new/cold chat) used to render a fully blank screen — show a
   // centered prompt instead, reusing the shared .inbox-zero empty-state shell.
   const threadHtml = thread.length
@@ -65,23 +83,26 @@ export function mChat(s) {
   return `
   <div class="m-head">
     <div class="m-gary">
-      <button class="m-gary-tap" data-act="openConvSheet" title="Conversations" style="display:contents">
-        <div class="m-gav"><img src="${AVATAR}" alt="Gary"></div>
-        <div style="flex:1;min-width:0"><div class="nm">Gary <span style="font-size:10px;color:var(--faint)">▾</span></div><div class="status"><span class="dot"></span>${s.live?.chat?.title || 'New chat'}</div></div>
+      <div class="m-gav"><img src="${AVATAR}" alt="Gary"></div>
+      <button class="m-gary-id" data-act="openConvSheet" title="Switch conversation">
+        <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span><span class="m-conv-caret">▾</span></div>
+        <div class="m-conv-sub"><span class="dot"></span>Gary · online</div>
       </button>
-      <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model" style="font-size:10px;padding:4px 9px;border:1px solid var(--bd);border-radius:999px;background:transparent;color:var(--mut);cursor:pointer;white-space:nowrap"><span class="model-provider-logo">${modelLogo}</span>${esc(model)}</button>
-      ${when(!focused, `<button class="m-icon-btn" data-act="newChat" title="New chat">${I.plus(17)}</button>`)}
+      <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="m-model-name">${esc(modelLabel)}</span></button>
+      <button class="m-icon-btn m-hide-kb" data-act="newChat" title="New chat">${I.plus(17)}</button>
     </div>
   </div>
-  ${when(!focused, `<div class="m-comp-handle"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>`)}
+  <div class="m-comp-handle m-hide-kb"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>
   <div class="m-scroll m-thread${thread.length ? '' : ' empty'}" data-ptr="1">${mPtr(s, 'Refreshing chat…')}${threadHtml}</div>
-  <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;bottom:${focused ? '78px' : 'calc(env(safe-area-inset-bottom,0px) + 122px)'}">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
+  <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;bottom:calc(env(safe-area-inset-bottom,0px) + 122px)">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
   <div class="m-composer${focused ? ' focused' : ''}">
+    ${when(s.live?.chat?.queued, `<div class="m-queued" data-act="queueRecall"><span class="q-ico">⏳</span><span class="q-txt">Queued${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 50))}` : ' · image'}</span><button class="m-q-x" data-act="queueCancel">✕</button></div>`)}
     ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], (a) => `<span class="m-attach-chip"><span class="nm">${esc(a.name || a.id)}</span><span class="x" data-act="removeAttach" data-arg="${esc(a.id)}">✕</span></span>`)}</div>`)}
     <div class="bar">
       <label class="m-round-btn bordered" title="Attach photo or file"><input type="file" data-upload multiple style="display:none">${I.plus(16)}</label>
-      <textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message Gary…">${esc(s.draft || '')}</textarea>
-      ${when(!focused, `<button class="m-round-btn">${ic.mic()}</button>`)}
+      <textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message Gary…">
+${esc(s.draft || '')}</textarea>
+      <button class="m-round-btn m-hide-kb">${ic.mic()}</button>
       <button class="m-send" data-act="send">${I.send(16)}</button>
     </div>
   </div>`;
@@ -90,10 +111,9 @@ export function mChat(s) {
 // ---- inbox ----------------------------------------------------------------
 export function mInbox(s) {
   const items = s.live?.inbox?.items ?? INBOX;
-  const visible = items.filter((m) => !s.dismissed.includes(m.id));
+  const visible = filterVisible(items, { dismissed: s.dismissed, filter: s.inboxFilter });
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
-  const cnt = (src) => visible.filter((m) => m.src === src).length;
 
   // swipeable card (NEEDS YOU); offset driven by s.swipe for the active id
   const swipeCard = (it) => {
@@ -104,7 +124,7 @@ export function mInbox(s) {
       <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
         <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>
         <div class="body">${esc(stripMd(it.body))}</div>
-        <div class="actions"><button class="m-pill" data-act="dismiss" data-arg="${it.id}">${esc(it.primary)}</button><button class="m-pill ghost" data-act="dismiss" data-arg="${it.id}">${esc(it.secondary)}</button></div>
+        <div class="actions">${cardButtonsHtml(it, esc)}</div>
       </div>
     </div>`;
   };
@@ -113,16 +133,14 @@ export function mInbox(s) {
       <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span></div>
       <div class="body">${esc(stripMd(it.body))}</div>
       <div class="m-ai-pill">✦ ${esc(it.suggest)}</div>
-      <div class="actions"><button class="m-pill" data-act="dismiss" data-arg="${it.id}">Archive</button><button class="m-pill ghost" data-act="dismiss" data-arg="${it.id}">Keep</button></div>
+      <div class="actions">${cardButtonsHtml(it, esc)}</div>
     </div>`;
 
   return `
   <div class="m-head">
     <div class="m-head-row"><span class="m-title">Inbox</span><span class="m-title-sub">${visible.length} to triage</span><div class="m-spacer"></div><button class="m-triage" data-act="triageAll">✦ Triage</button></div>
     <div class="m-head-row" style="margin-top:11px;gap:7px">
-      <span class="m-chip active">All ${visible.length}</span>
-      <span class="m-chip"><span class="dot" style="background:var(--red)"></span>gmail ${cnt('GMAIL')}</span>
-      <span class="m-chip"><span class="dot" style="background:var(--green)"></span>slack ${cnt('SLACK')}</span>
+      ${chipRowHtml(sourceCounts(items, { dismissed: s.dismissed }, s.live?.inbox?.sources), { filter: s.inboxFilter, errors: s.live?.inbox?.errors || {} }, esc)}
     </div>
   </div>
   <div class="m-scroll m-feed" data-ptr="1">

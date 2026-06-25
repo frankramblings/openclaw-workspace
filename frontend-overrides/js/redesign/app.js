@@ -257,13 +257,6 @@ const actions = {
   selDoc: (i) => { state.selDoc = Number(i); },
   selEmail: (i) => { state.selEmail = Number(i); },
 
-  // inbox
-  dismiss: (id) => { const n = Number(id); if (!state.dismissed.includes(n)) state.dismissed = [...state.dismissed, n]; },
-  triageAll: () => {
-    const ids = [3, 4, 5]; // aiArchive items
-    state.dismissed = [...new Set([...state.dismissed, ...ids])];
-  },
-
   // calendar
   clearQuick: () => { state.quick = ''; },
 
@@ -450,7 +443,12 @@ root.addEventListener('keydown', (e) => {
   const t = e.target;
   if (!t || !t.getAttribute) return;
   const fk = t.getAttribute('data-focus');
-  if ((fk === 'draft' || fk === 'mdraft') && e.key === 'Enter' && !e.shiftKey) {
+  if (e.key !== 'Enter' || (fk !== 'draft' && fk !== 'mdraft')) return;
+  // Cmd/Ctrl+Enter always sends (desktop & mobile). Plain Enter sends on desktop
+  // only (Shift+Enter = newline there); on mobile (mdraft) plain Enter inserts a
+  // newline — the box auto-grows and the Send button or ⌘/Ctrl+Enter sends.
+  const sendCombo = (e.metaKey || e.ctrlKey) || (fk === 'draft' && !e.shiftKey);
+  if (sendCombo) {
     e.preventDefault();
     if (actions.send) { actions.send(); render(); }
   }
@@ -501,14 +499,25 @@ document.addEventListener('keydown', (e) => {
 
 // mobile keyboard: focusing the chat composer raises the keyboard (frame 9 —
 // tab bar hides, composer lifts). Guarded so the focus-restore loop is a no-op.
+// Toggle the composing layout via a CSS class on the existing .m-app instead of
+// a full render(). Rebuilding root.innerHTML on focus destroyed the live
+// textarea (so the freshly-focused field lost focus and the keyboard collapsed
+// → "can't type") and replaced the Send button mid-tap (so the first tap was
+// swallowed by the rebuild and a second tap was needed). A class toggle leaves
+// both elements intact: focus persists and the first Send tap lands.
+function setMobileKb(on) {
+  state.keyboard = on;
+  const app = root.querySelector('.m-app');
+  if (app) app.classList.toggle('kb-up', on);
+}
 root.addEventListener('focusin', (e) => {
   if (isMobile() && e.target.getAttribute && e.target.getAttribute('data-focus') === 'mdraft' && !state.keyboard) {
-    state.keyboard = true; render();
+    setMobileKb(true);
   }
 });
 root.addEventListener('focusout', (e) => {
   if (e.target.getAttribute && e.target.getAttribute('data-focus') === 'mdraft' && state.keyboard) {
-    state.keyboard = false; render();
+    setMobileKb(false);
   }
 });
 

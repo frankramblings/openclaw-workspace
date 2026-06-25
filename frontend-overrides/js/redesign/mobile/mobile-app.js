@@ -24,7 +24,10 @@ function pushedSurface(s, sub) {
 export function renderMobile(s) {
   const reader = s.mTab === 'email' && s.mReader;
   const composing = s.mTab === 'chat' && s.keyboard;
-  const showTabBar = !reader && !composing;
+  // The tab bar is always rendered (except in the email reader) and hidden via
+  // the `.kb-up` class while composing — so toggling the keyboard never rebuilds
+  // the composer DOM (see setMobileKb in app.js).
+  const showTabBar = !reader;
 
   let body;
   if (reader) body = mEmailReader(s);
@@ -44,7 +47,7 @@ export function renderMobile(s) {
     (s.mConvSheetOpen ? renderConvSheet(s) : '') +
     (s.mModelSheetOpen ? renderModelSheet(s) : '');
 
-  return `<div class="m-app">${body}${showTabBar ? renderTabBar(s) : ''}${sheets}</div>`;
+  return `<div class="m-app${composing ? ' kb-up' : ''}">${body}${showTabBar ? renderTabBar(s) : ''}${sheets}</div>`;
 }
 
 // ---- mobile action handlers (merged into the shared action map) -----------
@@ -52,6 +55,13 @@ export function mobileActions(state) {
   const closeSheets = () => { state.companionSheetOpen = false; state.quickCaptureOpen = false; state.mConvSheetOpen = false; state.mModelSheetOpen = false; };
   return {
     mGo: (tab) => { state.mTab = tab; state.mSub = null; state.mReader = false; state.keyboard = false; closeSheets(); },
+    // Center "+" tap → start a fresh thread on the Chat tab (the expected mental
+    // model for a centered "+"). Long-press routes to openCapture instead — see
+    // wireMobileGestures. Capture is the secondary branch, not a co-equal button.
+    mNewChat: () => {
+      state.mTab = 'chat'; state.mSub = null; state.mReader = false; state.keyboard = false; closeSheets();
+      if (runtime.actions && runtime.actions.newChat) runtime.actions.newChat();
+    },
     mOpenSub: (id) => {
       state.mTab = 'more';
       if (id === 'scheduled') { state.mSub = 'settings'; state.setSection = 'scheduled'; }
@@ -137,7 +147,7 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     if (!drag) return;
     const d = drag; drag = null;
     if (d.mode === 'swipe') {
-      if (d.dx <= SWIPE_COMMIT) { commitArchive(Number(d.id)); render(); }
+      if (d.dx <= SWIPE_COMMIT) { commitArchive(String(d.id)); render(); }
       else { d.card.classList.remove('swiping'); d.card.classList.add('snap'); d.card.style.transform = 'translateX(0)'; }
     }
   };
@@ -220,4 +230,33 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     }
   });
   root.addEventListener('touchcancel', () => { pup = null; });
+
+  // --- long-press the center "+" → quick capture ---------------------------
+  // Tap fires mNewChat (new thread); holding ~450ms opens the capture sheet
+  // instead, and we swallow the click that follows so a new thread isn't ALSO
+  // created. Movement past a small threshold cancels (it was a scroll/swipe).
+  const LP_MS = 450;
+  let lp = null; // { sx, sy, timer }
+  const clearLp = () => { if (lp) { clearTimeout(lp.timer); lp = null; } };
+  const fireCaptureLongPress = () => {
+    lp = null;
+    state.quickCaptureOpen = true;
+    state.captureType = state.captureType || 'remind';
+    try { if (navigator.vibrate) navigator.vibrate(8); } catch (_) { /* no haptics */ }
+    // Eat the click that the browser dispatches on release so mNewChat is skipped.
+    const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); root.removeEventListener('click', swallow, true); };
+    root.addEventListener('click', swallow, true);
+    setTimeout(() => root.removeEventListener('click', swallow, true), 700);
+    render();
+  };
+  root.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('.m-add-btn');
+    if (!btn) return;
+    lp = { sx: e.clientX, sy: e.clientY, timer: setTimeout(fireCaptureLongPress, LP_MS) };
+  });
+  root.addEventListener('pointermove', (e) => {
+    if (lp && (Math.abs(e.clientX - lp.sx) > 8 || Math.abs(e.clientY - lp.sy) > 8)) clearLp();
+  });
+  root.addEventListener('pointerup', clearLp);
+  root.addEventListener('pointercancel', clearLp);
 }

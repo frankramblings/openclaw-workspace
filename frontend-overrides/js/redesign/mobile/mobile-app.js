@@ -6,7 +6,7 @@
 import { icon } from '../icons.js';
 import { renderCenter } from '../surfaces.js';
 import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore } from './mobile-surfaces.js';
-import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet } from './mobile-sheets.js';
+import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvSheet, renderModelSheet } from './mobile-sheets.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
 
@@ -40,14 +40,16 @@ export function renderMobile(s) {
   const sheets =
     (s.companionSheetOpen ? renderCompanionSheet(s) : '') +
     (s.quickCaptureOpen ? renderCaptureSheet(s) : '') +
-    (s.composeOpen ? renderComposeSheet(s) : '');
+    (s.composeOpen ? renderComposeSheet(s) : '') +
+    (s.mConvSheetOpen ? renderConvSheet(s) : '') +
+    (s.mModelSheetOpen ? renderModelSheet(s) : '');
 
   return `<div class="m-app">${body}${showTabBar ? renderTabBar(s) : ''}${sheets}</div>`;
 }
 
 // ---- mobile action handlers (merged into the shared action map) -----------
 export function mobileActions(state) {
-  const closeSheets = () => { state.companionSheetOpen = false; state.quickCaptureOpen = false; };
+  const closeSheets = () => { state.companionSheetOpen = false; state.quickCaptureOpen = false; state.mConvSheetOpen = false; state.mModelSheetOpen = false; };
   return {
     mGo: (tab) => { state.mTab = tab; state.mSub = null; state.mReader = false; state.keyboard = false; closeSheets(); },
     mOpenSub: (id) => {
@@ -63,6 +65,13 @@ export function mobileActions(state) {
     companionTab: (t) => { state.companionTab = t; },
     openCapture: () => { state.quickCaptureOpen = true; state.captureType = state.captureType || 'remind'; },
     closeCapture: () => { state.quickCaptureOpen = false; },
+    openConvSheet: () => { closeSheets(); state.mConvSheetOpen = true; },
+    closeConvSheet: () => { state.mConvSheetOpen = false; },
+    mSelectSession: (id) => { state.mConvSheetOpen = false; if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(id); },
+    openModelSheet: () => { closeSheets(); state.mModelSheetOpen = true; },
+    closeModelSheet: () => { state.mModelSheetOpen = false; },
+    mSetModel: (id) => { state.mModelSheetOpen = false; if (runtime.actions && runtime.actions.setModel) runtime.actions.setModel(id); },
+    mSetDefaultModel: (id) => { if (runtime.actions && runtime.actions.setDefaultModel) runtime.actions.setDefaultModel(id); },
     setCaptureType: (t) => { state.captureType = t; },
     // Quick-capture submit: persist the draft as a note (kind = remind/note/task),
     // optimistically close, restore on failure so the capture is never lost.
@@ -108,7 +117,7 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
     if (drag.mode === 'pending') {
-      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6) { drag.mode = 'swipe'; drag.card.classList.add('swiping'); drag.card.classList.remove('snap'); }
+      if (Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(dx) > 10) { drag.mode = 'swipe'; drag.card.classList.add('swiping'); drag.card.classList.remove('snap'); }
       else if (Math.abs(dy) > 8) drag = null; // vertical → let the pull/scroll handlers have it
       return;
     }
@@ -177,4 +186,34 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   };
   root.addEventListener('touchend', endPull);
   root.addEventListener('touchcancel', endPull);
+
+  // --- pull-up from bottom edge → quick capture ----------------------------
+  // Arm only when the touch starts within 60px of the viewport bottom and
+  // the target is not an interactive element (button, input, textarea).
+  const CAPTURE_TRIGGER = 50; // px upward travel that fires the sheet
+  const BOTTOM_ZONE = 60;
+  let pup = null; // { startY }
+
+  root.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { pup = null; return; }
+    if (state.quickCaptureOpen || state.companionSheetOpen) { pup = null; return; }
+    const t = e.touches[0];
+    if (window.innerHeight - t.clientY > BOTTOM_ZONE) { pup = null; return; }
+    const tag = (e.target && e.target.tagName || '').toLowerCase();
+    if (tag === 'button' || tag === 'input' || tag === 'textarea' || tag === 'a') { pup = null; return; }
+    pup = { startY: t.clientY };
+  }, { passive: true });
+
+  root.addEventListener('touchend', (e) => {
+    if (!pup) return;
+    const t = e.changedTouches[0];
+    const dy = pup.startY - t.clientY; // positive = upward
+    pup = null;
+    if (dy >= CAPTURE_TRIGGER) {
+      state.quickCaptureOpen = true;
+      state.captureType = state.captureType || 'remind';
+      render();
+    }
+  });
+  root.addEventListener('touchcancel', () => { pup = null; });
 }

@@ -69,6 +69,54 @@ export function renderComposeSheet(s) {
   </div>`;
 }
 
+export function renderConvSheet(s) {
+  const chat = s.live?.chat || {};
+  const groups = chat.groups || [];
+  const activeId = chat.activeId;
+  const convRow = (r) => `<div class="m-conv-row ocrow${r.active ? ' active' : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}">
+    <span class="m-conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span>
+    <span class="m-conv-title">${esc(r.title)}</span>
+    ${r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+  </div>`;
+  const groupHtml = groups.length
+    ? map(groups, (g) => `<div class="m-conv-grp">${esc(g.label)}</div>${map(g.rows || [], convRow)}`)
+    : `<div style="padding:16px;color:var(--faint);font-size:13px">No conversations yet.</div>`;
+  return `
+  <div class="m-scrim" data-act="closeConvSheet"></div>
+  <div class="m-sheet conv-sheet">
+    <div class="m-grab"><div class="h"></div></div>
+    <div class="m-cap-head"><span class="t">Conversations</span><div class="m-spacer"></div><button class="m-round-btn" data-act="newChat" title="New chat">${I.plus(16)}</button><button class="cancel" data-act="closeConvSheet">Close</button></div>
+    <div class="m-conv-list">${groupHtml}</div>
+  </div>`;
+}
+
+export function renderModelSheet(s) {
+  const chat = s.live?.chat || {};
+  const groups = s.live?.modelGroups || [];
+  const curId = (chat.endpointId || '') + '·' + (chat.model || '');
+  const defId = s.live?.defaultModel || '';
+  if (!groups.length) {
+    return `<div class="m-scrim" data-act="closeModelSheet"></div><div class="m-sheet model-sheet"><div class="m-grab"><div class="h"></div></div><div class="m-cap-head"><span class="t">Model</span><div class="m-spacer"></div><button class="cancel" data-act="closeModelSheet">Close</button></div><div style="padding:20px;color:var(--faint);font-size:13px">Loading models…</div></div>`;
+  }
+  const row = (m) => {
+    const active = m.id === curId;
+    const isDef = m.id === defId;
+    return `<div class="m-model-row${active ? ' sel' : ''}" data-act="mSetModel" data-arg="${esc(m.id)}">
+      <span class="m-model-name">${esc(m.name)}</span>
+      ${active ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+      <span class="mstar${isDef ? ' mstar-def' : ''}" data-act="mSetDefaultModel" data-arg="${esc(m.id)}" title="Set as default">★</span>
+    </div>`;
+  };
+  const group = (g) => `<div class="m-model-ep">${esc(g.ep)}</div>${map(g.models, row)}`;
+  return `
+  <div class="m-scrim" data-act="closeModelSheet"></div>
+  <div class="m-sheet model-sheet">
+    <div class="m-grab"><div class="h"></div></div>
+    <div class="m-cap-head"><span class="t">Model</span><div class="m-spacer"></div><button class="cancel" data-act="closeModelSheet">Close</button></div>
+    <div class="m-model-list">${map(groups, group)}</div>
+  </div>`;
+}
+
 export function renderCaptureSheet(s) {
   const type = s.captureType || 'remind';
   const draft = s.captureDraft || '';

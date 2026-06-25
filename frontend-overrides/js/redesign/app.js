@@ -13,6 +13,7 @@ import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
+import { wireResizableSidebars } from './resize-sidebars.js';
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -36,9 +37,11 @@ const state = {
   mTab: 'chat', mSub: null, mReader: false, keyboard: false,
   companionSheetOpen: false, companionTab: 'terminal',
   quickCaptureOpen: false, captureType: 'remind', captureDraft: '',
+  mConvSheetOpen: false, mModelSheetOpen: false,
   refreshing: false,
   // live backend data per surface (loaders populate; render falls back to mock)
   live: {},
+  isOnline: navigator.onLine,
 };
 
 let researchTimer = null;
@@ -70,7 +73,7 @@ function renderRail() {
     <div class="oc-rail-head">
       <div class="oc-avatar oc-avatar-28" data-act="toggleRail" title="Toggle sidebar"><img src="${AVATAR}" alt="Gary"></div>
       <span class="oc-rail-name">Gary</span>
-      <span class="oc-online"><span class="dot"></span>online</span>
+      <span class="oc-online${state.isOnline ? '' : ' offline'}"><span class="dot"></span>${state.isOnline ? 'online' : 'offline'}</span>
       <div class="oc-spacer"></div>
       <button class="oc-rail-collapse" data-act="toggleRail" title="Collapse sidebar"><span style="display:inline-flex;transform:rotate(${collapsed ? '180deg' : '0deg'})">${I.chevLeft()}</span></button>
     </div>
@@ -198,6 +201,9 @@ function render() {
 
   // post-render hook (the live terminal overlay repositions itself here)
   if (runtime.afterRender) runtime.afterRender();
+
+  // Wire drag-to-resize handles on desktop (no-op on mobile — the selectors won't match)
+  if (!isMobile()) wireResizableSidebars(root);
 }
 
 // ---- actions --------------------------------------------------------------
@@ -209,6 +215,7 @@ const actions = {
   // chat composer
   toggleSlash: () => { state.forceSlash = !state.forceSlash; },
   pickSlash: (name) => { state.draft = name + ' '; state.forceSlash = false; },
+  fillComposer: (prompt) => { state.draft = prompt || ''; state.forceSlash = false; },
   setMode: (mode) => { state.chatMode = mode; },
   // Incognito / "Nobody" mode (ported from Odysseus): when on, send() appends
   // incognito=true so the backend doesn't persist the turn.
@@ -536,6 +543,9 @@ seedMobileFromHash(fromHash);
 
 const _go = actions.go;
 actions.go = (surface) => { _go(surface); if (location.hash !== '#' + surface) history.replaceState(null, '', '#' + surface); };
+
+window.addEventListener('online', () => { state.isOnline = true; render(); });
+window.addEventListener('offline', () => { state.isOnline = false; render(); });
 
 window.addEventListener('hashchange', () => {
   const h = (location.hash || '').replace('#', '');

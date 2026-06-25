@@ -150,6 +150,25 @@ function currentModelLabel(s, model) {
   return model;
 }
 
+const QUICK_CHIPS = [
+  { label: 'What can you do?', prompt: 'What can you do?' },
+  { label: 'Summarize my recent sessions', prompt: 'Summarize my recent sessions' },
+  { label: 'Help me configure a channel', prompt: 'Help me configure a channel' },
+  { label: 'Check system health', prompt: 'Check system health' },
+];
+
+function chatWelcome() {
+  const chips = QUICK_CHIPS.map((c) =>
+    `<button class="qchip occhip" data-act="fillComposer" data-arg="${esc(c.prompt)}">${esc(c.label)}</button>`
+  ).join('');
+  return `<div class="chat-welcome">
+    <div class="cw-av"><img src="${AVATAR}" alt="Gary"></div>
+    <div class="cw-name">Gary</div>
+    <div class="cw-hint">Type a message below &nbsp;·&nbsp; <kbd>/</kbd> for commands</div>
+    <div class="cw-chips">${chips}</div>
+  </div>`;
+}
+
 function chatSurface(s) {
   const d = s.draft || '';
   const typedSlash = d.startsWith('/');
@@ -163,7 +182,9 @@ function chatSurface(s) {
   const subtitle = chat.subtitle ?? '12 messages · claude-opus-4';
   const model = chat.model ?? 'opus-4';
   const pct = chat.usagePct != null ? chat.usagePct : 4.4;
-  const thread = map(chat.thread || [], (msg) => chatMsg(msg, s));
+  const msgs = chat.thread || [];
+  const thread = map(msgs, (msg) => chatMsg(msg, s));
+  const isEmpty = msgs.length === 0;
 
   return `
   <div class="chat-head">
@@ -181,7 +202,7 @@ function chatSurface(s) {
       </div>`)}
     </div>
   </div>
-  <div class="chat-thread">${thread}</div>
+  <div class="chat-thread">${isEmpty ? chatWelcome() : thread}</div>
   <div class="composer-wrap">
     <button class="scroll-btm ocbtn" data-act="scrollChatBottom" title="Jump to latest" style="position:absolute;right:16px;top:-44px;z-index:25;width:34px;height:34px;border-radius:50%;background:var(--panel,#1e2025);border:1px solid var(--border);color:var(--fg);cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)">↓</button>
     ${when(slashOpen, `

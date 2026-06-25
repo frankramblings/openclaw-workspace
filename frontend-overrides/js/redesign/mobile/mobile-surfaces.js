@@ -62,8 +62,11 @@ export function mChat(s) {
   return `
   <div class="m-head">
     <div class="m-gary">
-      <div class="m-gav"><img src="${AVATAR}" alt="Gary"></div>
-      <div style="flex:1;min-width:0"><div class="nm">Gary</div><div class="status"><span class="dot"></span>online · opus-4</div></div>
+      <button class="m-gary-tap" data-act="openConvSheet" title="Conversations" style="display:contents">
+        <div class="m-gav"><img src="${AVATAR}" alt="Gary"></div>
+        <div style="flex:1;min-width:0"><div class="nm">Gary <span style="font-size:10px;color:var(--faint)">▾</span></div><div class="status"><span class="dot"></span>${s.live?.chat?.title || 'New chat'}</div></div>
+      </button>
+      <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model" style="font-size:10px;padding:4px 9px;border:1px solid var(--bd);border-radius:999px;background:transparent;color:var(--mut);cursor:pointer;white-space:nowrap">${esc(s.live?.chat?.model || 'opus-4')}</button>
       ${when(!focused, `<button class="m-icon-btn" data-act="newChat" title="New chat">${I.plus(17)}</button>`)}
     </div>
   </div>

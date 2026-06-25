@@ -79,6 +79,7 @@ function buildGroups(sessions, activeId) {
   let count = 0;
   for (const s of sessions) {
     if (count >= 20) break;
+    if (s.archived) continue;
     const label = bucketFor(s.updated, now);
     byLabel[label].push({
       id: s.id,
@@ -1026,6 +1027,7 @@ export const actions = {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
+    chat.rowMenuOpen = null;
     const wasActive = chat.activeId === id;
     try { await apiJson(`/api/session/${id}/archive`, {}); } catch (_) {}
     if (wasActive) { chat.activeId = null; storeActiveId(null); chat.thread = []; chat.title = 'New chat'; chat.subtitle = ''; }

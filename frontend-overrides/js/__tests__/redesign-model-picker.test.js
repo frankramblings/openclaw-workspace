@@ -69,3 +69,22 @@ test('provider icon follows the endpoint before the underlying model family', ()
   assert.equal(providerKey('perplexity-web', 'claude-sonnet-4-6'), 'perplexity');
   assert.match(providerLogo('perplexity-web', 'claude-sonnet-4-6'), /<svg/);
 });
+
+test('opening the mobile model sheet loads the shared model catalog', async () => {
+  globalThis.location = { origin: 'http://localhost' };
+  const [{ mobileActions }, { runtime }] = await Promise.all([
+    import('../redesign/mobile/mobile-app.js'),
+    import('../redesign/live/runtime.js'),
+  ]);
+  const s = { live: {}, mModelSheetOpen: false };
+  let loaded = 0;
+  const priorActions = runtime.actions;
+  runtime.actions = { loadModelOptions: async () => { loaded += 1; } };
+  try {
+    await mobileActions(s).openModelSheet();
+    assert.equal(s.mModelSheetOpen, true);
+    assert.equal(loaded, 1);
+  } finally {
+    runtime.actions = priorActions;
+  }
+});

@@ -846,15 +846,12 @@ export const actions = {
     runtime.render();
   },
 
-  // Composer model picker: open/close the menu, lazily loading the catalog
-  // from /api/models (items → flattened {mid, name}).
-  toggleModelMenu: async () => {
+  // Shared model-picker loader. Desktop uses a popover; mobile uses a sheet,
+  // but both need the same endpoint-grouped catalog and current default.
+  loadModelOptions: async () => {
     const state = runtime.state;
     if (!state) return;
-    const open = !state.modelMenuOpen;
-    state.modelMenuOpen = open;
-    runtime.render();
-    if (open && !(state.live && state.live.modelGroups)) {
+    if (!(state.live && state.live.modelGroups)) {
       try {
         const data = await apiGet('/api/models');
         const items = (data && data.items) || [];
@@ -884,14 +881,23 @@ export const actions = {
     }
     // Reflect the current default-for-new-chats (as a composite id) so the ★ lands
     // on exactly one row.
-    if (open) {
-      try {
-        const dc = await apiGet('/api/default-chat');
-        state.live = state.live || {};
-        state.live.defaultModel = ((dc && dc.endpoint_id) || '') + MODEL_SEP + ((dc && dc.model) || '');
-        runtime.render();
-      } catch (_) { /* ignore */ }
-    }
+    try {
+      const dc = await apiGet('/api/default-chat');
+      state.live = state.live || {};
+      state.live.defaultModel = ((dc && dc.endpoint_id) || '') + MODEL_SEP + ((dc && dc.model) || '');
+      runtime.render();
+    } catch (_) { /* ignore */ }
+  },
+
+  // Composer model picker: open/close the desktop popover, then lazily load
+  // the shared catalog. Mobile calls loadModelOptions directly for its sheet.
+  toggleModelMenu: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    const open = !state.modelMenuOpen;
+    state.modelMenuOpen = open;
+    runtime.render();
+    if (open) await actions.loadModelOptions();
   },
 
   // ★ Set a model as the default for NEW chats (persists via POST /api/default-chat).

@@ -68,7 +68,11 @@ export function mobileActions(state) {
     openConvSheet: () => { closeSheets(); state.mConvSheetOpen = true; },
     closeConvSheet: () => { state.mConvSheetOpen = false; },
     mSelectSession: (id) => { state.mConvSheetOpen = false; if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(id); },
-    openModelSheet: () => { closeSheets(); state.mModelSheetOpen = true; },
+    openModelSheet: async () => {
+      closeSheets();
+      state.mModelSheetOpen = true;
+      if (runtime.actions && runtime.actions.loadModelOptions) await runtime.actions.loadModelOptions();
+    },
     closeModelSheet: () => { state.mModelSheetOpen = false; },
     mSetModel: (id) => { state.mModelSheetOpen = false; if (runtime.actions && runtime.actions.setModel) runtime.actions.setModel(id); },
     mSetDefaultModel: (id) => { if (runtime.actions && runtime.actions.setDefaultModel) runtime.actions.setDefaultModel(id); },

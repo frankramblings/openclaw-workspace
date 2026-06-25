@@ -40,6 +40,35 @@ the loop Granola → Obsidian (preservation) → Inbox (triage) → Asana (follo
 - No visual redesign / revert to the classic look. Functionality only.
 - No new auth: Gmail (himalaya), Slack (keychain), Asana (PAT) are already wired.
 
+## Actual starting state (discovered)
+
+A prior session already did part of this in the **canonical** `frontend-overrides/`
+layer (the live `frontend/` is generated/stale, which is why the deployed inbox
+looks like a skeleton). What exists:
+
+- `live/inbox-logic.js` — pure, **unit-tested** helpers: `srcStyle`, `actionLabel`,
+  `cardActions(item)`, `filterVisible(items,{dismissed,filter})`,
+  `sourceCounts(items,opts,backendSources)`, `openUrlFor(item)`. Test:
+  `node scripts/test/inbox-logic.test.mjs`.
+- `live/inbox.js` — `load()` (maps feed incl. `actions[]`, `rec`, `meta`, all 5
+  sources, `sources`/`errors`); actions `archive/delete/mark_read/complete/reviewed`
+  (→ `runAction`), tolerant `dismiss`, `open` (click-out + gmail msgid resolve),
+  `setFilter`. `dismissed` ids are **strings** here. `triageAll` is a placeholder
+  (bulk-dismiss, not real triage). Captures `_lastUndoTs` but nothing consumes it.
+
+What's **not** wired: the render layer. `inboxSurface()` (`surfaces.js`) and
+`mInbox()` (`mobile-surfaces.js`) still hardcode `data-act="dismiss"` on every
+button and ignore `cardActions`/`filterVisible`/`sourceCounts`/`inboxFilter`. So the
+logic is reachable in code but from no rendered control. Genuinely missing:
+read-in-place reader, snooze, undo toast + history, real triage, Hand-to-Gary,
+tappable rec chip, working/extended filter chips, mobile right-swipe, and all of
+Add-to-Asana (frontend + backend). There is no `package.json`; JS tests are
+self-executing `.mjs` run with `node <file>`. Build deploy: edit
+`frontend-overrides/`, run `scripts/sync-frontend.sh`, then restart the service.
+
+The leftover numeric mock `dismiss` in `app.js` and `Number(d.id)` in the mobile
+gesture can desync `state.dismissed` (string vs number) — fix as part of the rewire.
+
 ## Architecture fit
 
 The shell (`app.js`) rebuilds `root.innerHTML` wholesale on every `render()` and

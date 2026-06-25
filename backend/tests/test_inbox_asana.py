@@ -78,3 +78,49 @@ def test_map_task_detail_handles_missing_bits():
     assert d["name"] == "(no name)"
     assert d["comments"] == []
     assert d["assignee"] is None
+
+
+import pytest
+
+@pytest.mark.asyncio
+async def test_create_task_posts_to_project(monkeypatch):
+    calls = {}
+    async def fake_api(method, path, body=None):
+        calls["method"], calls["path"], calls["body"] = method, path, body
+        return {"data": {"gid": "999"}}
+    monkeypatch.setattr(asana, "_api", fake_api)
+    monkeypatch.setattr(asana._inbox_settings, "asana_project_gid", lambda: "PROJ")
+    gid = await asana.create_task("Follow up with Taylor", "from meeting note", "2026-07-01", "SEC")
+    assert gid == "999"
+    assert calls["method"] == "POST"
+    assert calls["path"] == "/tasks"
+    data = calls["body"]["data"]
+    assert data["name"] == "Follow up with Taylor"
+    assert data["notes"] == "from meeting note"
+    assert data["due_on"] == "2026-07-01"
+    # placed in the Backlog section of the project
+    assert {"project": "PROJ", "section": "SEC"} in data["memberships"]
+
+@pytest.mark.asyncio
+async def test_create_task_without_due_or_section(monkeypatch):
+    captured = {}
+    async def fake_api(method, path, body=None):
+        captured["body"] = body
+        return {"data": {"gid": "1"}}
+    monkeypatch.setattr(asana, "_api", fake_api)
+    monkeypatch.setattr(asana._inbox_settings, "asana_project_gid", lambda: "PROJ")
+    await asana.create_task("x", "y", None, None)
+    data = captured["body"]["data"]
+    assert "due_on" not in data
+    assert data["projects"] == ["PROJ"]
+
+@pytest.mark.asyncio
+async def test_delete_task(monkeypatch):
+    calls = {}
+    async def fake_api(method, path, body=None):
+        calls["method"], calls["path"] = method, path
+        return {"data": {}}
+    monkeypatch.setattr(asana, "_api", fake_api)
+    await asana.delete_task("42")
+    assert calls["method"] == "DELETE"
+    assert calls["path"] == "/tasks/42"

@@ -154,3 +154,24 @@ async def complete(gid: str) -> None:
 
 async def uncomplete(gid: str) -> None:
     await _api("PUT", f"/tasks/{gid}", {"data": {"completed": False}})
+
+
+async def create_task(name: str, notes: str, due_on: str | None,
+                      section_gid: str | None) -> str:
+    """Create a task in the Frank To-Dos project. When section_gid is given the
+    task is placed in that section via memberships; otherwise it lands in the
+    project's default section. Returns the new task gid."""
+    project = _inbox_settings.asana_project_gid()
+    data: dict = {"name": name, "notes": notes}
+    if section_gid:
+        data["memberships"] = [{"project": project, "section": section_gid}]
+    else:
+        data["projects"] = [project]
+    if due_on:
+        data["due_on"] = due_on
+    resp = await _api("POST", "/tasks", {"data": data})
+    return str(resp["data"]["gid"])
+
+
+async def delete_task(gid: str) -> None:
+    await _api("DELETE", f"/tasks/{gid}")

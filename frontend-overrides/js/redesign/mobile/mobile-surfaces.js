@@ -9,6 +9,7 @@ import { renderActivity } from '../chat-activity.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
 import { cardButtonsHtml, chipRowHtml, filterVisible, sourceCounts } from '../live/inbox-logic.js';
+import { detailEndpoint } from '../live/inbox-detail.js';
 
 const ic = {
   mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
@@ -115,6 +116,7 @@ export function mInbox(s) {
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
 
+  const mBodyAttr = (it) => detailEndpoint(it) ? ` data-act="openReader" data-arg="${esc(it.id)}" style="cursor:pointer"` : '';
   // swipeable card (NEEDS YOU); offset driven by s.swipe for the active id
   const swipeCard = (it) => {
     const off = (s.swipe && s.swipe.id === it.id) ? s.swipe.dx : 0;
@@ -123,7 +125,7 @@ export function mInbox(s) {
       <div class="m-swipe-bg"><div class="act">${ic.archive()}<span>Archive</span></div></div>
       <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
         <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>
-        <div class="body">${esc(stripMd(it.body))}</div>
+        <div class="body"${mBodyAttr(it)}>${esc(stripMd(it.body))}</div>
         <div class="actions">${cardButtonsHtml(it, esc)}</div>
       </div>
     </div>`;
@@ -131,10 +133,64 @@ export function mInbox(s) {
   const fyiCard = (it) => `
     <div class="m-card fyi">
       <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span></div>
-      <div class="body">${esc(stripMd(it.body))}</div>
+      <div class="body"${mBodyAttr(it)}>${esc(stripMd(it.body))}</div>
       <button class="m-ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
       <div class="actions">${cardButtonsHtml(it, esc)}</div>
     </div>`;
+
+  const mReaderBody = (r) => {
+    if (!r) return '';
+    if (r.loading) return `<div class="ird-loading" style="padding:20px;color:var(--faint)">Loading…</div>`;
+    if (r.error) return `<div style="padding:16px;color:var(--red)">${esc(r.error)}</div>`;
+    const d = r.data || {};
+    if (r.kind === 'slack') {
+      const msgs = Array.isArray(d.messages) ? d.messages : [];
+      return `<div class="ird-slack-thread" style="padding:12px 16px">${msgs.map((m) =>
+        `<div style="margin-bottom:10px"><b style="font-size:12px;color:var(--faint)">${esc(String(m.user || m.username || ''))}</b><div style="font-size:13px;line-height:1.5">${esc(String(m.text || ''))}</div></div>`
+      ).join('')}${!msgs.length ? '<div style="color:var(--faint)">No messages.</div>' : ''}</div>`;
+    }
+    if (r.kind === 'asana') {
+      const notes = esc(String(d.notes || '')).replace(/\n/g, '<br>');
+      const assignee = d.assignee && (d.assignee.name || d.assignee) ? esc(String(d.assignee.name || d.assignee)) : null;
+      const due = d.due_on ? esc(String(d.due_on)) : null;
+      return `<div style="padding:12px 16px;font-size:13px">
+        ${when(assignee, `<div style="margin-bottom:6px;color:var(--faint)">Assignee: <b style="color:var(--fg)">${assignee}</b></div>`)}
+        ${when(due, `<div style="margin-bottom:6px;color:var(--faint)">Due: <b style="color:var(--fg)">${due}</b></div>`)}
+        ${notes ? `<div style="white-space:pre-wrap;line-height:1.5">${notes}</div>` : ''}
+      </div>`;
+    }
+    if (r.kind === 'gmail') {
+      const rawBody = d.body || d.body_html || '';
+      const isHtml = /<[a-z!][\s\S]*>/i.test(String(rawBody));
+      let text = String(rawBody);
+      if (isHtml) {
+        text = text
+          .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, ' ')
+          .replace(/<br\s*\/?>/gi, '\n').replace(/<\/?(p|div|li|h[1-6])\s*\/?>/gi, '\n')
+          .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+          .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
+          .replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+      }
+      const paras = text.split(/\n\n+/).map((p) => p.replace(/\n/g, ' ').trim()).filter(Boolean);
+      return `<div style="padding:12px 16px;font-size:13px;line-height:1.6">${paras.map((p) => `<p style="margin:0 0 10px">${esc(p)}</p>`).join('')}</div>`;
+    }
+    return `<div style="padding:16px;color:var(--faint)">No content.</div>`;
+  };
+
+  const inboxReaderSheet = s.inboxReader ? (() => {
+    const r = s.inboxReader;
+    const item = items.find((m) => m.id === r.id) || {};
+    const title = item.who || r.id || 'Detail';
+    return `
+    <div class="m-sheet-scrim" data-act="closeReader" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50"></div>
+    <div class="m-sheet" style="position:fixed;left:0;right:0;bottom:0;max-height:80vh;background:var(--panel,#1e2025);border-radius:16px 16px 0 0;display:flex;flex-direction:column;z-index:51;overflow:hidden">
+      <div style="display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <span style="font-weight:600;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title)}</span>
+        <span data-act="closeReader" style="cursor:pointer;color:var(--faint);font-size:20px;line-height:1;padding:2px 6px">✕</span>
+      </div>
+      <div style="overflow-y:auto;flex:1">${mReaderBody(r)}</div>
+    </div>`;
+  })() : '';
 
   return `
   <div class="m-head">
@@ -148,7 +204,8 @@ export function mInbox(s) {
     ${when(needs.length > 0, `<div class="m-grp needs">NEEDS YOU · ${needs.length}</div>${map(needs, swipeCard)}`)}
     ${when(fyi.length > 0, `<div class="m-grp fyi">AI-SUGGESTED · FYI · ${fyi.length}</div>${map(fyi, fyiCard)}`)}
     ${when(visible.length === 0, `<div class="inbox-zero" style="padding:60px 0"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">Gary cleared the feed.</div></div>`)}
-  </div>`;
+  </div>
+  ${inboxReaderSheet}`;
 }
 
 // ---- email list -----------------------------------------------------------

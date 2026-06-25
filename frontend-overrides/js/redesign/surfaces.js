@@ -5,6 +5,7 @@
 import { I, icon } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
 import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml } from './live/inbox-logic.js';
+import { detailEndpoint } from './live/inbox-detail.js';
 import {
   AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES, PAST_RESEARCH,
   LIBRARY, KIND_STYLE, LIB_FILTERS, NOTES, EMAILS, INBOX,
@@ -354,6 +355,81 @@ function composeOverlay(s) {
 }
 
 // ===========================================================================
+// INBOX READER OVERLAY (desktop)
+// ===========================================================================
+function inboxReaderBody(r) {
+  if (r.loading) return `<div class="ird-loading">Loading…</div>`;
+  if (r.error) return `<div class="ird-error" style="color:var(--red)">${esc(r.error)}</div>`;
+  const d = r.data || {};
+  if (r.kind === 'slack') {
+    const msgs = Array.isArray(d.messages) ? d.messages : [];
+    if (!msgs.length) return `<div class="ird-empty">No messages found.</div>`;
+    return `<div class="ird-slack-thread">${msgs.map((m) =>
+      `<div class="ird-slack-msg"><span class="ird-slack-user">${esc(String(m.user || m.username || ''))}</span><span class="ird-slack-text">${esc(String(m.text || ''))}</span></div>`
+    ).join('')}</div>`;
+  }
+  if (r.kind === 'asana') {
+    const notes = esc(String(d.notes || '')).replace(/\n/g, '<br>');
+    const assignee = d.assignee && (d.assignee.name || d.assignee) ? esc(String(d.assignee.name || d.assignee)) : null;
+    const due = d.due_on ? esc(String(d.due_on)) : null;
+    const stories = Array.isArray(d.stories) ? d.stories : (Array.isArray(d.comments) ? d.comments : []);
+    const commentHtml = stories.length
+      ? `<div class="ird-asana-comments">${stories.filter((c) => c.type === 'comment' || c.text || c.body).map((c) =>
+          `<div class="ird-asana-comment"><span class="ird-slack-user">${esc(String((c.created_by && c.created_by.name) || c.author || ''))}</span><span class="ird-slack-text">${esc(String(c.text || c.body || ''))}</span></div>`
+        ).join('')}</div>`
+      : '';
+    return `<div class="ird-asana">
+      ${when(assignee, `<div class="ird-meta">Assignee: <b>${assignee}</b></div>`)}
+      ${when(due, `<div class="ird-meta">Due: <b>${due}</b></div>`)}
+      ${notes ? `<div class="ird-notes" style="white-space:pre-wrap;margin-top:8px">${notes}</div>` : ''}
+      ${commentHtml}
+    </div>`;
+  }
+  if (r.kind === 'gmail') {
+    // Safe approach: use email.js stripHtml logic is not importable here at render time,
+    // so we render paragraphs from the plain body field (already stripped by the API)
+    // or fall back to escaped raw body. This is SAFE — no HTML injection.
+    const rawBody = d.body || d.body_html || '';
+    // Detect HTML; strip tags server-side text is preferred but if HTML slips through, escape it.
+    const isHtml = /<[a-z!][\s\S]*>/i.test(String(rawBody));
+    if (isHtml) {
+      // Strip HTML client-side by replacing tags with spaces, then escape.
+      const stripped = String(rawBody)
+        .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, ' ')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/?(p|div|tr|li|h[1-6]|blockquote)\s*\/?>/gi, '\n')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
+        .replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+      const paras = stripped.split(/\n\n+/).map((p) => p.replace(/\n/g, ' ').trim()).filter(Boolean);
+      return `<div class="ird-gmail">${paras.map((p) => `<p>${esc(p)}</p>`).join('')}</div>`;
+    }
+    const paras = String(rawBody).trim().split(/\n\n+/).map((p) => p.replace(/\n/g, ' ').trim()).filter(Boolean);
+    return `<div class="ird-gmail">${paras.length ? paras.map((p) => `<p>${esc(p)}</p>`).join('') : `<p>${esc(String(rawBody))}</p>`}</div>`;
+  }
+  return `<div class="ird-empty">No content.</div>`;
+}
+
+function inboxReaderOverlay(s) {
+  const r = s.inboxReader;
+  if (!r) return '';
+  const items = s.live?.inbox?.items ?? INBOX;
+  const item = items.find((m) => m.id === r.id) || {};
+  const title = item.who || r.id || 'Detail';
+  return `
+    <div class="inbox-reader-scrim" data-act="closeReader" style="position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:40"></div>
+    <div class="inbox-reader-panel" style="position:absolute;right:0;top:0;bottom:0;width:min(480px,100%);background:var(--panel,#1e2025);border-left:1px solid var(--border);display:flex;flex-direction:column;z-index:41;overflow:hidden">
+      <div class="ird-header" style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <span style="font-weight:600;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title)}</span>
+        <span data-act="closeReader" style="cursor:pointer;color:var(--faint);font-size:18px;line-height:1;padding:2px 4px" title="Close">✕</span>
+      </div>
+      <div class="ird-body" style="flex:1;overflow-y:auto;padding:16px;font-size:13px;line-height:1.6">
+        ${inboxReaderBody(r)}
+      </div>
+    </div>`;
+}
+
+// ===========================================================================
 // INBOX
 // ===========================================================================
 function inboxSurface(s) {
@@ -362,23 +438,24 @@ function inboxSurface(s) {
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
 
+  const bodyAttr = (it) => detailEndpoint(it) ? ` data-act="openReader" data-arg="${esc(it.id)}" style="cursor:pointer"` : '';
   const needsCard = (it) => `
     <div class="inbox-card">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
-      <div class="body">${esc(stripMd(it.body))}</div>
+      <div class="body"${bodyAttr(it)}>${esc(stripMd(it.body))}</div>
       ${when(it.source === 'obsidian' && it.rec && it.rec.due, `<div class="ai-pill">✦ task · due ${esc((it.rec || {}).due || '')}</div>`)}
       ${cardButtonsHtml(it, esc)}
     </div>`;
   const fyiCard = (it) => `
     <div class="inbox-card fyi">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
-      <div class="body">${esc(stripMd(it.body))}</div>
+      <div class="body"${bodyAttr(it)}>${esc(stripMd(it.body))}</div>
       <button class="ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
       ${cardButtonsHtml(it, esc)}
     </div>`;
 
   return `
-  <div class="inbox-col">
+  <div class="inbox-col" style="position:relative">
     <div class="inbox-head">
       <div class="row1">
         <span class="ttl">Inbox</span><span class="cnt">${visible.length} to triage</span>
@@ -405,6 +482,7 @@ function inboxSurface(s) {
         </div>
         <div class="ies-actions"><button class="btn-sm" data-act="confirmAddAsana">Add task</button><button class="btn-sm ghost" data-act="closeEdit">Cancel</button></div>
       </div>`)}
+    ${when(!!s.inboxReader, inboxReaderOverlay(s))}
   </div>`;
 }
 

@@ -9,6 +9,7 @@
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
 import { srcStyle, openUrlFor, dueChipToISO } from './inbox-logic.js';
+import { detailEndpoint } from './inbox-detail.js';
 
 const ageLabel = (h) => {
   const n = Number(h) || 0;
@@ -270,6 +271,30 @@ export const actions = {
     } catch (e) {
       state.inboxToast = { msg: "Triage unavailable — try again", undoTs: null };
     }
+    runtime.render();
+  },
+
+  // Open in-place reader for gmail / slack / asana. Falls back to click-out
+  // for sources without a detail endpoint (obsidian, documents, etc.).
+  openReader: async (id) => {
+    const state = runtime.state;
+    const item = findItem(state, id);
+    if (!item) return;
+    const ep = detailEndpoint(item);
+    if (!ep) { actions.open(id); return; }
+    state.inboxReader = { id: String(id), kind: ep.kind, loading: true, data: null, error: null };
+    runtime.render();
+    try {
+      const data = await apiGet(ep.url);
+      state.inboxReader = { id: String(id), kind: ep.kind, loading: false, data, error: null };
+    } catch (e) {
+      state.inboxReader = { id: String(id), kind: ep.kind, loading: false, data: null, error: String(e && e.message || 'Failed to load') };
+    }
+    runtime.render();
+  },
+
+  closeReader: () => {
+    runtime.state.inboxReader = null;
     runtime.render();
   },
 

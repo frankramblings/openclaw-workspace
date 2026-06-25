@@ -8,7 +8,7 @@ import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
-import { cardButtonsHtml, chipRowHtml, filterVisible, sourceCounts } from '../live/inbox-logic.js';
+import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 
 const ic = {
@@ -120,10 +120,15 @@ export function mInbox(s) {
   // swipeable card (NEEDS YOU); offset driven by s.swipe for the active id
   const swipeCard = (it) => {
     const off = (s.swipe && s.swipe.id === it.id) ? s.swipe.dx : 0;
+    // Invites don't auto-act on a right swipe (no accidental "Yes" → organizer
+    // email) — the hint tells the user to tap a button instead.
+    const rightHint = isInvite(it)
+      ? '📅<span>Tap Yes / Maybe / No</span>'
+      : '✓<span>Action</span>';
     return `
     <div class="m-swipe" data-swipe-id="${it.id}">
       <div class="m-swipe-bg">
-        <div class="act act-right">✓<span>Action</span></div>
+        <div class="act act-right">${rightHint}</div>
         <div class="act act-left">✕<span>Dismiss · ⏰</span></div>
       </div>
       <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">

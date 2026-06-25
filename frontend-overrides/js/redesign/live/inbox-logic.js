@@ -53,16 +53,23 @@ const CLEAR_VERBS = ['add_asana', 'archive', 'mark_read', 'complete', 'reviewed'
 // Produce the ordered button descriptors a card should render.
 // role: 'primary' (the clear-action), 'ghost' (secondary verbs like delete),
 //       'x' (dismiss → the ✕), 'icon' (snooze / open / gary affordances).
+// A calendar invite awaiting a Yes/Maybe/No. Detected by source, the backend
+// `rsvp` action, or the meta.isInvite flag — any one is enough.
+export function isInvite(item) {
+  const allowed = Array.isArray(item && item.actions)
+    ? item.actions.map((a) => String(a).toLowerCase()) : [];
+  return (item && item.source === 'calendar')
+    || allowed.includes('rsvp')
+    || !!(item && item.meta && item.meta.isInvite);
+}
+
 export function cardActions(item) {
   const allowed = Array.isArray(item && item.actions) ? item.actions.map((a) => String(a).toLowerCase()) : [];
 
   // Calendar invite: Yes / Maybe / No write the RSVP straight to Google. There
   // is no "clear verb" — the three responses ARE the actions. Dismiss stays the
   // top-right ✕; open/snooze/gary remain as universal affordances.
-  const isInvite = (item && item.source === 'calendar')
-    || allowed.includes('rsvp')
-    || !!(item && item.meta && item.meta.isInvite);
-  if (isInvite) {
+  if (isInvite(item)) {
     return [
       { action: 'rsvpYes', label: 'Yes', role: 'primary' },
       { action: 'rsvpMaybe', label: 'Maybe', role: 'ghost' },

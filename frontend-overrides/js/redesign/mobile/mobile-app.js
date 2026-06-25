@@ -9,7 +9,7 @@ import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore
 import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvSheet, renderModelSheet } from './mobile-sheets.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
-import { cardActions, swipeIntent } from '../live/inbox-logic.js';
+import { cardActions, isInvite, swipeIntent } from '../live/inbox-logic.js';
 
 const PUSHED_SURFACES = new Set(['research', 'library', 'notes', 'settings']);
 
@@ -159,6 +159,15 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
         // Find the primary action for this item and call it.
         const items = state.live && state.live.inbox && state.live.inbox.items;
         const item = Array.isArray(items) ? items.find((m) => String(m.id) === id) : null;
+        // Calendar invites: never auto-RSVP on a swipe — sending "Yes" emails
+        // the organizer, far too easy to fire by accident. Require a button tap.
+        if (item && isInvite(item)) {
+          d.card.classList.remove('swiping');
+          d.card.classList.add('snap');
+          d.card.style.transform = 'translateX(0)';
+          render();
+          return;
+        }
         const actions = item ? cardActions(item) : [];
         const primary = actions.find((a) => a.role === 'primary');
         if (primary && runtime.actions && runtime.actions[primary.action]) {

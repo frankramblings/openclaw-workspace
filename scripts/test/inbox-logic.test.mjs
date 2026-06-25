@@ -3,6 +3,7 @@ import {
   srcStyle,
   actionLabel,
   cardActions,
+  isInvite,
   filterVisible,
   sourceCounts,
   openUrlFor,
@@ -78,6 +79,13 @@ assert.ok(!invite.some((a) => a.role === 'x'), 'invite has no row ✕ (dismiss i
 const inviteByMeta = cardActions({ source: 'gmail', meta: { isInvite: true } });
 assert.equal(inviteByMeta.find((a) => a.role === 'primary').action, 'rsvpYes',
   'meta.isInvite alone triggers RSVP buttons');
+
+// isInvite detection (used by mobile swipe guard + render): source/action/meta.
+assert.ok(isInvite({ source: 'calendar' }), 'calendar source is an invite');
+assert.ok(isInvite({ source: 'gmail', actions: ['rsvp'] }), 'rsvp action marks an invite');
+assert.ok(isInvite({ meta: { isInvite: true } }), 'meta.isInvite marks an invite');
+assert.ok(!isInvite({ source: 'gmail', actions: ['archive'] }), 'plain gmail is not an invite');
+assert.ok(!isInvite({}), 'empty item is not an invite');
 
 // --- filterVisible: dismissed hidden, source filter applied -----------------
 const items = [

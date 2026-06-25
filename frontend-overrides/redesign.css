@@ -38,7 +38,7 @@ body{background:var(--bg);font-family:var(--sans);color:var(--fg);-webkit-font-s
 textarea,input{font-family:var(--sans);color:var(--fg);outline:none}
 textarea::placeholder,input::placeholder{color:var(--faint)}
 input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
-::selection{background:rgba(79,227,209,.28)}
+::selection{background:color-mix(in srgb,var(--teal) 28%,transparent)}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:#2d2f36;border-radius:7px;border:2px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-thumb:hover{background:#3a3d45;background-clip:padding-box}

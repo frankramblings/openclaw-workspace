@@ -204,7 +204,7 @@ function attachChip(a) {
   return `<div class="atch-chip atch-file"><span class="atch-ext">${esc(ext.slice(0,4) || 'file')}</span><span class="atch-name" title="${esc(name)}">${esc(name)}</span>${rm}</div>`;
 }
 
-const QUICK_CHIPS = [
+export const QUICK_CHIPS = [
   { label: 'What can you do?', prompt: 'What can you do?' },
   { label: 'Summarize my recent sessions', prompt: 'Summarize my recent sessions' },
   { label: 'Help me configure a channel', prompt: 'Help me configure a channel' },

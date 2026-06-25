@@ -4,6 +4,7 @@
 import { I, icon } from '../icons.js';
 import { esc, map, when, stripMd } from '../dom.js';
 import { AVATAR, EMAILS, INBOX } from '../data.js';
+import { QUICK_CHIPS } from '../surfaces.js';
 import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
 import { renderMarkdown } from '../markdown.js';
@@ -75,11 +76,16 @@ export function mChat(s) {
     const _hit = _ml.find((m) => m.id === _curId) || _ml.find((m) => m.mid === model);
     if (_hit && _hit.name) modelLabel = _hit.name;
   }
-  // Empty thread (new/cold chat) used to render a fully blank screen — show a
-  // centered prompt instead, reusing the shared .inbox-zero empty-state shell.
-  const threadHtml = thread.length
-    ? map(thread, (msg) => mChatMsg(msg, s))
-    : `<div class="inbox-zero m-chat-zero"><div class="ico"><img src="${AVATAR}" alt="Gary"></div><div class="t">Message Gary to start</div><div class="d">Ask anything — or pull up Terminal · Files above.</div></div>`;
+  const chips = QUICK_CHIPS.map((c) =>
+    `<button class="qchip occhip" data-act="fillComposer" data-arg="${esc(c.prompt)}">${esc(c.label)}</button>`
+  ).join('');
+  const mWelcome = `<div class="chat-welcome">
+    <div class="cw-av"><img src="${AVATAR}" alt="Gary"></div>
+    <div class="cw-name">Gary</div>
+    <div class="cw-hint">Type a message below &nbsp;·&nbsp; <kbd>/</kbd> for commands</div>
+    <div class="cw-chips">${chips}</div>
+  </div>`;
+  const threadHtml = thread.length ? map(thread, (msg) => mChatMsg(msg, s)) : mWelcome;
   // composing layout: keyboard up, tab bar hidden (handled by shell), composer lifts
   return `
   <div class="m-head">

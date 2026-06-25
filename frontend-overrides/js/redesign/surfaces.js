@@ -103,6 +103,31 @@ function renderAttachments(attach) {
   return `<div class="msg-attachments">${items}</div>`;
 }
 
+// Interleaved rendering for history turns: round_texts[0] → mini-trail for
+// round 1 tools → round_texts[1] → mini-trail for round 2 tools → …
+// Each tool group uses a scoped id so collapse state doesn't collide.
+function renderRounds(m, s) {
+  const rawRts = m.round_texts;
+  const byRound = {};
+  (m.activity.steps || []).forEach(st => {
+    const r = st.round || 1;
+    (byRound[r] = byRound[r] || []).push(st);
+  });
+  const maxRound = Object.keys(byRound).reduce((mx, r) => Math.max(mx, +r), 0);
+  let html = '';
+  const rt0 = rawRts[0];
+  if (rt0 && rt0.trim()) html += renderMarkdown(rt0);
+  for (let r = 1; r <= maxRound; r++) {
+    const rSteps = byRound[r] || [];
+    if (rSteps.length) {
+      html += renderActivity({ id: `${m.id}-r${r}`, activity: { status: 'done', steps: rSteps } }, s);
+    }
+    const rt = rawRts[r];
+    if (rt && rt.trim()) html += renderMarkdown(rt);
+  }
+  return html;
+}
+
 // one chat message → html (assistant prose / user bubble). Live thread items:
 // { role:'assistant'|'user', time, model, text, activity? }
 export function chatMsg(m, s) {
@@ -118,7 +143,9 @@ export function chatMsg(m, s) {
   const notice = m.error
     ? `<div class="msg-error" style="margin-top:6px;display:flex;gap:7px;align-items:flex-start;color:var(--red,#e5616a);font-size:13px;line-height:1.45;background:rgba(229,97,106,.08);border:1px solid rgba(229,97,106,.28);border-radius:8px;padding:8px 11px"><span aria-hidden="true">⚠</span><span>${esc(m.notice || 'No response from this model.')}</span></div>`
     : '';
-  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${renderActivity(m, s)}${paras}${notice}${hasText && !m.error ? msgTools(m) : ''}</div></div>`;
+  const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
+    ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
+  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m) : ''}</div></div>`;
 }
 
 

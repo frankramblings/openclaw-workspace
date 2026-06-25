@@ -123,6 +123,7 @@ function historySteps(toolEvents, msgIdx) {
     steps.push({
       id: `h${msgIdx}-s${i}`,
       kind,
+      round: ev.round || 1,
       label: PAST[kind] || 'Ran',
       file: ev.command || '',
       meta: failed ? `exit ${ev.exit_code}` : '',
@@ -157,9 +158,12 @@ async function fetchThread(id, fallbackModel, name) {
       if (steps.length) {
         // The final answer is the LAST non-empty round (backend `content` is the
         // first); render it below the trail, like the live multi-round view.
-        const rts = Array.isArray(meta.round_texts)
-          ? meta.round_texts.filter((t) => t && t.trim()) : [];
+        const rawRts = Array.isArray(meta.round_texts) ? meta.round_texts : [];
+        const rts = rawRts.filter((t) => t && t.trim());
         if (rts.length) msg.text = rts[rts.length - 1];
+        // Keep the full (unfiltered) round array for interleaved rendering in
+        // chatMsg — indices must line up with tool_event round numbers.
+        if (rawRts.length > 1) msg.round_texts = rawRts;
         msg.activity = {
           status: 'done',
           worked: `Worked · ${steps.length} step${steps.length === 1 ? '' : 's'}`,
@@ -295,7 +299,11 @@ function toolKind(name) {
 const PRESENT = { read: 'Reading', grep: 'Searching', edit: 'Editing', run: 'Running', web: 'Searching the web', generic: 'Working' };
 const PAST = { read: 'Read', grep: 'Searched', edit: 'Edited', run: 'Ran', web: 'Searched the web', generic: 'Ran tool' };
 
-function fmtElapsed(ms) { return `${Math.max(0, Math.round((Date.now() - ms) / 1000))}s`; }
+function fmtElapsed(ms) {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return `${s}s`;            // under a minute: "42s"
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;  // 159s → "2:39"
+}
 
 function lineColor(line) {
   const t = String(line).trim();

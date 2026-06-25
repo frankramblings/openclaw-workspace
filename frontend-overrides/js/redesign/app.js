@@ -18,7 +18,7 @@ import { wireResizableSidebars } from './resize-sidebars.js';
 // ---- state ---------------------------------------------------------------
 const state = {
   surface: 'chat',
-  railExpanded: true,
+  railExpanded: false,
   // chat
   draft: '', forceSlash: false, chatMode: 'agent',
   chatUI: { trail: {}, step: {}, group: {} }, // activity-trail collapse (msg/step/group)

@@ -107,7 +107,8 @@ assert.ok(html.includes('data-act="delete"'), 'ghost delete button present');
 assert.ok(html.includes('data-act="open"'), 'open affordance present');
 assert.ok(html.includes('data-act="snooze"'), 'snooze affordance present');
 assert.ok(html.includes('data-act="gary"'), 'hand-to-gary affordance present');
-assert.ok(html.includes('data-act="dismiss"'), 'dismiss ✕ present');
+assert.ok(!html.includes('data-act="dismiss"'),
+  'dismiss ✕ is NOT in the action row — it lives as the top-right card ✕, no duplicate');
 assert.ok(html.includes('data-arg="a1"'), 'every button carries the item id');
 assert.ok(!/data-act="dismiss"[^>]*>Archive/.test(html), 'Archive is not wired to dismiss');
 

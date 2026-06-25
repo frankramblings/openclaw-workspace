@@ -73,7 +73,8 @@ export function cardActions(item) {
     out.push({ action: 'snooze', label: actionLabel('snooze'), role: 'icon' });
   }
   out.push({ action: 'gary', label: actionLabel('gary'), role: 'icon' });
-  out.push({ action: 'dismiss', label: actionLabel('dismiss'), role: 'x' });
+  // Dismiss is NOT a row button — it lives as the top-right ✕ on the card
+  // (`.top .inbox-x` in surfaces.js), so we don't duplicate it in the action row.
 
   return out;
 }

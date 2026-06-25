@@ -1,15 +1,16 @@
-/* Vendored JetBrainsMono Nerd Font for the attached terminal. Full (non-subset)
-   so Nerd-Font PUA glyphs (powerline, dev icons) are preserved. */
+/* MonoLisa for the attached terminal. */
 @font-face {
-  font-family: "JetBrainsMono Nerd Font";
-  src: url("/static/js/vendor/xterm/JetBrainsMonoNF-Regular.woff2") format("woff2");
-  font-weight: 400;
+  font-family: "MonoLisa";
+  src: url("/static/js/vendor/xterm/MonoLisa-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "JetBrainsMono Nerd Font";
-  src: url("/static/js/vendor/xterm/JetBrainsMonoNF-Bold.woff2") format("woff2");
-  font-weight: 700;
+  font-family: "MonoLisa";
+  src: url("/static/js/vendor/xterm/MonoLisa-italic.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: italic;
   font-display: swap;
 }
 

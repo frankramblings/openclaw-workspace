@@ -21,14 +21,14 @@
   --panel: #17181b;
   --border: #33353a;
   --red: #e8c268;
-  --font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-family: 'MonoLisa', ui-monospace, monospace;
 }
 
 /* ── Shared knobs ── */
 :root {
   --hermes-radius: 10px;
   --hermes-pill: 999px;
-  --hermes-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --hermes-mono: 'MonoLisa', ui-monospace, monospace;
   --hermes-muted: color-mix(in srgb, var(--fg) 55%, transparent);
   --hermes-faint: color-mix(in srgb, var(--fg) 35%, transparent);
 }

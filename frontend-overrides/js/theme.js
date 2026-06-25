@@ -60,11 +60,11 @@ const TEXT_SIZE_KEY = 'odysseus-text-size';        // UI text scale
 const CHAT_SIZE_KEY = 'odysseus-chat-text-size';   // chat bubbles + composer
 
 const FONT_MAP = {
-  mono: "'Fira Code', monospace",
+  mono: "'MonoLisa', ui-monospace, monospace",
   sans: "system-ui, -apple-system, 'Segoe UI', sans-serif",
   serif: "Georgia, 'Times New Roman', serif",
 };
-const DEFAULT_FONT = 'sans';              // HERMES: was 'mono'
+const DEFAULT_FONT = 'mono';
 const DEFAULT_DENSITY = 'comfortable';
 const MAX_CUSTOM_THEMES = 8;
 

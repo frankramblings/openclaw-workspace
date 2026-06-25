@@ -87,17 +87,17 @@ html, body { overflow-x: hidden; height: 100%; margin: 0; overscroll-behavior: n
 body {
   background-color: var(--bg);
   color: var(--fg);
-  font-family: var(--font-family, 'Fira Code', monospace);
+  font-family: var(--font-family, 'MonoLisa', monospace);
+  font-feature-settings: 'liga','calt','ss15','ss16','ss13','ss14','onum';
   display: flex;
   height: 100%;
   height: 100dvh; /* dynamic viewport height — adapts when mobile keyboard opens */
   overflow: hidden;
 }
 
-/* Self-hosted Fira Code font */
-@font-face { font-family: 'Fira Code'; font-weight: 300; font-style: normal; font-display: swap; src: url('/static/fonts/FiraCode-Light.woff2') format('woff2'); }
-@font-face { font-family: 'Fira Code'; font-weight: 400; font-style: normal; font-display: swap; src: url('/static/fonts/FiraCode-Regular.woff2') format('woff2'); }
-@font-face { font-family: 'Fira Code'; font-weight: 600; font-style: normal; font-display: swap; src: url('/static/fonts/FiraCode-SemiBold.woff2') format('woff2'); }
+/* Self-hosted MonoLisa */
+@font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('/static/fonts/MonoLisa-normal.woff2') format('woff2'); }
+@font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: italic; font-display: swap; src: url('/static/fonts/MonoLisa-italic.woff2') format('woff2'); }
 
 /* Code block baseline */
 pre, code, .hljs {
@@ -2069,7 +2069,7 @@ body.bg-pattern-sparkles {
       position: relative;
       line-height: 1.4;
       font-size: 0.95em;
-      font-family: 'Fira Code', 'Courier New', monospace;
+      font-family: 'MonoLisa', ui-monospace, monospace;
       min-height: 38px;
       max-width: 100%;
       margin: 8px 0;
@@ -3480,7 +3480,7 @@ body.bg-pattern-sparkles {
     }
     .code-runner-pre {
       margin:0; padding:0;
-      font-family:'Fira Code', 'Courier New', monospace;
+      font-family:'MonoLisa', ui-monospace, monospace;
       font-size:0.9em; line-height:1.5;
       white-space:pre-wrap; word-break:break-word;
       color:var(--fg);
@@ -5032,7 +5032,7 @@ body.bg-pattern-sparkles {
       border-radius: 4px;
       background: var(--bg);
       color: var(--fg);
-      font-family: 'Fira Code', monospace;
+      font-family: 'MonoLisa', monospace;
       font-size: 10.2px; /* 15% smaller than 12px */
       cursor: pointer;
       transition: all 0.2s ease;
@@ -5766,7 +5766,7 @@ pre { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
       outline: none;
       color: var(--fg);
       font-size: 16px;
-      font-family: 'Fira Code', monospace;
+      font-family: 'MonoLisa', monospace;
       padding: 14px 16px;
       box-sizing: border-box;
     }
@@ -7103,10 +7103,9 @@ pre { background: var(--code-bg, var(--hl-bg, #282c34)) !important; }
 
 /* ── Components (from style.css) ── */
 
-/* Self-hosted Fira Code font */
-@font-face { font-family: 'Fira Code'; font-weight: 300; font-style: normal; font-display: swap; src: url('/static/fonts/FiraCode-Light.woff2') format('woff2'); }
-@font-face { font-family: 'Fira Code'; font-weight: 400; font-style: normal; font-display: swap; src: url('/static/fonts/FiraCode-Regular.woff2') format('woff2'); }
-@font-face { font-family: 'Fira Code'; font-weight: 600; font-style: normal; font-display: swap; src: url('/static/fonts/FiraCode-SemiBold.woff2') format('woff2'); }
+/* Self-hosted MonoLisa */
+@font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('/static/fonts/MonoLisa-normal.woff2') format('woff2'); }
+@font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: italic; font-display: swap; src: url('/static/fonts/MonoLisa-italic.woff2') format('woff2'); }
 
 /* Scrollbar styling */
 
@@ -9975,7 +9974,7 @@ textarea.memory-add-input {
   cursor: pointer;
   border: 1px solid transparent;
   line-height: 16px;
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease, filter 0.12s ease;
   user-select: none;
 }
@@ -12356,7 +12355,7 @@ mark.doc-find-mark.current {
   z-index: 5;
   overflow-y: auto;
   padding: 8px 12px;
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   font-size: 0.85rem;
   line-height: 1.5;
   opacity: 0;
@@ -12836,7 +12835,7 @@ body:has(.doc-version-panel:not(.hidden)) .hamburger-btn {
   padding: 6px 12px 8px;
   max-height: 200px;
   overflow: auto;
-  font-family: 'Fira Code', 'Courier New', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 0.85em;
   line-height: 1.5;
   position: relative;
@@ -14902,7 +14901,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
   display: none;
   position: relative;
   padding: 8px 12px;
-  font-family: 'Berkeley Mono', 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 9.5px;
   line-height: 1.5;
   color: var(--code-fg, var(--hl-fg, var(--fg)));
@@ -14971,7 +14970,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
      modal font, which is the app font (Fira Code) on mobile and Inter on
      desktop (.modal-content's Inter rule is inside @media min-width:769px).
      Mirror that here so all three footers match in both contexts. */
-  font-family: var(--font-family, 'Fira Code', monospace);
+  font-family: var(--font-family, 'MonoLisa', monospace);
   transition: border-color 0.15s, color 0.15s;
 }
 @media (min-width: 769px) {
@@ -15631,7 +15630,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
 .skill-builtin-card { cursor: default; }
 .skill-builtin-card:hover { border-color: var(--border); }
 .skill-card-preview .skill-md-pre {
-  font-family: ui-monospace, 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 11.5px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -15725,7 +15724,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
 .skills-audit-summary { font-size: 11px; opacity: 0.7; margin-bottom: 4px; }
 .skills-audit-log {
   max-height: 22vh; overflow-y: auto;
-  font-family: ui-monospace, 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 10.5px; line-height: 1.5; opacity: 0.8;
 }
 /* ── Skill test monitor + AI eval verdict ── */
@@ -15735,7 +15734,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
   min-height: 120px;
   max-height: 48vh;
   overflow-y: auto;
-  font-family: ui-monospace, 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 9.5px;
   line-height: 1.45;
   padding: 8px 10px;
@@ -15803,7 +15802,7 @@ body:not(.email-doc-split-active) #email-lib-modal.email-lib-fullscreen:not(.mod
   width: 100%;
   box-sizing: border-box;
   resize: none;
-  font-family: ui-monospace, 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 11.5px;
   line-height: 1.5;
   padding: 8px;
@@ -17238,7 +17237,7 @@ body.gallery-selecting .gallery-dl-btn,
 }
 .cookbook-serve-preset-meta {
   font-size: 9px;
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   color: var(--fg-muted);
   opacity: 0.5;
 }
@@ -17362,7 +17361,7 @@ body.gallery-selecting .gallery-dl-btn,
   background: color-mix(in srgb, var(--fg) 4%, transparent);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-all;
@@ -17440,7 +17439,7 @@ body.gallery-selecting .gallery-dl-btn,
   background: color-mix(in srgb, var(--fg) 4%, transparent);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-all;
@@ -17672,7 +17671,7 @@ body.gallery-selecting .gallery-dl-btn,
 }
 .cookbook-serve-dir-pill {
   font-size: 10px;
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   padding: 2px 8px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
@@ -17717,7 +17716,7 @@ body.gallery-selecting .gallery-dl-btn,
 .cookbook-gpu-btn {
   width: 22px; height: 22px;
   font-size: 10px;
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: none;
@@ -17781,7 +17780,7 @@ body.gallery-selecting .gallery-dl-btn,
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   font-size: 11px;
   color: var(--fg);
 }
@@ -17987,7 +17986,7 @@ body.gallery-selecting .gallery-dl-btn,
 .cookbook-saved-host {
   font-size: 10px;
   color: var(--fg-muted);
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
 }
 .cookbook-saved-name {
   flex: 1;
@@ -18302,7 +18301,7 @@ body.gallery-selecting .gallery-dl-btn,
   font-size: 11px;
   /* Match the generic .hwfit-sf serve controls: inherit font + 4px radius
      so the Speculative method/token widgets read as the same control
-     family as the rest of the panel (they were 'Fira Code'/3px before). */
+     family as the rest of the panel (they were 'MonoLisa'/3px before). */
   font-family: inherit;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -18420,7 +18419,7 @@ body.gallery-selecting .gallery-dl-btn,
   background: color-mix(in srgb, var(--fg) 4%, transparent);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-family: 'Berkeley Mono', 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 10px;
   white-space: pre-wrap;
   word-break: break-all;
@@ -18820,20 +18819,20 @@ body.gallery-selecting .gallery-dl-btn,
 .cookbook-task-session {
   font-size: 9px;
   color: var(--fg-muted);
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   opacity: 0.35;
   letter-spacing: 0.3px;
 }
 .cookbook-task-server {
   font-size: 9px;
   color: var(--fg-muted);
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   opacity: 0.4;
 }
 .cookbook-task-uptime {
   font-size: 9px;
   color: var(--fg-muted);
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   opacity: 0.4;
 }
 .cookbook-task-status {
@@ -19381,7 +19380,7 @@ body.gallery-selecting .gallery-dl-btn,
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--fg);
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   font-size: 12px;
   padding: 5px 8px;
 }
@@ -20073,7 +20072,7 @@ body.gallery-selecting .gallery-dl-btn,
 }
 .hwfit-panel-advanced summary:hover, .hwfit-panel-settings summary:hover { color: var(--fg); }
 .hwfit-panel-cmd {
-  font-family: 'Berkeley Mono', 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 10px; padding: 6px 8px; border-radius: 4px;
   background: var(--bg); border: 1px solid var(--border);
   white-space: pre-wrap; word-break: break-all; max-height: 60px; overflow-y: auto;
@@ -21415,7 +21414,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   flex-shrink: 0;
   min-width: 35px;
   text-align: right;
-  font-family: 'Berkeley Mono', 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
 }
 
 /* Cookbook serve param hints */
@@ -21453,7 +21452,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   padding: 1px 5px;
   border-radius: 3px;
   margin-left: 4px;
-  font-family: 'Berkeley Mono', 'SF Mono', 'Fira Code', monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
 }
 
 /* Cookbook output copy — show only on hover */
@@ -21855,7 +21854,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .research-synapse .rs-label {
   fill: var(--fg);
   font-size: 10px;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   pointer-events: none;
   opacity: 0.85;
 }
@@ -21869,7 +21868,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
   gap: 6px;
   flex-wrap: wrap;
   padding: 6px 10px 8px;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-family: 'MonoLisa', ui-monospace, monospace;
   font-size: 11px;
   color: var(--fg-dim, var(--fg));
   opacity: 0.85;
@@ -23977,7 +23976,7 @@ input.settings-select::placeholder { color: color-mix(in srgb, var(--fg) 35%, tr
 .ge-dep-notice-text { flex: 1 1 auto; line-height: 1.4; }
 .ge-dep-notice-text strong { display: block; margin-bottom: 2px; }
 .ge-dep-notice-text code {
-  font-family: 'Fira Code', monospace;
+  font-family: 'MonoLisa', monospace;
   font-size: 10px;
   padding: 1px 4px;
   border-radius: 3px;
@@ -33989,7 +33988,7 @@ input.cp-swatch-input::selection { background: transparent; }
   background: var(--bg, #000); color: var(--fg, #eee);
   border: 1px solid var(--border, #333);
   border-radius: 4px;
-  font-family: ui-monospace, 'Fira Code', monospace;
+  font-family: ui-monospace, 'MonoLisa', monospace;
   font-size: 12px; text-transform: lowercase;
 }
 .cp-hex:focus { outline: none; border-color: var(--red, #e06c75); }

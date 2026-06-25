@@ -64,7 +64,7 @@ async function buildTerm() {
     allowProposedApi: true,
     cursorBlink: true,
     fontSize: 12,
-    fontFamily: "'JetBrains Mono NF','JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace",
+    fontFamily: "'MonoLisa',ui-monospace,monospace",
     scrollback: 5000,
     theme: {
       background: '#15161a', foreground: '#cfd3da', cursor: '#4fe3d1',

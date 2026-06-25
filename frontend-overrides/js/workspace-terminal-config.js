@@ -16,8 +16,7 @@
     brightCyan: '#a2e9f0', brightWhite: '#f0f6fc'
   };
 
-  var FONT_STACK =
-    '"JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, Menlo, monospace';
+  var FONT_STACK = '"MonoLisa", ui-monospace, monospace';
 
   // Let the active workspace theme override the terminal background only, so the
   // panel never clashes with a light/alt Hermes theme. cssVarLookup is injected

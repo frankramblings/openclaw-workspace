@@ -973,6 +973,10 @@ if config.FRONTEND_DIR.exists():
     @app.get("/")
     async def index():
         return FileResponse(str(config.FRONTEND_DIR / "index.html"))
+
+    @app.get("/classic")
+    async def index_classic():
+        return FileResponse(str(config.FRONTEND_DIR / "index-classic.html"))
 else:
     @app.get("/")
     async def index_missing():

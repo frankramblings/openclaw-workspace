@@ -699,9 +699,28 @@ function settingsSurface(s) {
 }
 
 // ===========================================================================
+// WELCOME / PLACEHOLDER
+// ===========================================================================
+function welcomeSurface() {
+  const chips = QUICK_CHIPS.map((c) =>
+    `<button class="qchip occhip" data-act="fillComposer" data-arg="${esc(c.prompt)}">${esc(c.label)}</button>`
+  ).join('');
+  return `<div class="welcome-surface">
+    <div class="ws-av"><img src="${AVATAR}" alt="Gary"></div>
+    <div class="ws-name">Gary</div>
+    <div class="ws-tagline">Your AI workspace</div>
+    <button class="ws-new ocbtn" data-act="newChat">Start a new chat</button>
+    <div class="ws-chips">${chips}</div>
+  </div>`;
+}
+
+// ===========================================================================
 // DISPATCH
 // ===========================================================================
 export function renderCenter(s) {
+  if (s.surface === 'chat' && (!s.live?.chat || !s.live.chat.activeId)) {
+    return welcomeSurface();
+  }
   switch (s.surface) {
     case 'chat': return chatSurface(s);
     case 'email': return emailSurface(s);

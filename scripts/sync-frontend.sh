@@ -65,34 +65,34 @@ if [[ -d "$OVERRIDES" ]]; then
   done < <(find "$DEST" -type f \( -name '*.js' -o -name '*.html' -o -name '*.json' -o -name '*.webmanifest' \) -print0)
   echo "baked agent name '$AGENT_NAME' into __AGENT_NAME__ tokens"
 
-  # Inject the workspace stylesheet once, just before </head> (idempotent).
-  INDEX="$DEST/index.html"
+  # Inject classic add-ons into index-classic.html (idempotent).
+  INDEX_CLASSIC="$DEST/index-classic.html"
   LINK='<link rel="stylesheet" href="/static/workspace.css">'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/workspace.css" ]] \
-     && ! grep -qF "workspace.css" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/workspace.css" ]] \
+     && ! grep -qF "workspace.css" "$INDEX_CLASSIC"; then
     # Insert the link line before the first </head>.
     awk -v link="  $LINK" '
       !done && /<\/head>/ { print link; done=1 }
       { print }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected workspace.css <link> into index.html"
   fi
 
   # Inject the Hermes skin stylesheet once, just before </head> (idempotent).
   LINK_HERMES='<link rel="stylesheet" href="/static/hermes.css">'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/hermes.css" ]] \
-     && ! grep -qF "hermes.css" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/hermes.css" ]] \
+     && ! grep -qF "hermes.css" "$INDEX_CLASSIC"; then
     awk -v link="  $LINK_HERMES" '
       !done && /<\/head>/ { print link; done=1 }
       { print }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected hermes.css <link> into index.html"
   fi
 
   # Inject the Cron tab add-on once, just before </body> (idempotent).
   SCRIPT='<script src="/static/js/cron.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/cron.js" ]] \
-     && ! grep -qF "js/cron.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/cron.js" ]] \
+     && ! grep -qF "js/cron.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT" '
       { lines[NR] = $0 }
       END {
@@ -101,14 +101,14 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected cron.js <script> into index.html"
   fi
 
   # Inject the Inbox tab add-on once, just before </body> (idempotent).
   SCRIPT_INBOX='<script src="/static/js/inbox.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/inbox.js" ]] \
-     && ! grep -qF "js/inbox.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/inbox.js" ]] \
+     && ! grep -qF "js/inbox.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT_INBOX" '
       { lines[NR] = $0 }
       END {
@@ -117,14 +117,14 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected inbox.js <script> into index.html"
   fi
 
   # Inject the gateway-status add-on once, just before </body> (idempotent).
   SCRIPT_GW='<script src="/static/js/gateway-status.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/gateway-status.js" ]] \
-     && ! grep -qF "js/gateway-status.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/gateway-status.js" ]] \
+     && ! grep -qF "js/gateway-status.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT_GW" '
       { lines[NR] = $0 }
       END {
@@ -133,14 +133,14 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected gateway-status.js <script> into index.html"
   fi
 
   # Inject the skills-toggle add-on once, just before </body> (idempotent).
   SCRIPT_SKT='<script src="/static/js/skills-toggle.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/skills-toggle.js" ]] \
-     && ! grep -qF "js/skills-toggle.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/skills-toggle.js" ]] \
+     && ! grep -qF "js/skills-toggle.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT_SKT" '
       { lines[NR] = $0 }
       END {
@@ -149,14 +149,14 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected skills-toggle.js <script> into index.html"
   fi
 
   # Inject the capabilities gating add-on once, before </body> (idempotent).
   SCRIPT_CAP='<script src="/static/js/capabilities.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/capabilities.js" ]] \
-     && ! grep -qF "js/capabilities.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/capabilities.js" ]] \
+     && ! grep -qF "js/capabilities.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT_CAP" '
       { lines[NR] = $0 }
       END {
@@ -165,14 +165,14 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected capabilities.js <script> into index.html"
   fi
 
   # Inject the Hermes footer add-on once, just before </body> (idempotent).
   SCRIPT_HFOOT='<script src="/static/js/hermes-footer.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/hermes-footer.js" ]] \
-     && ! grep -qF "js/hermes-footer.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/hermes-footer.js" ]] \
+     && ! grep -qF "js/hermes-footer.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT_HFOOT" '
       { lines[NR] = $0 }
       END {
@@ -181,14 +181,14 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected hermes-footer.js <script> into index.html"
   fi
 
   # Inject the workspace-explorer add-on once, just before </body> (idempotent).
   SCRIPT_WE='<script src="/static/js/workspace-explorer.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/workspace-explorer.js" ]] \
-     && ! grep -qF "js/workspace-explorer.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/workspace-explorer.js" ]] \
+     && ! grep -qF "js/workspace-explorer.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT_WE" '
       { lines[NR] = $0 }
       END {
@@ -197,14 +197,14 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected workspace-explorer.js <script> into index.html"
   fi
 
   # Inject the strip-order add-on once, just before </body> (idempotent).
   SCRIPT_SO='<script src="/static/js/strip-order.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/strip-order.js" ]] \
-     && ! grep -qF "js/strip-order.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/strip-order.js" ]] \
+     && ! grep -qF "js/strip-order.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT_SO" '
       { lines[NR] = $0 }
       END {
@@ -213,14 +213,14 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected strip-order.js <script> into index.html"
   fi
 
   # Inject the hermes-panels add-on once, just before </body> (idempotent).
   SCRIPT_HP='<script src="/static/js/hermes-panels.js" defer></script>'
-  if [[ -f "$INDEX" ]] && [[ -f "$OVERRIDES/js/hermes-panels.js" ]] \
-     && ! grep -qF "js/hermes-panels.js" "$INDEX"; then
+  if [[ -f "$INDEX_CLASSIC" ]] && [[ -f "$OVERRIDES/js/hermes-panels.js" ]] \
+     && ! grep -qF "js/hermes-panels.js" "$INDEX_CLASSIC"; then
     awk -v s="  $SCRIPT_HP" '
       { lines[NR] = $0 }
       END {
@@ -229,7 +229,7 @@ if [[ -d "$OVERRIDES" ]]; then
           print lines[i]
         }
       }
-    ' "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+    ' "$INDEX_CLASSIC" > "$INDEX_CLASSIC.tmp" && mv "$INDEX_CLASSIC.tmp" "$INDEX_CLASSIC"
     echo "injected hermes-panels.js <script> into index.html"
   fi
 fi
@@ -289,13 +289,12 @@ if [[ -f "$SW" ]]; then
   # Generate the precache manifest from what's actually deployed (sw.js holds
   # a /*__PRECACHE__*/ token). Keep it to the shell the app needs offline:
   # all JS/CSS, fonts, icons, manifests. Exclude sw.js itself and source maps.
-  # index-redesign.html is the installable redesign's start_url, so it (and its
-  # manifest) must be precached — else an offline launch hits the SW nav
-  # fallback to '/' and opens the classic SPA instead of the redesign.
+  # index.html (the redesign, start_url '/') must be precached for offline PWA
+  # launches. index-classic.html is also included for completeness.
   PRECACHE_LIST=$(cd "$DEST" && find . -type f \
       \( -name '*.js' -o -name '*.css' -o -name '*.woff2' -o -name '*.png' \
-         -o -name '*.svg' -o -name 'manifest.json' -o -name 'manifest-redesign.json' \
-         -o -name 'index-redesign.html' \) \
+         -o -name '*.svg' -o -name 'manifest.json' \
+         -o -name 'index.html' -o -name 'index-classic.html' \) \
       ! -name 'sw.js' ! -name '*.map' \
     | sort | sed "s|^\./|'/static/|; s|\$|',|" | tr '\n' ' ')
   python3 - "$SW" "$PRECACHE_LIST" <<'PYEOF'

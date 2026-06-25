@@ -162,6 +162,23 @@ async def action(payload: dict):
             await asana.complete(item_id)
             state.dismiss(source, item_id, "completed")
             undo = {"asana_gid": item_id}
+        elif act == "add_asana":
+            from datetime import datetime, timezone
+            due = payload.get("due")
+            due_on = None
+            if isinstance(due, str) and due.strip():
+                due_on = due.strip()[:10]
+            elif isinstance(due, (int, float)) and due > 0:
+                due_on = datetime.fromtimestamp(due / 1000, tz=timezone.utc).date().isoformat()
+            task_name = (payload.get("task") or title or "Follow-up")[:140]
+            url = meta.get("url") or ""
+            notes = (f"Captured from your inbox ({source}).\n\n"
+                     f"{(payload.get('snippet') or title or '')[:1000]}\n\n"
+                     + (f"Source: {url}" if url else "")).strip()
+            gid = await asana.create_task(
+                task_name, notes, due_on, settings.asana_section_gid())
+            state.dismiss(source, item_id, "added_to_asana")
+            undo = {"asana_delete_gid": gid}
         else:
             return _bad(f"unknown action '{act}' for source '{source}'")
     except Exception as exc:  # noqa: BLE001 - surface to the card toast
@@ -204,6 +221,8 @@ async def items_undo(payload: dict):
             await email_himalaya.move_message(uid, undo["folder"], "INBOX")
         elif "asana_gid" in undo:                  # asana complete
             await asana.uncomplete(undo["asana_gid"])
+        elif "asana_delete_gid" in undo:            # add_asana → delete the task
+            await asana.delete_task(undo["asana_delete_gid"])
         # 'local' undo (dismiss/snooze/reviewed/mark_read): nothing remote.
     except Exception as exc:  # noqa: BLE001
         # restore the history entry so the user can retry

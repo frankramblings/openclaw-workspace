@@ -104,3 +104,48 @@ def test_cache_ttl_outlives_dot_poll():
     re-runs the gmail/slack/asana collectors (0.9s+ on the mini)."""
     from backend import inbox
     assert inbox.CACHE_TTL_MS >= 150_000
+
+
+@pytest.mark.anyio
+async def test_add_asana_creates_and_dismisses(client, monkeypatch):
+    from backend.inbox import sources
+    created = {}
+
+    async def fake_create(name, notes, due_on, section_gid):
+        created.update(name=name, notes=notes, due_on=due_on, section=section_gid)
+        return "TASK123"
+
+    monkeypatch.setattr(sources.asana, "create_task", fake_create)
+    async with client as c:
+        r = await c.post("/api/items/action", json={
+            "source": "obsidian", "id": "abc", "action": "add_asana",
+            "title": "Send Q3 deck to Taylor", "task": "Send Q3 deck to Taylor",
+            "due": "2026-07-03", "meta": {"url": "obsidian://note"}})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and isinstance(body["undoTs"], int)
+    assert created["name"] == "Send Q3 deck to Taylor"
+    assert created["due_on"] == "2026-07-03"
+    assert "obsidian://note" in created["notes"]
+
+
+@pytest.mark.anyio
+async def test_add_asana_undo_deletes_task(client, monkeypatch):
+    from backend.inbox import sources
+    deleted = {}
+
+    async def fake_create(name, notes, due_on, section_gid):
+        return "T9"
+
+    async def fake_delete(gid):
+        deleted["gid"] = gid
+
+    monkeypatch.setattr(sources.asana, "create_task", fake_create)
+    monkeypatch.setattr(sources.asana, "delete_task", fake_delete)
+    async with client as c:
+        ts = (await c.post("/api/items/action", json={
+            "source": "obsidian", "id": "z", "action": "add_asana",
+            "title": "t"})).json()["undoTs"]
+        r = await c.post("/api/items/undo", json={"ts": ts})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert deleted["gid"] == "T9"

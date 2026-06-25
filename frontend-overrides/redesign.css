@@ -186,6 +186,17 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .cw-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px;max-width:480px}
 .qchip{background:transparent;border:1px solid var(--bd);border-radius:999px;padding:7px 16px;font-size:11.5px;font-family:var(--sans);color:var(--mut);cursor:pointer}
 
+/* Attachment chips in the composer */
+.attach-pending{display:flex;flex-wrap:wrap;gap:8px;padding:8px 10px 0}
+.atch-chip{position:relative;display:inline-flex;align-items:center;border-radius:10px;background:var(--panel2,#23262b);border:1px solid var(--bd);overflow:hidden;flex:none}
+.atch-rm{border:none;background:rgba(0,0,0,.6);color:#fff;border-radius:50%;width:17px;height:17px;font-size:9px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex:none}
+.atch-img{width:72px;height:72px}
+.atch-img img{width:100%;height:100%;object-fit:cover;display:block}
+.atch-img .atch-rm{position:absolute;top:4px;right:4px}
+.atch-file{gap:8px;padding:8px 12px;max-width:240px}
+.atch-ext{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;background:var(--teal2);color:#fff;border-radius:4px;padding:2px 6px;flex:none}
+.atch-name{font-size:11.5px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+
 .msg-asst{display:flex;gap:13px;margin-bottom:24px}
 .msg-av{width:30px;height:30px;flex:none;border-radius:8px;overflow:hidden;background:var(--teal);display:flex;align-items:center;justify-content:center}
 .msg-av img{width:100%;height:100%;object-fit:contain;padding:2px;box-sizing:border-box;display:block}

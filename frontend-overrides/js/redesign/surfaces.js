@@ -150,6 +150,19 @@ function currentModelLabel(s, model) {
   return model;
 }
 
+// Attachment chips — image files get a thumbnail, everything else gets a
+// labelled card with an extension badge (mirrors Claude / ChatGPT behaviour).
+const _IMG_EXTS = new Set(['jpg','jpeg','png','gif','webp','svg','bmp','avif','ico']);
+function attachChip(a) {
+  const name = a.name || a.id;
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const rm = `<button class="atch-rm" data-act="removeAttach" data-arg="${esc(a.id)}" title="Remove">✕</button>`;
+  if (_IMG_EXTS.has(ext)) {
+    return `<div class="atch-chip atch-img" title="${esc(name)}"><img src="/api/upload/${esc(a.id)}" alt="">${rm}</div>`;
+  }
+  return `<div class="atch-chip atch-file"><span class="atch-ext">${esc(ext.slice(0,4) || 'file')}</span><span class="atch-name" title="${esc(name)}">${esc(name)}</span>${rm}</div>`;
+}
+
 const QUICK_CHIPS = [
   { label: 'What can you do?', prompt: 'What can you do?' },
   { label: 'Summarize my recent sessions', prompt: 'Summarize my recent sessions' },
@@ -214,8 +227,8 @@ function chatSurface(s) {
     <div class="composer${slashOpen ? ' slash' : ''}">
       <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message Gary…   ( type / for commands )">${esc(d)}</textarea>
       ${when(s.pendingAttach && s.pendingAttach.length, `
-      <div class="attach-pending" style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 6px 0">
-        ${map(s.pendingAttach || [], (a) => `<span class="attach-chip" style="display:inline-flex;align-items:center;gap:5px;background:#2a2d33;border-radius:7px;padding:3px 8px;font-size:12px"><span>${esc(a.name || a.id)}</span><span data-act="removeAttach" data-arg="${esc(a.id)}" style="cursor:pointer;color:var(--faint)">✕</span></span>`)}
+      <div class="attach-pending">
+        ${map(s.pendingAttach || [], attachChip)}
       </div>`)}
       <div class="composer-row">
         <button class="icon-btn ocbtn" data-act="toggleSlash" title="More tools">${I.plus()}</button>

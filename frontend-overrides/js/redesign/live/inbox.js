@@ -293,6 +293,7 @@ export const actions = {
       }
     } catch (e) {
       unmarkDismissed(state, id);
+      state.inboxToast = { msg: "Couldn't snooze — retry", undoTs: null };
       runtime.render();
       return;
     }

@@ -83,6 +83,10 @@ function findItem(state, id) {
   return items.find((m) => m.id === String(id));
 }
 
+async function reloadInbox(state) {
+  await load(state);
+}
+
 // Open a URL in a new tab without leaking window.opener.
 function openExternal(url) {
   try {
@@ -232,16 +236,16 @@ export const actions = {
   },
 
   triageAll: async () => {
-    // Placeholder until slice B wires the real /api/items/triage. For now this
-    // clears the FYI batch (matches the skeleton's prior behaviour) so the
-    // button is never a no-op, but it no longer pretends to "triage".
     const state = runtime.state;
-    const items = (state.live && state.live.inbox && state.live.inbox.items) || [];
-    const fyi = items.filter((m) => m.group === 'fyi');
-    for (const it of fyi) markDismissed(state, it.id);
+    state.inboxToast = { msg: 'Triaging…', undoTs: null };
     runtime.render();
-    for (const it of fyi) {
-      try { await apiJson('/api/items/action', { source: it.source, id: it.id, action: 'dismiss' }); } catch (_) {}
+    try {
+      const r = await apiJson('/api/items/triage', {});
+      if (r && r.ok === false) throw new Error(r.error || 'triage failed');
+      await reloadInbox(state);   // refetch so rec chips appear
+      state.inboxToast = { msg: `Triaged ${r.scored ?? 0} items`, undoTs: null };
+    } catch (e) {
+      state.inboxToast = { msg: "Triage unavailable — try again", undoTs: null };
     }
     runtime.render();
   },

@@ -397,6 +397,15 @@ function imagesFrom(list) {
   }
   return out;
 }
+// Any file type — used for drag-and-drop (paste stays image-only since
+// clipboard items are almost always screenshots, not arbitrary files).
+function filesFrom(list) {
+  const out = [];
+  for (const f of (list || [])) {
+    if (f && f.size >= 0) out.push(f.name ? f : new File([f], `upload-${Date.now()}`, { type: f.type || 'application/octet-stream' }));
+  }
+  return out;
+}
 
 root.addEventListener('paste', (e) => {
   if (!chatAttachContext(e.target)) return;
@@ -412,7 +421,7 @@ function showDrop(on) {
   if (on && !_dropOverlay) {
     _dropOverlay = document.createElement('div');
     _dropOverlay.id = 'oc-drop-overlay';
-    _dropOverlay.innerHTML = '<div class="oc-drop-card">Drop image to attach</div>';
+    _dropOverlay.innerHTML = '<div class="oc-drop-card">Drop to attach</div>';
     document.body.appendChild(_dropOverlay);
   }
   if (_dropOverlay) _dropOverlay.style.display = on ? 'flex' : 'none';
@@ -431,8 +440,8 @@ root.addEventListener('drop', (e) => {
   e.preventDefault();
   showDrop(false);
   if (!chatAttachContext(e.target)) return;
-  const imgs = imagesFrom(e.dataTransfer && e.dataTransfer.files);
-  if (imgs.length && actions.uploadAttachments) actions.uploadAttachments(imgs);
+  const files = filesFrom(e.dataTransfer && e.dataTransfer.files);
+  if (files.length && actions.uploadAttachments) actions.uploadAttachments(files);
 });
 
 // Enter-to-send in the chat composer (Shift+Enter = newline). Calls the chat

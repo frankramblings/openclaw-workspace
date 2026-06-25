@@ -20,6 +20,8 @@
 import { runtime } from './runtime.js';
 import { apiGet, apiJson, apiDelete } from './api.js';
 
+const ACCENT_KEY = 'oc-accent';
+
 // state.ui toggle key -> real /api/auth/settings key. Only keys we're confident
 // map to a real backend setting persist server-side; everything else stays
 // local (still flips visually).
@@ -60,12 +62,19 @@ async function persistSetting(realKey, value) {
 }
 
 export async function load(state) {
+  // Apply cached accent immediately (synchronous — no flash on reload).
+  try {
+    const cached = localStorage.getItem(ACCENT_KEY);
+    if (cached) { state.accent = cached; setAccentVars(cached); }
+  } catch (_) {}
+
   // 1) Accent from /api/config -> drives both --accent and --red.
   try {
     const cfg = await apiGet('/api/config');
     if (cfg && typeof cfg.accent === 'string' && cfg.accent) {
       state.accent = cfg.accent;
       setAccentVars(cfg.accent);
+      try { localStorage.setItem(ACCENT_KEY, cfg.accent); } catch (_) {}
     }
   } catch (_) { /* keep current accent */ }
 
@@ -95,6 +104,7 @@ export const actions = {
     if (!hex) return;
     runtime.state && (runtime.state.accent = hex);
     setAccentVars(hex);
+    try { localStorage.setItem(ACCENT_KEY, hex); } catch (_) {}
     runtime.render();
     persistAccent(hex); // best-effort, fire-and-forget
   },

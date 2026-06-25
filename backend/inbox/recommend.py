@@ -12,7 +12,7 @@ ALLOWED = {
     "gmail": {"archive", "delete", "reply", "gary", "none"},
     "slack": {"mark_read", "gary", "none"},
     "asana": {"complete", "gary", "none"},
-    "obsidian": {"reviewed", "gary", "none"},
+    "obsidian": {"reviewed", "add_asana", "gary", "none"},
     "documents": {"gary", "none"},
 }
 
@@ -94,7 +94,7 @@ def build_triage_prompt(items: list[dict], cap: int = TRIAGE_CAP):
         "  gmail: archive|delete|reply|gary|none",
         "  slack: mark_read|gary|none",
         "  asana: complete|gary|none",
-        "  obsidian: reviewed|gary|none",
+        "  obsidian: add_asana|reviewed|gary|none",
         "  documents: gary|none",
         "(reply = I should answer this email; gary = hand to my assistant "
         "with context. Prefer archive for newsletters/notifications, delete "
@@ -104,6 +104,11 @@ def build_triage_prompt(items: list[dict], cap: int = TRIAGE_CAP):
         "fences:",
         '[{"id": "<id>", "action": "<action>", "confidence": "high|med|low", '
         '"reason": "<max 8 words>"}]',
+        "For obsidian items prefer add_asana (capture the commitment as a task) "
+        "and ALSO return \"task\" (a cleaned imperative ≤12 words) and \"due\" "
+        "(YYYY-MM-DD). Honor explicit dates in the text relative to today; if none, "
+        "pick a sensible near-term date (≈3 business days out). Use \"reviewed\" "
+        "only for pure FYI lines, \"none\" when unsure.",
         "",
         "Items:",
     ]
@@ -151,4 +156,11 @@ def parse_triage_reply(text: str, valid: dict, now_ms: int) -> dict:
             "action": action,
             "confidence": conf if conf in ("high", "med", "low") else "med",
             "reason": str(e.get("reason") or "")[:80], "ts": now_ms}
+        if source == "obsidian":
+            task = e.get("task")
+            if isinstance(task, str) and task.strip():
+                out[f"{source}:{iid}"]["task"] = task.strip()[:140]
+            due = e.get("due")
+            if isinstance(due, str) and len(due.strip()) >= 8:
+                out[f"{source}:{iid}"]["due"] = due.strip()[:10]
     return out

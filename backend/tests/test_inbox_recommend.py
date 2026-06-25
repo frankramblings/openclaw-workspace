@@ -96,3 +96,26 @@ async def test_stale_rec_cleared_when_stats_drop(tmp_path, monkeypatch):
             state.drop_stat("gmail:news@x.com", "archive")
         r2 = (await c.get("/api/items?sources=gmail")).json()
     assert "rec" not in r2["items"][0]
+
+
+def test_obsidian_allows_add_asana():
+    assert "add_asana" in recommend.ALLOWED["obsidian"]
+
+
+def test_parse_keeps_task_and_due_for_obsidian():
+    valid = {"o1": "obsidian"}
+    reply = ('[{"id":"o1","action":"add_asana","confidence":"high",'
+             '"reason":"commitment to Taylor","task":"Send Q3 deck",'
+             '"due":"2026-07-03"}]')
+    out = recommend.parse_triage_reply(reply, valid, now_ms=0)
+    rec = out["obsidian:o1"]
+    assert rec["action"] == "add_asana"
+    assert rec["task"] == "Send Q3 deck"
+    assert rec["due"] == "2026-07-03"
+
+
+def test_parse_ignores_task_due_for_non_obsidian():
+    valid = {"g1": "gmail"}
+    reply = '[{"id":"g1","action":"archive","task":"x","due":"2026-01-01"}]'
+    rec = recommend.parse_triage_reply(reply, valid, now_ms=0)["gmail:g1"]
+    assert "task" not in rec and "due" not in rec

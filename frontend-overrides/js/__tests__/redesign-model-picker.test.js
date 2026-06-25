@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { modelPopover } from '../redesign/surfaces.js';
+import { providerKey, providerLogo } from '../redesign/provider-logo.js';
 
 // claude-sonnet-4-6 is offered by BOTH endpoints — the identity-bug case.
 const groups = [
@@ -60,4 +61,11 @@ test('default star marks exactly one row (the composite default)', () => {
 
 test('the popover wrapper swallows chrome clicks (data-act="noop")', () => {
   assert.match(modelPopover(state()), /class="model-pop" data-act="noop"/);
+});
+
+test('provider icon follows the endpoint before the underlying model family', () => {
+  assert.equal(providerKey('claude-cli', 'claude-opus-4-8'), 'anthropic');
+  assert.equal(providerKey('openai', 'gpt-5.5'), 'openai');
+  assert.equal(providerKey('perplexity-web', 'claude-sonnet-4-6'), 'perplexity');
+  assert.match(providerLogo('perplexity-web', 'claude-sonnet-4-6'), /<svg/);
 });

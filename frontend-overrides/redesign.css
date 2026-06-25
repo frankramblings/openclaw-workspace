@@ -258,6 +258,10 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .pill-btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--mut);font-family:var(--sans);font-size:10.5px;cursor:pointer;flex:none;white-space:nowrap}
 .model-btn{height:32px;padding:0 11px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--fg);display:inline-flex;align-items:center;gap:7px;font-family:var(--sans);font-size:10.5px;cursor:pointer;white-space:nowrap;flex:none}
 .model-btn .glyph{font-family:var(--mono);color:var(--teal)}
+.model-provider-logo{width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--mut)}
+.model-provider-logo svg{width:100%;height:100%;display:block}
+.m-model-chip{display:inline-flex;align-items:center;gap:6px}
+.m-model-chip .model-provider-logo{width:13px;height:13px}
 .model-btn-name{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* compact, endpoint-grouped model picker (design_handoff_model_selector) */

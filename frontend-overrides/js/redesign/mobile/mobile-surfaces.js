@@ -7,6 +7,7 @@ import { AVATAR, EMAILS, INBOX } from '../data.js';
 import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
 import { renderMarkdown } from '../markdown.js';
+import { providerLogo } from '../provider-logo.js';
 
 const ic = {
   mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
@@ -53,6 +54,8 @@ const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr" style="height:$
 export function mChat(s) {
   const focused = s.keyboard;
   const thread = s.live?.chat?.thread || [];
+  const model = s.live?.chat?.model || 'opus-4';
+  const modelLogo = providerLogo(s.live?.chat?.endpointId, model);
   // Empty thread (new/cold chat) used to render a fully blank screen — show a
   // centered prompt instead, reusing the shared .inbox-zero empty-state shell.
   const threadHtml = thread.length
@@ -66,7 +69,7 @@ export function mChat(s) {
         <div class="m-gav"><img src="${AVATAR}" alt="Gary"></div>
         <div style="flex:1;min-width:0"><div class="nm">Gary <span style="font-size:10px;color:var(--faint)">▾</span></div><div class="status"><span class="dot"></span>${s.live?.chat?.title || 'New chat'}</div></div>
       </button>
-      <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model" style="font-size:10px;padding:4px 9px;border:1px solid var(--bd);border-radius:999px;background:transparent;color:var(--mut);cursor:pointer;white-space:nowrap">${esc(s.live?.chat?.model || 'opus-4')}</button>
+      <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model" style="font-size:10px;padding:4px 9px;border:1px solid var(--bd);border-radius:999px;background:transparent;color:var(--mut);cursor:pointer;white-space:nowrap"><span class="model-provider-logo">${modelLogo}</span>${esc(model)}</button>
       ${when(!focused, `<button class="m-icon-btn" data-act="newChat" title="New chat">${I.plus(17)}</button>`)}
     </div>
   </div>

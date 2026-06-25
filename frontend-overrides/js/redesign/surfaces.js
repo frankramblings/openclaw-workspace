@@ -12,6 +12,7 @@ import {
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
 import { renderActivity } from './chat-activity.js';
 import { renderMarkdown } from './markdown.js';
+import { providerLogo } from './provider-logo.js';
 
 // ===========================================================================
 // CHAT
@@ -194,6 +195,7 @@ function chatSurface(s) {
   const title = chat.title ?? 'Workspace Streaming Chat Updates';
   const subtitle = chat.subtitle ?? '12 messages · claude-opus-4';
   const model = chat.model ?? 'opus-4';
+  const modelLogo = providerLogo(chat.endpointId, model);
   const pct = chat.usagePct != null ? chat.usagePct : 4.4;
   const msgs = chat.thread || [];
   const thread = map(msgs, (msg) => chatMsg(msg, s));
@@ -236,7 +238,7 @@ function chatSurface(s) {
         <div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
         <div class="oc-spacer"></div>
         <button class="icon-btn ocbtn" data-act="toggleIncognito" title="${s.incognito ? 'Incognito ON — this chat is not saved' : 'Incognito — don’t save this chat'}" style="${s.incognito ? 'color:var(--violet)' : ''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7"/><path d="M2 12s3 7 10 7 10-7 10-7"/><circle cx="12" cy="12" r="2.5"/>${s.incognito ? '<line x1="3" y1="3" x2="21" y2="21"/>' : ''}</svg></button>
-        <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="glyph">A\\</span><span class="model-btn-name">${esc(currentModelLabel(s, model))}</span>${I.chevDownSm()}</button>
+        <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="model-btn-name">${esc(currentModelLabel(s, model))}</span>${I.chevDownSm()}</button>
         <div class="mode-toggle">
           <button class="${agent ? 'active-agent' : ''}" data-act="setMode" data-arg="agent">Agent</button>
           <button class="${!agent ? 'active-chat' : ''}" data-act="setMode" data-arg="chat">Chat</button>

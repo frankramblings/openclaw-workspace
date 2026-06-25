@@ -48,8 +48,13 @@ export async function loadSurface(name, { state, actions, render, force = false 
       fetchedOnce.delete(name); // allow retry on next activation
     }
   }
-  // chat also brings up the companion (terminal/files)
-  if (name === 'chat') loadSurface('companion', { state, actions, render, force });
+  // chat also brings up the companion (terminal/files) and seeds the accent/ui
+  // prefs from settings — so the stored theme color applies on every page load,
+  // not just when the user navigates to the Settings surface.
+  if (name === 'chat') {
+    loadSurface('companion', { state, actions, render, force });
+    loadSurface('settings', { state, actions, render, force });
+  }
 }
 
 // expose for live modules that want to re-fetch (e.g. after a mutation)

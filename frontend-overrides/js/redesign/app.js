@@ -49,6 +49,9 @@ let refreshTimer = null;
 let toastTimer = null;
 const root = document.getElementById('oc-root');
 const mq = window.matchMedia('(max-width: 768px)');
+// Hide root until the first live-data render so mock sample data never flashes.
+let rootRevealed = false;
+root.style.visibility = 'hidden';
 const isMobile = () => mq.matches;
 
 // ---- rail -----------------------------------------------------------------
@@ -152,6 +155,11 @@ function render() {
 
   const s = state;
   root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
+
+  if (!rootRevealed && Object.keys(state.live).length > 0) {
+    rootRevealed = true;
+    root.style.visibility = '';
+  }
 
   // auto-dismiss toast after 8 s (re-arm on every render while toast is set)
   clearTimeout(toastTimer);
@@ -604,6 +612,9 @@ window.addEventListener('hashchange', () => {
 
 render();
 loadActive(); // kick off live data for the initial surface
+// Safety net: if live loading fails entirely (network down, all throws), reveal
+// after 3 s so the page doesn't stay permanently invisible.
+setTimeout(() => { if (!rootRevealed) { rootRevealed = true; root.style.visibility = ''; } }, 3000);
 // Prime the chat loader even when booting into another surface, so the
 // cross-session turn notifier (started in chat's load()) runs from the start —
 // a reply finishing while you're in Inbox/Email/etc. still notifies.

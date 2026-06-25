@@ -199,10 +199,9 @@ export async function load(state) {
   const list = Array.isArray(sessions) ? sessions : [];
 
   const chat = ensureChat(state);
-  // Prefer the in-memory active chat, then the one persisted from last session
-  // (if it still exists). Do NOT fall back to list[0] — a null stored id means
-  // the user explicitly left the welcome screen or clicked New Chat; auto-loading
-  // a session in that case suppresses the welcome screen on refresh.
+  // Restore the session from before the reload. storeActiveId(null) is called
+  // when the user explicitly leaves a chat (New Chat, delete), so a null stored
+  // value correctly keeps the welcome screen after refresh in those cases.
   const stored = readActiveId();
   const storedValid = stored && list.some((s) => s.id === stored);
   const activeId = chat.activeId || (storedValid ? stored : null) || null;
@@ -834,6 +833,7 @@ export const actions = {
     stopElapsed();
     turn = null;
     chat.activeId = null;
+    storeActiveId(null);
     chat.thread = [];
     chat.title = 'New chat';
     if (Array.isArray(chat.groups)) {

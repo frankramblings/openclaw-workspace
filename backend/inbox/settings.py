@@ -144,6 +144,14 @@ def asana_project_gid() -> str:
             or "")
 
 
+def asana_section_gid() -> str:
+    """Asana section GID for new captured tasks. Env ASANA_SECTION_GID >
+    inbox.json asana.section_gid > Frank To-Dos → Backlog default."""
+    return (os.environ.get("ASANA_SECTION_GID")
+            or _coll("asana").get("section_gid")
+            or "1206274018380402")
+
+
 def asana_pat_path() -> Path:
     """Resolved path to the asana.env PAT file.
     Env INBOX_ASANA_ENV > inbox.json pat_path > ~/.openclaw/workspace/secrets/asana.env.

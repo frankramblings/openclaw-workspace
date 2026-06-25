@@ -462,3 +462,24 @@ class TestCapabilitiesInbox:
         monkeypatch.delenv("ASANA_PROJECT_GID", raising=False)
         result = caps.snapshot()
         assert result["inbox"]["available"] is True
+
+
+# ---------------------------------------------------------------------------
+# asana_section_gid(): env > inbox.json > default
+# ---------------------------------------------------------------------------
+
+def test_asana_section_gid_default(monkeypatch):
+    monkeypatch.delenv("ASANA_SECTION_GID", raising=False)
+    monkeypatch.setattr(settings, "_coll", lambda name: {})
+    assert settings.asana_section_gid() == "1206274018380402"
+
+
+def test_asana_section_gid_env_wins(monkeypatch):
+    monkeypatch.setenv("ASANA_SECTION_GID", "ENVSEC")
+    assert settings.asana_section_gid() == "ENVSEC"
+
+
+def test_asana_section_gid_from_inbox_json(monkeypatch):
+    monkeypatch.delenv("ASANA_SECTION_GID", raising=False)
+    monkeypatch.setattr(settings, "_coll", lambda name: {"section_gid": "JSONSEC"})
+    assert settings.asana_section_gid() == "JSONSEC"

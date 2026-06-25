@@ -8,7 +8,7 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
-import { srcStyle, openUrlFor } from './inbox-logic.js';
+import { srcStyle, openUrlFor, dueChipToISO } from './inbox-logic.js';
 
 const ageLabel = (h) => {
   const n = Number(h) || 0;
@@ -116,6 +116,73 @@ async function runAction(id, action) {
 }
 
 export const actions = {
+  // Obsidian capture: create an Asana task from the surfaced commitment.
+  addAsana: async (id) => {
+    const state = runtime.state;
+    const item = findItem(state, id);
+    if (!item) return;
+    const rec = item.rec || {};
+    const payload = {
+      source: item.source, id: String(id), action: 'add_asana',
+      title: item.who, task: rec.task || item.who,
+      due: rec.due || null, snippet: item.body, meta: item.meta || {},
+    };
+    markDismissed(state, id);
+    runtime.render();
+    try {
+      const r = await apiJson('/api/items/action', payload);
+      if (r && r.ok === false) throw new Error(r.error || 'add failed');
+      if (r && r.undoTs) {
+        state._lastUndoTs = r.undoTs;
+        state.inboxToast = { msg: `Added → ${payload.due ? 'due ' + payload.due : 'no due date'}`, undoTs: r.undoTs };
+      }
+    } catch (e) {
+      unmarkDismissed(state, id);
+      state.inboxToast = { msg: "Couldn't add to Asana — retry", undoTs: null };
+    }
+    runtime.render();
+  },
+
+  // Open the quick edit sheet (long-press / "Edit") to adjust name + due first.
+  addAsanaEdit: (id) => {
+    const state = runtime.state;
+    const item = findItem(state, id);
+    if (!item) return;
+    const rec = item.rec || {};
+    state.inboxEditFor = { id: String(id), task: rec.task || item.who, due: rec.due || null };
+    runtime.render();
+  },
+  pickDue: (chip) => {
+    const state = runtime.state;
+    if (!state.inboxEditFor) return;
+    state.inboxEditFor = { ...state.inboxEditFor, due: dueChipToISO(chip, Date.now()) };
+    runtime.render();
+  },
+  closeEdit: () => { runtime.state.inboxEditFor = null; runtime.render(); },
+  confirmAddAsana: async () => {
+    const state = runtime.state;
+    const edit = state.inboxEditFor;
+    if (!edit) return;
+    const item = findItem(state, edit.id);
+    state.inboxEditFor = null;
+    if (!item) { runtime.render(); return; }
+    markDismissed(state, edit.id);
+    runtime.render();
+    try {
+      const r = await apiJson('/api/items/action', {
+        source: item.source, id: edit.id, action: 'add_asana',
+        title: item.who, task: edit.task, due: edit.due,
+        snippet: item.body, meta: item.meta || {},
+      });
+      if (r && r.ok === false) throw new Error(r.error || 'add failed');
+      if (r && r.undoTs) { state._lastUndoTs = r.undoTs; state.inboxToast = { msg: `Added → ${edit.due ? 'due ' + edit.due : 'no due date'}`, undoTs: r.undoTs }; }
+    } catch (e) {
+      unmarkDismissed(state, edit.id);
+      state.inboxToast = { msg: "Couldn't add to Asana — retry", undoTs: null };
+    }
+    runtime.render();
+  },
+
   // Per-source real actions.
   archive: (id) => runAction(id, 'archive'),
   delete: (id) => runAction(id, 'delete'),

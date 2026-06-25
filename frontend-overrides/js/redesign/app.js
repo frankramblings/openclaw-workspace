@@ -340,6 +340,7 @@ root.addEventListener('input', (e) => {
   const t = e.target.closest('[data-model]');
   if (!t) return;
   const field = t.getAttribute('data-model');
+  if (field === 'inboxEditTask' && state.inboxEditFor) { state.inboxEditFor = { ...state.inboxEditFor, task: t.value }; return; }
   state[field] = t.value;
   if (field === 'draft') state.forceSlash = false; // typing manages the slash menu
 

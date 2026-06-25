@@ -24,6 +24,7 @@ export function srcStyle(source) {
 // Human labels for backend action verbs. Unknown verbs are humanized
 // (snake_case → "Sentence case") so a new backend action still reads sanely.
 const ACTION_LABEL = {
+  add_asana: 'Add to Asana',
   archive: 'Archive',
   delete: 'Delete',
   mark_read: 'Mark read',
@@ -46,7 +47,7 @@ export function actionLabel(action) {
 // The verb (if any) that "clears" an item from the feed for a given source.
 // This becomes the card's primary button. dismiss/snooze are universal and
 // never primary; dismiss is rendered as the ✕, snooze/open/gary as affordances.
-const CLEAR_VERBS = ['archive', 'mark_read', 'complete', 'reviewed'];
+const CLEAR_VERBS = ['add_asana', 'archive', 'mark_read', 'complete', 'reviewed'];
 
 // Produce the ordered button descriptors a card should render.
 // role: 'primary' (the clear-action), 'ghost' (secondary verbs like delete),

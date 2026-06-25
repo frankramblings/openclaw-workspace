@@ -366,6 +366,7 @@ function inboxSurface(s) {
     <div class="inbox-card">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
       <div class="body">${esc(stripMd(it.body))}</div>
+      ${when(it.source === 'obsidian' && it.rec && it.rec.due, `<div class="ai-pill">✦ task · due ${esc((it.rec || {}).due || '')}</div>`)}
       ${cardButtonsHtml(it, esc)}
     </div>`;
   const fyiCard = (it) => `
@@ -394,6 +395,16 @@ function inboxSurface(s) {
       ${when(fyi.length > 0, `<div class="grp-label fyi"><span class="lbl fyilbl">AI-SUGGESTED · FYI</span><span class="n">${fyi.length}</span><div class="sect-divider"></div></div>${map(fyi, fyiCard)}`)}
       ${when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">Gary cleared the feed. Nothing left to triage.</div></div>`)}
     </div>
+    ${when(!!s.inboxEditFor, `
+      <div class="inbox-edit-sheet">
+        <div class="ies-row"><b>Add to Asana</b><span class="oc-spacer"></span><span data-act="closeEdit" style="cursor:pointer">✕</span></div>
+        <input class="set-input" data-model="inboxEditTask" value="${esc((s.inboxEditFor && s.inboxEditFor.task) || '')}" />
+        <div class="ies-due">Due: <b>${esc((s.inboxEditFor && s.inboxEditFor.due) || 'none')}</b></div>
+        <div class="ies-chips">
+          ${['today', 'tomorrow', 'fri', 'nextweek', 'none'].map((c) => `<span class="due-chip" data-act="pickDue" data-arg="${c}">${c}</span>`).join('')}
+        </div>
+        <div class="ies-actions"><button class="btn-sm" data-act="confirmAddAsana">Add task</button><button class="btn-sm ghost" data-act="closeEdit">Cancel</button></div>
+      </div>`)}
   </div>`;
 }
 

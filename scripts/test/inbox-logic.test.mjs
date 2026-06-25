@@ -134,4 +134,12 @@ assert.equal(dueChipToISO('fri', MON), '2026-07-03', 'next Friday from Mon');
 assert.equal(dueChipToISO('nextweek', MON), '2026-07-06', 'next Monday');
 assert.equal(dueChipToISO('none', MON), null);
 
+// Obsidian primary becomes Add to Asana (not Reviewed) when add_asana is allowed.
+const obsA = cardActions({ source: 'obsidian', actions: ['add_asana', 'reviewed', 'dismiss', 'snooze'] });
+const obsPrim = obsA.find((a) => a.role === 'primary');
+assert.equal(obsPrim.action, 'add_asana', 'obsidian primary = add to asana');
+assert.equal(obsPrim.label, 'Add to Asana');
+// reviewed remains available as a ghost (plain hide).
+assert.ok(obsA.some((a) => a.action === 'reviewed' && a.role === 'ghost'));
+
 console.log('inbox-logic: all assertions OK');

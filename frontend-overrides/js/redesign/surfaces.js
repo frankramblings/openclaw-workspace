@@ -718,9 +718,6 @@ function welcomeSurface() {
 // DISPATCH
 // ===========================================================================
 export function renderCenter(s) {
-  if (s.surface === 'chat' && (!s.live?.chat || !s.live.chat.activeId)) {
-    return welcomeSurface();
-  }
   switch (s.surface) {
     case 'chat': return chatSurface(s);
     case 'email': return emailSurface(s);

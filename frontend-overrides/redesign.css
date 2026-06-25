@@ -586,8 +586,10 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .set-endpoint .det{font-size:9.5px;color:var(--faint);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .set-endpoint .st{font-size:9.5px;display:inline-flex;align-items:center;gap:5px;margin-left:auto}
 .set-endpoint .st .d{width:6px;height:6px;border-radius:50%}
-.set-accents{display:flex;gap:11px;margin:4px 0 6px}
-.set-accent{width:38px;height:38px;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.set-accents{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 6px}
+.set-accent{width:34px;height:34px;border-radius:9px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}
+.set-accent-custom{width:34px;height:34px;border-radius:9px;border:1px dashed var(--bd);display:flex;align-items:center;justify-content:center;flex:none;font-size:14px;color:var(--faint)}
+.set-accent-custom.on{border-style:solid;color:var(--fg)}
 .set-toggle-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--bd2);cursor:pointer}
 .set-toggle-row .lbl{font-size:11px;color:var(--fg)}
 .set-toggle-row .dsc{font-size:10px;color:var(--faint);margin-top:1px}

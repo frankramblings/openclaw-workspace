@@ -271,8 +271,22 @@ const actions = {
   setSection: (id) => { state.setSection = id; },
   toggleUi: (key) => { state.ui = { ...state.ui, [key]: !state.ui[key] }; },
   setAccent: (hex) => {
+    if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return;
     state.accent = hex;
-    document.documentElement.style.setProperty('--accent', hex);
+    // Parse RGB
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    // Derive teal2 (darker, ~58%) and tealtint (10% opacity)
+    const r2 = Math.round(r * 0.58), g2 = Math.round(g * 0.58), b2 = Math.round(b * 0.58);
+    const toHex = (n) => n.toString(16).padStart(2, '0');
+    const teal2 = `#${toHex(r2)}${toHex(g2)}${toHex(b2)}`;
+    const tealTint = `rgba(${r},${g},${b},.10)`;
+    const root = document.documentElement;
+    root.style.setProperty('--accent', hex);
+    root.style.setProperty('--teal', hex);
+    root.style.setProperty('--teal2', teal2);
+    root.style.setProperty('--tealtint', tealTint);
   },
 
   // mobile (merged below)
@@ -322,6 +336,14 @@ function autoGrowComposer(t) {
 }
 
 root.addEventListener('input', (e) => {
+  // Color picker input: data-act-color fires setAccent on every change
+  const cp = e.target.closest('[data-act-color]');
+  if (cp && cp.type === 'color') {
+    const act = cp.getAttribute('data-act-color');
+    const fn = actions[act];
+    if (fn) { fn(cp.value); render(); }
+    return;
+  }
   const t = e.target.closest('[data-model]');
   if (!t) return;
   const field = t.getAttribute('data-model');

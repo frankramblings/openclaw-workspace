@@ -651,11 +651,20 @@ function settingsSurface(s) {
         return `<div class="set-danger"><div style="flex:1"><div class="lbl">${esc(r.label)}</div><div class="dsc">${esc(r.desc)}</div></div><button class="set-btn danger" style="height:30px"${r.kind ? ` data-act="wipe" data-arg="${esc(r.kind)}"` : ''}>Wipe</button></div>`;
       case 'text':
         return `<div class="set-text">${esc(r.text)}</div>`;
-      case 'accent':
-        return `<div class="set-accents">${map(['#4fe3d1', '#7bb6ff', '#5bd97f', '#a99bf5'], (hex) => {
-          const on = accent === hex;
-          return `<div class="set-accent" data-act="setAccent" data-arg="${hex}" style="background:${hex};box-shadow:0 0 0 ${on ? '3px' : '0px'} ${hex}55">${on ? icon('<path d="M20 6 9 17l-5-5"/>', { size: 17, sw: 3, stroke: '#0c1413' }) : ''}</div>`;
-        })}</div>`;
+      case 'accent': {
+        const SWATCHES = ['#4fe3d1','#7bb6ff','#5bd97f','#a99bf5','#f0726a','#e8c268','#f97ab8','#67c4e3','#ff9850','#c6e847'];
+        const isCustom = !SWATCHES.includes(accent);
+        return `<div class="set-accents">
+          ${map(SWATCHES, (hex) => {
+            const on = accent === hex;
+            return `<div class="set-accent" data-act="setAccent" data-arg="${hex}" style="background:${hex};box-shadow:0 0 0 ${on ? '3px' : '0px'} ${hex}55">${on ? icon('<path d="M20 6 9 17l-5-5"/>', { size: 17, sw: 3, stroke: '#0c1413' }) : ''}</div>`;
+          })}
+          <label class="set-accent-custom${isCustom ? ' on' : ''}" title="Custom hex color" style="position:relative;cursor:pointer">
+            <input type="color" value="${esc(isCustom ? accent : '#4fe3d1')}" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer" data-act-color="setAccent">
+            <span>${isCustom ? '✓' : '+'}</span>
+          </label>
+        </div>`;
+      }
       default:
         return '';
     }

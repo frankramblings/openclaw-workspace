@@ -18,6 +18,7 @@ let loadingXterm = null;
 let term = null, fit = null, overlay = null, screen = null;
 let ws = null, currentKey = null;
 let lastRect = null, fitTO = null;
+let currentMount = null, ro = null, roTO = null;
 
 function injectCss(href) {
   if (document.querySelector(`link[data-xt="${href}"]`)) return;
@@ -109,7 +110,15 @@ function doFit() {
   } catch (e) {}
 }
 
-function hide() { if (overlay) overlay.style.display = 'none'; }
+function hide() {
+  if (overlay) overlay.style.display = 'none';
+  // Clear lastRect so doFit() always runs when the terminal next becomes
+  // visible — stale rect caused by tab-switch would skip the fit otherwise.
+  lastRect = null;
+  currentMount = null;
+  if (ro) { ro.disconnect(); ro = null; }
+  clearTimeout(roTO);
+}
 
 // Called after every app render (and on window resize).
 async function onRender() {
@@ -128,6 +137,16 @@ async function onRender() {
   overlay.style.width = r.width + 'px';
   overlay.style.height = r.height + 'px';
   lastRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+
+  // (Re)attach ResizeObserver when the mount element changes (e.g. tab switch
+  // creates a fresh DOM node). Fires when the mount's rect changes — keyboard
+  // animation completing, sheet reflow — so we reposition without polling.
+  if (mount !== currentMount) {
+    if (ro) { ro.disconnect(); ro = null; }
+    currentMount = mount;
+    ro = new ResizeObserver(() => { clearTimeout(roTO); roTO = setTimeout(onRender, 50); });
+    ro.observe(mount);
+  }
 
   const key = (runtime.state && runtime.state.live && runtime.state.live.chat && runtime.state.live.chat.activeId) || 'global';
   if (!ws || key !== currentKey) connect(key);

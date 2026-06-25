@@ -30,9 +30,18 @@ const SETTINGS_TOGGLE_MAP = {
 };
 
 function setAccentVars(hex) {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return;
   const s = document.documentElement.style;
   s.setProperty('--accent', hex);
-  s.setProperty('--red', hex); // REAL theme accent var — makes the swatch drive the app
+  s.setProperty('--red', hex); // REAL theme accent var — makes the swatch drive the classic gateway
+  // Redesign uses --teal / --teal2 / --tealtint throughout; derive all three.
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const toHex = (n) => Math.round(n).toString(16).padStart(2, '0');
+  s.setProperty('--teal', hex);
+  s.setProperty('--teal2', `#${toHex(r * 0.58)}${toHex(g * 0.58)}${toHex(b * 0.58)}`);
+  s.setProperty('--tealtint', `rgba(${r},${g},${b},.10)`);
 }
 
 // Best-effort persistence helpers — swallow every error.

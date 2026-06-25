@@ -125,4 +125,13 @@ assert.ok(/data-arg="GMAIL"[^>]*class="[^"]*active/.test(chips) ||
   'active class on the filtered chip');
 assert.ok(chips.includes('⚠'), 'error badge shown for slack');
 
+// --- dueChipToISO: maps Add-to-Asana date chips to ISO YYYY-MM-DD ----------
+import { dueChipToISO } from '../../frontend-overrides/js/redesign/live/inbox-logic.js';
+const MON = Date.UTC(2026, 5, 29, 12, 0, 0); // 2026-06-29 is a Monday (UTC noon)
+assert.equal(dueChipToISO('today', MON), '2026-06-29');
+assert.equal(dueChipToISO('tomorrow', MON), '2026-06-30');
+assert.equal(dueChipToISO('fri', MON), '2026-07-03', 'next Friday from Mon');
+assert.equal(dueChipToISO('nextweek', MON), '2026-07-06', 'next Monday');
+assert.equal(dueChipToISO('none', MON), null);
+
 console.log('inbox-logic: all assertions OK');

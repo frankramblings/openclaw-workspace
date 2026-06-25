@@ -152,3 +152,20 @@ export function cardButtonsHtml(item, esc) {
   });
   return `<div class="card-actions">${btns.join('')}</div>`;
 }
+
+// --- dueChipToISO: maps Add-to-Asana date chips to ISO YYYY-MM-DD ----------
+// Pure helper — takes nowMs so it's deterministic/testable regardless of TZ.
+// Chips: today | tomorrow | fri | nextweek | none (anything else → null).
+function _iso(ms) { return new Date(ms).toISOString().slice(0, 10); }
+const DAY = 86400000;
+export function dueChipToISO(chip, nowMs) {
+  const c = String(chip || '').toLowerCase();
+  const d = new Date(nowMs);
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  if (c === 'none') return null;
+  if (c === 'today') return _iso(nowMs);
+  if (c === 'tomorrow') return _iso(nowMs + DAY);
+  if (c === 'fri') { let add = (5 - dow + 7) % 7; if (add === 0) add = 7; return _iso(nowMs + add * DAY); }
+  if (c === 'nextweek') { const add = ((1 - dow + 7) % 7) || 7; return _iso(nowMs + add * DAY); }
+  return null;
+}

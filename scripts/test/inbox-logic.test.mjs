@@ -111,4 +111,18 @@ assert.ok(html.includes('data-act="dismiss"'), 'dismiss ✕ present');
 assert.ok(html.includes('data-arg="a1"'), 'every button carries the item id');
 assert.ok(!/data-act="dismiss"[^>]*>Archive/.test(html), 'Archive is not wired to dismiss');
 
+// --- chipRowHtml: interactive source-filter chips with error badges -----------
+import { chipRowHtml } from '../../frontend-overrides/js/redesign/live/inbox-logic.js';
+const chips = chipRowHtml(
+  { all: 5, GMAIL: 3, SLACK: 2, OBSIDIAN: 1 },
+  { filter: 'GMAIL', errors: { slack: 'timeout' } },
+  (x) => String(x));
+assert.ok(chips.includes('data-act="setFilter"'), 'chips are clickable');
+assert.ok(chips.includes('data-arg="ALL"'), 'All chip present');
+assert.ok(chips.includes('data-arg="OBSIDIAN"'), 'obsidian chip present');
+assert.ok(/data-arg="GMAIL"[^>]*class="[^"]*active/.test(chips) ||
+          /class="[^"]*active[^"]*"[^>]*data-arg="GMAIL"/.test(chips),
+  'active class on the filtered chip');
+assert.ok(chips.includes('⚠'), 'error badge shown for slack');
+
 console.log('inbox-logic: all assertions OK');

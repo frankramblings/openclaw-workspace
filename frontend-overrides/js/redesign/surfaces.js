@@ -4,7 +4,7 @@
 
 import { I, icon } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
-import { cardActions, filterVisible, sourceCounts, cardButtonsHtml } from './live/inbox-logic.js';
+import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml } from './live/inbox-logic.js';
 import {
   AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES, PAST_RESEARCH,
   LIBRARY, KIND_STYLE, LIB_FILTERS, NOTES, EMAILS, INBOX,
@@ -361,7 +361,6 @@ function inboxSurface(s) {
   const visible = filterVisible(items, { dismissed: s.dismissed, filter: s.inboxFilter });
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
-  const cnt = (src) => visible.filter((m) => m.src === src).length;
 
   const needsCard = (it) => `
     <div class="inbox-card">
@@ -385,12 +384,10 @@ function inboxSurface(s) {
         <div class="oc-spacer"></div>
         <button class="triage-btn" data-act="triageAll">✦ Triage with Gary</button>
       </div>
-      <div class="src-chips">
-        <span class="src-chip active">All ${visible.length}</span>
-        <span class="src-chip"><span class="dot" style="background:var(--red)"></span>gmail ${cnt('GMAIL')}</span>
-        <span class="src-chip"><span class="dot" style="background:var(--green)"></span>slack ${cnt('SLACK')}</span>
-        <span class="src-chip"><span class="dot" style="background:var(--gold)"></span>asana ${cnt('ASANA')}</span>
-      </div>
+      ${chipRowHtml(
+        sourceCounts(items, { dismissed: s.dismissed }, s.live?.inbox?.sources),
+        { filter: s.inboxFilter, errors: s.live?.inbox?.errors || {} },
+        esc)}
     </div>
     <div class="inbox-scroll">
       ${when(needs.length > 0, `<div class="grp-label"><span class="lbl needs">NEEDS YOU</span><span class="n">${needs.length}</span><div class="sect-divider"></div></div>${map(needs, needsCard)}`)}

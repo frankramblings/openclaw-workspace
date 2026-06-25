@@ -116,6 +116,25 @@ export function openUrlFor(item) {
   return (item && item.meta && item.meta.url) || null;
 }
 
+// Chip-row color dots, one per known source.
+const CHIP_DOT = { GMAIL: 'var(--red)', SLACK: 'var(--green)', ASANA: 'var(--gold)',
+  OBSIDIAN: 'var(--purple, #b794f6)', DOCUMENTS: 'var(--blue, #6aa6f0)' };
+
+export function chipRowHtml(counts, opts, esc) {
+  const filter = (opts && opts.filter) || null;
+  const errors = (opts && opts.errors) || {};
+  const errUp = {}; for (const k of Object.keys(errors)) errUp[k.toUpperCase()] = true;
+  const chip = (key, label, n) => {
+    const active = (key === 'ALL' && !filter) || key === filter;
+    const dot = key === 'ALL' ? '' : `<span class="dot" style="background:${CHIP_DOT[key] || 'var(--muted)'}"></span>`;
+    const warn = errUp[key] ? ' <span class="chip-warn" title="source error">⚠</span>' : '';
+    return `<span class="src-chip${active ? ' active' : ''}" data-act="setFilter" data-arg="${key}">${dot}${esc(label)} ${n || 0}${warn}</span>`;
+  };
+  const order = ['GMAIL', 'SLACK', 'ASANA', 'OBSIDIAN', 'DOCUMENTS'];
+  const present = order.filter((k) => k in counts || errUp[k]);
+  return `<div class="src-chips">${chip('ALL', 'All', counts.all)}${present.map((k) => chip(k, k.toLowerCase(), counts[k])).join('')}</div>`;
+}
+
 // Render the ordered action row for a card. `esc` is the caller's HTML-escaper.
 // primary → solid btn; ghost → ghost btn; icon → small affordance; x → the ✕.
 export function cardButtonsHtml(item, esc) {

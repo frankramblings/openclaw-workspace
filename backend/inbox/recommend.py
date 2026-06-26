@@ -12,7 +12,7 @@ ALLOWED = {
     "gmail": {"archive", "delete", "reply", "gary", "none"},
     "slack": {"mark_read", "gary", "none"},
     "asana": {"complete", "gary", "none"},
-    "obsidian": {"reviewed", "dismiss", "add_asana", "gary", "none"},
+    "obsidian": {"reviewed", "dismiss", "add_asana", "complete", "gary", "none"},
     "documents": {"gary", "none"},
 }
 

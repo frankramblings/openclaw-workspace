@@ -7,9 +7,8 @@ import { esc, map, when, stripMd } from './dom.js';
 import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import {
-  AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES, PAST_RESEARCH,
-  LIBRARY, KIND_STYLE, LIB_FILTERS, NOTES, EMAILS, INBOX,
-  CAL_MONTH, CAL_CELLS, CAL_BAR_TONE,
+  AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES,
+  KIND_STYLE, LIB_FILTERS, CAL_BAR_TONE,
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
 import { renderActivity } from './chat-activity.js';
@@ -295,10 +294,10 @@ ${esc(d)}</textarea>
 // EMAIL
 // ===========================================================================
 function emailSurface(s) {
-  const emails = s.live?.email?.emails ?? EMAILS;
+  const emails = s.live?.email?.emails || [];
   const emailUnread = emails.filter((e) => e.unread).length;
   const sel = Math.max(0, Math.min(s.selEmail, emails.length - 1));
-  const m = s.live?.email?.current ?? emails[sel] ?? EMAILS[0];
+  const m = s.live?.email?.current ?? emails[sel] ?? {};
   const attach = m.attach || [];
   const replyTo = (m.from || '').split(' ')[0];
   return `
@@ -441,7 +440,7 @@ function inboxReaderBody(r) {
 function inboxReaderOverlay(s) {
   const r = s.inboxReader;
   if (!r) return '';
-  const items = s.live?.inbox?.items ?? INBOX;
+  const items = s.live?.inbox?.items || [];
   const item = items.find((m) => m.id === r.id) || {};
   const title = item.who || r.id || 'Detail';
   return `
@@ -499,7 +498,7 @@ function inboxHistoryDrawer(s) {
 // INBOX
 // ===========================================================================
 function inboxSurface(s) {
-  const items = s.live?.inbox?.items ?? INBOX;
+  const items = s.live?.inbox?.items || [];
   const visible = filterVisible(items, { dismissed: s.dismissed, filter: s.inboxFilter });
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
@@ -596,8 +595,8 @@ function calendarSurface(s) {
     return `<div class="${cls.join(' ')}">${dateHtml}${bars}${events}${more}</div>`;
   };
   const weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-  const cells = s.live?.calendar?.cells ?? CAL_CELLS;
-  const month = s.live?.calendar?.month ?? CAL_MONTH;
+  const cells = s.live?.calendar?.cells || [];
+  const month = s.live?.calendar?.month || '';
   return `
   <div class="cal-col">
     <div class="cal-top">
@@ -678,12 +677,12 @@ function researchSurface(s) {
       ${when(done, `
       <div class="res-card done">
         <div class="row1"><span class="res-done-ico">✓</span><span class="t">Report ready</span><span class="meta">3 rounds · 8 sources · 2:14</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:30px" data-act="resetResearch">New research</button></div>
-        <p class="res-summary">${s.live?.research?.summary ?? '<strong>Transistor</strong> wins on price-per-show and unlimited podcasts; <strong>Buzzsprout</strong> leads on ease + analytics polish; <strong>Captivate</strong> is strongest for growth/marketing tools. None has a first-party Wistia integration — all support it via RSS + embed.'}</p>
+        <p class="res-summary">${s.live?.research?.summary || ''}</p>
         <div class="card-actions"><button class="btn-sm" data-act="resReport" data-arg="${esc(s.live?.research?.lastRid || '')}">↗ Visual Report</button><button class="btn-sm ghost" data-act="resDiscuss" data-arg="${esc(s.live?.research?.lastRid || '')}">Discuss in chat</button><button class="btn-sm ghost" data-act="go" data-arg="library">Save to Library</button></div>
       </div>`)}
 
-      <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past ?? PAST_RESEARCH).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer">Library, Research →</span></div>
-      ${map(s.live?.research?.past ?? PAST_RESEARCH, (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}
+      <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past || []).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer">Library, Research →</span></div>
+      ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}
     </div>
   </div>`;
 }
@@ -693,7 +692,7 @@ function researchSurface(s) {
 // ===========================================================================
 function librarySurface(s) {
   const lf = s.libFilter;
-  const all = s.live?.library?.items ?? LIBRARY;
+  const all = s.live?.library?.items || [];
   const lq = (s.libQuery || '').trim().toLowerCase();
   const items = all.filter((a) => (lf === 'all' || a.cat === lf) && (!lq || String(a.title || '').toLowerCase().includes(lq)));
   return `
@@ -722,9 +721,9 @@ function librarySurface(s) {
 // NOTES
 // ===========================================================================
 function notesSurface(s) {
-  const docs0 = s.live?.notes?.docs ?? NOTES;
+  const docs0 = s.live?.notes?.docs || [];
   const sel = Math.max(0, Math.min(s.selDoc, docs0.length - 1));
-  const doc = docs0[sel] || NOTES[0];
+  const doc = docs0[sel] || { title: '', meta: '', path: '', version: 0, blocks: [] };
   const block = (b) => {
     if (b.t === 'h') return `<h2>${esc(b.text)}</h2>`;
     if (b.t === 'quote') return `<blockquote>${esc(b.text)}</blockquote>`;

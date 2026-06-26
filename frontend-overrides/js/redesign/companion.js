@@ -3,7 +3,7 @@
 
 import { I, icon } from './icons.js';
 import { esc, map, when } from './dom.js';
-import { AVATAR, FS, EXT_COLOR, DOCK } from './data.js';
+import { AVATAR, EXT_COLOR, DOCK } from './data.js';
 
 // effective tab for a surface (Gary suppressed on chat; chat defaults Terminal)
 export function effectiveTab(s) {
@@ -13,7 +13,7 @@ export function effectiveTab(s) {
 
 // flatten the workspace tree into renderable rows honoring fsOpen
 function fsRows(s) {
-  const tree = s.live?.companion?.tree ?? FS;
+  const tree = s.live?.companion?.tree || [];
   const rows = [];
   const walk = (nodes, depth, prefix) => {
     for (const node of nodes) {

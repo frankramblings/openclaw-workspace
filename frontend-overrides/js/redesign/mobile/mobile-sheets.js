@@ -3,12 +3,12 @@
 
 import { I, icon } from '../icons.js';
 import { esc, map, when } from '../dom.js';
-import { AVATAR, FS, EXT_COLOR } from '../data.js';
+import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, CAPTURE_PARSE, RECENT_CAPTURES } from './mobile-data.js';
 
 // compact file tree (shared FS data) for the companion sheet's Files tab
 function fileTree(s) {
-  const tree = s.live?.companion?.tree ?? FS;
+  const tree = s.live?.companion?.tree || [];
   const rows = [];
   const walk = (nodes, depth, prefix) => {
     for (const node of nodes) {

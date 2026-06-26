@@ -3,7 +3,7 @@
 
 import { I, icon } from '../icons.js';
 import { esc, map, when, stripMd } from '../dom.js';
-import { AVATAR, EMAILS, INBOX } from '../data.js';
+import { AVATAR } from '../data.js';
 import { QUICK_CHIPS } from '../surfaces.js';
 import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
@@ -118,7 +118,7 @@ ${esc(s.draft || '')}</textarea>
 
 // ---- inbox ----------------------------------------------------------------
 export function mInbox(s) {
-  const items = s.live?.inbox?.items ?? INBOX;
+  const items = s.live?.inbox?.items || [];
   const visible = filterVisible(items, { dismissed: s.dismissed, filter: s.inboxFilter });
   const needs = visible.filter((m) => m.group === 'needs');
   const fyi = visible.filter((m) => m.group === 'fyi');
@@ -231,7 +231,7 @@ export function mInbox(s) {
 
 // ---- email list -----------------------------------------------------------
 export function mEmailList(s) {
-  const emails = s.live?.email?.emails ?? EMAILS;
+  const emails = s.live?.email?.emails || [];
   const emailUnread = emails.filter((e) => e.unread).length;
   return `
   <div class="m-head">
@@ -253,8 +253,8 @@ export function mEmailList(s) {
 
 // ---- email reader (pushed, no tab bar) ------------------------------------
 export function mEmailReader(s) {
-  const emails = s.live?.email?.emails ?? EMAILS;
-  const m = s.live?.email?.current ?? emails[s.selEmail] ?? EMAILS[0];
+  const emails = s.live?.email?.emails || [];
+  const m = s.live?.email?.current ?? emails[s.selEmail] ?? {};
   const attach = (m.attach || [])[0];
   const replyTo = (m.from || '').split(' ')[0];
   return `

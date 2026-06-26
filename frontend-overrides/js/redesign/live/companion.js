@@ -18,6 +18,7 @@
 import { apiGet, apiJson } from './api.js';
 import { runtime } from './runtime.js';
 import { initTerminal } from './terminal.js';
+import { initDocEditor, actions as docActions } from './document-editor.js';
 
 /** Lowercase file extension (no dot), or '' when the name has none. */
 function extOf(name) {
@@ -60,6 +61,7 @@ function transform(tree) {
 // Populate state.live.companion in the mock's shape. Throwing keeps the mock.
 export async function load(state) {
   initTerminal(); // boot the persistent xterm overlay (idempotent)
+  initDocEditor(); // boot the persistent doc editor overlay (idempotent)
   const data = await apiGet('/api/workspace/tree?hidden=0');
   if (!data || !Array.isArray(data.tree)) {
     throw new Error('workspace tree: missing tree array');
@@ -113,4 +115,9 @@ export const actions = {
     try { await load(state); } catch (_) {}
     runtime.render();
   },
+  wsOpenFile: async (path) => {
+    await docActions.openWorkspaceFile(path);
+  },
+  saveDoc: async () => docActions.saveDoc(),
+  closeDoc: async () => docActions.closeDoc(),
 };

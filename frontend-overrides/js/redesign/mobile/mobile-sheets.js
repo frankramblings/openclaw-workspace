@@ -20,7 +20,7 @@ function fileTree(s) {
         rows.push(`<div class="fs-dir ocfile" data-act="toggleFs" data-arg="${esc(path)}" style="padding-left:${pad}px;padding-right:14px">${chev}${I.folder(14)}<span class="nm">${esc(node.n)}</span>${node.meta ? `<span class="meta">${esc(node.meta)}</span>` : ''}</div>`);
         if (open && node.children) walk(node.children, depth + 1, path);
       } else {
-        rows.push(`<div class="fs-file" style="padding-left:${pad + 17}px;padding-right:14px">${I.file(13, EXT_COLOR[node.t] || 'var(--mut)')}<span class="nm">${esc(node.n)}</span></div>`);
+        rows.push(`<div class="fs-file ocfile" data-act="wsOpenFile" data-arg="${esc(path)}" style="padding-left:${pad + 17}px;padding-right:14px;cursor:pointer">${I.file(13, EXT_COLOR[node.t] || 'var(--mut)')}<span class="nm">${esc(node.n)}</span></div>`);
       }
     }
   };

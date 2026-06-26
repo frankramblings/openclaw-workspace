@@ -23,6 +23,30 @@ function link(text, url) {
   return `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 }
 
+// Known text-file extensions whose bare filenames are worth linking (used for
+// code spans; plain-text matching requires a slash to reduce false positives).
+const FILE_EXTS = /^(md|txt|json|js|mjs|ts|tsx|jsx|py|css|html|htm|sh|yaml|yml|toml|ini|csv|log|sql|env|skill|rb|go|rs|c|cpp|h|java|kt|swift|vue|svelte|php)$/i;
+
+function isFilePath(s) {
+  if (!s || /[\s'"<>]/.test(s)) return false;
+  if (s.includes('/')) return /\w/.test(s);
+  const dot = s.lastIndexOf('.');
+  return dot > 0 && FILE_EXTS.test(s.slice(dot + 1));
+}
+
+// Turn path-like tokens in HTML text nodes into clickable spans. Splits on HTML
+// tags so we never mangle attribute values or tag names. Only matches paths
+// with a slash — bare filenames in plain text have too many false positives.
+function linkifyPaths(html) {
+  const PATH_RE = /(?<![.\w/\\])((?:\.{1,2}\/|\/)?(?:[\w.-]+\/)+[\w.-]+\.[\w]{1,10})(?![.\w/])/g;
+  return html.replace(/(<[^>]+>)|([^<]+)/g, (m, tag, text) => {
+    if (tag) return tag;
+    return text.replace(PATH_RE, (path) =>
+      `<span class="file-link" data-act="wsOpenFile" data-arg="${esc(path)}">${path}</span>`
+    );
+  });
+}
+
 // Inline formatting on a single run of raw text. Code spans are pulled out and
 // escaped separately so their contents are never treated as markdown.
 export function inline(text) {
@@ -39,8 +63,15 @@ export function inline(text) {
     .replace(/(^|[^_\w])_([^_\n]+)_(?=[^_\w]|$)/g, '$1<em>$2</em>')
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, u) => link(t, u));
-  return s.replace(new RegExp(C0 + '(\\d+)' + C1, 'g'),
-    (_, i) => `<code class="code-inline">${esc(codes[+i])}</code>`);
+  s = linkifyPaths(s);
+  return s.replace(new RegExp(C0 + '(\\d+)' + C1, 'g'), (_, i) => {
+    const raw = codes[+i];
+    const escaped = esc(raw);
+    if (isFilePath(raw.trim())) {
+      return `<code class="code-inline file-link" data-act="wsOpenFile" data-arg="${escaped}">${escaped}</code>`;
+    }
+    return `<code class="code-inline">${escaped}</code>`;
+  });
 }
 
 const RE = {

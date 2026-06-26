@@ -23,7 +23,7 @@ function fsRows(s) {
         rows.push({ isDir: true, name: node.n, meta: node.meta || '', open, pad: 8 + depth * 15, path });
         if (open && node.children) walk(node.children, depth + 1, path);
       } else {
-        rows.push({ isDir: false, name: node.n, pad: 8 + depth * 15 + 17, color: EXT_COLOR[node.t] || 'var(--mut)' });
+        rows.push({ isDir: false, name: node.n, path, pad: 8 + depth * 15 + 17, color: EXT_COLOR[node.t] || 'var(--mut)' });
       }
     }
   };
@@ -37,7 +37,7 @@ function fileTreeHtml(s, { dense } = {}) {
       const chev = `<svg width="${dense ? 10 : 11}" height="${dense ? 10 : 11}" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="chev" style="transform:rotate(${r.open ? '90deg' : '0deg'})"><path d="m9 18 6-6-6-6"/></svg>`;
       return `<div class="fs-dir ocfile" data-act="toggleFs" data-arg="${esc(r.path)}" style="padding-left:${r.pad}px">${chev}${I.folder(dense ? 13 : 14)}<span class="nm">${esc(r.name)}</span>${r.meta ? `<span class="meta">${esc(r.meta)}</span>` : ''}</div>`;
     }
-    return `<div class="fs-file" style="padding-left:${r.pad}px">${I.file(dense ? 12 : 13, r.color)}<span class="nm">${esc(r.name)}</span></div>`;
+    return `<div class="fs-file ocfile" data-act="wsOpenFile" data-arg="${esc(r.path)}" style="padding-left:${r.pad}px;cursor:pointer">${I.file(dense ? 12 : 13, r.color)}<span class="nm">${esc(r.name)}</span></div>`;
   }).join('');
 }
 

@@ -209,6 +209,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-body p:last-child{margin-bottom:0}
 .code-inline{font-family:var(--mono);font-size:11px;background:#23252b;color:var(--teal);padding:1.5px 6px;border-radius:5px}
 .code-inline.gold{font-size:10px;color:var(--gold);padding:1px 6px}
+.file-link{cursor:pointer}.file-link:hover{text-decoration:underline dotted}
 .code-card{border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin-bottom:13px;background:#121317}
 .code-card .bar{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:#181a1f;border-bottom:1px solid var(--bd2)}
 .code-card .bar span{font-family:var(--mono);font-size:9.5px;color:var(--faint)}

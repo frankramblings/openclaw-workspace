@@ -331,6 +331,18 @@ def workspace_tree(fresh: int = 0, hidden: int = 0):
     return data
 
 
+class FileWriteBody(BaseModel):
+    path: str
+    content: str
+
+@router.put("/api/workspace/file")
+def workspace_file_write(body: FileWriteBody):
+    target = _mutable_or_400(body.path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="not a file")
+    target.write_text(body.content, encoding="utf-8")
+    return {"ok": True}
+
 @router.get("/api/workspace/file")
 def workspace_file(path: str):
     root = workspace_root()

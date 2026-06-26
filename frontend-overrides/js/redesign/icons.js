@@ -8,6 +8,34 @@ export function icon(body, { size = 18, sw = 1.7, stroke = 'currentColor', fill 
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${vb} ${vb}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
 
+// The "fortress" loader — animated Kryptonian crystals (the brand loading
+// spinner; named for Superman's Fortress of Solitude). Ported from the classic
+// UI's fortress-loading-48.svg. Markup is namespaced (fl-* classes, NO inner
+// <style> — the source asset's <style> has :root/.crystal rules that leak when
+// inlined); the fl-grow/fl-shard keyframes live in redesign.css. Color is
+// inherited via currentColor, so set `color` on the wrapper to tint it.
+const FORTRESS_BODY = `
+  <ellipse cx="24" cy="38.5" rx="15" ry="3.5" fill="currentColor" opacity=".14"/>
+  <g stroke-linejoin="round">
+    <path class="fl-crystal fl-c1" d="M23.6 38 L20.8 16 L24 6 L27.2 16 L24.4 38 Z" fill="currentColor" fill-opacity=".82" stroke="currentColor" stroke-opacity="1" stroke-width=".9"/>
+    <path class="fl-crystal fl-c2" d="M17.5 38 L15.2 23 L18.4 12 L21.1 26 L20 38 Z" fill="currentColor" fill-opacity=".62" stroke="currentColor" stroke-opacity=".9" stroke-width=".8"/>
+    <path class="fl-crystal fl-c3" d="M29 38 L27.4 25 L31.5 10 L34.4 24 L32.4 38 Z" fill="currentColor" fill-opacity=".62" stroke="currentColor" stroke-opacity=".9" stroke-width=".8"/>
+    <path class="fl-crystal fl-c4" d="M12.7 39 L11.5 29 L14.6 20 L17 31 L16 39 Z" fill="currentColor" fill-opacity=".44" stroke="currentColor" stroke-opacity=".74" stroke-width=".75"/>
+    <path class="fl-crystal fl-c5" d="M35.2 39 L33.7 30 L37.6 19 L40.1 31 L38.7 39 Z" fill="currentColor" fill-opacity=".44" stroke="currentColor" stroke-opacity=".74" stroke-width=".75"/>
+    <path class="fl-crystal fl-c6" d="M20.3 39 L19.3 28 L22.1 19 L24.2 30 L23.2 39 Z" fill="currentColor" fill-opacity=".7" stroke="currentColor" stroke-opacity=".82" stroke-width=".65"/>
+    <path class="fl-crystal fl-c7" d="M26.5 39 L25.8 29 L28.3 18 L30.7 30 L29.5 39 Z" fill="currentColor" fill-opacity=".7" stroke="currentColor" stroke-opacity=".82" stroke-width=".65"/>
+  </g>
+  <g fill="currentColor">
+    <path class="fl-shard fl-s1" style="--dx:-8px;--dy:-12px" d="M15 18 l2 -3 l1 4 z"/>
+    <path class="fl-shard fl-s2" style="--dx:9px;--dy:-15px" d="M32 16 l3 -2 l-1 4 z"/>
+    <path class="fl-shard fl-s3" style="--dx:2px;--dy:-18px" d="M24 11 l2 -2 l1 3 z"/>
+  </g>`;
+
+/** Fortress crystals loader at a given pixel size. Returns an <svg> string. */
+export function fortress(size = 16) {
+  return `<svg class="fl-svg" viewBox="0 0 48 48" width="${size}" height="${size}" role="img" aria-label="Loading">${FORTRESS_BODY}</svg>`;
+}
+
 // ---- rail / surface icons -------------------------------------------------
 export const I = {
   chat: (s = 18) => icon('<path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.5 8.5 0 0 1-3.8-.9L3 20l1.9-4.1A8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z"/>', { size: s }),

@@ -2,7 +2,7 @@
 // Each returns an HTML string; interactivity is wired via data-act / data-model
 // attributes handled by app.js event delegation.
 
-import { I, icon } from './icons.js';
+import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
 import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
@@ -74,7 +74,7 @@ function convListBody(s) {
     + `<span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span>`
     + `<span class="conv-title">${esc(r.title)}</span>`
     + (r.notify ? `<span class="conv-dot notify" title="Reply finished"></span>`
-        : r.working ? `<span class="conv-dot working" title="Working…"></span>` : '')
+        : r.working ? `<span class="conv-spin working" title="Working…">${fortress(15)}</span>` : '')
     + (r.important ? `<span class="conv-fav" aria-hidden="true">${I.star(13, true)}</span>` : '')
     + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
     + (rowMenuOpen === r.id ? convMenu(r) : '')
@@ -665,7 +665,7 @@ function researchSurface(s) {
 
       ${when(running, `
       <div class="res-card running">
-        <div class="row1"><span class="res-spin"></span><span class="running-ttl">${esc(s.researchProgress?.label || 'Researching…')}</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:28px" data-act="resetResearch">Stop</button></div>
+        <div class="row1"><span class="res-spin">${fortress(14)}</span><span class="running-ttl">${esc(s.researchProgress?.label || 'Researching…')}</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:28px" data-act="resetResearch">Stop</button></div>
         <div class="res-steps">
           <div class="res-step"><span style="color:var(--green)">✓</span><div class="done-txt">Planned the search — 4 sub-questions</div></div>
           <div class="res-step"><span style="color:var(--green)">✓</span><div class="done-txt">Searched the web — <span class="mono" style="color:var(--faint)">12 results</span> across 4 queries</div></div>

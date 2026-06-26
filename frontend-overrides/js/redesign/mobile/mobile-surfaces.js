@@ -1,7 +1,7 @@
 // Mobile surface renderers (phone shell). Reuse the shared data from ../data.js;
 // only chrome/layout differs from desktop.
 
-import { I, icon } from '../icons.js';
+import { I, icon, fortress } from '../icons.js';
 import { esc, map, when, stripMd } from '../dom.js';
 import { AVATAR } from '../data.js';
 import { QUICK_CHIPS } from '../surfaces.js';
@@ -60,7 +60,7 @@ export function mChatMsg(m, s) {
 // Pull-to-refresh indicator. Any .m-scroll marked data-ptr="1" with this as its
 // first child becomes pullable (see wireMobileGestures); refresh() re-fetches
 // whatever surface is active, so the markup is all each surface needs.
-const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr" style="height:${s.refreshing ? 'auto' : '0'}">${when(s.refreshing, `<span class="spin"></span><span class="lbl">${label}</span>`)}</div>`;
+const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr" style="height:${s.refreshing ? 'auto' : '0'}">${when(s.refreshing, `<span class="spin">${fortress(20)}</span><span class="lbl">${label}</span>`)}</div>`;
 
 // ---- chat -----------------------------------------------------------------
 export function mChat(s) {

@@ -211,10 +211,19 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
 
   root.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1 || state.refreshing) { ptr = null; return; } // never stack a pull on an in-flight refresh
-    const feed = e.target.closest('[data-ptr]');
-    if (!feed || feed.scrollTop > 0) { ptr = null; return; }
+    let feed = e.target.closest('[data-ptr]');
+    let fromChrome = false;
+    if (!feed) {
+      // Classic parity: the top chrome (header / pull handle) isn't a scroll
+      // ancestor of the message list, so a downward pull there must refresh
+      // regardless of how far the thread is scrolled. Anchor to the screen's
+      // own feed (chrome + feed are siblings inside .m-app).
+      const chrome = e.target.closest('.m-head, .m-comp-handle');
+      if (chrome) { feed = chrome.parentElement.querySelector('[data-ptr]'); fromChrome = true; }
+    }
+    if (!feed || (!fromChrome && feed.scrollTop > 0)) { ptr = null; return; }
     const t = e.touches[0];
-    ptr = { feed, el: feed.querySelector('.m-ptr'), startX: t.clientX, startY: t.clientY, active: false, h: 0 };
+    ptr = { feed, el: feed.querySelector('.m-ptr'), startX: t.clientX, startY: t.clientY, active: false, h: 0, fromChrome };
   }, { passive: true });
 
   root.addEventListener('touchmove', (e) => {
@@ -222,9 +231,12 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     const t = e.touches[0];
     const dx = t.clientX - ptr.startX;
     const dy = t.clientY - ptr.startY;
-    // bail (let native scroll / sideways swipe win) if not yet committed to a pull
-    if (!ptr.active && (ptr.feed.scrollTop > 0 || dy < ARM || Math.abs(dx) > dy)) {
-      if (dy < 0 || ptr.feed.scrollTop > 0 || Math.abs(dx) > dy) ptr = null; // clearly not a pull — release it
+    // bail (let native scroll / sideways swipe win) if not yet committed to a pull.
+    // A chrome-anchored pull ignores the feed's scroll position (the header isn't
+    // its scroll ancestor), matching classic.
+    const scrolled = !ptr.fromChrome && ptr.feed.scrollTop > 0;
+    if (!ptr.active && (scrolled || dy < ARM || Math.abs(dx) > dy)) {
+      if (dy < 0 || scrolled || Math.abs(dx) > dy) ptr = null; // clearly not a pull — release it
       return; // otherwise keep waiting for a deliberate downward pull
     }
     ptr.active = true;

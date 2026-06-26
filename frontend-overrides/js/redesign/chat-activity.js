@@ -16,7 +16,7 @@
 //            cursor?:bool }   // append a blinking cursor (active run)
 // Collapse state lives in s.chatUI: { trail:{[msgId]:bool}, step:{[stepId]:bool} }.
 
-import { icon } from './icons.js';
+import { icon, fortress } from './icons.js';
 import { esc, map, when } from './dom.js';
 import { groupSteps, groupLabel, summarize } from './chat-activity-group.js';
 
@@ -76,7 +76,7 @@ function stepRow(st, s, { iconHtml, alwaysOpen } = {}) {
 function activeStep(st) {
   const out = (st.lines && st.lines.length) ? `<div class="act-detail">${codeBlock(st.lines, true)}</div>` : '';
   return `<div class="act-working">
-    <span class="act-spinner gold"></span>
+    <span class="act-spinner gold">${fortress(14)}</span>
     <span class="shimmer act-shim">${esc(st.label || 'Running')}</span>
     ${st.file ? `<span class="file">${esc(st.file)}</span>` : ''}
   </div>${out}`;
@@ -120,7 +120,7 @@ function renderWorking(m, s) {
   return `
   <div class="act-wrap"><div class="act-spine">
     <div class="act-working">
-      <span class="act-spinner"></span>
+      <span class="act-spinner">${fortress(14)}</span>
       <span class="shimmer act-shim">Working…</span>
       ${act.elapsed ? `<span class="act-elapsed">${esc(act.elapsed)}</span>` : ''}
       <div class="oc-spacer"></div>

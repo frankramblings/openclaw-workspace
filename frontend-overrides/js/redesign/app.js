@@ -54,6 +54,15 @@ let rootRevealed = false;
 root.style.visibility = 'hidden';
 const isMobile = () => mq.matches;
 
+// Fade out the fortress boot loader (index.html #app-loader) once the shell is
+// revealed. Idempotent — safe to call from every reveal path.
+function hideBootLoader() {
+  const l = document.getElementById('app-loader');
+  if (!l || l.classList.contains('is-hiding')) return;
+  l.classList.add('is-hiding');
+  setTimeout(() => l.remove(), 320);
+}
+
 // ---- rail -----------------------------------------------------------------
 function railItem(surface, label, iconHtml, badge) {
   const active = state.surface === surface;
@@ -168,6 +177,7 @@ function render() {
   if (!rootRevealed && Object.keys(state.live).length > 0) {
     rootRevealed = true;
     root.style.visibility = '';
+    hideBootLoader();
   }
 
   // auto-dismiss toast after 8 s (re-arm on every render while toast is set)
@@ -320,6 +330,18 @@ function loadActive(force = false) {
   loadSurface(activeSurface(), { state, actions, render, force });
 }
 
+// Refresh the active surface's live data (chat thread, inbox, etc.). Shared by
+// the pull-to-refresh gesture AND the chat header's refresh button — chat is
+// bottom-pinned, so a top-pull is awkward to reach; the button refreshes from
+// anywhere without scrolling to the top of history.
+function doRefresh() {
+  state.refreshing = true; render();
+  clearTimeout(refreshTimer);
+  loadActive(true);
+  refreshTimer = setTimeout(() => { state.refreshing = false; render(); }, 900);
+}
+actions.refreshChat = doRefresh;
+
 // ---- event delegation -----------------------------------------------------
 root.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');
@@ -333,12 +355,34 @@ root.addEventListener('click', (e) => {
     }
     return;
   }
+  // The composer Send button is driven off pointerup (below), not click, to
+  // dodge the mobile focus/click race. Skip it here so it doesn't double-fire.
+  if (t.closest('.m-send')) return;
   const name = t.getAttribute('data-act');
   const fn = actions[name];
   if (!fn) return;
   fn(t.getAttribute('data-arg'), e);
   render();
   loadActive(); // fetch live data for any newly-activated surface (idempotent)
+});
+
+// Mobile: send from pointerup instead of click. Tapping any button blurs the
+// focused textarea, which dismisses the soft keyboard and triggers a layout
+// shift that can swallow the synthesized click — that's why a click-based send
+// took two taps on mobile (first tap eaten). pointerup fires before that race;
+// preventDefault stops the ghost click from double-sending. send reads
+// state.draft, not the focused field, so focus changes don't matter. Works on
+// desktop too (pointer events cover mouse).
+root.addEventListener('pointerup', (e) => {
+  const sb = e.target.closest('.m-send');
+  if (!sb) return;
+  e.preventDefault();
+  const name = sb.getAttribute('data-act') || 'send';
+  const fn = actions[name];
+  if (!fn) return;
+  fn(sb.getAttribute('data-arg'), e);
+  render();
+  loadActive();
 });
 
 // live-bound inputs/textareas
@@ -550,12 +594,7 @@ root.addEventListener('focusout', (e) => {
 wireMobileGestures({
   root, state,
   commitArchive: (id) => actions.dismiss(id),
-  refresh: () => {
-    state.refreshing = true; render();
-    clearTimeout(refreshTimer);
-    loadActive(true); // actually re-fetch the active surface's live data (inbox), not just spin
-    refreshTimer = setTimeout(() => { state.refreshing = false; render(); }, 900);
-  },
+  refresh: doRefresh,
   render,
 });
 
@@ -623,7 +662,7 @@ render();
 loadActive(); // kick off live data for the initial surface
 // Safety net: if live loading fails entirely (network down, all throws), reveal
 // after 3 s so the page doesn't stay permanently invisible.
-setTimeout(() => { if (!rootRevealed) { rootRevealed = true; root.style.visibility = ''; } }, 3000);
+setTimeout(() => { if (!rootRevealed) { rootRevealed = true; root.style.visibility = ''; hideBootLoader(); } }, 3000);
 // Prime the chat loader even when booting into another surface, so the
 // cross-session turn notifier (started in chat's load()) runs from the start —
 // a reply finishing while you're in Inbox/Email/etc. still notifies.

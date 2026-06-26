@@ -105,6 +105,9 @@
 .m-model-chip { flex: none; display: flex; align-items: center; gap: 5px; font-size: 10px; padding: 4px 10px; border: 1px solid var(--bd); border-radius: 999px; background: transparent; color: var(--mut); cursor: pointer; white-space: nowrap; max-width: 130px; }
 .m-model-chip .m-model-name { overflow: hidden; text-overflow: ellipsis; }
 
+/* Chat header refresh button: spin its icon while a refresh is in flight. */
+.m-icon-btn.spinning svg { animation: spin .8s linear infinite; }
+
 /* ---- bottom tab bar ------------------------------------------------------- */
 .m-tabbar {
   flex: none;
@@ -228,8 +231,11 @@ html.native .m-tabbar {
 
 /* ---- inbox ---------------------------------------------------------------- */
 .m-feed { padding: 6px 14px 24px; overscroll-behavior-y: contain; }
-.m-ptr { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; overflow: hidden; transition: height .2s ease; }
-.m-ptr .spin { width: 22px; height: 22px; border: 2px solid var(--teal); border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+/* Sticky so a header/chrome pull shows feedback even when the thread is scrolled
+   to the bottom (the indicator would otherwise sit scrolled out of view up top).
+   At height:0 it's invisible during normal scrolling; it only reveals on pull. */
+.m-ptr { position: sticky; top: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; overflow: hidden; transition: height .2s ease; box-sizing: border-box; }
+.m-ptr .spin { display: inline-flex; align-items: center; color: var(--teal); line-height: 0; }
 .m-ptr .lbl { font-size: 10.5px; color: var(--faint); }
 .m-grp { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; margin: 4px 2px 9px; }
 .m-grp.needs { color: var(--teal); } .m-grp.fyi { color: var(--violet); margin-top: 16px; }

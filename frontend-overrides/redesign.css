@@ -35,6 +35,35 @@ body{background:var(--bg);font-family:var(--sans);color:var(--fg);-webkit-font-s
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @keyframes spin{to{transform:rotate(360deg)}}
 
+/* ── Fortress loader (animated Kryptonian crystals) ─────────────────────────
+   The brand loading spinner — named for Superman's Fortress of Solitude. Markup
+   is emitted by icons.js `fortress()` (fl-* classes, namespaced from the classic
+   UI's fortress-loading-48.svg). Color is inherited via currentColor. */
+.fl-svg{display:inline-block;vertical-align:middle}
+.fl-crystal{transform-box:fill-box;transform-origin:50% 100%;animation:fl-grow 1.35s cubic-bezier(.2,.8,.2,1) infinite}
+.fl-c1{animation-delay:0ms}.fl-c2{animation-delay:90ms}.fl-c3{animation-delay:170ms}
+.fl-c4{animation-delay:250ms}.fl-c5{animation-delay:330ms}.fl-c6{animation-delay:410ms}.fl-c7{animation-delay:490ms}
+.fl-shard{transform-box:fill-box;transform-origin:50% 50%;animation:fl-shard 1.35s ease-out infinite;opacity:0}
+.fl-s1{animation-delay:720ms}.fl-s2{animation-delay:790ms}.fl-s3{animation-delay:860ms}
+@keyframes fl-grow{
+  0%{transform:scaleY(.08) translateY(7px);opacity:0}
+  22%{opacity:1}
+  58%{transform:scaleY(1) translateY(-2px);opacity:1}
+  76%{transform:scaleY(.82) translateY(-4px) rotate(2deg);opacity:.85}
+  100%{transform:scaleY(.08) translateY(7px) rotate(-2deg);opacity:0}
+}
+@keyframes fl-shard{
+  0%,45%{transform:translate(0,0) scale(.3);opacity:0}
+  58%{opacity:1}
+  100%{transform:translate(var(--dx),var(--dy)) scale(.15) rotate(50deg);opacity:0}
+}
+@media (prefers-reduced-motion:reduce){.fl-crystal,.fl-shard{animation:none;opacity:1}}
+
+/* Full-screen boot loader: the fortress, centered, while #oc-root is hidden. */
+#app-loader{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;
+  background:var(--bg);color:#fff;opacity:.9;transition:opacity .3s}
+#app-loader.is-hiding{opacity:0;pointer-events:none}
+
 textarea,input{font-family:var(--sans);color:var(--fg);outline:none}
 textarea::placeholder,input::placeholder{color:var(--faint)}
 input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
@@ -101,8 +130,9 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .oc-rail.collapsed .ocnav .nav-pip{display:block;position:absolute;top:7px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--teal);flex:none}
 
 .conv-dot{flex:none;width:7px;height:7px;border-radius:50%}
-.conv-dot.notify{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 20%,transparent);animation:pulse 1.6s ease-in-out infinite}
-.conv-dot.working{background:var(--teal);animation:pulse 1.2s ease-in-out infinite}
+.conv-dot.notify{background:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 20%,transparent);animation:pulse 1.6s ease-in-out infinite}
+.conv-spin.working{flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--teal)}
+.conv-spin.working .fl-svg{display:block}
 /* In-app turn-finished toast (appended to <body>, outside the render root). */
 #oc-toast-host{position:fixed;z-index:9999;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .oc-toast{pointer-events:auto;display:flex;align-items:center;gap:10px;max-width:340px;padding:11px 14px;border-radius:12px;background:var(--panel2);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent);box-shadow:0 8px 28px rgba(0,0,0,.45);color:var(--fg);font-size:11px;cursor:pointer;transform:translateY(12px);opacity:0;transition:opacity .2s ease,transform .2s ease}
@@ -198,7 +228,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .atch-ext{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;background:var(--teal2);color:#fff;border-radius:4px;padding:2px 6px;flex:none}
 .atch-name{font-size:11.5px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 
-.msg-asst{display:flex;gap:13px;margin-bottom:24px}
+.msg-asst{display:flex;gap:13px;margin-bottom:18px}
 .msg-av{width:30px;height:30px;flex:none;border-radius:8px;overflow:hidden;background:var(--teal);display:flex;align-items:center;justify-content:center}
 .msg-av img{width:100%;height:100%;object-fit:contain;padding:2px;box-sizing:border-box;display:block}
 .msg-body{min-width:0;max-width:760px;overflow-wrap:anywhere}
@@ -217,7 +247,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .code-card .bar .copy{cursor:pointer}
 .code-card pre{margin:0;padding:13px 14px;font-family:var(--mono);font-size:10.5px;line-height:1.7;color:#cfd3da;overflow-x:auto}
 .tok-kw{color:var(--violet)} .tok-fn{color:var(--gold)} .tok-str{color:var(--green)} .tok-com{color:var(--faint)} .tok-prop{color:var(--blue)}
-.msg-user-wrap{display:flex;justify-content:flex-end}
+.msg-user-wrap{display:flex;justify-content:flex-end;margin-bottom:18px}
 .msg-user{max-width:520px;background:var(--tealtint);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent);border-radius:12px 12px 4px 12px;padding:13px 16px}
 .msg-attachments{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
 .msg-attach-img{max-width:100%;max-height:280px;border-radius:8px;display:block;object-fit:contain}
@@ -323,13 +353,13 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .act-spine{margin-top:4px;padding-left:5px;border-left:1.5px solid var(--bd2);margin-left:6px}
 .act-row{display:flex;align-items:center;gap:8px;padding:5px 8px;cursor:pointer;margin-left:-1px}
 .act-row .act-ic{display:flex;flex:none}
-.act-row .lbl{font-size:10.5px;color:var(--mut)}
+.act-row .lbl{font-size:10.5px;color:var(--mut);white-space:nowrap;flex:none}
 .act-row .lbl.think{font-style:italic}
 .act-row .file{font-family:var(--mono);font-size:10px;color:#aab0ba;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .act-row .meta{font-family:var(--mono);font-size:9.5px;flex:none}
 .act-group{display:flex;align-items:center;gap:8px;padding:5px 8px;cursor:pointer;margin-left:-1px}
 .act-group .act-ic{display:flex;flex:none}
-.act-group .lbl{font-size:10.5px;color:var(--mut)}
+.act-group .lbl{font-size:10.5px;color:var(--mut);white-space:nowrap;flex:none}
 .act-group:hover .lbl{color:var(--fg)}
 .act-group .meta{font-family:var(--mono);font-size:9.5px;flex:none}
 .act-chev{transition:transform .15s;flex:none}
@@ -339,8 +369,8 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .act-code .ln{white-space:pre}
 .act-working{display:flex;align-items:center;gap:8px;padding:5px 8px;margin-left:-1px}
 .act-working .file{font-family:var(--mono);font-size:10px;color:#aab0ba}
-.act-spinner{width:13px;height:13px;flex:none;border:1.6px solid var(--teal);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}
-.act-spinner.gold{border-color:var(--gold);border-top-color:transparent}
+.act-spinner{flex:none;display:inline-flex;align-items:center;color:var(--teal);line-height:0}
+.act-spinner.gold{color:var(--gold)}
 .act-shim{font-size:10.5px;font-weight:600}
 .act-elapsed{font-family:var(--mono);font-size:9.5px;color:var(--faint)}
 .act-stop{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:7px;border:1px solid var(--bd);background:transparent;color:var(--mut);font-family:var(--sans);font-size:10px;cursor:pointer}
@@ -360,7 +390,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .m-thread .act-ic svg,.m-thread .act-row .act-ic svg{width:12px;height:12px}
 .m-thread .act-detail{margin-left:24px}
 .m-thread .act-code{font-size:9px;padding:8px 10px}
-.m-thread .act-spinner{width:12px;height:12px;border-width:1.5px}
+.m-thread .act-spinner .fl-svg{width:13px;height:13px}
 .m-thread .act-elapsed{font-size:9px}
 .m-thread .act-cursor{width:6px;height:11px}
 
@@ -516,7 +546,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .res-card.running{background:var(--tealtint)}
 .res-card.done{background:var(--panel)}
 .res-card .row1{display:flex;align-items:center;gap:9px;margin-bottom:14px}
-.res-spin{width:14px;height:14px;border:2px solid var(--teal);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite}
+.res-spin{display:inline-flex;align-items:center;color:var(--teal);line-height:0}
 .res-card .running-ttl{font-size:11.5px;font-weight:600;color:var(--teal)}
 .res-steps{display:flex;flex-direction:column;gap:11px;font-size:11px}
 .res-step{display:flex;gap:10px;align-items:flex-start}

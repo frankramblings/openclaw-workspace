@@ -22,7 +22,8 @@ const ic = {
 
 // ---- bottom tab bar -------------------------------------------------------
 export function renderTabBar(s) {
-  const inboxN = INBOX.filter((m) => !s.dismissed.includes(m.id)).length;
+  const inboxItems = s.live?.inbox?.items || [];
+  const inboxN = inboxItems.filter((m) => !s.dismissed.includes(String(m.id))).length;
   const tab = (id, label, iconHtml, badge) => {
     const active = s.mTab === id && !s.mSub;
     return `<button class="m-tab${active ? ' active' : ''}" data-act="mGo" data-arg="${id}">
@@ -231,9 +232,10 @@ export function mInbox(s) {
 // ---- email list -----------------------------------------------------------
 export function mEmailList(s) {
   const emails = s.live?.email?.emails ?? EMAILS;
+  const emailUnread = emails.filter((e) => e.unread).length;
   return `
   <div class="m-head">
-    <div class="m-head-row"><span class="m-title">Email</span><span class="pill-teal">1 unread</span><div class="m-spacer"></div><button class="m-icon-btn">${I.plus(16)}</button></div>
+    <div class="m-head-row"><span class="m-title">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="m-spacer"></div><button class="m-icon-btn">${I.plus(16)}</button></div>
     <div class="m-search">${I.search()}<span class="ph">Search · INBOX</span></div>
   </div>
   <div class="m-scroll m-mail-list" data-ptr="1">

@@ -296,6 +296,7 @@ ${esc(d)}</textarea>
 // ===========================================================================
 function emailSurface(s) {
   const emails = s.live?.email?.emails ?? EMAILS;
+  const emailUnread = emails.filter((e) => e.unread).length;
   const sel = Math.max(0, Math.min(s.selEmail, emails.length - 1));
   const m = s.live?.email?.current ?? emails[sel] ?? EMAILS[0];
   const attach = m.attach || [];
@@ -304,7 +305,7 @@ function emailSurface(s) {
   <div class="split-h">
     <div class="oc-secondary email-list">
       <div class="list-top">
-        <div class="list-top-head"><span class="ttl">Email</span><span class="pill-teal">1 unread</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="composeNew">+ New</button></div>
+        <div class="list-top-head"><span class="ttl">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="oc-spacer"></div><button class="btn btn-teal" data-act="composeNew">+ New</button></div>
         <div class="oc-search">${I.search()}<input data-model="emailQuery" data-focus="emailQuery" placeholder="Search · INBOX" value="${esc(s.emailQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
       </div>
       <div class="list-scroll">

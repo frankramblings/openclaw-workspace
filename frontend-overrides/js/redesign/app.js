@@ -71,7 +71,9 @@ function chatNotifyBadge() {
 
 function renderRail() {
   const collapsed = !state.railExpanded;
-  const inboxVisible = 6 - state.dismissed.length; // live rail badge
+  const inboxItems = state.live?.inbox?.items || [];
+  const inboxVisible = inboxItems.filter((m) => !state.dismissed.includes(String(m.id))).length;
+  const emailUnread = (state.live?.email?.emails || []).filter((e) => e.unread).length;
   return `
   <div class="oc-rail${collapsed ? ' collapsed' : ''}">
     <div class="oc-rail-head">
@@ -82,8 +84,8 @@ function renderRail() {
       <button class="oc-rail-collapse" data-act="toggleRail" title="Collapse sidebar"><span style="display:inline-flex;transform:rotate(${collapsed ? '180deg' : '0deg'})">${I.chevLeft()}</span></button>
     </div>
     ${railItem('chat', 'Chat', I.chat(), chatNotifyBadge())}
-    ${railItem('inbox', 'Inbox', I.inbox(), `<span class="nav-badge">${inboxVisible}</span>`)}
-    ${railItem('email', 'Email', I.email(), '<span class="nav-count">1</span>')}
+    ${railItem('inbox', 'Inbox', I.inbox(), inboxVisible > 0 ? `<span class="nav-badge">${inboxVisible}</span>` : '')}
+    ${railItem('email', 'Email', I.email(), emailUnread > 0 ? `<span class="nav-count">${emailUnread}</span>` : '')}
     ${railItem('calendar', 'Calendar', I.calendar())}
     ${railItem('research', 'Research', I.research())}
     ${railItem('library', 'Library', I.library())}

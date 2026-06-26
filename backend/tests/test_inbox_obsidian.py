@@ -61,7 +61,7 @@ def test_map_items_scores_and_shapes():
     assert mine["score"] == 1 + 4 + 2          # base + action-mine + <24h
     assert mine["subtitle"] == "2026-06-01 Sync"
     assert mine["meta"]["url"].startswith("obsidian://open?path=")
-    assert mine["actions"] == ["reviewed", "dismiss", "snooze"]
+    assert mine["actions"] == ["add_asana", "reviewed", "dismiss", "snooze"]
     # dedup: identical ids are stable hashes
     assert len({i["id"] for i in items}) == len(items)
 

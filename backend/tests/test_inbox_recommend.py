@@ -26,6 +26,23 @@ def test_heuristic_stale_slack_unread():
     assert recommend.heuristic_rec(_slack(kind="mention", age_h=200)) is None
 
 
+def _obs_item(kind, assignee=None):
+    return {"id": "o1", "source": "obsidian", "title": "Send the deck",
+            "ageHours": 5.0, "snippet": kind,
+            "meta": {"kind": kind, "assignee": assignee},
+            "actions": ["add_asana", "reviewed", "dismiss", "snooze"]}
+
+
+def test_heuristic_other_peoples_action_suggests_dismiss():
+    # An item assigned to someone other than Frank -> immediate dismiss hint.
+    rec = recommend.heuristic_rec(_obs_item("action-other", assignee="Allie"))
+    assert rec == {"action": "dismiss", "by": "heuristic",
+                   "reason": "assigned to Allie"}
+    # Frank's own / team / unassigned items get no such nudge.
+    assert recommend.heuristic_rec(_obs_item("action-mine", "Frank")) is None
+    assert recommend.heuristic_rec(_obs_item("action")) is None
+
+
 def test_history_rec_threshold():
     stats = {"gmail:news@x.com": {"delete": 4, "archive": 1}}   # 80% delete
     rec = recommend.history_rec(_gmail("news@x.com"), stats)

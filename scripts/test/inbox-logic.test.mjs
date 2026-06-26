@@ -53,9 +53,13 @@ assert.equal(slack.find((a) => a.role === 'primary').action, 'mark_read');
 const asana = cardActions({ source: 'asana', actions: ['complete', 'dismiss', 'snooze'] });
 assert.equal(asana.find((a) => a.role === 'primary').action, 'complete');
 
-// Obsidian: reviewed is primary.
-const obs = cardActions({ source: 'obsidian', actions: ['reviewed', 'dismiss', 'snooze'] });
-assert.equal(obs.find((a) => a.role === 'primary').action, 'reviewed');
+// Obsidian: add_asana is primary (capture the commitment as a task); reviewed
+// demotes to a secondary ghost button.
+const obs = cardActions({ source: 'obsidian', actions: ['add_asana', 'reviewed', 'dismiss', 'snooze'] });
+assert.equal(obs.find((a) => a.role === 'primary').action, 'add_asana',
+  'obsidian primary = add_asana');
+assert.ok(obs.some((a) => a.action === 'reviewed' && a.role === 'ghost'),
+  'reviewed is now a secondary ghost button');
 
 // Documents: no clear-verb → no primary, but still has gary + open + dismiss(✕).
 const docs = cardActions({ source: 'documents', actions: ['dismiss', 'snooze'] });

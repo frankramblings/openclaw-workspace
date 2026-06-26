@@ -120,7 +120,7 @@ def map_items(name: str, file_path: str, actions: list[dict], file_ts: float,
                      "fullText": a["text"], "assignee": a.get("assignee"),
                      "url": "obsidian://open?path="
                             + urllib.parse.quote(file_path, safe="")},
-            "actions": ["reviewed", "dismiss", "snooze"],
+            "actions": ["add_asana", "reviewed", "dismiss", "snooze"],
         })
     return items
 

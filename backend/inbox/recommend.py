@@ -62,6 +62,13 @@ def heuristic_rec(item: dict) -> dict | None:
             and item.get("ageHours", 0) > SLACK_STALE_HOURS):
         return {"action": "mark_read", "by": "heuristic",
                 "reason": "stale channel chatter"}
+    # A meeting action item explicitly assigned to someone other than Frank/team
+    # isn't his to capture — suggest dismiss out of the gate. Per-person history
+    # (which outranks heuristics) still refines this once he's triaged a few.
+    if src == "obsidian" and meta.get("kind") == "action-other":
+        who = (meta.get("assignee") or "someone else").strip()
+        return {"action": "dismiss", "by": "heuristic",
+                "reason": f"assigned to {who}"}
     return None
 
 

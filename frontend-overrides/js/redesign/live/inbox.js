@@ -155,6 +155,10 @@ export const actions = {
   rsvpNo: (id) => runRsvp(id, 'declined'),
 
   // Obsidian capture: create an Asana task from the surfaced commitment.
+  // Alias so the backend action name `add_asana` (the primary card button's
+  // data-act, and the rec chip) dispatches here — the registry keys on the
+  // raw string, and there is no camel-casing step.
+  add_asana: (id) => actions.addAsana(id),
   addAsana: async (id) => {
     const state = runtime.state;
     const item = findItem(state, id);

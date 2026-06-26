@@ -190,7 +190,10 @@ function render() {
   if (focusKey) {
     const el = root.querySelector(`[data-focus="${focusKey}"]`);
     if (el) {
-      el.focus();
+      // preventScroll: focusing an input otherwise scrolls its nearest scroll
+      // container (the chat thread) to reveal it — which yanked the thread on
+      // every keystroke-driven render. We restore scroll explicitly below.
+      el.focus({ preventScroll: true });
       if (selStart != null && el.setSelectionRange) {
         try { el.setSelectionRange(selStart, selEnd); } catch (_) { /* non-text input */ }
       }
@@ -424,6 +427,19 @@ root.addEventListener('input', (e) => {
   // pure CSS (:placeholder-shown), so skipping render here is safe. Desktop
   // keeps its live render — it drives the slash-command palette as you type.
   if (fk === 'mdraft') return;
+  // Typing in the desktop composer must not move the thread at all. render()
+  // rebuilds the DOM and re-focuses the textarea; pin the chat scroll to exactly
+  // where it was so a keystroke changes nothing in the viewport.
+  if (fk === 'draft') {
+    const before = root.querySelector('.chat-thread');
+    const savedTop = before ? before.scrollTop : null;
+    render();
+    if (savedTop != null) {
+      const after = root.querySelector('.chat-thread');
+      if (after) after.scrollTop = savedTop;
+    }
+    return;
+  }
   render();
 });
 

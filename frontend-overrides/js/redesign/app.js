@@ -116,7 +116,7 @@ function renderDesktop(s) {
 // root.innerHTML wholesale, which would otherwise reset every scrollable region
 // to the top — jumping the chat back up on every action (expanding a tool card)
 // and pinning the live stream above the fold so new output never came into view.
-const SCROLL_SELECTORS = ['.chat-thread', '.m-scroll'];
+const SCROLL_SELECTORS = ['.chat-thread', '.m-scroll', '.m-files'];
 
 // Track chat mount/session across renders so we can jump to the newest message
 // when a chat is first opened (or you switch sessions) instead of leaving it

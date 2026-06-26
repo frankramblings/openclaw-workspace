@@ -48,6 +48,25 @@ async function ensureXterm() {
   await loadingXterm;
 }
 
+function accentColor() {
+  return getComputedStyle(document.documentElement).getPropertyValue('--teal').trim() || '#4fe3d1';
+}
+
+function termTheme() {
+  const teal = accentColor();
+  return {
+    background: '#15161a', foreground: '#cfd3da', cursor: teal,
+    cursorAccent: '#15161a', selectionBackground: `color-mix(in srgb,${teal} 28%,transparent)`,
+    black: '#15161a', red: '#f0726a', green: '#5bd97f', yellow: '#e8c268',
+    blue: '#7bb6ff', magenta: '#a99bf5', cyan: teal, white: '#dfe2e8',
+    brightBlack: '#5f636d', brightWhite: '#ffffff',
+  };
+}
+
+export function updateTermTheme() {
+  if (term) term.options.theme = termTheme();
+}
+
 async function buildTerm() {
   await ensureXterm();
   if (term) return;
@@ -67,13 +86,7 @@ async function buildTerm() {
     fontSize: 12,
     fontFamily: "'MonoLisa',ui-monospace,monospace",
     scrollback: 5000,
-    theme: {
-      background: '#15161a', foreground: '#cfd3da', cursor: '#4fe3d1',
-      cursorAccent: '#15161a', selectionBackground: 'rgba(79,227,209,.28)',
-      black: '#15161a', red: '#f0726a', green: '#5bd97f', yellow: '#e8c268',
-      blue: '#7bb6ff', magenta: '#a99bf5', cyan: '#4fe3d1', white: '#dfe2e8',
-      brightBlack: '#5f636d', brightWhite: '#ffffff',
-    },
+    theme: termTheme(),
   });
   fit = new window.FitAddon.FitAddon();
   term.loadAddon(fit);

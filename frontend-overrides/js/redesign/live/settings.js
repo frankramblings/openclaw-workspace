@@ -19,6 +19,7 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson, apiDelete } from './api.js';
+import { updateTermTheme } from './terminal.js';
 
 const ACCENT_KEY = 'oc-accent';
 
@@ -106,6 +107,7 @@ export const actions = {
     if (!hex) return;
     runtime.state && (runtime.state.accent = hex);
     setAccentVars(hex);
+    updateTermTheme();
     try { localStorage.setItem(ACCENT_KEY, hex); } catch (_) {}
     runtime.render();
     persistAccent(hex); // best-effort, fire-and-forget

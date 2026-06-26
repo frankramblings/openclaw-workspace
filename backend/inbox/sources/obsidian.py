@@ -39,6 +39,57 @@ _ACTION_PATTERNS = [
 _KIND_SCORE = {"unchecked-todo": 2, "action": 3, "action-mine": 4,
                "action-other": 1, "follow-up": 2, "todo": 0}
 
+# Inline owner attribution. Granola summaries phrase commitments as prose —
+# "Frank to draft X", "Aubry will send Y" — with no "Name:" separator. Detect a
+# leading first-name followed by a commitment verb so other people's items can
+# be told apart from Frank's. Two guards keep precision high:
+#   1. a commitment verb must follow the name (to/will/needs to/…), and
+#   2. _NOT_A_NAME rejects sentence-initial verbs that share the shape
+#      ("Talk to…", "Plan to…", "Respond to…") but aren't people.
+_INLINE_OWNER_RE = re.compile(
+    r"^([A-Z][a-z]+(?:\s+(?:&|\+|and)\s+[A-Z][a-z]+)?)\s+"
+    r"(?:to|will(?:\s+be)?|'ll|is\s+going\s+to|are\s+going\s+to|going\s+to|"
+    r"needs?\s+to|plans?\s+to|wants?\s+to|agreed\s+to|should)"
+    r"\s+(.+)$")
+# Lowercase tokens that look like a name in "<Word> to/will …" but are verbs or
+# nouns, not people. Derived from real meeting-note false positives.
+_NOT_A_NAME = frozenset("""
+    talk respond plan prepare transition potential candidates continue need want
+    going aim hope try look move begin start agree agreed decide decided refer
+    switch pivot commit offer get review discuss send create draft schedule
+    follow explore consider confirm add build define make share update reach
+    ensure determine finalize test launch bring keep work use check pull push
+    write figure circle loop touch sync align meet remember note remind
+    timeline goal milestone
+""".split())
+# Collective owners that count as Frank's to capture, not someone else's
+# ("both"/"together" name a shared commitment Frank is part of).
+_MINE_RE = re.compile(r"\b(team|we|everyone|wistia|both|together)\b", re.I)
+
+
+def _classify_owner(name: str) -> str:
+    """'action-mine' if the assignee is Frank (configurable owner) or a
+    collective ('team', 'we', …); otherwise 'action-other'."""
+    owner = _inbox_settings.obsidian_owner_name()
+    mine = bool(_MINE_RE.search(name)) or (
+        bool(owner) and bool(re.match(rf"^{re.escape(owner)}\b", name, re.I)))
+    return "action-mine" if mine else "action-other"
+
+
+def _infer_owner(text: str) -> tuple[str | None, str, str]:
+    """Parse 'Frank to draft the deck' → ('action-mine', 'draft the deck',
+    'Frank'). Returns (None, '', '') when no owner can be inferred."""
+    m = _INLINE_OWNER_RE.match(text)
+    if not m:
+        return None, "", ""
+    name = m.group(1).strip()
+    if name.split()[0].lower() in _NOT_A_NAME:
+        return None, "", ""
+    rest = m.group(2).strip()
+    if not _real_action(rest):
+        return None, "", ""
+    return _classify_owner(name), rest, name
+
 
 def _real_action(text: str) -> bool:
     stripped = re.sub(r"\[\[[^\]]+\]\]", "", text)
@@ -63,24 +114,31 @@ def extract_actions(raw: str) -> list[dict]:
             if checkbox_m:
                 text = checkbox_m.group(1).strip()
                 if _real_action(text):
-                    out.append({"kind": "unchecked-todo", "text": text, "line": i + 1})
+                    kind, rest, who = _infer_owner(text)
+                    if kind:
+                        out.append({"kind": kind, "text": rest, "line": i + 1,
+                                    "assignee": who})
+                    else:
+                        out.append({"kind": "unchecked-todo", "text": text,
+                                    "line": i + 1})
                 continue
             am = _ASSIGNEE_RE.match(line)
             if am:
                 assignee, text = am.group(1).strip(), am.group(2).strip()
                 if _real_action(text):
-                    owner = _inbox_settings.obsidian_owner_name()
-                    mine = bool(re.search(r"\bteam\b", assignee, re.I)) or (
-                        bool(owner) and bool(
-                            re.match(rf"^{re.escape(owner)}\b", assignee, re.I)))
-                    out.append({"kind": "action-mine" if mine else "action-other",
+                    out.append({"kind": _classify_owner(assignee),
                                 "text": text, "line": i + 1, "assignee": assignee})
                 continue
             bullet = _BULLET_RE.match(line)
             if bullet:
                 text = bullet.group(1).strip()
                 if _real_action(text):
-                    out.append({"kind": "action", "text": text, "line": i + 1})
+                    kind, rest, who = _infer_owner(text)
+                    if kind:
+                        out.append({"kind": kind, "text": rest, "line": i + 1,
+                                    "assignee": who})
+                    else:
+                        out.append({"kind": "action", "text": text, "line": i + 1})
                 continue
         for pattern, kind in _ACTION_PATTERNS:
             m = pattern.match(line)

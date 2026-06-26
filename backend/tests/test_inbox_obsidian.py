@@ -72,3 +72,74 @@ def test_owner_name_unset_means_no_mine_boost(monkeypatch):
     monkeypatch.setattr(inbox_settings, "obsidian_owner_name", lambda: "")
     by_text = {a["text"]: a["kind"] for a in obsidian.extract_actions(NOTE)}
     assert by_text["send the Q3 deck to legal"] == "action-other"
+
+
+# --- Inline owner inference (Granola summary phrasing) -----------------------
+# Granola writes action items as prose bullets like "Frank to draft X" or
+# "Aubry will send Y" — no "Name:" separator. Infer the owner from that phrasing
+# so other people's to-dos can be recommended for dismissal.
+
+INLINE = """## Action items
+- Frank to draft the posting cadence document
+- Frank will follow up by end of week with next steps
+- Aubry to send embeddable webinars draft tomorrow
+- Mitra will schedule 1-on-1s with team members next week
+- Team will provide updates on campaign changes
+- Talk to Sylvie about YouTube publishing delays
+- Respond to Natasha with the State of Video proposal
+- Plan to watch the film before the next recording session
+- ship the new pricing page
+"""
+
+
+def _kinds(note):
+    return {a["text"]: a["kind"] for a in obsidian.extract_actions(note)}
+
+
+def test_inline_owner_self_is_mine():
+    k = _kinds(INLINE)
+    assert k["draft the posting cadence document"] == "action-mine"
+    assert k["follow up by end of week with next steps"] == "action-mine"
+
+
+def test_inline_owner_other_person():
+    actions = {a["text"]: a for a in obsidian.extract_actions(INLINE)}
+    assert actions["send embeddable webinars draft tomorrow"]["kind"] == "action-other"
+    assert actions["send embeddable webinars draft tomorrow"]["assignee"] == "Aubry"
+    # An unknown name is still a person, not Frank → other.
+    assert actions["schedule 1-on-1s with team members next week"]["kind"] == "action-other"
+
+
+def test_inline_team_is_mine():
+    assert _kinds(INLINE)["provide updates on campaign changes"] == "action-mine"
+
+
+def test_inline_owner_text_strips_the_name():
+    """The owner name is parsed out of the title so the card reads as a task
+    ('draft the deck'), not 'Frank to draft the deck'."""
+    texts = {a["text"] for a in obsidian.extract_actions(INLINE)}
+    assert "draft the posting cadence document" in texts
+    assert "Frank to draft the posting cadence document" not in texts
+
+
+def test_sentence_initial_verbs_are_not_owners():
+    """'Talk to', 'Respond to', 'Plan to' look like 'Name verb' but the leading
+    token is a verb, not a person — must stay plain actions."""
+    k = _kinds(INLINE)
+    assert k["Talk to Sylvie about YouTube publishing delays"] == "action"
+    assert k["Respond to Natasha with the State of Video proposal"] == "action"
+    assert k["Plan to watch the film before the next recording session"] == "action"
+    assert k["ship the new pricing page"] == "action"
+
+
+def test_inline_owner_in_checkbox():
+    note = "## Action items\n- [ ] Aubry to send the signed SOW\n"
+    actions = obsidian.extract_actions(note)
+    assert actions[0]["kind"] == "action-other"
+    assert actions[0]["assignee"] == "Aubry"
+
+
+def test_inline_owner_respects_unset_owner(monkeypatch):
+    monkeypatch.setattr(inbox_settings, "obsidian_owner_name", lambda: "")
+    # With no owner configured, even "Frank to ..." is just someone else.
+    assert _kinds(INLINE)["draft the posting cadence document"] == "action-other"

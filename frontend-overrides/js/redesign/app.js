@@ -154,7 +154,14 @@ function render() {
   }
 
   const s = state;
+  const sheetWasOpen = isMobile() && state.companionSheetOpen;
   root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
+  // Suppress the slide-up animation when the sheet is already open and being
+  // re-rendered by a click inside it — otherwise every action replays the pop.
+  if (sheetWasOpen) {
+    const sheet = root.querySelector('.m-sheet.companion');
+    if (sheet) sheet.style.animation = 'none';
+  }
 
   if (!rootRevealed && Object.keys(state.live).length > 0) {
     rootRevealed = true;

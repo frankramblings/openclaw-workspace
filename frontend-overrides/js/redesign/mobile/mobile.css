@@ -333,8 +333,8 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-seg-row .seg span { flex: 1; text-align: center; font-size: 12.5px; color: var(--mut); padding: 6px 0; border-radius: 7px; cursor: pointer; }
 .m-seg-row .seg span.active { font-weight: 600; color: var(--ink); background: var(--teal); }
 .m-sheet-x { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--bd); display: flex; align-items: center; justify-content: center; color: var(--mut); cursor: pointer; background: none; flex: none; }
-.m-term { flex: 1; overflow: auto; padding: 4px 16px 24px; font-family: var(--mono); font-size: 11.5px; line-height: 1.85; color: #cfd3da; }
-.m-term .cwd { font-size: 10.5px; color: var(--faint); margin-bottom: 6px; }
+.m-term { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.m-term .cwd { font-size: 10.5px; color: var(--faint); padding: 4px 16px 6px; flex: none; }
 .m-term .host { color: var(--green); } .m-term .ws { color: var(--blue); } .m-term .ok { color: var(--green); } .m-term .dim { color: var(--faint); }
 .m-term-cursor { display: inline-block; width: 7px; height: 13px; background: var(--teal); vertical-align: -2px; animation: blink 1.1s step-end infinite; }
 .m-files { flex: 1; overflow: auto; padding: 4px 0 24px; }

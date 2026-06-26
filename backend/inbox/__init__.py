@@ -114,13 +114,10 @@ def _bad(msg: str):
 
 
 def _stat_key(source: str, meta: dict) -> str | None:
-    """Counter key for the history-recommendation layer. Only gmail senders
-    and slack channels have a stable 'sender' notion (spec §2)."""
-    if source == "gmail" and meta.get("from"):
-        return f"gmail:{meta['from'].lower()}"
-    if source == "slack" and meta.get("channel"):
-        return f"slack:{meta['channel']}"
-    return None
+    """Counter key for the history-recommendation layer. Single source of
+    truth is recommend.counter_key — gmail senders, slack channels, and
+    obsidian assignee/meeting-series all learn through the same buckets."""
+    return recommend.counter_key({"source": source, "meta": meta})
 
 
 @router.post("/api/items/action")

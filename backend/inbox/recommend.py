@@ -12,9 +12,13 @@ ALLOWED = {
     "gmail": {"archive", "delete", "reply", "gary", "none"},
     "slack": {"mark_read", "gary", "none"},
     "asana": {"complete", "gary", "none"},
-    "obsidian": {"reviewed", "add_asana", "gary", "none"},
+    "obsidian": {"reviewed", "dismiss", "add_asana", "gary", "none"},
     "documents": {"gary", "none"},
 }
+
+# Strip the "YYYY-MM-DD - " prefix from a meeting-note filename so recurring
+# meetings (e.g. "Brand team bi-weekly") collapse to one learnable series key.
+_MEETING_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\s*-\s*")
 
 _NEWSLETTER_RE = re.compile(
     r"(no-?reply|donotreply|notifications?@|newsletter|mailer-daemon"
@@ -25,11 +29,26 @@ SLACK_STALE_HOURS = 7 * 24
 
 
 def counter_key(item: dict) -> str | None:
+    """Stable bucket an item's triage actions accumulate under, so repeated
+    decisions on *similar* items (not the same id) become a learned rec.
+
+    gmail -> sender, slack -> channel. obsidian has no stable sender, so we
+    learn on whoever the action is assigned to ("is this mine or someone
+    else's?"); unassigned lines fall back to the recurring meeting series."""
+    src = item["source"]
     meta = item.get("meta") or {}
-    if item["source"] == "gmail" and meta.get("from"):
+    if src == "gmail" and meta.get("from"):
         return f"gmail:{meta['from'].lower()}"
-    if item["source"] == "slack" and meta.get("channel"):
+    if src == "slack" and meta.get("channel"):
         return f"slack:{meta['channel']}"
+    if src == "obsidian":
+        who = (meta.get("assignee") or "").strip()
+        if who:
+            return f"obsidian:who:{who.lower()}"
+        series = _MEETING_DATE_RE.sub(
+            "", re.sub(r"\.md$", "", meta.get("file") or "")).strip()
+        if series:
+            return f"obsidian:mtg:{series.lower()}"
     return None
 
 
@@ -57,7 +76,8 @@ def history_rec(item: dict, stats: dict) -> dict | None:
         return None
     if action not in ALLOWED.get(item["source"], set()):
         return None
-    noun = "this sender" if item["source"] == "gmail" else "this channel"
+    noun = {"gmail": "this sender", "slack": "this channel",
+            "obsidian": "items like this"}.get(item["source"], "this")
     return {"action": action, "by": "history",
             "reason": f"you did this {count}/{total} times for {noun}"}
 

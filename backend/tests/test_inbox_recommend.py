@@ -119,3 +119,45 @@ def test_parse_ignores_task_due_for_non_obsidian():
     reply = '[{"id":"g1","action":"archive","task":"x","due":"2026-01-01"}]'
     rec = recommend.parse_triage_reply(reply, valid, now_ms=0)["gmail:g1"]
     assert "task" not in rec and "due" not in rec
+
+
+# --- obsidian learning: counter keys + history recs --------------------------
+
+def _obsidian(text="Send the deck", assignee=None, file="2026-06-23 - Brand team bi-weekly.md"):
+    return {"id": "o1", "source": "obsidian", "title": text, "ageHours": 5.0,
+            "snippet": "action", "meta": {"file": file, "assignee": assignee},
+            "actions": ["reviewed", "dismiss", "snooze"]}
+
+
+def test_counter_key_obsidian_prefers_assignee():
+    # An action assigned to someone learns per-person ("is this mine?").
+    assert recommend.counter_key(_obsidian(assignee="Allie")) == "obsidian:who:allie"
+
+
+def test_counter_key_obsidian_falls_back_to_meeting_series():
+    # No assignee -> learn per recurring meeting, date prefix stripped.
+    assert (recommend.counter_key(_obsidian(assignee=None))
+            == "obsidian:mtg:brand team bi-weekly")
+
+
+def test_counter_key_obsidian_none_when_no_signal():
+    assert recommend.counter_key(_obsidian(assignee=None, file="")) is None
+
+
+def test_obsidian_allows_dismiss_for_learned_noise():
+    # "dismiss as noise" must be an executable learned action for obsidian.
+    assert "dismiss" in recommend.ALLOWED["obsidian"]
+
+
+def test_history_rec_learns_obsidian_by_assignee():
+    # 4/5 times I dismissed Allie's action items -> recommend dismiss.
+    stats = {"obsidian:who:allie": {"dismiss": 4, "add_asana": 1}}
+    rec = recommend.history_rec(_obsidian(assignee="Allie"), stats)
+    assert rec["action"] == "dismiss" and rec["by"] == "history"
+    assert "4/5" in rec["reason"]
+
+
+def test_history_rec_learns_obsidian_by_meeting():
+    stats = {"obsidian:mtg:brand team bi-weekly": {"add_asana": 5}}
+    rec = recommend.history_rec(_obsidian(assignee=None), stats)
+    assert rec["action"] == "add_asana" and rec["by"] == "history"

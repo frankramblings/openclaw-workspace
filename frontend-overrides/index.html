@@ -21,6 +21,15 @@
 
   <link rel="stylesheet" href="/static/redesign.css" />
   <link rel="stylesheet" href="/static/js/redesign/mobile/mobile.css" />
+  <!-- Native shell detection: the GaryWorkspace WKWebView wrapper appends
+       "GaryNative" to its UA. In that shell the web view is full-screen and the
+       home-indicator safe area is real + drawable, so the mobile tab bar switches
+       to true env() padding (html.native rules) instead of the Safari-PWA hack. -->
+  <script>
+    if (/GaryNative/.test(navigator.userAgent)) {
+      document.documentElement.classList.add('native');
+    }
+  </script>
 </head>
 <body>
   <div id="oc-root"></div>

@@ -66,7 +66,7 @@ function railItem(surface, label, iconHtml, badge) {
 function chatNotifyBadge() {
   const n = (state.live && state.live.chat && state.live.chat.notified)
     ? state.live.chat.notified.size : 0;
-  return n > 0 ? '<span class="nav-dot" title="A reply finished while you were away"></span>' : '';
+  return n > 0 ? '<span class="nav-pip"></span><span class="nav-dot"></span>' : '';
 }
 
 function renderRail() {
@@ -85,7 +85,7 @@ function renderRail() {
     </div>
     ${railItem('chat', 'Chat', I.chat(), chatNotifyBadge())}
     ${railItem('inbox', 'Inbox', I.inbox(), inboxVisible > 0 ? `<span class="nav-pip"></span><span class="nav-badge">${inboxVisible}</span>` : '')}
-    ${railItem('email', 'Email', I.email(), emailUnread > 0 ? `<span class="nav-pip"></span><span class="nav-count">${emailUnread}</span>` : '')}
+    ${railItem('email', 'Email', I.email(), emailUnread > 0 ? `<span class="nav-pip"></span><span class="nav-badge">${emailUnread}</span>` : '')}
     ${railItem('calendar', 'Calendar', I.calendar())}
     ${railItem('research', 'Research', I.research())}
     ${railItem('library', 'Library', I.library())}
@@ -628,3 +628,7 @@ setTimeout(() => { if (!rootRevealed) { rootRevealed = true; root.style.visibili
 // cross-session turn notifier (started in chat's load()) runs from the start —
 // a reply finishing while you're in Inbox/Email/etc. still notifies.
 if (activeSurface() !== 'chat') loadSurface('chat', { state, actions, render });
+// Pre-fetch inbox and email counts so nav badges appear immediately on load,
+// not only after the user navigates to those surfaces.
+if (activeSurface() !== 'inbox') loadSurface('inbox', { state, actions, render });
+if (activeSurface() !== 'email') loadSurface('email', { state, actions, render });

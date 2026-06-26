@@ -16,11 +16,23 @@
     height: 100%;
     overflow: hidden;
     overscroll-behavior: none;
+    /* iOS runs this PWA INSET (webview 812 in an 874 screen), leaving a ~34px
+       home-indicator gutter BELOW the webview that web content can't draw into.
+       The root background DOES paint that gutter, so colour it like the tab bar
+       (--chrome) — the bar then visually continues through the home indicator
+       instead of floating above a dead band. */
+    background: var(--chrome, #101115);
   }
+  /* The mount container must carry full height down the chain so .m-app can fill
+     it. Without this, a percentage height on .m-app would collapse. */
+  #oc-root { height: 100%; }
 }
 
 .m-app {
-  height: 100dvh;
+  /* Fill the full physical screen. iOS standalone PWAs measure 100dvh ~34px
+     SHORT of the bottom safe area, which left a dead band below the tab bar;
+     body's 100% box reaches the real bottom, so match it. */
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -99,9 +111,21 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-around;
-  padding: 8px 6px calc(env(safe-area-inset-bottom, 0px) + 14px);
+  /* Safari Home-Screen PWA renders INSET (webview 812 in an 874 screen): the home
+     indicator sits in an OS gutter BELOW the webview that web content can't draw
+     into, so env() padding only reserved a redundant ~34px "chin". A 2px pad seats
+     the labels at the real webview bottom; the gutter is colour-merged via the
+     root background (html/body) so the bar appears to continue through it. */
+  padding: 8px 6px 2px;
   background: var(--chrome, #101115);
   border-top: 1px solid var(--bd2);
+}
+/* Native GaryWorkspace shell (WKWebView, UA contains "GaryNative"): the web view
+   is genuinely full-screen, so the home-indicator safe area is real AND drawable.
+   Restore true env() padding so labels clear the indicator and the bar fills it
+   like a native tab bar — no Safari-PWA inset hack needed. */
+html.native .m-tabbar {
+  padding: 8px 6px calc(env(safe-area-inset-bottom, 0px) + 6px);
 }
 .m-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--mut); position: relative; background: none; border: none; cursor: pointer; padding: 0; }
 .m-tab .lbl { font-size: 10px; }

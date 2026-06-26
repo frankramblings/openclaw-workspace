@@ -69,7 +69,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .oc-rail{width:208px;flex:none;background:#101115;border-right:1px solid var(--bd2);display:flex;flex-direction:column;padding:12px 10px;overflow:hidden;transition:width .18s ease}
 .oc-rail.collapsed{width:60px}
 .oc-rail-head{display:flex;align-items:center;gap:9px;margin-bottom:12px;min-height:30px}
-.oc-rail.collapsed .oc-rail-head{justify-content:center}
+.oc-rail-head .oc-avatar{margin-left:4px}
 .oc-avatar{flex:none;border-radius:7px;overflow:hidden;cursor:pointer;background:var(--teal);display:flex;align-items:center;justify-content:center}
 .oc-avatar img{width:100%;height:100%;object-fit:contain;padding:2px;box-sizing:border-box;display:block}
 .oc-avatar-28{width:28px;height:28px}
@@ -82,7 +82,6 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .oc-rail-collapse svg{transition:transform .18s}
 
 .ocnav{display:flex;align-items:center;gap:11px;padding:9px;border-radius:9px;color:var(--mut);margin-bottom:3px;position:relative;cursor:pointer;background:transparent}
-.oc-rail.collapsed .ocnav{justify-content:center}
 .ocnav.active{background:var(--tealtint);color:var(--teal)}
 .ocnav .bar{position:absolute;left:-10px;top:9px;width:3px;height:20px;border-radius:2px;background:var(--teal);opacity:0;font-size:0;padding:0}
 .ocnav.active .bar{opacity:1}
@@ -93,15 +92,14 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .oc-rail.collapsed .oc-rail-head .oc-online,
 .oc-rail.collapsed .oc-rail-collapse,
 .oc-rail.collapsed .ocnav .nav-badge,
-.oc-rail.collapsed .ocnav .nav-count,
+.oc-rail.collapsed .ocnav .nav-dot,
 .oc-rail.collapsed .oc-user .uname{display:none}
 .nav-badge{margin-left:auto;font-size:9.5px;color:var(--teal);background:var(--tealtint);padding:1px 7px;border-radius:999px}
-.nav-count{margin-left:auto;font-size:9.5px;color:var(--faint)}
+.nav-dot{margin-left:auto;padding:1px 7px;display:flex;align-items:center;justify-content:center}
+.nav-dot::after{content:'';display:block;width:7px;height:7px;border-radius:50%;background:var(--teal)}
 .nav-pip{display:none}
 .oc-rail.collapsed .ocnav .nav-pip{display:block;position:absolute;top:7px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--teal);flex:none}
-/* Cross-session turn notifier: a reply finished while you were elsewhere. */
-.nav-dot{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 22%,transparent);animation:pulse 1.6s ease-in-out infinite}
-.oc-rail.collapsed .ocnav .nav-dot{margin-left:0}
+
 .conv-dot{flex:none;width:7px;height:7px;border-radius:50%}
 .conv-dot.notify{background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 20%,transparent);animation:pulse 1.6s ease-in-out infinite}
 .conv-dot.working{background:var(--teal);animation:pulse 1.2s ease-in-out infinite}

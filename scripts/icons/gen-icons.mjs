@@ -1,6 +1,13 @@
-// Generate all brand assets from the pinned source brand.src.svg.
+// Generate all brand assets.
 //
 //   cd scripts/icons && npm install && npm run gen
+//
+// Two modes (env WORKSPACE_ICON_MODE):
+//   helmet   (default) — render the pinned brand.src.svg line-art (below).
+//   initials           — synthesize a name-derived glyph: the agent's first
+//                        letter in the accent on the app background. Lets a
+//                        fresh install get a distinct icon with no art step:
+//                          WORKSPACE_ICON_MODE=initials WORKSPACE_AGENT_NAME=Aria npm run gen
 //
 // brand.src.svg is a two-tone illustration: the mark .ink. is the white
 // (.cls-1, #fff) paths; the black card + interior + detail dots are the default
@@ -42,10 +49,31 @@ function mono(inkColor) {
   return s;
 }
 
+// Initials mode: the agent's first letter as the mark. Single glyph reads best
+// at favicon sizes; non-letters are skipped, falling back to 'A' if empty.
+function initials(name) {
+  const letter = [...(name || '')].find((c) => /[a-z0-9]/i.test(c));
+  return (letter || 'A').toUpperCase();
+}
+function initialsSvg(inkColor) {
+  const ch = initials(process.env.WORKSPACE_AGENT_NAME);
+  // viewBox matches the helmet's 512 space so the sharp pipeline is identical.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">`
+    + `<text x="256" y="256" text-anchor="middle" dominant-baseline="central" `
+    + `font-family="Helvetica, Arial, sans-serif" font-weight="800" `
+    + `font-size="340" fill="${inkColor}">${ch}</text></svg>`;
+}
+
+const MODE = (process.env.WORKSPACE_ICON_MODE || 'helmet').toLowerCase();
+const makeMark = MODE === 'initials' ? initialsSvg : mono;
+if (MODE === 'initials') {
+  console.log(`icon mode: initials ('${initials(process.env.WORKSPACE_AGENT_NAME)}')`);
+}
+
 // logo.svg: opaque ink (#000) — color is irrelevant for a CSS mask, only alpha.
-const logoSvg = mono('#000');
+const logoSvg = makeMark('#000');
 // favicon.svg: ink baked to the theme accent.
-const faviconSvg = mono(ACCENT);
+const faviconSvg = makeMark(ACCENT);
 
 const SQUARE = [
   ['favicon-16x16.png', 16],

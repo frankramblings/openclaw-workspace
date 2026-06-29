@@ -1,7 +1,7 @@
 // Mobile bottom sheets: the swipe-up companion (Terminal/Files over Chat) and
 // the quick-capture modal (the ➕ tab — a mobile-only surface).
 
-import { I, icon } from '../icons.js';
+import { I, icon, fortress } from '../icons.js';
 import { esc, map, when } from '../dom.js';
 import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, CAPTURE_PARSE, RECENT_CAPTURES } from './mobile-data.js';
@@ -76,7 +76,9 @@ export function renderConvSheet(s) {
   const convRow = (r) => `<div class="m-conv-row ocrow${r.active ? ' active' : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}">
     <span class="m-conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span>
     <span class="m-conv-title">${esc(r.title)}</span>
-    ${r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+    ${r.notify ? `<span class="m-conv-dot notify" title="Reply finished"></span>`
+      : r.working ? `<span class="m-conv-spin working" title="Working…">${fortress(14)}</span>`
+      : r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
   </div>`;
   const groupHtml = groups.length
     ? map(groups, (g) => `<div class="m-conv-grp">${esc(g.label)}</div>${map(g.rows || [], convRow)}`)

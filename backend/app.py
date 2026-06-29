@@ -934,13 +934,11 @@ async def session_usage(session_id: str):
 
 # NOTE: the real resume/tail endpoints live in resume_route.py
 # (/api/chat/events/resume, /api/chat/turn, /api/chat/stream). The old
-# /api/chat/resume/{id} stub (always {messages: []}) was dead and is removed.
-# /api/chat/stream_status/{id} is kept ONLY because legacy js/sessions.js still
-# polls it; it remains a {active:false} stub until that caller is migrated to
-# event_store.current_turn() (handoff Part 3).
-@app.get("/api/chat/stream_status/{session_id}")
-async def stream_status(session_id: str):
-    return {"active": False}
+# /api/chat/resume/{id} and /api/chat/stream_status/{id} stubs were dead — their
+# only caller was the legacy js/sessions.js UI, which index.html no longer loads
+# (the redesign app.js fully replaced it). Both stubs are removed; live run state
+# is served by event_store.current_turn() via /api/chat/turn and the per-session
+# working state by /api/chat/active_sessions.
 
 
 @app.post("/api/chat/stop/{session_id}")

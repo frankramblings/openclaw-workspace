@@ -423,6 +423,11 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-conv-badge { font-size: 9px; font-weight: 700; color: var(--teal); background: var(--tealtint); padding: 2px 6px; border-radius: 5px; flex: none; }
 .m-conv-badge.term { color: var(--faint); background: transparent; border: 1px solid var(--bd); }
 .m-conv-title { flex: 1; font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Cross-session run state in the mobile chat list (parity with desktop conv-dot/conv-spin). */
+.m-conv-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.m-conv-dot.notify { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 20%, transparent); animation: pulse 1.6s ease-in-out infinite; }
+.m-conv-spin.working { flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--teal); }
+.m-conv-spin.working .fl-svg { display: block; }
 .m-sheet.conv-sheet .m-cap-head { padding: 0 16px 10px; margin-bottom: 0; }
 
 /* model picker sheet */

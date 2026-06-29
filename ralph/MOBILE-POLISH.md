@@ -11,7 +11,7 @@ issues. Mobile surface lives in `frontend-overrides/js/redesign/mobile/`
 3. Run `node --test 'frontend-overrides/js/__tests__/*.test.js'` (must stay green — 53 tests).
 4. **DEPLOY: run `bash scripts/sync-frontend.sh`.** `/static/` serves the generated `frontend/` dir (gitignored), NOT `frontend-overrides/`. Editing overrides alone changes NOTHING that users see until the sync layers them into `frontend/`. Skip this and every fix is invisible.
 5. **VERIFY in-browser** (renderers are HTML-string builders; node tests don't catch layout). Screenshot the live page at a mobile viewport and eyeball the change:
-   `chromium --headless --no-sandbox --ignore-certificate-errors --hide-scrollbars --force-device-scale-factor=2 --window-size=390,844 --virtual-time-budget=5000 --screenshot=/home/frank/ralph-shots/<name>.png "https://naboo.bicolor-triceratops.ts.net:8443/static/index-redesign.html#<surface>"`
+   `chromium --headless --no-sandbox --ignore-certificate-errors --hide-scrollbars --force-device-scale-factor=2 --window-size=390,844 --virtual-time-budget=5000 --screenshot=/home/frank/ralph-shots/<name>.png "https://YOUR-HOST.ts.net:8443/static/index-redesign.html#<surface>"`
    Surfaces route off `location.hash`: `#chat #inbox #email #more #calendar #notes #settings` (also `#capture`). Snap chromium can only write under non-hidden `$HOME` dirs (e.g. `/home/frank/ralph-shots/`), not `/tmp`. A persistent `--remote-debugging-port` browser gets SIGTERM'd by the harness, so one-shot `--screenshot` per surface is the only reliable mode.
 6. Mark the item `[x]`/`[!]`, append a PROGRESS line, commit `mobile: <one-line>` (note: `frontend/` is gitignored — only `frontend-overrides/` + `ralph/` files get committed), exit.
 

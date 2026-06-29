@@ -10,14 +10,14 @@ final class Nav: ObservableObject {
 }
 
 @main
-struct GaryApp: App {
+struct WorkspaceApp: App {
     @StateObject private var nav = Nav()
 
     var body: some Scene {
         WindowGroup {
             WebView(url: nav.url)
                 .ignoresSafeArea()
-                // Widget taps arrive as gary://action/<new|photo|voice|inbox>.
+                // Widget taps arrive as workspace://action/<new|photo|voice|inbox>.
                 // Translate to the PWA's ?action= URL; deeplink.js does the rest.
                 .onOpenURL { incoming in
                     let action = incoming.lastPathComponent

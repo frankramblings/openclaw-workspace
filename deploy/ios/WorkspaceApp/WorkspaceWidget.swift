@@ -2,26 +2,26 @@ import WidgetKit
 import SwiftUI
 
 // Static launcher widget. No data, no networking, no app group: every button is
-// just a deep link into the gary:// scheme that the app routes to ?action=.
+// just a deep link into the workspace:// scheme that the app routes to ?action=.
 
-struct GaryEntry: TimelineEntry { let date: Date }
+struct WorkspaceEntry: TimelineEntry { let date: Date }
 
-struct GaryProvider: TimelineProvider {
-    func placeholder(in context: Context) -> GaryEntry { GaryEntry(date: .now) }
+struct WorkspaceProvider: TimelineProvider {
+    func placeholder(in context: Context) -> WorkspaceEntry { WorkspaceEntry(date: .now) }
 
-    func getSnapshot(in context: Context, completion: @escaping (GaryEntry) -> Void) {
-        completion(GaryEntry(date: .now))
+    func getSnapshot(in context: Context, completion: @escaping (WorkspaceEntry) -> Void) {
+        completion(WorkspaceEntry(date: .now))
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<GaryEntry>) -> Void) {
+    func getTimeline(in context: Context, completion: @escaping (Timeline<WorkspaceEntry>) -> Void) {
         // One entry, never refreshes — the content is static buttons.
-        completion(Timeline(entries: [GaryEntry(date: .now)], policy: .never))
+        completion(Timeline(entries: [WorkspaceEntry(date: .now)], policy: .never))
     }
 }
 
-private func link(_ action: String) -> URL { URL(string: "gary://action/\(action)")! }
+private func link(_ action: String) -> URL { URL(string: "workspace://action/\(action)")! }
 
-struct GaryWidgetView: View {
+struct WorkspaceWidgetView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
@@ -58,10 +58,10 @@ struct GaryWidgetView: View {
 }
 
 @main
-struct GaryWidget: Widget {
+struct WorkspaceWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "GaryWidget", provider: GaryProvider()) { _ in
-            GaryWidgetView()
+        StaticConfiguration(kind: "WorkspaceWidget", provider: WorkspaceProvider()) { _ in
+            WorkspaceWidgetView()
         }
         .configurationDisplayName("Workspace")
         .description("Launch your workspace agent into a chat, photo, or inbox.")

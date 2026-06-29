@@ -128,6 +128,10 @@ TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL", "openai/gpt-5.4-mini")
 # .data/ is gitignored, so a user's chosen name never lands in the public repo.
 DEFAULT_AGENT_NAME = "Claw"
 DEFAULT_ACCENT = "#4fe3d1"  # the maskable-icon / theme cyan the UI ships with
+# AGPL-3.0 §13: the UI shows a "Source" link offering this running version's
+# source. A fork that modifies the app MUST set WORKSPACE_SOURCE_URL to its own
+# repository so network users get the *corresponding* (modified) source.
+DEFAULT_SOURCE_URL = "https://github.com/frankramblings/openclaw-workspace"
 BRANDING_PATH = DATA_DIR / "branding.json"
 
 
@@ -167,6 +171,17 @@ def accent_color() -> str:
         or load_branding().get("accent")
         or DEFAULT_ACCENT
     )
+
+
+def source_url() -> str:
+    """Public URL to the source of THIS running version (AGPL-3.0 §13).
+    Forks that modify the app should point this at their own repository.
+    Env > branding.json > default."""
+    return (
+        os.environ.get("WORKSPACE_SOURCE_URL")
+        or load_branding().get("source_url")
+        or DEFAULT_SOURCE_URL
+    ).strip() or DEFAULT_SOURCE_URL
 
 
 # --- Connection (non-secret gateway address / agent id for remote installs) --

@@ -174,6 +174,8 @@ async def workspace_config():
         # The footer shows this; previously it fetched the ENTIRE workspace
         # tree walk just to read .root (2026-06-12 mobile review E2).
         "workspace_root": str(workspace_files.workspace_root()),
+        # AGPL-3.0 §13: the SPA renders a "Source" link to this URL.
+        "source_url": config.source_url(),
     }
 
 

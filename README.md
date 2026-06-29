@@ -7,7 +7,7 @@
 **A personal AI command center.** A scored inbox that triages Gmail, Slack & Asana, a full email client, calendar, multi-step research, notes, and streaming chat — all talking to your own [OpenClaw](https://github.com/openclaw/openclaw) agent, from any browser.
 
 [![CI](https://github.com/frankramblings/openclaw-workspace/actions/workflows/ci.yml/badge.svg)](https://github.com/frankramblings/openclaw-workspace/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-4fe3d1.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-4fe3d1.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-4fe3d1.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/backend-FastAPI-4fe3d1.svg)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/docker-compose-4fe3d1.svg)](docker-compose.yml)
@@ -119,10 +119,11 @@ By default the port binds to `127.0.0.1` — **not reachable from the LAN**. The
 |---|---|---|
 | `WORKSPACE_AGENT_NAME` | from branding | Agent display name everywhere |
 | `WORKSPACE_ACCENT` | `#4fe3d1` | Theme accent color |
+| `WORKSPACE_SOURCE_URL` | upstream repo | Source link shown in the UI (AGPL §13). **Forks must point this at their own repo.** |
 | `OPENCLAW_GATEWAY_WS` | from `openclaw.json` | Gateway WebSocket URL |
 | `OPENCLAW_DEFAULT_MODEL` | `agents.list[0]` | Model for new chats |
 
 ---
 
-[MIT](LICENSE) © The OpenClaw Workspace authors  
-Built on [OpenClaw](https://github.com/openclaw/openclaw) · powered by [FastAPI](https://fastapi.tiangolo.com)
+[AGPL-3.0](LICENSE) © The OpenClaw Workspace authors — see [NOTICE](NOTICE)  
+Built on [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus) (AGPL-3.0) · talks to your [OpenClaw](https://github.com/openclaw/openclaw) agent · powered by [FastAPI](https://fastapi.tiangolo.com)

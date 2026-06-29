@@ -294,7 +294,7 @@ export function mCalendar(s) {
     </div>
   </div>
   <div class="m-scroll m-agenda" data-ptr="1">${mPtr(s, 'Refreshing…')}${map(agenda, group)}</div>
-  <div class="m-quickadd"><div class="box"><span class="star">✦</span><input data-model="quick" data-focus="mquick" placeholder="&quot;return home to Ithaca 1pm tmrw&quot;" value="${esc(s.quick || '')}"/><button class="add" data-act="clearQuick">${I.plus(15)}</button></div></div>`;
+  <div class="m-quickadd"><div class="box"><span class="star">✦</span><input data-model="quick" data-focus="mquick" placeholder="&quot;feed Krypto 1pm tmrw&quot;" value="${esc(s.quick || '')}"/><button class="add" data-act="clearQuick">${I.plus(15)}</button></div></div>`;
 }
 
 // ---- More hub -------------------------------------------------------------

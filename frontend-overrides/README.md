@@ -129,11 +129,15 @@ The brand assets/markup live here as durable overrides so they survive the sync:
   are rebranded by a `sed` step in `scripts/sync-frontend.sh` that runs after the
   override copy: a capitalized `Odysseus` → `Gary` swap, which leaves lowercase
   functional identifiers (`odysseus-theme` key, `_odysseusLoadTime`) intact.
-  **Intentionally excluded** (literary/persona content, not chrome): `js/presets.js`
-  (the "Odysseus" character persona), `js/research/panel.js` (a myth example
-  query), and any line matching `/Laertes/` (the Homer "I am Odysseus…" quote in
-  `/quote`). The welcome subtitle "Yours for the voyage." is replaced with
-  "Merely an automaton, here to serve." by a separate sed in the same step.
+  The base's Homer/Odyssey easter eggs are **swapped for Gary easter eggs**
+  (Gary, the Superman Robot of the Fortress of Solitude — *Superman*, 2025) by a
+  guarded `python3` block in the same script, just before the name swap:
+  `js/presets.js` (the character persona → Gary the robot), `js/research/panel.js`
+  (the research example → the LuthorCorp kaiju), `js/slashCommands.js` (the
+  `/quote` Homer quotes → Gary quotes; command renamed `/odyssey`→`/gary`), and
+  the `js/calendar.js` quick-add hint. The welcome subtitle "Yours for the
+  voyage." is replaced with "Merely an automaton, here to serve." by a separate
+  sed in the same step.
 
 ## Adding an override
 

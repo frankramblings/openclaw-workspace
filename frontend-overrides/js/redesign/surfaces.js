@@ -611,7 +611,7 @@ function calendarSurface(s) {
       </div>
       <div class="cal-quick${has ? ' has' : ''}">
         <span class="star">✦</span>
-        <input data-model="quick" data-focus="quick" placeholder="Quick add — try “lunch with Sam tue 1pm” or “return home to Ithaca 1pm tmrw”" value="${esc(s.quick || '')}"/>
+        <input data-model="quick" data-focus="quick" placeholder="Quick add — try “lunch with Sam tue 1pm” or “feed Krypto 1pm tmrw”" value="${esc(s.quick || '')}"/>
         ${when(has, '<button class="cal-add" data-act="clearQuick">↵ Add</button>')}
       </div>
       ${when(has, `<div class="cal-parse"><span class="k">__AGENT_NAME__ parsed:</span><span class="ev"><span class="d"></span>${esc(q)}</span><span class="x">· Personal · 1 hr</span></div>`)}

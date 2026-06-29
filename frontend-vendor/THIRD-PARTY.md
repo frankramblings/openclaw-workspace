@@ -2,8 +2,22 @@
 
 This directory vendors the SPA base plus a few prebuilt browser libraries and
 fonts so the workspace runs without a build step or CDN. Each is redistributed
-under its own license (all permissive). Trademarks/copyrights belong to their
-respective owners.
+under its own license. Trademarks/copyrights belong to their respective owners.
+
+## SPA base
+
+| Project | Author | License | Source |
+|---|---|---|---|
+| Odysseus | PewDiePie (Felix Kjellberg) | **AGPL-3.0-or-later** | https://github.com/pewdiepie-archdaemon/odysseus |
+
+The vanilla-JS SPA in this directory (`app.js`, `js/`, `style.css`, the HTML
+shells, etc.) is the Odysseus base, modified for this workspace. **Odysseus is
+licensed AGPL-3.0-or-later — a strong network-copyleft license, not permissive.**
+Because this project bundles and modifies AGPL-3.0 source and serves it over a
+network, AGPL-3.0 §13 obliges offering the complete corresponding source of the
+running version to its users, and a combined/distributed work must itself be
+AGPL-3.0-compatible. The project is licensed accordingly — see the repo-root
+`LICENSE` (AGPL-3.0) and `NOTICE`.
 
 ## Libraries (`lib/`)
 

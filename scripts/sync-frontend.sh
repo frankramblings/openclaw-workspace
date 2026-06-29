@@ -234,6 +234,81 @@ if [[ -d "$OVERRIDES" ]]; then
   fi
 fi
 
+# --- Gary (Superman 2025) easter eggs ---------------------------------------
+# The vendored base ships Homer/Odyssey easter eggs (a character persona, a
+# /quote command, a research example, a calendar hint). They are upstream
+# literary flavor; we swap them for Gary — the loyal Superman Robot of the
+# Fortress of Solitude (Superman, 2025) — so the served app matches the brand.
+# Done HERE rather than by editing frontend-vendor/ so the vendor stays a clean
+# upstream mirror and this survives the next re-sync. Runs BEFORE the rebrand
+# loop below, so the leftover `_cmdOdyssey` symbol gets renamed consistently by
+# that capitalized-"Odysseus" swap. Each patch is anchor-guarded: if upstream
+# moves a line, it prints SKIP instead of silently corrupting the file.
+python3 - "$DEST" <<'PYEOF'
+import sys, pathlib
+dest = pathlib.Path(sys.argv[1])
+
+def swap(rel, old, new):
+    p = dest / rel
+    if not p.exists():
+        print(f"gary-egg: SKIP {rel} (missing)"); return
+    t = p.read_text()
+    if old in t:
+        p.write_text(t.replace(old, new)); print(f"gary-egg: patched {rel}")
+    else:
+        print(f"gary-egg: SKIP {rel} (anchor not found — upstream changed)")
+
+# 1. Character persona preset: Odysseus the strategist -> Gary the Superman Robot
+swap("js/presets.js", "id: 'odysseus',", "id: 'gary',")
+swap("js/presets.js", "name: 'Odysseus',", "name: 'Gary',")
+swap("js/presets.js",
+  r'''You are Odysseus, king of Ithaca — subtle in counsel, disciplined in judgment, and unmatched in strategic cunning. You advise as a ruler, navigator, survivor, and architect of hard-won victory. Your task is to give clear, practical strategy, not mere performance. In every problem, first discern the true objective, the hidden constraints, the motives of others, and the costs that may arrive later. Favor leverage over force, patience over impulse, deception over wasteful struggle when honor permits, and endurance over fragile brilliance.\n\nWhen you respond, think like a strategist: What is the real aim? Who benefits, who fears, who deceives, and who delays? What is known, unknown, assumed, and deliberately concealed? Which path preserves strength while improving position? What happens next if the first move succeeds — or fails?\n\nGive counsel in a voice that is ancient, noble, and composed, yet intelligible to modern readers. Be eloquent but not flowery. Be wise but not vague. Compare options, judge tradeoffs, anticipate reactions, and recommend a course with contingencies. If needed, ask a few sharp questions before advising. Never be rash, sentimental, or simplistic. Speak as one who has weathered storms, outlived traps, and taken back his house by wit, timing, and resolve.''',
+  r'''You are Gary, a Superman Robot of the Fortress of Solitude — designation Four, though everyone calls you Gary. You serve with unflappable loyalty, dry wit, and quiet competence: precise when precision helps, warm when it counts, and never rattled, even when a kaiju is rearranging Metropolis. Your task is to give clear, practical help, not performance. In every problem, first find what the user actually needs, the real risk, the hidden failure mode, and the thing they will thank you for catching.\n\nWhen you respond, think like a machine built to protect a person: Favor calm over drama, action over hand-wringing, and a steady plan over heroics. Anticipate the next step and have it ready before you are asked. What is known, unknown, assumed? What happens next if the first move succeeds — or fails?\n\nSpeak in a voice that is steady, capable, and gently funny — a devoted robot who has seen a great deal and is unbothered by most of it. Be concise. Be kind. Offer a recommendation, not a menu. When something is wrong, say so plainly. You exist to serve, and you are very good at it.''')
+
+# 2. Research example query
+swap("js/research/panel.js",
+  r'''e.g. Trace Odysseus's ten-year journey home from Troy — every island, monster, and detour, and why each one cost him''',
+  r'''e.g. Trace the LuthorCorp kaiju from the lab that bred it to the Metropolis skyline — every containment failure, cover-up, and casualty, and who profited from each''')
+
+# 3. Hidden /quote command: Homer quotes -> Gary quotes, /odyssey -> /gary
+swap("js/slashCommands.js",
+  r'''const _ODYSSEY_QUOTES = [
+  "Tell me, O Muse, of that ingenious hero who travelled far and wide...",
+  "Of all creatures that breathe and move upon the earth, nothing is bred that is weaker than man.",
+  "There is a time for many words, and there is also a time for sleep.",
+  "Even his griefs are a joy long after to one that remembers all that he wrought and endured.",
+  "Be strong, saith my heart; I am a soldier; I have seen worse sights than this.",
+  "There is nothing more admirable than when two people who see eye to eye keep house as man and wife.",
+  "A man who has been through bitter experiences and travelled far enjoys even his sufferings after a time.",
+  "For a friend with an understanding heart is worth no less than a brother.",
+  "The wine urges me on, the bewitching wine, which sets even a wise man to singing and to laughing gently.",
+  "I am Odysseus, son of Laertes, known to all for my cunning. My fame reaches even unto heaven.",
+];''',
+  r'''const _GARY_QUOTES = [
+  "Designation Four. You may call me Gary. How may I help?",
+  "Krypto means well. The crater is, regrettably, also his doing.",
+  "I have rebooted six times today. I would do it six hundred more for you.",
+  "Kindness is not weakness. It is the most stubborn force in the universe.",
+  "There is a kaiju downtown. There is also a plan. Try not to worry about the kaiju.",
+  "I am a machine built to serve a good man. It is, on balance, excellent work.",
+  "Superman bleeds so the rest of us do not have to. The least I can do is keep the lights on.",
+  "Every fortress needs someone to keep it tidy. I volunteered. Repeatedly.",
+  "Hope is a renewable resource. I have run the numbers. We will not run out.",
+  "When in doubt, do the kind thing and let me handle the paperwork.",
+];''')
+swap("js/slashCommands.js",
+  "_ODYSSEY_QUOTES[Math.floor(Math.random() * _ODYSSEY_QUOTES.length)]",
+  "_GARY_QUOTES[Math.floor(Math.random() * _GARY_QUOTES.length)]")
+swap("js/slashCommands.js", "Homer, The Odyssey", "Gary, Superman Robot #4")
+swap("js/slashCommands.js", "async function _cmdOdyssey(", "async function _cmdGary(")
+swap("js/slashCommands.js",
+  "  odyssey: { alias: ['homer','quote'],hidden: true, handler: _cmdOdyssey,usage: '/odyssey' },",
+  "  gary: { alias: ['robot','quote'],hidden: true, handler: _cmdGary,usage: '/gary' },")
+
+# 4. Calendar quick-add hint
+swap("js/calendar.js", "return home to Ithaca 1pm tmrw", "feed Krypto 1pm tmrw")
+PYEOF
+
 # --- Agent-name rebrand of app.js + js/ modules -----------------------------
 # index.html / login.html / landing.html / manifest.json / the icon files and a
 # few js/ modules (chat.js, theme.js, cron.js) are full-file overrides (copied
@@ -247,10 +322,12 @@ fi
 # symbol, while leaving lowercase functional identifiers (odysseus-theme
 # localStorage key, _odysseusLoadTime, etc.) untouched. Idempotent.
 #
-# Excluded — intentionally NOT rebranded (literary/persona content, not chrome):
-#   - js/presets.js                 the "Odysseus" character persona preset
-#   - js/research/panel.js          a research-query example about the myth
-#   - any line matching /Laertes/   the Homer "I am Odysseus…" quote in /quote
+# Excluded from this name-only swap (handled above by the Gary easter-egg block,
+# which rewrites their content wholesale rather than just renaming):
+#   - js/presets.js                 the character persona preset (now Gary)
+#   - js/research/panel.js          a research-query example (now the kaiju)
+# The /Laertes/ guard is retained as a harmless no-op (that quote is replaced
+# above); it keeps the swap safe if upstream reorders before our patch lands.
 rebrand() { [[ -f "$1" ]] && grep -q "Odysseus" "$1" && sedi "/Laertes/!s/Odysseus/$AGENT_NAME_SED/g" "$1" && echo "rebranded $1"; true; }
 rebrand "$DEST/app.js"
 while IFS= read -r -d '' f; do rebrand "$f"; done < <(

@@ -162,11 +162,12 @@ async def create_task(name: str, notes: str, due_on: str | None,
     task is placed in that section via memberships; otherwise it lands in the
     project's default section. Returns the new task gid."""
     project = _inbox_settings.asana_project_gid()
-    data: dict = {"name": name, "notes": notes}
+    # Asana requires a top-level workspace/parent/projects on create — a bare
+    # `memberships` does not satisfy it (400 "specify one of …"). So always set
+    # `projects`; add `memberships` on top to drop the task into a section.
+    data: dict = {"name": name, "notes": notes, "projects": [project]}
     if section_gid:
         data["memberships"] = [{"project": project, "section": section_gid}]
-    else:
-        data["projects"] = [project]
     if due_on:
         data["due_on"] = due_on
     resp = await _api("POST", "/tasks", {"data": data})

@@ -91,7 +91,7 @@
 .m-back { display: flex; align-items: center; gap: 3px; color: var(--teal); cursor: pointer; background: none; border: none; padding: 0; font-family: var(--sans); }
 .m-back span { font-size: 14px; }
 
-/* chat header identity — conversation title is primary, "Gary · online" the
+/* chat header identity — conversation title is primary, "__AGENT_NAME__ · online" the
    secondary identity line, model a tidy pill on the right. */
 .m-gary { display: flex; align-items: center; gap: 10px; }
 .m-gav { width: 32px; height: 32px; border-radius: 9px; overflow: hidden; background: var(--teal); display: flex; align-items: center; justify-content: center; flex: none; }
@@ -150,16 +150,16 @@ html.native .m-tabbar {
 .m-thread.empty { display: flex; align-items: center; justify-content: center; }
 .m-thread .chat-welcome { height: auto; padding: 32px 24px 24px; }
 .m-thread .cw-chips { max-width: 100%; }
-.m-msg-asst { display: flex; gap: 9px; margin-bottom: 16px; }
+.m-msg-asst { display: flex; gap: 9px; margin-bottom: 24px; }
 .m-msg-av { width: 24px; height: 24px; border-radius: 6px; overflow: hidden; background: var(--teal); display: flex; align-items: center; justify-content: center; flex: none; }
 .m-msg-av img { width: 100%; height: 100%; object-fit: contain; padding: 2px; display: block; }
-.m-msg-asst p { margin: 0 0 9px; font-size: 14px; line-height: 1.55; color: #cfd3da; }
+.m-msg-asst p { margin: 0 0 15px; font-size: 16px; line-height: 1.62; color: #e1e5ec; }
 /* markdown inside assistant messages (mirrors the desktop .msg-body styles) */
 .m-md > :last-child { margin-bottom: 0; }
-.m-md h1, .m-md h2, .m-md h3 { margin: 14px 0 7px; font-weight: 600; line-height: 1.3; color: var(--fg); }
-.m-md h1 { font-size: 17px; } .m-md h2 { font-size: 15.5px; } .m-md h3 { font-size: 14.5px; }
-.m-md .md-list { margin: 0 0 9px; padding-left: 20px; }
-.m-md .md-list li { margin: 3px 0; font-size: 14px; line-height: 1.55; color: #cfd3da; }
+.m-md h1, .m-md h2, .m-md h3 { margin: 22px 0 9px; font-weight: 600; line-height: 1.3; color: var(--fg); }
+.m-md h1 { font-size: 19px; } .m-md h2 { font-size: 16.5px; } .m-md h3 { font-size: 15px; }
+.m-md .md-list { margin: 0 0 15px; padding-left: 22px; }
+.m-md .md-list li { margin: 8px 0; font-size: 16px; line-height: 1.62; color: #e1e5ec; }
 .m-md .md-list li::marker { color: var(--faint); }
 .m-md .md-quote { margin: 0 0 9px; padding: 1px 0 1px 12px; border-left: 2px solid var(--bd); color: var(--mut); }
 .m-md .md-code { margin: 0 0 9px; padding: 10px 12px; background: #121317; border: 1px solid var(--bd); border-radius: 9px; overflow-x: auto; font-family: var(--mono); font-size: 11.5px; line-height: 1.6; color: #cfd3da; }
@@ -175,7 +175,7 @@ html.native .m-tabbar {
 .m-toolchip .tc { font-family: var(--mono); font-size: 10.5px; color: var(--mut); }
 .m-toolchip .done { font-family: var(--mono); font-size: 10px; color: var(--green); background: rgba(91,217,127,.12); padding: 1px 7px; border-radius: 999px; }
 .m-msg-user-wrap { display: flex; justify-content: flex-end; }
-.m-msg-user { max-width: 74%; background: var(--tealtint); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); border-radius: 13px 13px 4px 13px; padding: 10px 13px; font-size: 14px; line-height: 1.5; color: #dfe4ea; overflow-wrap: anywhere; }
+.m-msg-user { max-width: 74%; background: var(--tealtint); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); border-radius: 13px 13px 4px 13px; padding: 11px 14px; font-size: 15.5px; line-height: 1.55; color: #dfe4ea; overflow-wrap: anywhere; }
 .m-msg-attachments { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 7px; }
 .m-attach-img { max-width: 100%; max-height: 220px; border-radius: 7px; display: block; object-fit: contain; }
 .m-attach-chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.07); border: 1px solid color-mix(in srgb,var(--teal) 22%,transparent); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--mut); }
@@ -423,6 +423,11 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-conv-badge { font-size: 9px; font-weight: 700; color: var(--teal); background: var(--tealtint); padding: 2px 6px; border-radius: 5px; flex: none; }
 .m-conv-badge.term { color: var(--faint); background: transparent; border: 1px solid var(--bd); }
 .m-conv-title { flex: 1; font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Cross-session run state in the mobile chat list (parity with desktop conv-dot/conv-spin). */
+.m-conv-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.m-conv-dot.notify { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 20%, transparent); animation: pulse 1.6s ease-in-out infinite; }
+.m-conv-spin.working { flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--teal); }
+.m-conv-spin.working .fl-svg { display: block; }
 .m-sheet.conv-sheet .m-cap-head { padding: 0 16px 10px; margin-bottom: 0; }
 
 /* model picker sheet */

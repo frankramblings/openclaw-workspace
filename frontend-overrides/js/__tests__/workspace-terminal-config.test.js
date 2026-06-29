@@ -11,8 +11,9 @@ const sandbox = { window: {} };
 vm.runInNewContext(code, sandbox);
 const C = sandbox.window.WTTermConfig;
 
-test('font stack leads with the Nerd Font', () => {
-  assert.ok(C.FONT_STACK.startsWith('"JetBrainsMono Nerd Font"'));
+test('font stack leads with the preferred mono font and degrades gracefully', () => {
+  assert.ok(C.FONT_STACK.startsWith('"MonoLisa"'));
+  assert.ok(C.FONT_STACK.includes('monospace'));
 });
 
 test('buildTermOptions enables proposed API and uses the font stack', () => {

@@ -42,7 +42,7 @@ tap the widget row -> **Shortcuts** -> add *Ask* (and *Photo*).
 ## Phase 2 — Scriptable (prettier, free app)
 
 1. Install **Scriptable** from the App Store.
-2. New script -> paste the contents of `gary-widget.scriptable.js` -> name it
+2. New script -> paste the contents of `workspace-widget.scriptable.js` -> name it
    anything you like (e.g. "Workspace").
 3. Edit `const BASE` at the top of the script to your workspace host URL.
 4. Home Screen: add a **Scriptable** widget (medium = Ask/Photo/Inbox buttons;

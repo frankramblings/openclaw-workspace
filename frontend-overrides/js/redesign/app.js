@@ -14,6 +14,7 @@ import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
+import { openImageOverlay } from './live/image-viewer.js';
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -86,8 +87,8 @@ function renderRail() {
   return `
   <div class="oc-rail${collapsed ? ' collapsed' : ''}">
     <div class="oc-rail-head">
-      <div class="oc-avatar oc-avatar-28" data-act="toggleRail" title="Toggle sidebar"><img src="${AVATAR}" alt="Gary"></div>
-      <span class="oc-rail-name">Gary</span>
+      <div class="oc-avatar oc-avatar-28" data-act="toggleRail" title="Toggle sidebar"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+      <span class="oc-rail-name">__AGENT_NAME__</span>
       <span class="oc-online${state.isOnline ? '' : ' offline'}"><span class="dot"></span>${state.isOnline ? 'online' : 'offline'}</span>
       <div class="oc-spacer"></div>
       <button class="oc-rail-collapse" data-act="toggleRail" title="Collapse sidebar"><span style="display:inline-flex;transform:rotate(${collapsed ? '180deg' : '0deg'})">${I.chevLeft()}</span></button>
@@ -190,7 +191,10 @@ function render() {
   if (focusKey) {
     const el = root.querySelector(`[data-focus="${focusKey}"]`);
     if (el) {
-      el.focus();
+      // preventScroll: focusing an input otherwise scrolls its nearest scroll
+      // container (the chat thread) to reveal it — which yanked the thread on
+      // every keystroke-driven render. We restore scroll explicitly below.
+      el.focus({ preventScroll: true });
       if (selStart != null && el.setSelectionRange) {
         try { el.setSelectionRange(selStart, selEnd); } catch (_) { /* non-text input */ }
       }
@@ -244,6 +248,8 @@ function render() {
 const actions = {
   toggleRail: () => { state.railExpanded = !state.railExpanded; },
   go: (surface) => { state.surface = surface; state.resOpenCtl = null; },
+  // Open an image fullscreen (inline shared images carry data-act="imgView").
+  imgView: (src) => { openImageOverlay(src); },
   newChat: () => { state.surface = 'chat'; state.draft = ''; },
 
   // chat composer
@@ -424,6 +430,19 @@ root.addEventListener('input', (e) => {
   // pure CSS (:placeholder-shown), so skipping render here is safe. Desktop
   // keeps its live render — it drives the slash-command palette as you type.
   if (fk === 'mdraft') return;
+  // Typing in the desktop composer must not move the thread at all. render()
+  // rebuilds the DOM and re-focuses the textarea; pin the chat scroll to exactly
+  // where it was so a keystroke changes nothing in the viewport.
+  if (fk === 'draft') {
+    const before = root.querySelector('.chat-thread');
+    const savedTop = before ? before.scrollTop : null;
+    render();
+    if (savedTop != null) {
+      const after = root.querySelector('.chat-thread');
+      if (after) after.scrollTop = savedTop;
+    }
+    return;
+  }
   render();
 });
 

@@ -13,8 +13,11 @@ import asyncio
 import base64
 import contextlib
 import json
+import logging
 import mimetypes
 import re
+import subprocess
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -379,6 +382,37 @@ async def _late_reply(session_key: str, brain_message: str,
     return None
 
 
+_log = logging.getLogger(__name__)
+
+# Gateway rejects chat.send payloads over ~10 MB base64. Cap individual images
+# at 4 MB raw (~5.3 MB base64) to stay safely under that limit with multiple
+# attachments. HEIC/HEIF files are converted to JPEG first (models don't support
+# them natively and iPhone photos are often 7+ MB).
+_ATTACH_MAX_BYTES = 4 * 1024 * 1024  # 4 MB
+
+
+def _heic_to_jpeg(src: Path) -> bytes | None:
+    """Convert a HEIC/HEIF file to JPEG via ffmpeg. Returns JPEG bytes or None."""
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(src), "-update", "1",
+             "-vf", "scale='min(1920,iw)':-2", "-q:v", "5", tmp_path],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode == 0:
+            return Path(tmp_path).read_bytes()
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        if tmp_path:
+            with contextlib.suppress(OSError):
+                Path(tmp_path).unlink()
+    return None
+
+
 def _resolve_attachments(raw: str) -> list[dict]:
     """Turn the composer's posted `attachments` (a JSON array of upload ids, each
     a filename under ATTACH_DIR) into the chat.send attachment shape the gateway
@@ -408,10 +442,22 @@ def _resolve_attachments(raw: str) -> list[dict]:
             data = path.read_bytes()
         except Exception:  # noqa: BLE001 - unreadable file → skip it
             continue
+        # Convert HEIC/HEIF → JPEG (models don't support these formats).
+        if mime in ("image/heic", "image/heif"):
+            converted = _heic_to_jpeg(path)
+            if converted:
+                data, mime = converted, "image/jpeg"
+            else:
+                _log.warning("HEIC conversion failed for %s; skipping attachment", path.name)
+                continue
+        # Skip images that are still too large for the gateway after conversion.
+        if len(data) > _ATTACH_MAX_BYTES:
+            _log.warning("Attachment %s is %d bytes (>4 MB); skipping", path.name, len(data))
+            continue
         out.append({
             "type": "image",
             "mimeType": mime,
-            "fileName": path.name,
+            "fileName": path.stem + (".jpg" if mime == "image/jpeg" else path.suffix),
             "content": base64.b64encode(data).decode("ascii"),
         })
     return out
@@ -888,13 +934,11 @@ async def session_usage(session_id: str):
 
 # NOTE: the real resume/tail endpoints live in resume_route.py
 # (/api/chat/events/resume, /api/chat/turn, /api/chat/stream). The old
-# /api/chat/resume/{id} stub (always {messages: []}) was dead and is removed.
-# /api/chat/stream_status/{id} is kept ONLY because legacy js/sessions.js still
-# polls it; it remains a {active:false} stub until that caller is migrated to
-# event_store.current_turn() (handoff Part 3).
-@app.get("/api/chat/stream_status/{session_id}")
-async def stream_status(session_id: str):
-    return {"active": False}
+# /api/chat/resume/{id} and /api/chat/stream_status/{id} stubs were dead — their
+# only caller was the legacy js/sessions.js UI, which index.html no longer loads
+# (the redesign app.js fully replaced it). Both stubs are removed; live run state
+# is served by event_store.current_turn() via /api/chat/turn and the per-session
+# working state by /api/chat/active_sessions.
 
 
 @app.post("/api/chat/stop/{session_id}")

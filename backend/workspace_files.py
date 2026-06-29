@@ -37,6 +37,16 @@ TEXT_EXTS = {
     ".sh", ".yaml", ".yml", ".toml", ".ini", ".csv", ".log", ".skill",
 }
 
+# Extensions that are never text. Writing UTF-8 text over one of these (e.g. a
+# text editor that opened a PNG via res.text() and saved it back) silently
+# corrupts the file — every non-UTF-8 byte becomes the � replacement char. The
+# PUT handler refuses these so an image can never be clobbered by an editor save.
+_BINARY_EXTS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".ico",
+    ".pdf", ".zip", ".gz", ".tar", ".tgz", ".mp3", ".mp4", ".mov", ".wav",
+    ".m4a", ".webm", ".woff", ".woff2", ".ttf", ".otf", ".eot",
+}
+
 _cache: dict = {}  # hidden_flag(bool) -> (timestamp, data); cleared on any mutation
 
 
@@ -340,6 +350,10 @@ def workspace_file_write(body: FileWriteBody):
     target = _mutable_or_400(body.path)
     if not target.is_file():
         raise HTTPException(status_code=404, detail="not a file")
+    if target.suffix.lower() in _BINARY_EXTS:
+        # Refuse to overwrite a binary file with editor text — that would
+        # corrupt it. Images/PDFs/etc. are viewed, not text-edited.
+        raise HTTPException(status_code=415, detail="not a text-editable file")
     target.write_text(body.content, encoding="utf-8")
     return {"ok": True}
 

@@ -160,6 +160,12 @@ async def action(payload: dict):
             await asana.complete(item_id)
             state.dismiss(source, item_id, "completed")
             undo = {"asana_gid": item_id}
+        elif act == "complete" and source == "obsidian":
+            # A meeting action item Frank finished himself. No external task to
+            # close (those go through add_asana) — just record "done" as its own
+            # disposition, distinct from dismiss (noise) and reviewed (FYI), so
+            # the learning layer can tell "I act on these" from "I skip these".
+            state.dismiss(source, item_id, "completed")
         elif act == "rsvp" and source == "calendar":
             response = payload.get("response")
             event_id = meta.get("event_id") or item_id

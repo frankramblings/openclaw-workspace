@@ -5,7 +5,8 @@
 # errors. Catches the blind spot where a transient 502 made a console-only guard
 # falsely report "clean".
 set -u
-BASE="https://naboo.bicolor-triceratops.ts.net:8443/static/index-redesign.html"
+# Override WORKSPACE_HOST to point at your own workspace host (Tailscale MagicDNS name or local IP).
+BASE="https://${WORKSPACE_HOST:-YOUR-HOST.ts.net}:8443/static/index-redesign.html"
 SURFACES="${*:-chat inbox email more calendar notes settings research library}"
 PROF=/home/frank/ralph-shots/pg
 fail=0

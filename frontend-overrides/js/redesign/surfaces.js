@@ -144,7 +144,7 @@ export function chatMsg(m, s) {
     : '';
   const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
-  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="msg-body"><div class="msg-meta"><span class="name">Gary</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m) : ''}</div></div>`;
+  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m) : ''}</div></div>`;
 }
 
 
@@ -215,8 +215,8 @@ function chatWelcome() {
     `<button class="qchip occhip" data-act="fillComposer" data-arg="${esc(c.prompt)}">${esc(c.label)}</button>`
   ).join('');
   return `<div class="chat-welcome">
-    <div class="cw-av"><img src="${AVATAR}" alt="Gary"></div>
-    <div class="cw-name">Gary</div>
+    <div class="cw-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+    <div class="cw-name">__AGENT_NAME__</div>
     <div class="cw-hint">Type a message below &nbsp;·&nbsp; <kbd>/</kbd> for commands</div>
     <div class="cw-chips">${chips}</div>
   </div>`;
@@ -267,7 +267,7 @@ function chatSurface(s) {
     ${when(s.modelMenuOpen, modelPopover(s))}
     <div class="composer${slashOpen ? ' slash' : ''}">
       ${when(s.live?.chat?.queued, `<div class="queued-msg" data-act="queueRecall" title="Click to edit"><span class="q-ico">⏳</span><span class="q-txt">Queued — sends when the reply finishes${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 90))}` : ' · (image)'}</span><button class="q-x ocbtn" data-act="queueCancel" title="Cancel">✕</button></div>`)}
-      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message Gary…   ( type / for commands )">
+      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message __AGENT_NAME__…   ( type / for commands )">
 ${esc(d)}</textarea>
       ${when(s.pendingAttach && s.pendingAttach.length, `
       <div class="attach-pending">
@@ -538,7 +538,7 @@ function inboxSurface(s) {
       <div class="row1">
         <span class="ttl">Inbox</span><span class="cnt">${visible.length} to triage</span>
         <div class="oc-spacer"></div>
-        <button class="triage-btn" data-act="triageAll">✦ Triage with Gary</button>
+        <button class="triage-btn" data-act="triageAll">✦ Triage with __AGENT_NAME__</button>
         <button class="icon-btn ocbtn" data-act="toggleHistory" title="Recent actions" style="margin-left:6px;font-size:13px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:7px;color:${s.inboxHistoryOpen ? 'var(--teal)' : 'var(--faint)'};cursor:pointer">⏱ History</button>
       </div>
       ${chipRowHtml(
@@ -549,7 +549,7 @@ function inboxSurface(s) {
     <div class="inbox-scroll">
       ${when(needs.length > 0, `<div class="grp-label"><span class="lbl needs">NEEDS YOU</span><span class="n">${needs.length}</span><div class="sect-divider"></div></div>${map(needs, needsCard)}`)}
       ${when(fyi.length > 0, `<div class="grp-label fyi"><span class="lbl fyilbl">AI-SUGGESTED · FYI</span><span class="n">${fyi.length}</span><div class="sect-divider"></div></div>${map(fyi, fyiCard)}`)}
-      ${when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">Gary cleared the feed. Nothing left to triage.</div></div>`)}
+      ${when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed. Nothing left to triage.</div></div>`)}
     </div>
     ${when(!!s.inboxEditFor, `
       <div class="inbox-edit-sheet">
@@ -614,7 +614,7 @@ function calendarSurface(s) {
         <input data-model="quick" data-focus="quick" placeholder="Quick add — try “lunch with Sam tue 1pm” or “return home to Ithaca 1pm tmrw”" value="${esc(s.quick || '')}"/>
         ${when(has, '<button class="cal-add" data-act="clearQuick">↵ Add</button>')}
       </div>
-      ${when(has, `<div class="cal-parse"><span class="k">Gary parsed:</span><span class="ev"><span class="d"></span>${esc(q)}</span><span class="x">· Personal · 1 hr</span></div>`)}
+      ${when(has, `<div class="cal-parse"><span class="k">__AGENT_NAME__ parsed:</span><span class="ev"><span class="d"></span>${esc(q)}</span><span class="x">· Personal · 1 hr</span></div>`)}
     </div>
     <div class="cal-weekdays">${map(weekdays, (d) => `<div>${d}</div>`)}</div>
     <div class="cal-grid">${map(cells, cell)}</div>
@@ -652,7 +652,7 @@ function researchSurface(s) {
   <div class="res-wrap">
     <div class="res-inner">
       <div class="res-composer${has ? ' has' : ''}">
-        <textarea data-model="researchQuery" data-focus="researchQuery" rows="2" placeholder="What should Gary investigate? e.g. “Compare the top 3 podcast hosting platforms on price, analytics, and Wistia integration.”">${esc(s.researchQuery || '')}</textarea>
+        <textarea data-model="researchQuery" data-focus="researchQuery" rows="2" placeholder="What should __AGENT_NAME__ investigate? e.g. “Compare the top 3 podcast hosting platforms on price, analytics, and Wistia integration.”">${esc(s.researchQuery || '')}</textarea>
         <div class="scope-chips">${scopes}</div>
         <div class="res-controls">
           <span class="lbl">Defaults — click any to override:</span>
@@ -696,7 +696,7 @@ function librarySurface(s) {
   const lq = (s.libQuery || '').trim().toLowerCase();
   const items = all.filter((a) => (lf === 'all' || a.cat === lf) && (!lq || String(a.title || '').toLowerCase().includes(lq)));
   return `
-  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts Gary has produced</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newDoc" style="margin-right:8px">+ New doc</button><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div></div>
+  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts __AGENT_NAME__ has produced</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newDoc" style="margin-right:8px">+ New doc</button><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div></div>
   <div class="lib-wrap">
     <div class="lib-filters">
       ${map(LIB_FILTERS, ([id, label]) => `<span class="lib-filter${lf === id ? ' active' : ''}" data-act="libFilter" data-arg="${id}">${esc(label)}</span>`)}
@@ -907,8 +907,8 @@ function welcomeSurface() {
     `<button class="qchip occhip" data-act="fillComposer" data-arg="${esc(c.prompt)}">${esc(c.label)}</button>`
   ).join('');
   return `<div class="welcome-surface">
-    <div class="ws-av"><img src="${AVATAR}" alt="Gary"></div>
-    <div class="ws-name">Gary</div>
+    <div class="ws-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+    <div class="ws-name">__AGENT_NAME__</div>
     <div class="ws-tagline">Your AI workspace</div>
     <button class="ws-new ocbtn" data-act="newChat">Start a new chat</button>
     <div class="ws-chips">${chips}</div>

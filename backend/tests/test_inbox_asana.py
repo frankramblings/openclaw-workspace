@@ -99,6 +99,9 @@ def test_create_task_posts_to_project(monkeypatch):
     assert data["due_on"] == "2026-07-01"
     # placed in the Backlog section of the project
     assert {"project": "PROJ", "section": "SEC"} in data["memberships"]
+    # ...and `projects` must still be set: Asana 400s on a bare `memberships`
+    # ("specify one of workspace, parent, projects").
+    assert data["projects"] == ["PROJ"]
 
 def test_create_task_without_due_or_section(monkeypatch):
     captured = {}

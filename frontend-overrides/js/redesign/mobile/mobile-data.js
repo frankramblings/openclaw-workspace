@@ -11,7 +11,7 @@ export const WEEK_STRIP = [
 export const AGENDA = [
   { label: 'TODAY · FRI JUN 19', tag: 'Juneteenth', tagColor: 'var(--gold)', events: [
     { time: 'all-day', tone: 'var(--gold)', title: 'Wistia Holiday · Office closed', sub: 'Kirill OOO · Mitra OOO' },
-    { time: '9:00', tone: 'var(--teal)', title: 'Hold: prep for Senior Mgmt', sub: 'Suggested by Gary · 1 hr' },
+    { time: '9:00', tone: 'var(--teal)', title: 'Hold: prep for Senior Mgmt', sub: 'Suggested by __AGENT_NAME__ · 1 hr' },
   ] },
   { label: 'MON · JUN 22', events: [
     { time: '08:15', tone: 'var(--teal)', title: 'Daycare drop-off' },

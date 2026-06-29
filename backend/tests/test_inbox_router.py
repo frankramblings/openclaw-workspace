@@ -71,6 +71,27 @@ async def test_unknown_action_rejected(client):
     assert r.status_code == 400
 
 
+@pytest.mark.anyio
+async def test_complete_hides_obsidian_item(client, monkeypatch):
+    """Completing a meeting action item clears it from the feed (no external
+    task to close — that path is add_asana) and logs it as 'completed'."""
+    async def fake_obsidian():
+        return [{"id": "o1", "source": "obsidian", "title": "Send the deck",
+                 "subtitle": "", "snippet": "", "ts": 2, "ageHours": 1.0,
+                 "score": 5, "meta": {},
+                 "actions": ["add_asana", "complete", "reviewed", "dismiss", "snooze"]}]
+
+    monkeypatch.setitem(inbox.SOURCES, "obsidian", fake_obsidian)
+    inbox._cache.clear()
+    async with client as c:
+        r = await c.post("/api/items/action",
+                         json={"source": "obsidian", "id": "o1", "action": "complete"})
+        assert r.json()["ok"] is True
+        gone = await c.get("/api/items?sources=obsidian")
+    assert gone.json()["items"] == []
+    assert state.history(limit=1)[0]["action"] == "complete"
+
+
 def test_spinoff_dedupes_recent_same_item(monkeypatch, tmp_path):
     """A runaway client hammered spinoff for one stuck item (~100 'Reply: Q
     about quotas' sessions in 5 days, each burning a seeding agent turn).

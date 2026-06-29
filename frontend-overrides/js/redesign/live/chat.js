@@ -108,7 +108,7 @@ function ensureChat(state) {
 
 // Fetch + map history into a thread; returns { thread, title?, subtitle, model }.
 // Rebuild the Cowork-style activity trail from a turn's saved tool_events
-// (backend _map_history). Skips Gary's `message` reply-delivery tool — parity
+// (backend _map_history). Skips the agent's `message` reply-delivery tool — parity
 // with the live relay, which hides its card — so reload matches the live view.
 function historySteps(toolEvents, msgIdx) {
   if (!Array.isArray(toolEvents)) return [];
@@ -765,10 +765,10 @@ function showChatToast(text, id) {
 // always, plus an OS notification when the user has granted permission.
 function notifyTurnDone(chat, id) {
   const title = _titleFor(chat, id) || 'a chat';
-  showChatToast(`Gary finished replying · ${title}`, id);
+  showChatToast(`__AGENT_NAME__ finished replying · ${title}`, id);
   try {
     if ('Notification' in window && Notification.permission === 'granted') {
-      const n = new Notification('Gary finished replying', { body: title, tag: 'oc-turn-' + id });
+      const n = new Notification('__AGENT_NAME__ finished replying', { body: title, tag: 'oc-turn-' + id });
       n.onclick = () => { try { window.focus(); } catch (_) {} openNotified(id); n.close(); };
     }
   } catch (_) { /* OS notifications unavailable */ }
@@ -1095,7 +1095,7 @@ export const actions = {
         thread = list.map((h) => ({ role: h.role === 'user' ? 'user' : 'assistant', text: h.content || '' }));
       } catch (_) { thread = []; }
     }
-    const text = thread.map((m) => `${m.role === 'user' ? 'You' : 'Gary'}: ${m.text || ''}`).join('\n\n');
+    const text = thread.map((m) => `${m.role === 'user' ? 'You' : '__AGENT_NAME__'}: ${m.text || ''}`).join('\n\n');
     try { await navigator.clipboard.writeText(text); } catch (_) {}
     runtime.render();
   },
@@ -1106,7 +1106,7 @@ export const actions = {
     state.chatMenuOpen = false;
     const chat = ensureChat(state);
     const title = chat.title || 'conversation';
-    const md = `# ${title}\n\n` + (chat.thread || []).map((m) => `**${m.role === 'user' ? 'You' : 'Gary'}:** ${m.text || ''}`).join('\n\n');
+    const md = `# ${title}\n\n` + (chat.thread || []).map((m) => `**${m.role === 'user' ? 'You' : '__AGENT_NAME__'}:** ${m.text || ''}`).join('\n\n');
     try {
       const blob = new Blob([md], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);

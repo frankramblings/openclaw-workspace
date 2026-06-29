@@ -39,3 +39,9 @@ node_modules/
 OVERNIGHT-REPORT.md
 
 .claude/settings.local.json
+
+# Transient CSS editing-session backups
+frontend-overrides/.redesign.css.*
+
+# Personal native iOS shell (carries private tailnet host; not for public repo)
+/native/

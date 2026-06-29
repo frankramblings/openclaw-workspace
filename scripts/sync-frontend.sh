@@ -62,7 +62,7 @@ if [[ -d "$OVERRIDES" ]]; then
     if grep -q "__AGENT_NAME__" "$f"; then
       sedi "s/__AGENT_NAME__/$AGENT_NAME_SED/g" "$f"
     fi
-  done < <(find "$DEST" -type f \( -name '*.js' -o -name '*.html' -o -name '*.json' -o -name '*.webmanifest' \) -print0)
+  done < <(find "$DEST" -type f \( -name '*.js' -o -name '*.html' -o -name '*.json' -o -name '*.webmanifest' -o -name '*.css' \) -print0)
   echo "baked agent name '$AGENT_NAME' into __AGENT_NAME__ tokens"
 
   # Inject classic add-ons into index-classic.html (idempotent).

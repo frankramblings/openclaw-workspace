@@ -314,6 +314,7 @@ class TestEnabledCollectors:
         monkeypatch.setenv("INBOX_ASANA_ENABLED", "false")
         monkeypatch.setenv("INBOX_OBSIDIAN_ENABLED", "false")
         monkeypatch.setenv("INBOX_DOCUMENTS_ENABLED", "false")
+        monkeypatch.setenv("INBOX_CALENDAR_ENABLED", "false")
         assert settings.enabled_collectors() == []
 
     def test_order_is_stable(self, tmp_path, monkeypatch):
@@ -321,7 +322,7 @@ class TestEnabledCollectors:
         monkeypatch.setattr(_cfg, "DATA_DIR", tmp_path / "nodata")
         for var in ("INBOX_GMAIL_ENABLED", "INBOX_SLACK_ENABLED",
                     "INBOX_ASANA_ENABLED", "INBOX_OBSIDIAN_ENABLED",
-                    "INBOX_DOCUMENTS_ENABLED"):
+                    "INBOX_DOCUMENTS_ENABLED", "INBOX_CALENDAR_ENABLED"):
             monkeypatch.delenv(var, raising=False)
         pat_file = tmp_path / "asana.env"
         pat_file.write_text('ASANA_PAT="fake-token"\n')
@@ -332,6 +333,7 @@ class TestEnabledCollectors:
         assert result.index("slack") < result.index("asana")
         assert result.index("asana") < result.index("obsidian")
         assert result.index("obsidian") < result.index("documents")
+        assert result.index("documents") < result.index("calendar")
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +448,7 @@ class TestCapabilitiesInbox:
         monkeypatch.setenv("INBOX_ASANA_ENABLED", "false")
         monkeypatch.setenv("INBOX_OBSIDIAN_ENABLED", "false")
         monkeypatch.setenv("INBOX_DOCUMENTS_ENABLED", "false")
+        monkeypatch.setenv("INBOX_CALENDAR_ENABLED", "false")
         result = caps.snapshot()
         assert result["inbox"]["available"] is False
         assert "collector" in result["inbox"]["reason"]

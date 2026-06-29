@@ -14,6 +14,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -398,11 +399,22 @@ def signals_stale() -> bool:
 
 
 async def kick_refresh() -> None:
-    """Fire-and-forget kick of the slack-refresh launchd job."""
+    """Fire-and-forget kick of the slack-refresh launchd job.
+
+    launchd (``launchctl``) only exists on macOS. On Linux/other hosts the
+    refresh job is managed differently (e.g. systemd/cron), so this is a no-op
+    there. Any failure to launch is swallowed — this is best-effort and must
+    never break inbox collection.
+    """
+    if sys.platform != "darwin":
+        return
     def _kick() -> None:
-        subprocess.Popen(
-            ["launchctl", "kickstart", f"gui/{os.getuid()}/{REFRESH_JOB}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            subprocess.Popen(
+                ["launchctl", "kickstart", f"gui/{os.getuid()}/{REFRESH_JOB}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (FileNotFoundError, OSError):
+            pass
     await asyncio.to_thread(_kick)
 
 

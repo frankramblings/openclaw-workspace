@@ -131,3 +131,37 @@ Slack keychain account + obsidian owner name (no more hardcoded identifiers);
 branch (single commit, no history, private identifiers and `docs/superpowers/`
 internal planning docs stripped). Identifier scan must be empty before the script
 proceeds. Push `public:main` to a public remote.
+
+## 1.0 readiness pass (2026-06-28)
+
+Closed the remaining gaps that actually blocked "someone else can install + we can publish":
+
+- **Off-macOS portability:** `slack.kick_refresh` no longer crashes the inbox on
+  Linux/CI (launchctl is darwin-only). Branch suite back to green.
+- **Branding leak fixed (the big one):** the redesign UI had reintroduced ~52
+  hardcoded "Gary" display strings after the original tokenization pass. All
+  re-tokenized to `__AGENT_NAME__`; verified a bake as Aria/Jarvis leaves no
+  display "Gary". Also fixed the bake to cover `*.css` (it was js/html/json only,
+  so a CSS token shipped un-baked).
+- **Publish-gate now PASSES:** scrubbed the private tailnet host + remaining
+  personal data from mock/demo/test/logic (settings/email demo data, obsidian
+  owner regex, a test fixture filename); relocated the obsolete chat-resume
+  handoff under docs/superpowers/. `prepare-public.sh` 3 checks all green.
+- **De-personalized tracked iOS app** (`deploy/ios`: GaryApp → WorkspaceApp,
+  workspace:// scheme, generic bundle id). Personal native shell kept private
+  (gitignored).
+- **Durable/resumable chat streaming — DONE (handoff Parts 1-3):** backend +
+  frontend resume were already built; finished Part 3 mobile parity (working
+  spinner + finished-while-away dot in the mobile chat list), retired the dead
+  /api/chat/stream_status stub, and added core-path tests (event_store eviction
+  + resume_route endpoints). Live backend verified: /api/chat/active_sessions
+  correctly reports a running session. Suite 595 (py) + 57 (js) green.
+- **Icons item 9 closed:** opt-in `WORKSPACE_ICON_MODE=initials` name-derived mark
+  (helmet stays default).
+- All merged to `main`. Stale `calendar-rsvp` branch is superseded by main's
+  newer calendar/RSVP implementation — do NOT merge it (would delete ~10k lines).
+
+**Remaining = owner actions only:** (1) run `prepare-public.sh` + flip the repo
+public (it's still PRIVATE); (2) browser-verify the streaming leave/refresh/return
+UX + mobile spinner (frontend is baked + live); (3) confirm the initials PNG
+render on the Mac (sharp's native binary is macOS).

@@ -11,6 +11,7 @@
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
 import { reload } from './index.js';
+import { openImageOverlay } from './image-viewer.js';
 
 const CSS = '/static/js/vendor/toastui/toastui-editor.min.css';
 const CSS_DARK = '/static/js/vendor/toastui/toastui-editor-dark.min.css';
@@ -200,6 +201,18 @@ export const actions = {
   // Open a workspace file by path (not a library doc id).
   openWorkspaceFile: async (path) => {
     if (!path) return;
+    // Binary files must NEVER reach the text editor: it shows garbage and
+    // (before the backend guard) its autosave corrupted the file. Images open
+    // in the fullscreen viewer; other binaries open in a new browser tab.
+    const url = '/api/workspace/file?path=' + encodeURIComponent(path);
+    if (/\.(png|jpe?g|gif|webp|svg|bmp|avif|ico)$/i.test(path)) {
+      openImageOverlay(url, path.split('/').pop() || path);
+      return;
+    }
+    if (/\.(pdf|zip|gz|tar|tgz|mp3|mp4|mov|wav|m4a|webm|woff2?|ttf|otf|eot)$/i.test(path)) {
+      try { window.open(url, '_blank', 'noopener'); } catch (_) {}
+      return;
+    }
     const d = docState();
     if (!d) return;
     try {

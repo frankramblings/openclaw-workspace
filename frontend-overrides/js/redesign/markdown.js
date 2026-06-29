@@ -19,7 +19,28 @@ function safeUrl(url) {
   return /^(https?:|mailto:|\/|#)/i.test(String(url || '').trim()) ? url : '#';
 }
 
+function isVaultPath(url) {
+  const s = String(url || '').trim();
+  if (/^(https?:|mailto:|#)/i.test(s)) return false;
+  return /^~\/\.openclaw\/workspace\//.test(s)
+    || s.includes('/.openclaw/workspace/')
+    || isFilePath(s);
+}
+
+function workspacePath(url) {
+  const s = String(url || '').trim();
+  const tilde = '~/.openclaw/workspace/';
+  const marker = '/.openclaw/workspace/';
+  if (s.startsWith(tilde)) return s.slice(tilde.length);
+  const i = s.indexOf(marker);
+  if (i >= 0) return s.slice(i + marker.length);
+  return s;
+}
+
 function link(text, url) {
+  if (isVaultPath(url)) {
+    return `<span class="file-link" data-act="wsOpenFile" data-arg="${esc(workspacePath(url))}">${text}</span>`;
+  }
   return `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 }
 
@@ -74,6 +95,35 @@ export function inline(text) {
   });
 }
 
+// Inline image sharing (parity with desktop markdown.js _extractSharedImages).
+// The agent shares an existing file with `MEDIA:<path>` on its own line; it may
+// also paste a raw `<img src="data:image/…">` or `![alt](data:image/…)`. These
+// aren't markdown, so we lift them out before line parsing and emit real <img>s
+// (local paths served by the allow-listed /api/workspace-media route).
+function sharedImageHtml(src) {
+  const e = esc(src);
+  // data-act="imgView" → tapping opens the fullscreen viewer (see app.js).
+  return `<div class="shared-image" data-act="imgView" data-arg="${e}">`
+    + `<img src="${e}" alt="shared image" loading="lazy"></div>`;
+}
+
+function extractSharedImages(text) {
+  let imagesHtml = '';
+  text = text.replace(/<img\b[^>]*?\bsrc\s*=\s*["'](data:image\/[^"']+)["'][^>]*>/gi,
+    (_m, src) => { imagesHtml += sharedImageHtml(src); return ''; });
+  text = text.replace(/!\[[^\]]*\]\((data:image\/[^)\s]+)\)/gi,
+    (_m, src) => { imagesHtml += sharedImageHtml(src); return ''; });
+  text = text.replace(/^[ \t>*-]*MEDIA:\s*`?\s*([^\n`]+?)\s*`?[ \t]*$/gim, (_m, raw) => {
+    const p = raw.trim();
+    if (!p) return '';
+    const src = /^(https?:|data:image\/)/i.test(p)
+      ? p : '/api/workspace-media?path=' + encodeURIComponent(p);
+    imagesHtml += sharedImageHtml(src);
+    return '';
+  });
+  return { text: text.replace(/\n{3,}/g, '\n\n').trim(), imagesHtml };
+}
+
 const RE = {
   fence: /^```/,
   heading: /^(#{1,6})\s+(.*)$/,
@@ -89,8 +139,17 @@ function startsBlock(line) {
     || RE.quote.test(line) || RE.ul.test(line) || RE.ol.test(line);
 }
 
-export function renderMarkdown(src) {
-  const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
+export function renderMarkdown(src, topLevel = true) {
+  let source = String(src == null ? '' : src).replace(/\r\n?/g, '\n');
+  // Lift shared images out at the top level only (don't re-scan blockquote
+  // recursion, where MEDIA lines would be content, not directives).
+  let imagesHtml = '';
+  if (topLevel) {
+    const ex = extractSharedImages(source);
+    source = ex.text;
+    imagesHtml = ex.imagesHtml;
+  }
+  const lines = source.split('\n');
   const out = [];
   let i = 0;
   while (i < lines.length) {
@@ -111,7 +170,7 @@ export function renderMarkdown(src) {
     if (RE.quote.test(line)) {            // blockquote (recursive)
       const buf = [];
       while (i < lines.length && RE.quote.test(lines[i])) { buf.push(lines[i].replace(RE.quote, '')); i++; }
-      out.push(`<blockquote class="md-quote">${renderMarkdown(buf.join('\n'))}</blockquote>`);
+      out.push(`<blockquote class="md-quote">${renderMarkdown(buf.join('\n'), false)}</blockquote>`);
       continue;
     }
     if (RE.ul.test(line)) {               // unordered list
@@ -131,5 +190,5 @@ export function renderMarkdown(src) {
     while (i < lines.length && !RE.blank.test(lines[i]) && !startsBlock(lines[i])) { buf.push(lines[i]); i++; }
     out.push(`<p>${inline(buf.join('\n')).replace(/\n/g, '<br>')}</p>`);
   }
-  return out.join('');
+  return out.join('') + imagesHtml;
 }

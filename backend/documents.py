@@ -73,7 +73,7 @@ def _write(doc: dict):
     # Vault-linked doc (opened via /api/vault/open): mirror the body back to
     # the original vault file so UI/agent edits land where the file lives.
     # Best-effort — the library copy stays canonical for the editor.
-    if doc.get("vault_path"):
+    if doc.get("vault_path") and posixpath.splitext(doc["vault_path"])[1].lower() not in _BINARY_SUFFIXES:
         try:
             target = vs.WORKSPACE / doc["vault_path"]
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -355,6 +355,15 @@ EDITOR_EXTS = {
 }
 
 
+# Extensions that are never text and must not open in the document editor.
+# Images go to the in-page image viewer (frontend) / /api/workspace-media.
+_BINARY_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".ico",
+    ".pdf", ".zip", ".gz", ".tar", ".tgz", ".mp3", ".mp4", ".mov", ".wav",
+    ".m4a", ".webm", ".woff", ".woff2", ".ttf", ".otf", ".eot",
+}
+
+
 def _editor_language(rel: str) -> str:
     """Syntax-language hint for a vault path. A .bak wrapper resolves by its
     inner extension (note.md.bak → markdown); anything unrecognized is plain
@@ -374,6 +383,13 @@ async def open_vault_file(path: str):
     f = vs.WORKSPACE / rel
     if not f.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
+    # The text editor is for text. Reject known-binary extensions up front:
+    # read_text() can silently succeed on binary (so the UnicodeDecodeError
+    # guard below is not enough), which would stuff raw bytes into the editor.
+    # Images are served + viewed via /api/workspace-media / the frontend
+    # image viewer instead.
+    if f.suffix.lower() in _BINARY_SUFFIXES:
+        return JSONResponse({"error": "not a text file"}, status_code=400)
     # A library doc referenced by its own storage path → return it directly.
     if rel.startswith("Documents/") and rel.endswith(".md"):
         doc = _load(rel[len("Documents/"):-len(".md")])

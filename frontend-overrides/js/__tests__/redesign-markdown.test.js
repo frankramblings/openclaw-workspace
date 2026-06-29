@@ -39,6 +39,20 @@ test('links: safe schemes pass, javascript: is defused', () => {
   assert.doesNotMatch(evil, /javascript:/);
 });
 
+test('workspace vault links open via file action instead of navigating', () => {
+  const html = inline('[draft](~/.openclaw/workspace/heike-wistia-additional-concepts.md)');
+  assert.match(html, /class="file-link"/);
+  assert.match(html, /data-act="wsOpenFile"/);
+  assert.match(html, /data-arg="heike-wistia-additional-concepts\.md"/);
+  assert.doesNotMatch(html, /href="#"/);
+});
+
+test('absolute workspace links are normalized before opening', () => {
+  const html = inline('[draft](/home/frank/.openclaw/workspace/memory/radar.md)');
+  assert.match(html, /data-act="wsOpenFile"/);
+  assert.match(html, /data-arg="memory\/radar\.md"/);
+});
+
 test('headings', () => {
   assert.match(renderMarkdown('# Title'), /<h1 class="md-h">Title<\/h1>/);
   assert.match(renderMarkdown('### Sub'), /<h3 class="md-h">Sub<\/h3>/);

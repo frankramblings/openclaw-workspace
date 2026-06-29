@@ -14,6 +14,7 @@ import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
+import { openImageOverlay } from './live/image-viewer.js';
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -247,6 +248,8 @@ function render() {
 const actions = {
   toggleRail: () => { state.railExpanded = !state.railExpanded; },
   go: (surface) => { state.surface = surface; state.resOpenCtl = null; },
+  // Open an image fullscreen (inline shared images carry data-act="imgView").
+  imgView: (src) => { openImageOverlay(src); },
   newChat: () => { state.surface = 'chat'; state.draft = ''; },
 
   // chat composer

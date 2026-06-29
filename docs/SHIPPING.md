@@ -156,12 +156,25 @@ Closed the remaining gaps that actually blocked "someone else can install + we c
   /api/chat/stream_status stub, and added core-path tests (event_store eviction
   + resume_route endpoints). Live backend verified: /api/chat/active_sessions
   correctly reports a running session. Suite 595 (py) + 57 (js) green.
-- **Icons item 9 closed:** opt-in `WORKSPACE_ICON_MODE=initials` name-derived mark
-  (helmet stays default).
+- **Icons item 9 closed:** initials-from-name is the DEFAULT for every install
+  (`gen-icons.mjs` + `setup.sh` generate it); helmet is the maintainer's private
+  opt-in via gitignored `.data/branding.json` "icon_mode": "helmet" (never ships).
 - All merged to `main`. Stale `calendar-rsvp` branch is superseded by main's
   newer calendar/RSVP implementation — do NOT merge it (would delete ~10k lines).
 
-**Remaining = owner actions only:** (1) run `prepare-public.sh` + flip the repo
-public (it's still PRIVATE); (2) browser-verify the streaming leave/refresh/return
-UX + mobile spinner (frontend is baked + live); (3) confirm the initials PNG
-render on the Mac (sharp's native binary is macOS).
+**Remaining = owner actions only:**
+1. Run `prepare-public.sh` + flip the repo public (it's still PRIVATE).
+2. Browser-verify the streaming leave/refresh/return UX + mobile spinner
+   (frontend is baked + live).
+3. **Regenerate the committed default icons as neutral initials, on the Mac**
+   (sharp's native binary is macOS, so it can't run on the Linux host). The
+   tracked `frontend-overrides/*.png` are still the maintainer's helmet, so the
+   repo's pre-`setup` fallback would ship the helmet. Fix before publish:
+   ```bash
+   WORKSPACE_AGENT_NAME=Claw WORKSPACE_ICON_MODE=initials \
+     node scripts/icons/gen-icons.mjs
+   git add frontend-overrides/{favicon*,apple-touch-icon.png,icon-192.png,icon-512.png,maskable-icon.png,logo.svg}
+   ```
+   (Real installers are unaffected — `setup.sh` regenerates their initials icon
+   locally; this only fixes the shipped default. The maintainer's own deploy
+   stays the helmet via icon_mode=helmet.)

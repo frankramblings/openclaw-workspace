@@ -87,8 +87,8 @@ function renderRail() {
   return `
   <div class="oc-rail${collapsed ? ' collapsed' : ''}">
     <div class="oc-rail-head">
-      <div class="oc-avatar oc-avatar-28" data-act="toggleRail" title="Toggle sidebar"><img src="${AVATAR}" alt="Gary"></div>
-      <span class="oc-rail-name">Gary</span>
+      <div class="oc-avatar oc-avatar-28" data-act="toggleRail" title="Toggle sidebar"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+      <span class="oc-rail-name">__AGENT_NAME__</span>
       <span class="oc-online${state.isOnline ? '' : ' offline'}"><span class="dot"></span>${state.isOnline ? 'online' : 'offline'}</span>
       <div class="oc-spacer"></div>
       <button class="oc-rail-collapse" data-act="toggleRail" title="Collapse sidebar"><span style="display:inline-flex;transform:rotate(${collapsed ? '180deg' : '0deg'})">${I.chevLeft()}</span></button>

@@ -1,11 +1,11 @@
-// Adaptive companion (Terminal · Files · Gary), split mini-IDE, and the
+// Adaptive companion (Terminal · Files · the agent), split mini-IDE, and the
 // collapsed reveal strip. Mirrors the design reference's right-pane behavior.
 
 import { I, icon } from './icons.js';
 import { esc, map, when } from './dom.js';
 import { AVATAR, EXT_COLOR, DOCK } from './data.js';
 
-// effective tab for a surface (Gary suppressed on chat; chat defaults Terminal)
+// effective tab for a surface (agent tab suppressed on chat; chat defaults Terminal)
 export function effectiveTab(s) {
   const raw = s.compTab || (s.surface === 'chat' ? 'terminal' : 'gary');
   return (s.surface === 'chat' && raw === 'gary') ? 'terminal' : raw;
@@ -66,14 +66,14 @@ function garyPane(s) {
   <div class="comp-subhead"><span class="sub">· ${esc(d.sub || '')}</span></div>
   <div class="gary-dock">
     <div class="row">
-      <div class="gav"><img src="${AVATAR}" alt="Gary"></div>
+      <div class="gav"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
       <div style="min-width:0">
         <p>${esc(d.msg || '')}</p>
         <div class="gary-chips"><span class="gary-chip teal occhip">${esc(d.c1 || '')}</span><span class="gary-chip occhip">${esc(d.c2 || '')}</span></div>
       </div>
     </div>
   </div>
-  <div class="gary-ask"><div class="box"><span class="ph">Ask Gary…</span><button class="btn-send-xs">${I.send(15)}</button></div></div>`;
+  <div class="gary-ask"><div class="box"><span class="ph">Ask __AGENT_NAME__…</span><button class="btn-send-xs">${I.send(15)}</button></div></div>`;
 }
 
 function splitPane(s) {
@@ -106,7 +106,7 @@ export function renderCompanion(s) {
     <div class="comp-tabs">
       <button class="${tabCls('terminal')}" data-act="compTab" data-arg="terminal">${I.terminal()}Terminal</button>
       <button class="${tabCls('files')}" data-act="compTab" data-arg="files">${I.folder(14, 'currentColor')}Files</button>
-      ${when(showGary, `<button class="${tabCls('gary')} gary" data-act="compTab" data-arg="gary"><span class="gicon"><img src="${AVATAR}" alt=""></span>Gary</button>`)}
+      ${when(showGary, `<button class="${tabCls('gary')} gary" data-act="compTab" data-arg="gary"><span class="gicon"><img src="${AVATAR}" alt=""></span>__AGENT_NAME__</button>`)}
       <div class="oc-spacer"></div>
       <button class="comp-ctl${split ? ' on' : ''}" data-act="toggleSplit" title="Split — terminal over files">${I.split()}</button>
       <button class="comp-ctl ocbtn" data-act="toggleComp" title="Hide panel">${I.panelHide()}</button>
@@ -123,6 +123,6 @@ export function renderReveal(s) {
     <div class="reveal-div"></div>
     <button class="reveal-icon ocbtn" data-act="compTab" data-arg="terminal" title="Terminal">${I.terminal(16)}</button>
     <button class="reveal-icon ocbtn" data-act="compTab" data-arg="files" title="Files">${I.folder(16, 'currentColor')}</button>
-    ${when(showGary, `<button class="reveal-icon ocbtn" data-act="compTab" data-arg="gary" title="Gary"><span class="reveal-gicon"><img src="${AVATAR}" alt=""></span></button>`)}
+    ${when(showGary, `<button class="reveal-icon ocbtn" data-act="compTab" data-arg="gary" title="__AGENT_NAME__"><span class="reveal-gicon"><img src="${AVATAR}" alt=""></span></button>`)}
   </div>`;
 }

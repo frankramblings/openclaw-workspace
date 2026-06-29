@@ -232,7 +232,7 @@ export const actions = {
   complete: (id) => runAction(id, 'complete'),
   reviewed: (id) => runAction(id, 'reviewed'),
 
-  // Hand item to Gary — mint a chat session seeded with this item's context.
+  // Hand item to the agent — mint a chat session seeded with this item's context.
   gary: async (id) => {
     const state = runtime.state;
     const item = findItem(state, id);
@@ -246,11 +246,11 @@ export const actions = {
         location.hash = '#chat';
         if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(String(sid));
       } else {
-        state.inboxToast = { msg: "Couldn't hand to Gary", undoTs: null };
+        state.inboxToast = { msg: "Couldn't hand to __AGENT_NAME__", undoTs: null };
         runtime.render();
       }
     } catch (_) {
-      state.inboxToast = { msg: "Couldn't hand to Gary", undoTs: null };
+      state.inboxToast = { msg: "Couldn't hand to __AGENT_NAME__", undoTs: null };
       runtime.render();
     }
   },

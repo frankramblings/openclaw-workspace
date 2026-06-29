@@ -12,7 +12,7 @@ export const SLASH_COMMANDS = [
   { glyph: '✎', name: '/note', desc: 'capture a note to the vault', color: 'var(--green)' },
 ];
 
-// ---- adaptive Gary dock content (per non-chat surface) --------------------
+// ---- adaptive agent dock content (per non-chat surface) -------------------
 export const DOCK = {
   email:    { sub: 'on this thread', msg: "Three Cannes agreements are live — Tameka and Jayde signed, Brendan's still in revision.", c1: 'Draft a status reply', c2: 'Open all 3' },
   inbox:    { sub: 'triage assistant', msg: '3 items need you — two Slack threads from Cierra and a calendar invite. The rest I can archive.', c1: '✦ Archive the FYI batch', c2: 'Draft replies' },
@@ -62,7 +62,7 @@ export const NOTES = [
     blocks: [
       P('Living doc for the workspace redesign. Direction A — refined charcoal — is the agreed base.'),
       H('Locked decisions'),
-      L(['Persistent panes over floating windows', 'Split typography: prose proportional, code/data mono', 'Adaptive companion: Terminal with chat, Gary elsewhere']),
+      L(['Persistent panes over floating windows', 'Split typography: prose proportional, code/data mono', 'Adaptive companion: Terminal with chat, __AGENT_NAME__ elsewhere']),
       Q('Research controls: sensible defaults, overridable per-search.'),
     ] },
   { title: 'Cannes agreements — status', path: 'notes/cannes-status.md', version: 3, meta: 'Updated 1d ago · 320 words',

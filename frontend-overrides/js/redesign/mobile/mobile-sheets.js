@@ -125,13 +125,13 @@ export function renderCaptureSheet(s) {
   <div class="m-scrim" data-act="closeCapture"></div>
   <div class="m-sheet capture">
     <div class="m-grab"><div class="h"></div></div>
-    <div class="m-cap-head"><div class="av"><img src="${AVATAR}" alt="Gary"></div><span class="t">Quick capture</span><div class="m-spacer"></div><button class="cancel" data-act="closeCapture">Cancel</button></div>
+    <div class="m-cap-head"><div class="av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><span class="t">Quick capture</span><div class="m-spacer"></div><button class="cancel" data-act="closeCapture">Cancel</button></div>
     <div class="m-cap-input"><textarea data-model="captureDraft" data-focus="mcapture" rows="2" placeholder="Remind me to send the Cannes deck to legal before Friday">${esc(draft)}</textarea></div>
-    ${when(draft.trim().length > 0, `<div class="m-cap-parse"><span class="k">Gary parsed:</span>${esc(parse)}</div>`)}
+    ${when(draft.trim().length > 0, `<div class="m-cap-parse"><span class="k">__AGENT_NAME__ parsed:</span>${esc(parse)}</div>`)}
     <div class="m-cap-types">
       ${map(CAPTURE_TYPES, (t) => `<span class="m-cap-type${type === t.id ? ' active' : ''}" data-act="setCaptureType" data-arg="${t.id}">${t.glyph} ${esc(t.label)}</span>`)}
     </div>
-    <button class="m-cap-send" data-act="sendCapture">${I.send(17)}Send to Gary</button>
+    <button class="m-cap-send" data-act="sendCapture">${I.send(17)}Send to __AGENT_NAME__</button>
     <div class="m-cap-recent-lbl">RECENT CAPTURES</div>
     ${map(RECENT_CAPTURES, (r) => `<div class="m-cap-recent"><span class="g" style="color:${r.color}">${r.glyph}</span><span class="tx">${esc(r.text)}</span><span class="ty">${esc(r.type)}</span></div>`)}
   </div>`;

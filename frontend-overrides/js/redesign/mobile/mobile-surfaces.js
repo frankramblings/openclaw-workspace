@@ -54,7 +54,7 @@ export function mChatMsg(m, s) {
     }).join('') : '';
     return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div></div>`;
   }
-  return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"><div class="m-msg-av"><img src="${AVATAR}" alt="Gary"></div><div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}</div></div>`;
+  return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"><div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}</div></div>`;
 }
 
 // Pull-to-refresh indicator. Any .m-scroll marked data-ptr="1" with this as its
@@ -81,8 +81,8 @@ export function mChat(s) {
     `<button class="qchip occhip" data-act="fillComposer" data-arg="${esc(c.prompt)}">${esc(c.label)}</button>`
   ).join('');
   const mWelcome = `<div class="chat-welcome">
-    <div class="cw-av"><img src="${AVATAR}" alt="Gary"></div>
-    <div class="cw-name">Gary</div>
+    <div class="cw-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+    <div class="cw-name">__AGENT_NAME__</div>
     <div class="cw-hint">Type a message below &nbsp;·&nbsp; <kbd>/</kbd> for commands</div>
     <div class="cw-chips">${chips}</div>
   </div>`;
@@ -91,10 +91,10 @@ export function mChat(s) {
   return `
   <div class="m-head">
     <div class="m-gary">
-      <div class="m-gav"><img src="${AVATAR}" alt="Gary"></div>
+      <div class="m-gav"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
       <button class="m-gary-id" data-act="openConvSheet" title="Switch conversation">
         <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span><span class="m-conv-caret">▾</span></div>
-        <div class="m-conv-sub"><span class="dot"></span>Gary · online</div>
+        <div class="m-conv-sub"><span class="dot"></span>__AGENT_NAME__ · online</div>
       </button>
       <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="m-model-name">${esc(modelLabel)}</span></button>
       <button class="m-icon-btn m-hide-kb" data-act="newChat" title="New chat">${I.plus(17)}</button>
@@ -108,7 +108,7 @@ export function mChat(s) {
     ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], (a) => `<span class="m-attach-chip"><span class="nm">${esc(a.name || a.id)}</span><span class="x" data-act="removeAttach" data-arg="${esc(a.id)}">✕</span></span>`)}</div>`)}
     <div class="bar">
       <label class="m-round-btn bordered" title="Attach photo or file"><input type="file" data-upload multiple style="display:none">${I.plus(16)}</label>
-      <textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message Gary…">
+      <textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message __AGENT_NAME__…">
 ${esc(s.draft || '')}</textarea>
       <button class="m-round-btn m-hide-kb">${ic.mic()}</button>
       <button class="m-send" data-act="send">${I.send(16)}</button>
@@ -218,7 +218,7 @@ export function mInbox(s) {
     ${mPtr(s, 'Checking for new…')}
     ${when(needs.length > 0, `<div class="m-grp needs">NEEDS YOU · ${needs.length}</div>${map(needs, swipeCard)}`)}
     ${when(fyi.length > 0, `<div class="m-grp fyi">AI-SUGGESTED · FYI · ${fyi.length}</div>${map(fyi, fyiCard)}`)}
-    ${when(visible.length === 0, `<div class="inbox-zero" style="padding:60px 0"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">Gary cleared the feed.</div></div>`)}
+    ${when(visible.length === 0, `<div class="inbox-zero" style="padding:60px 0"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed.</div></div>`)}
   </div>
   ${inboxReaderSheet}
   ${s.inboxToast ? `
@@ -302,7 +302,7 @@ export function mMore(s) {
   return `
   <div class="m-head"><span class="m-title">More</span></div>
   <div class="m-scroll m-more">
-    <div class="m-gary-card"><div class="av"><img src="${AVATAR}" alt="Gary"></div><div style="flex:1"><div class="nm">Gary</div><div class="st"><span class="dot"></span>online · gateway healthy</div></div></div>
+    <div class="m-gary-card"><div class="av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div style="flex:1"><div class="nm">__AGENT_NAME__</div><div class="st"><span class="dot"></span>online · gateway healthy</div></div></div>
     <div class="m-grid">
       ${map(MORE_CARDS, (c) => `<div class="m-grid-card" data-act="mOpenSub" data-arg="${c.id}"><div class="ico" style="background:${c.iconBg};color:${c.iconColor}">${icon(c.icon, { size: 18, sw: 1.7 })}</div><div class="nm">${esc(c.name)}</div><div class="ct">${esc(c.count)}</div></div>`)}
     </div>

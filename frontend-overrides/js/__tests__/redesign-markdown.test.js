@@ -40,10 +40,10 @@ test('links: safe schemes pass, javascript: is defused', () => {
 });
 
 test('workspace vault links open via file action instead of navigating', () => {
-  const html = inline('[draft](~/.openclaw/workspace/heike-wistia-additional-concepts.md)');
+  const html = inline('[draft](~/.openclaw/workspace/project-notes.md)');
   assert.match(html, /class="file-link"/);
   assert.match(html, /data-act="wsOpenFile"/);
-  assert.match(html, /data-arg="heike-wistia-additional-concepts\.md"/);
+  assert.match(html, /data-arg="project-notes\.md"/);
   assert.doesNotMatch(html, /href="#"/);
 });
 

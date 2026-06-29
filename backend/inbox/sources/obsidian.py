@@ -62,9 +62,9 @@ _NOT_A_NAME = frozenset("""
     write figure circle loop touch sync align meet remember note remind
     timeline goal milestone
 """.split())
-# Collective owners that count as Frank's to capture, not someone else's
-# ("both"/"together" name a shared commitment Frank is part of).
-_MINE_RE = re.compile(r"\b(team|we|everyone|wistia|both|together)\b", re.I)
+# Collective owners that count as the configured owner's to capture, not someone
+# else's ("both"/"together" name a shared commitment the owner is part of).
+_MINE_RE = re.compile(r"\b(team|we|everyone|both|together)\b", re.I)
 
 
 def _classify_owner(name: str) -> str:

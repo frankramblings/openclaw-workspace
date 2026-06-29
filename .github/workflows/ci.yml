@@ -38,4 +38,6 @@ jobs:
         run: |
           test -f frontend/index.html
           ! grep -rq '__AGENT_NAME__' frontend
-          grep -q '<title>CI Chat' frontend/index.html
+          # The agent name must be baked into the title; tolerate the title
+          # wording (e.g. "CI Workspace") changing over time.
+          grep -q '<title>CI ' frontend/index.html

@@ -2,12 +2,15 @@
 //
 //   cd scripts/icons && npm install && npm run gen
 //
-// Two modes (env WORKSPACE_ICON_MODE):
-//   helmet   (default) — render the pinned brand.src.svg line-art (below).
-//   initials           — synthesize a name-derived glyph: the agent's first
-//                        letter in the accent on the app background. Lets a
-//                        fresh install get a distinct icon with no art step:
-//                          WORKSPACE_ICON_MODE=initials WORKSPACE_AGENT_NAME=Aria npm run gen
+// Mode + name + accent resolve from env > .data/branding.json > defaults, so
+// `scripts/setup.sh` (which writes branding.json) drives the icon with no flags.
+//
+// Two modes (WORKSPACE_ICON_MODE / branding.json "icon_mode"):
+//   initials (DEFAULT) — synthesize a name-derived glyph: the agent's first
+//                        letter in the accent on the app background. Every fresh
+//                        install gets a distinct icon with no art step.
+//   helmet             — render the pinned brand.src.svg line-art (below). The
+//                        maintainer's private mark; opt in with icon_mode=helmet.
 //
 // brand.src.svg is a two-tone illustration: the mark .ink. is the white
 // (.cls-1, #fff) paths; the black card + interior + detail dots are the default
@@ -32,10 +35,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
 const OUT_DIRS = [join(ROOT, 'frontend'), join(ROOT, 'frontend-overrides')];
 
-// App background and the current theme accent (cyan). The accent is baked into
-// the static favicon/PNG assets; in-UI logos stay dynamic via the CSS mask.
+// Single source of truth: env wins, else .data/branding.json, else defaults —
+// the same precedence config.py uses, so the icon matches the rest of the UI.
+function loadBranding() {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, '.data', 'branding.json'), 'utf8'));
+  } catch { return {}; }
+}
+const branding = loadBranding();
+const AGENT_NAME = process.env.WORKSPACE_AGENT_NAME || branding.agent_name || 'Claw';
+
+// App background and theme accent. The accent is baked into the static
+// favicon/PNG assets; in-UI logos stay dynamic via the CSS mask.
 const BG = '#282c34';
-const ACCENT = '#4fe3d1';
+const ACCENT = process.env.WORKSPACE_ACCENT || branding.accent || '#4fe3d1';
 
 const src = readFileSync(join(HERE, 'brand.src.svg'), 'utf8');
 
@@ -56,7 +69,7 @@ function initials(name) {
   return (letter || 'A').toUpperCase();
 }
 function initialsSvg(inkColor) {
-  const ch = initials(process.env.WORKSPACE_AGENT_NAME);
+  const ch = initials(AGENT_NAME);
   // viewBox matches the helmet's 512 space so the sharp pipeline is identical.
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">`
     + `<text x="256" y="256" text-anchor="middle" dominant-baseline="central" `
@@ -64,11 +77,12 @@ function initialsSvg(inkColor) {
     + `font-size="340" fill="${inkColor}">${ch}</text></svg>`;
 }
 
-const MODE = (process.env.WORKSPACE_ICON_MODE || 'helmet').toLowerCase();
-const makeMark = MODE === 'initials' ? initialsSvg : mono;
-if (MODE === 'initials') {
-  console.log(`icon mode: initials ('${initials(process.env.WORKSPACE_AGENT_NAME)}')`);
-}
+// initials is the default; helmet is the maintainer's opt-in private mark.
+const MODE = (process.env.WORKSPACE_ICON_MODE || branding.icon_mode || 'initials').toLowerCase();
+const makeMark = MODE === 'helmet' ? mono : initialsSvg;
+console.log(MODE === 'helmet'
+  ? 'icon mode: helmet (brand.src.svg)'
+  : `icon mode: initials ('${initials(AGENT_NAME)}' for "${AGENT_NAME}")`);
 
 // logo.svg: opaque ink (#000) — color is irrelevant for a CSS mask, only alpha.
 const logoSvg = makeMark('#000');

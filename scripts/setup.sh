@@ -270,6 +270,32 @@ PY
   echo
 fi
 
+# --- App icon (initials from the name by default; helmet is the maintainer's
+#     opt-in via branding.json "icon_mode": "helmet") --------------------------
+# Best-effort: needs node + sharp. If unavailable we keep the committed default
+# mark and print how to generate it later — setup never fails on the icon.
+if [[ "$DO_SYNC" == 1 ]]; then
+  ICON_DIR="$ROOT/scripts/icons"
+  if command -v node >/dev/null 2>&1; then
+    echo "Generating the app icon…"
+    if [[ ! -d "$ICON_DIR/node_modules/sharp" ]] && command -v npm >/dev/null 2>&1; then
+      ( cd "$ICON_DIR" && npm install --silent ) \
+        || echo "  (couldn't install sharp — keeping the default mark)"
+    fi
+    if [[ -d "$ICON_DIR/node_modules/sharp" ]]; then
+      WORKSPACE_AGENT_NAME="$NAME" node "$ICON_DIR/gen-icons.mjs" \
+        || echo "  (icon generation failed — keeping the default mark)"
+    else
+      echo "  (sharp not installed — keeping the default mark; run later:"
+      echo "     npm --prefix scripts/icons install && WORKSPACE_AGENT_NAME='$NAME' node scripts/icons/gen-icons.mjs)"
+    fi
+    echo
+  else
+    echo "  (node not found — skipping icon generation; default mark ships as-is)"
+    echo
+  fi
+fi
+
 # --- Frontend sync (bakes the name into the UI) -----------------------------
 if [[ "$DO_SYNC" == 1 ]]; then
   echo "Baking '$NAME' into the frontend…"

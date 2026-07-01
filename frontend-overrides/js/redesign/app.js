@@ -15,6 +15,7 @@ import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
 import { openImageOverlay } from './live/image-viewer.js';
+import './live/jobs.js'; // Live Jobs overlay — self-boots on import
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -357,10 +358,10 @@ root.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');
   if (!t) {
     // A click outside any actionable element dismisses open menus.
-    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen) {
+    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen || state.live?.chat?.msgMenuOpen) {
       state.chatMenuOpen = false;
       state.modelMenuOpen = false;
-      if (state.live?.chat) state.live.chat.rowMenuOpen = null;
+      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; }
       render();
     }
     return;

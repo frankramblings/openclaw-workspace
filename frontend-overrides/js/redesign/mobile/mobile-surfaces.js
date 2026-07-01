@@ -306,5 +306,6 @@ export function mMore(s) {
     <div class="m-grid">
       ${map(MORE_CARDS, (c) => `<div class="m-grid-card" data-act="mOpenSub" data-arg="${c.id}"><div class="ico" style="background:${c.iconBg};color:${c.iconColor}">${icon(c.icon, { size: 18, sw: 1.7 })}</div><div class="nm">${esc(c.name)}</div><div class="ct">${esc(c.count)}</div></div>`)}
     </div>
+    <a class="m-source-link" href="${esc(s.sourceUrl || 'https://github.com/frankramblings/openclaw-workspace')}" target="_blank" rel="noopener noreferrer">${I.code(14)}<span>View source · AGPL-3.0</span></a>
   </div>`;
 }

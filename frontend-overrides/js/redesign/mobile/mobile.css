@@ -349,6 +349,10 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-grid-card .ico { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
 .m-grid-card .nm { font-size: 14px; font-weight: 600; }
 .m-grid-card .ct { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+/* AGPL-3.0 source offer — quiet footer link under the More grid */
+.m-source-link { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 20px; padding: 10px; color: var(--faint); text-decoration: none; font-size: 12.5px; }
+.m-source-link:active { color: var(--teal); }
+.m-source-link svg { flex: none; }
 
 /* ---- sheets (companion + quick capture) ---------------------------------- */
 .m-scrim { position: absolute; inset: 0; background: rgba(8,9,11,.45); z-index: 40; }

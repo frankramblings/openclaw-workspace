@@ -70,4 +70,5 @@ export const I = {
   panelHide: (s = 15) => icon('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/><path d="m20 9-2 3 2 3"/>', { size: s, sw: 1.8 }),
   panelShow: (s = 15) => icon('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/><path d="m18 9 2 3-2 3"/>', { size: s, sw: 1.8 }),
   play: (s = 13) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`,
+  code: (s = 15) => icon('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>', { size: s, sw: 1.9 }),
 };

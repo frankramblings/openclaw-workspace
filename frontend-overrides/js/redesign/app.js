@@ -40,6 +40,9 @@ const state = {
   quickCaptureOpen: false, captureType: 'remind', captureDraft: '',
   mConvSheetOpen: false, mModelSheetOpen: false,
   refreshing: false,
+  // AGPL-3.0 §13: persistent offer of this running version's source. Seeded with
+  // the upstream fallback; overwritten at boot from /api/config (source_url).
+  sourceUrl: 'https://github.com/frankramblings/openclaw-workspace',
   // live backend data per surface (loaders populate; render falls back to mock)
   live: {},
   isOnline: navigator.onLine,
@@ -103,6 +106,7 @@ function renderRail() {
     <div class="oc-rail-fill"></div>
     ${railItem('settings', 'Settings', I.settings())}
     <div class="oc-user"><span class="uav">F</span><span class="uname">frank</span></div>
+    <a class="oc-rail-source" href="${esc(state.sourceUrl)}" target="_blank" rel="noopener noreferrer" title="AGPL-3.0 — view the source code of this running version">${I.code(14)}<span class="label">Source</span></a>
   </div>`;
 }
 
@@ -434,6 +438,15 @@ root.addEventListener('input', (e) => {
   // rebuilds the DOM and re-focuses the textarea; pin the chat scroll to exactly
   // where it was so a keystroke changes nothing in the viewport.
   if (fk === 'draft') {
+    // macOS dictation (and any IME) deliver text via composition events:
+    // repeated compositionupdate each carrying the full phrase-so-far, then a
+    // single compositionend. render() rebuilds root.innerHTML wholesale, which
+    // destroys the textarea's live composition range mid-dictation — the
+    // browser then loses its marked-text anchor and re-inserts the entire
+    // accumulated phrase on every update (the classic "H He Hel Hell…" pileup).
+    // State is already synced above so send() sees the text; skip the
+    // destructive re-render while composing. compositionend renders once after.
+    if (e.isComposing) return;
     const before = root.querySelector('.chat-thread');
     const savedTop = before ? before.scrollTop : null;
     render();
@@ -444,6 +457,27 @@ root.addEventListener('input', (e) => {
     return;
   }
   render();
+});
+
+// When an IME / macOS dictation composition finishes, do the single render the
+// input handler deliberately skipped while e.isComposing was true (see above),
+// so the slash palette and rest of the UI catch up to the dictated text.
+root.addEventListener('compositionend', (e) => {
+  const t = e.target.closest && e.target.closest('[data-model]');
+  if (!t) return;
+  const field = t.getAttribute('data-model');
+  if (field !== 'draft' && field !== 'mdraft') return;
+  state[field] = t.value;
+  const fk = t.getAttribute('data-focus');
+  if (fk === 'draft' || fk === 'mdraft') autoGrowComposer(t);
+  if (fk === 'mdraft') return; // mobile never re-renders the composer (see input handler)
+  const before = root.querySelector('.chat-thread');
+  const savedTop = before ? before.scrollTop : null;
+  render();
+  if (savedTop != null) {
+    const after = root.querySelector('.chat-thread');
+    if (after) after.scrollTop = savedTop;
+  }
 });
 
 // file inputs: composer attach (data-upload) and workspace upload (data-ws-upload)
@@ -690,3 +724,10 @@ if (activeSurface() !== 'chat') loadSurface('chat', { state, actions, render });
 // not only after the user navigates to those surfaces.
 if (activeSurface() !== 'inbox') loadSurface('inbox', { state, actions, render });
 if (activeSurface() !== 'email') loadSurface('email', { state, actions, render });
+// AGPL-3.0 §13: resolve the operator-configured source URL (WORKSPACE_SOURCE_URL
+// via /api/config) so the rail/More "Source" link points at the corresponding
+// source of THIS running version. Falls back to the upstream repo on failure.
+fetch('/api/config')
+  .then((r) => (r.ok ? r.json() : null))
+  .then((c) => { if (c && c.source_url) { state.sourceUrl = c.source_url; render(); } })
+  .catch(() => {});

@@ -36,6 +36,7 @@ from .documents import router as documents_router
 from .email_himalaya import router as email_router
 from .emoji_proxy import router as emoji_router
 from .inbox import router as inbox_router
+from .jobs import router as jobs_router
 from .memory import router as memory_router
 from .notes import router as notes_router
 from .research import router as research_router
@@ -46,6 +47,7 @@ from .uploads import router as uploads_router
 from .workspace_files import router as workspace_files_router
 from .terminals import router as terminals_router
 from .resume_route import router as resume_router
+from .export_pdf import router as export_pdf_router
 from . import workspace_files
 
 @asynccontextmanager
@@ -73,6 +75,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(AuthGateMiddleware)
 
 app.include_router(inbox_router)
+app.include_router(jobs_router)
 app.include_router(memory_router)
 app.include_router(skills_router)
 app.include_router(cron_router)
@@ -87,6 +90,7 @@ app.include_router(emoji_router)
 app.include_router(workspace_files_router)
 app.include_router(terminals_router)
 app.include_router(resume_router)
+app.include_router(export_pdf_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
 # server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop

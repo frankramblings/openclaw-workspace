@@ -34,7 +34,8 @@ Two things make it different from a regular chatbot:
 - **It acts, it doesn't just answer.** It's plugged into the tools you actually use, so instead of telling you what to do, it does it — sorts the inbox, drafts the reply, adds the meeting, runs the search.
 - **It knows *you*.** Because it can see your real email, calendar, tasks, and notes, everything it does is shaped by *your* world — your people, your projects, your voice. Not generic AI answers.
 
-<sub>The assistant itself is powered by [OpenClaw](https://github.com/openclaw/openclaw) — the "brain" that handles AI models, memory, and tools. **This project is the place you talk to it.** You name your assistant once at setup and that name brands the whole app: the icon, the title bar, the chat header.</sub>
+> **📦 Requires [OpenClaw](https://github.com/openclaw/openclaw) (sold separately 😉).**
+> OpenClaw is the *brain* — it runs the AI models, memory, and tools. This project is the *face* — the app you actually work in, sitting on top. You point it at your OpenClaw agent, name your assistant once, and that name brands the whole app: the icon, the title bar, the chat header.
 
 <!-- TODO: drop demo.gif here — ~12s of a live chat + tool-call streaming. This is the single biggest visual upgrade. -->
 

@@ -112,7 +112,12 @@ async def _embed(texts: list[str], input_type: str) -> list[list[float]] | None:
 # --- sqlite store ------------------------------------------------------------
 def _connect() -> sqlite3.Connection:
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=10.0)
+    # WAL lets a search read concurrently with the 30-min reindex write instead
+    # of failing with "database is locked"; busy_timeout backstops any remaining
+    # contention (e.g. the checkpoint) by waiting rather than erroring out.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS chunks (
             session_id   TEXT,
@@ -222,10 +227,12 @@ async def reindex(force: bool = False) -> dict:
     async with _reindex_lock:
         conn = _connect()
         indexed = total_chunks = skipped = 0
+        active_ids: set[str] = set()
         try:
             for s in sessions_store.list_sessions():
                 if s.get("archived"):
                     continue
+                active_ids.add(s.get("id"))
                 try:
                     status, n = await _reindex_session(conn, s, force)
                 except Exception as exc:  # noqa: BLE001 - isolate per-session
@@ -237,13 +244,25 @@ async def reindex(force: bool = False) -> dict:
                     total_chunks += n
                 elif status == "skipped":
                     skipped += 1
+            # Prune sessions that are no longer present-and-active (deleted or
+            # newly archived) so search never returns dead hits that open a
+            # missing/hidden conversation.
+            pruned = 0
+            cur = conn.execute("SELECT session_id FROM indexed")
+            for (sid,) in cur.fetchall():
+                if sid not in active_ids:
+                    conn.execute("DELETE FROM chunks WHERE session_id=?", (sid,))
+                    conn.execute("DELETE FROM indexed WHERE session_id=?", (sid,))
+                    pruned += 1
+            if pruned:
+                conn.commit()
         finally:
             conn.close()
         _invalidate_matrix_cache()
-        log.info("chat_search: reindex done — indexed=%d chunks=%d skipped=%d",
-                 indexed, total_chunks, skipped)
+        log.info("chat_search: reindex done — indexed=%d chunks=%d skipped=%d pruned=%d",
+                 indexed, total_chunks, skipped, pruned)
         return {"sessions_indexed": indexed, "chunks": total_chunks,
-                "skipped": skipped}
+                "skipped": skipped, "pruned": pruned}
 
 
 # --- search ------------------------------------------------------------------

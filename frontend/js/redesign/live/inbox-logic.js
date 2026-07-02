@@ -35,7 +35,7 @@ const ACTION_LABEL = {
   snooze: 'Snooze',
   reply: 'Reply',
   open: 'Open',
-  gary: 'Hand to __AGENT_NAME__',
+  gary: 'Hand to Gary',
 };
 
 export function actionLabel(action) {

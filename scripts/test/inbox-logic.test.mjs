@@ -29,7 +29,7 @@ assert.equal(actionLabel('reviewed'), 'Reviewed');
 assert.equal(actionLabel('dismiss'), 'Dismiss');
 assert.equal(actionLabel('snooze'), 'Snooze');
 assert.equal(actionLabel('open'), 'Open');
-assert.equal(actionLabel('gary'), 'Hand to Gary');
+assert.equal(actionLabel('gary'), 'Hand to __AGENT_NAME__');
 assert.equal(actionLabel('weird_thing'), 'Weird thing',
   'unknown verb → humanized fallback');
 
@@ -40,8 +40,8 @@ const gmail = cardActions({ source: 'gmail', actions: ['archive', 'delete', 'dis
 const gPrimary = gmail.find((a) => a.role === 'primary');
 assert.equal(gPrimary.action, 'archive', 'gmail primary = archive');
 assert.equal(gPrimary.label, 'Archive');
-assert.ok(gmail.some((a) => a.action === 'delete' && a.role === 'ghost'),
-  'gmail delete is a ghost button');
+assert.ok(gmail.some((a) => a.action === 'delete' && a.role === 'overflow'),
+  'gmail delete is an overflow button');
 assert.ok(!gmail.some((a) => a.action === 'dismiss' && a.role !== 'x'),
   'dismiss is not a normal row button');
 
@@ -58,10 +58,10 @@ assert.equal(asana.find((a) => a.role === 'primary').action, 'complete');
 const obs = cardActions({ source: 'obsidian', actions: ['add_asana', 'complete', 'reviewed', 'dismiss', 'snooze'] });
 assert.equal(obs.find((a) => a.role === 'primary').action, 'add_asana',
   'obsidian primary = add_asana');
-assert.ok(obs.some((a) => a.action === 'complete' && a.role === 'ghost'),
-  'complete is a secondary ghost button');
-assert.ok(obs.some((a) => a.action === 'reviewed' && a.role === 'ghost'),
-  'reviewed is now a secondary ghost button');
+assert.ok(obs.some((a) => a.action === 'complete' && a.role === 'overflow'),
+  'complete is a secondary overflow button');
+assert.ok(obs.some((a) => a.action === 'reviewed' && a.role === 'overflow'),
+  'reviewed is now a secondary overflow button');
 
 // Documents: no clear-verb → no primary, but still has gary + open + dismiss(✕).
 const docs = cardActions({ source: 'documents', actions: ['dismiss', 'snooze'] });
@@ -166,8 +166,8 @@ const obsA = cardActions({ source: 'obsidian', actions: ['add_asana', 'reviewed'
 const obsPrim = obsA.find((a) => a.role === 'primary');
 assert.equal(obsPrim.action, 'add_asana', 'obsidian primary = add to asana');
 assert.equal(obsPrim.label, 'Add to Asana');
-// reviewed remains available as a ghost (plain hide).
-assert.ok(obsA.some((a) => a.action === 'reviewed' && a.role === 'ghost'));
+// reviewed is now available as an overflow item.
+assert.ok(obsA.some((a) => a.action === 'reviewed' && a.role === 'overflow'));
 
 // --- snoozeUntilMs: preset snooze epoch-ms relative to nowMs ----------------
 import { snoozeUntilMs } from '../../frontend-overrides/js/redesign/live/inbox-logic.js';
@@ -183,5 +183,24 @@ assert.equal(swipeIntent(-150, 360), 'snooze',  'left swipe <-140 → snooze');
 assert.equal(swipeIntent(-100, 360), 'dismiss', 'left swipe -84..-140 → dismiss');
 assert.equal(swipeIntent(-40, 360), null,        'small left swipe → null');
 assert.equal(swipeIntent(40, 360), null,         'small right swipe → null');
+
+// --- Phase 1: secondaries move to overflow, main row is invariant ---
+{
+  const gmail = cardActions({ source: 'gmail', actions: ['archive', 'delete', 'dismiss', 'snooze'] });
+  assert.ok(gmail.some((a) => a.action === 'delete' && a.role === 'overflow'),
+    'gmail delete is now an overflow item, not a row ghost');
+  assert.ok(!gmail.some((a) => a.role === 'ghost'),
+    'non-invite cards emit no ghost role (secondaries are overflow)');
+
+  const obs = cardActions({ source: 'obsidian', actions: ['add_asana', 'complete', 'reviewed', 'dismiss', 'snooze'] });
+  const obsPrimary = obs.find((a) => a.role === 'primary');
+  assert.equal(obsPrimary.action, 'add_asana', 'obsidian primary stays add_asana');
+  const obsOverflow = obs.filter((a) => a.role === 'overflow').map((a) => a.action);
+  assert.deepEqual(obsOverflow, ['complete', 'reviewed'], 'obsidian complete+reviewed go to overflow in order');
+
+  // Invariant main row: exactly one primary + the icon affordances, no ghost/overflow inline.
+  const rowRoles = gmail.filter((a) => a.role === 'primary' || a.role === 'icon').map((a) => a.action);
+  assert.deepEqual(rowRoles, ['archive', 'open', 'snooze', 'gary'], 'gmail main row is Primary+open+snooze+gary');
+}
 
 console.log('inbox-logic: all assertions OK');

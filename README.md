@@ -47,12 +47,17 @@ Two things make it different from a regular chatbot:
 
 Most AI apps are a lone chat window: you ask, it replies, and then *you* still have to go do the thing. This one takes the next step for you.
 
-- 🗂️ **Tame the inbox.** One combined feed of Gmail, Slack, Asana, and meeting notes, sorted by *what actually needs you* vs. *just FYI*, with a suggested reply or archive on each.
-- ✉️ **Handle your mail.** A full email client where one tap drafts a reply, sends it, or summarizes a long thread.
-- 📅 **Run your calendar.** See your schedule and add events in plain English, like *"lunch with Sam Tuesday 1pm."*
-- 🔎 **Do the research.** Ask a question and get a real answer with **cited sources**, not just a guess.
-- 📝 **Keep your notes.** A shared notebook the assistant can read *and* write, so what you jot and what it finds live in one place.
-- 🔒 **Stay private.** Runs on your own computer, talks only to your own assistant. Nothing lives on someone else's server.
+🗂️ &nbsp; **Tame the inbox.** &nbsp; Gmail, Slack, Asana, and notes in one feed, sorted by *needs you* vs. *FYI*.
+
+✉️ &nbsp; **Handle your mail.** &nbsp; Draft, send, or summarize any thread in a tap.
+
+📅 &nbsp; **Run your calendar.** &nbsp; See your day and add events in plain English.
+
+🔎 &nbsp; **Do the research.** &nbsp; Real answers with **cited sources**, not guesses.
+
+📝 &nbsp; **Keep your notes.** &nbsp; One notebook you and the assistant both read and write.
+
+🔒 &nbsp; **Stay private.** &nbsp; Runs on your own machine. Nothing on someone else's server.
 
 ## Why it's different: it knows you
 
@@ -60,10 +65,13 @@ A generic chatbot can't do this. Because it's wired into your real email, calend
 
 That context shows up in everything it does:
 
-- **Drafts sound like you.** It's read your past replies, so it matches your voice instead of generic AI-speak.
-- **Answers already have context.** Ask *"when am I free to meet Sam?"* and it knows who Sam is, what your calendar looks like, and the thread you're planning around.
-- **Nothing falls through.** It connects dots across sources: the email that needs a calendar hold, the Slack ask that should become a task, the note that answers the question you just asked.
-- **It compounds.** The more you use it, the sharper the picture gets.
+**Drafts sound like you.** &nbsp; It's read your past replies, so it matches your voice, not generic AI-speak.
+
+**Answers already have context.** &nbsp; Ask *"when am I free to meet Sam?"* and it knows who Sam is and what your week looks like.
+
+**Nothing falls through.** &nbsp; It connects the dots: the email that needs a calendar hold, the Slack ask that should be a task.
+
+**It compounds.** &nbsp; The more you use it, the sharper the picture gets.
 
 > A chat box starts from zero every time. **This starts from everything it already knows about your world.**
 

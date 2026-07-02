@@ -434,6 +434,36 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-conv-spin.working .fl-svg { display: block; }
 .m-sheet.conv-sheet .m-cap-head { padding: 0 16px 10px; margin-bottom: 0; }
 
+/* ---- edge-swipe conversation drawer ------------------------------------
+   Always mounted (off-screen when closed) so wireMobileGestures can finger-track
+   transform without an innerHTML rebuild. `.dragging` kills the transition while
+   the finger owns it; releasing re-enables the ease so open/close animates. */
+.m-drawer-scrim { position: absolute; inset: 0; z-index: 44; background: rgba(8,9,11,.45); opacity: 0; pointer-events: none; transition: opacity .24s ease; }
+.m-drawer-scrim.open { opacity: 1; pointer-events: auto; }
+.m-drawer-scrim.dragging { transition: none; }
+.m-drawer {
+  position: absolute; top: 0; bottom: 0; z-index: 45; width: 86%; max-width: 340px;
+  display: flex; flex-direction: column; background: var(--panel);
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  will-change: transform; transition: transform .24s cubic-bezier(.22,.61,.36,1);
+}
+.m-drawer.left { left: 0; transform: translateX(-100%); border-right: 1px solid var(--bd); box-shadow: 16px 0 40px rgba(0,0,0,.5); }
+.m-drawer.right { right: 0; transform: translateX(100%); border-left: 1px solid var(--bd); box-shadow: -16px 0 40px rgba(0,0,0,.5); }
+.m-drawer.left.open, .m-drawer.right.open { transform: translateX(0); }
+.m-drawer.dragging { transition: none; }
+.m-drawer-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; border-bottom: 1px solid var(--bd); flex: none; }
+.m-drawer-head .t { font-size: 15px; font-weight: 600; color: var(--fg); }
+.m-drawer-head .cancel { background: none; border: none; color: var(--mut); font-size: 13px; cursor: pointer; padding: 4px 2px; }
+.m-drawer .m-conv-list { padding: 6px 12px calc(env(safe-area-inset-bottom,0px) + 8px); }
+/* Search box in the conversation drawer — semantic search over all chats. */
+.m-drawer-search { display: flex; align-items: center; gap: 8px; margin: 10px 16px 2px; padding: 0 11px; height: 38px; border-radius: 10px; border: 1px solid var(--bd); background: var(--bg); flex: none; }
+.m-drawer-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--fg); font-family: inherit; font-size: 14px; }
+/* Two-line semantic hit rows (conversation name + matched snippet). */
+.m-conv-msghit { align-items: flex-start; }
+.m-conv-hit { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.m-conv-hit-snip { font-size: 11.5px; line-height: 1.35; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) { .m-drawer, .m-drawer-scrim { transition: none; } }
+
 /* model picker sheet */
 .m-sheet.model-sheet { max-height: 75%; padding: 0 0 calc(env(safe-area-inset-bottom,0px) + 16px); }
 .m-model-list { flex: 1; overflow-y: auto; padding: 0 12px 8px; }

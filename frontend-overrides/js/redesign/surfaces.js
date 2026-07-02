@@ -23,7 +23,7 @@ export function renderChatList(s) {
   <div class="oc-secondary chat-list">
     <div class="chat-list-top">
       <button class="new-conv" data-act="newChat"><span class="plus">+</span> New conversation</button>
-      <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Filter conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
+      <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
       <div style="display:flex;justify-content:flex-end;margin-top:6px"><button data-act="cycleSessionSort" title="Sort order" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer">${s.convSort === 'alpha' ? 'A–Z' : 'Recent'} ⇅</button></div>
     </div>
     <div class="conv-scroll">${convListBody(s)}</div>
@@ -64,7 +64,6 @@ function convListBody(s) {
   const groups2 = q
     ? groups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
     : groups;
-  if (q && !groups2.length) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
   // Alpha sort flattens the date groups into a single A–Z list; Recent keeps groups.
   const sorted = s.convSort === 'alpha'
     ? [{ label: 'A–Z', rows: groups2.flatMap((g) => g.rows || []).slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' })) }]
@@ -79,16 +78,62 @@ function convListBody(s) {
     + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
     + (rowMenuOpen === r.id ? convMenu(r) : '')
     + `</div>`;
-  return map(sorted, (g, gi) => `
+  const titleHtml = map(sorted, (g, gi) => `
     <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
     ${map(g.rows, convRow)}`);
+  const msgHtml = semanticHits(s, groups2);
+  if (q && !groups2.length && !msgHtml) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
+  return titleHtml + msgHtml;
+}
+
+// Semantic content matches (backend /api/search) rendered as a MESSAGES section
+// beneath the local title matches. Surfaces conversations whose MESSAGE CONTENT
+// is relevant even when the title has none of the query words — and reaches
+// every conversation, not just the ones the list has loaded. Sessions already
+// shown as a title match are skipped to avoid duplicate rows.
+function semanticHits(s, titleGroups) {
+  const chat = s.live && s.live.chat;
+  const q = (s.convFilter || '').trim();
+  if (!chat || q.length < 2) return '';
+  const label = '<div class="conv-group"><span class="sect-label">MESSAGES</span></div>';
+  const res = chat.searchResults;
+  if (chat.searchLoading && !Array.isArray(res)) {
+    return `${label}<div class="conv-empty" style="padding:10px 14px;color:var(--faint);font-size:12px">Searching…</div>`;
+  }
+  if (!Array.isArray(res)) return '';
+  const shown = new Set((titleGroups || []).flatMap((g) => (g.rows || []).map((r) => r.id)));
+  const seen = new Set();
+  const rows = [];
+  for (const r of res) {
+    if (!r || !r.session_id || shown.has(r.session_id) || seen.has(r.session_id)) continue;
+    seen.add(r.session_id);
+    rows.push(r);
+  }
+  if (!rows.length) return '';
+  const hitRow = (r) => `<div class="conv-row ocrow conv-msghit" data-act="selectSession" data-arg="${esc(r.session_id)}">`
+    + `<span class="conv-badge">A\\</span>`
+    + `<span class="conv-hit"><span class="conv-title">${esc(r.session_name || 'Conversation')}</span>`
+    + `<span class="conv-hit-snip">${esc(stripMd(r.content_snippet || ''))}</span></span>`
+    + `</div>`;
+  return label + map(rows, hitRow);
 }
 
 // Per-message hover toolbar: client-side Copy + Download, bound to the message id.
-function msgTools(m) {
+// Download expands to a small flyout offering Markdown or PDF.
+function msgTools(m, openId) {
+  const open = openId === m.id;
+  const menu = open
+    ? `<div class="msg-dl-menu" data-act="noop" role="menu">`
+        + `<button class="msg-dl-item" data-act="downloadMessage" data-arg="${esc(m.id)}" role="menuitem"><span class="msg-dl-ic">${I.download(13)}</span>Markdown</button>`
+        + `<button class="msg-dl-item" data-act="downloadMessagePDF" data-arg="${esc(m.id)}" role="menuitem"><span class="msg-dl-ic">${I.download(13)}</span>PDF</button>`
+      + `</div>`
+    : '';
   return `<div class="msg-tools">`
     + `<button class="msg-tool" data-act="copyMessage" data-arg="${esc(m.id)}" title="Copy message" aria-label="Copy message">${I.copy(15)}</button>`
-    + `<button class="msg-tool" data-act="downloadMessage" data-arg="${esc(m.id)}" title="Download message" aria-label="Download message">${I.download(15)}</button>`
+    + `<div class="msg-dl-wrap">`
+      + `<button class="msg-tool${open ? ' on' : ''}" data-act="toggleMsgMenu" data-arg="${esc(m.id)}" title="Download message" aria-label="Download message" aria-haspopup="menu" aria-expanded="${open}">${I.download(15)}</button>`
+      + menu
+    + `</div>`
     + `</div>`;
 }
 
@@ -134,7 +179,7 @@ export function chatMsg(m, s) {
   const paras = hasText ? renderMarkdown(m.text) : '';
   if (m.role === 'user') {
     const attachHtml = renderAttachments(m.attach);
-    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m) : ''}</div>`;
+    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an
@@ -144,7 +189,7 @@ export function chatMsg(m, s) {
     : '';
   const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
-  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m) : ''}</div></div>`;
+  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div></div>`;
 }
 
 
@@ -253,6 +298,7 @@ function chatSurface(s) {
         <div class="cm-item" data-act="renameSession" style="padding:8px 10px;border-radius:7px;cursor:pointer">Rename</div>
         <div class="cm-item" data-act="copyTranscript" style="padding:8px 10px;border-radius:7px;cursor:pointer">Copy transcript</div>
         <div class="cm-item" data-act="exportChat" style="padding:8px 10px;border-radius:7px;cursor:pointer">Export as Markdown</div>
+        <div class="cm-item" data-act="exportChatPDF" style="padding:8px 10px;border-radius:7px;cursor:pointer">Export as PDF</div>
       </div>`)}
     </div>
   </div>

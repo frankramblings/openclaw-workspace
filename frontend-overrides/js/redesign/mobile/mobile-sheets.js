@@ -2,7 +2,7 @@
 // the quick-capture modal (the ➕ tab — a mobile-only surface).
 
 import { I, icon, fortress } from '../icons.js';
-import { esc, map, when } from '../dom.js';
+import { esc, map, when, stripMd } from '../dom.js';
 import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, CAPTURE_PARSE, RECENT_CAPTURES } from './mobile-data.js';
 
@@ -69,10 +69,17 @@ export function renderComposeSheet(s) {
   </div>`;
 }
 
-export function renderConvSheet(s) {
+// Shared conversation list markup — used by the edge-swipe side drawer (and the
+// legacy bottom sheet). One row per session; tapping selects, swiping the drawer
+// away dismisses it.
+function convListHtml(s) {
   const chat = s.live?.chat || {};
-  const groups = chat.groups || [];
-  const activeId = chat.activeId;
+  const allGroups = chat.groups || [];
+  const q = (s.convFilter || '').trim().toLowerCase();
+  // Local title filter (instant); semantic content hits are appended below.
+  const groups = q
+    ? allGroups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
+    : allGroups;
   const convRow = (r) => `<div class="m-conv-row ocrow${r.active ? ' active' : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}">
     <span class="m-conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span>
     <span class="m-conv-title">${esc(r.title)}</span>
@@ -80,15 +87,64 @@ export function renderConvSheet(s) {
       : r.working ? `<span class="m-conv-spin working" title="Working…">${fortress(14)}</span>`
       : r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
   </div>`;
-  const groupHtml = groups.length
-    ? map(groups, (g) => `<div class="m-conv-grp">${esc(g.label)}</div>${map(g.rows || [], convRow)}`)
-    : `<div style="padding:16px;color:var(--faint);font-size:13px">No conversations yet.</div>`;
+  const titleHtml = map(groups, (g) => `<div class="m-conv-grp">${esc(g.label)}</div>${map(g.rows || [], convRow)}`);
+  const msgHtml = mConvSemanticHits(s, groups);
+  if (!allGroups.length) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations yet.</div>';
+  if (q && !groups.length && !msgHtml) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations match.</div>';
+  return titleHtml + msgHtml;
+}
+
+// Semantic content matches (backend /api/search) for the mobile conv drawer —
+// mirrors the desktop MESSAGES section. Skips sessions already shown as a title
+// match. Tapping a hit opens that conversation.
+function mConvSemanticHits(s, titleGroups) {
+  const chat = s.live && s.live.chat;
+  const q = (s.convFilter || '').trim();
+  if (!chat || q.length < 2) return '';
+  const label = '<div class="m-conv-grp">MESSAGES</div>';
+  const res = chat.searchResults;
+  if (chat.searchLoading && !Array.isArray(res)) {
+    return `${label}<div style="padding:8px 16px;color:var(--faint);font-size:12px">Searching…</div>`;
+  }
+  if (!Array.isArray(res)) return '';
+  const shown = new Set((titleGroups || []).flatMap((g) => (g.rows || []).map((r) => r.id)));
+  const seen = new Set();
+  const rows = [];
+  for (const r of res) {
+    if (!r || !r.session_id || shown.has(r.session_id) || seen.has(r.session_id)) continue;
+    seen.add(r.session_id);
+    rows.push(r);
+  }
+  if (!rows.length) return '';
+  const hitRow = (r) => `<div class="m-conv-row ocrow m-conv-msghit" data-act="mSelectSession" data-arg="${esc(r.session_id)}">
+    <span class="m-conv-badge">A\\</span>
+    <span class="m-conv-hit"><span class="m-conv-title">${esc(r.session_name || 'Conversation')}</span><span class="m-conv-hit-snip">${esc(stripMd(r.content_snippet || ''))}</span></span>
+  </div>`;
+  return label + map(rows, hitRow);
+}
+
+// Edge-swipe conversation drawer. Always present in the DOM (translated off the
+// active edge when closed) so wireMobileGestures can finger-track it open/closed
+// without a mid-touch innerHTML rebuild. `mDrawerSide` picks which edge it hugs.
+export function renderConvDrawer(s) {
+  const side = s.mDrawerSide === 'right' ? 'right' : 'left';
+  const open = !!s.mDrawerOpen;
+  return `
+  <div class="m-drawer-scrim${open ? ' open' : ''}" data-act="closeDrawer"></div>
+  <div class="m-drawer ${side}${open ? ' open' : ''}" data-conv-drawer role="dialog" aria-label="Conversations">
+    <div class="m-drawer-head"><span class="t">Conversations</span><div class="m-spacer"></div><button class="m-round-btn" data-act="mNewChat" title="New chat">${I.plus(16)}</button><button class="cancel" data-act="closeDrawer">Close</button></div>
+    <div class="m-drawer-search">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"></div>
+    <div class="m-conv-list" data-ptr-skip>${convListHtml(s)}</div>
+  </div>`;
+}
+
+export function renderConvSheet(s) {
   return `
   <div class="m-scrim" data-act="closeConvSheet"></div>
   <div class="m-sheet conv-sheet">
     <div class="m-grab"><div class="h"></div></div>
     <div class="m-cap-head"><span class="t">Conversations</span><div class="m-spacer"></div><button class="m-round-btn" data-act="newChat" title="New chat">${I.plus(16)}</button><button class="cancel" data-act="closeConvSheet">Close</button></div>
-    <div class="m-conv-list">${groupHtml}</div>
+    <div class="m-conv-list">${convListHtml(s)}</div>
   </div>`;
 }
 

@@ -1606,6 +1606,10 @@ export async function loadSessions() {
     // empty after a refresh.
     fetched.forEach(s => { if (s.important && !s.is_important) s.is_important = true; });
     sessions = fetched;
+    // Keep the light-refresh signature in sync so the background poll doesn't
+    // immediately re-render what we just rendered.
+    _lastSessionsSig = JSON.stringify(fetched.map(s =>
+      [s.id, s.name, !!s.archived, !!s.is_important, s.folder || null]));
     renderSessionList();
 
     const sessionsSection = uiModule.el('sessions-section');
@@ -2449,6 +2453,53 @@ export async function materializePendingSession() {
   await loadSessions().catch(() => {});
   return true;
 }
+
+// ── Out-of-band session-list freshness ──
+// loadSessions() only fires on local actions (create/rename/delete) and 3s
+// after a turn ends in THIS tab, so threads created out-of-band — another
+// tab/device, an inbound-message-spawned session, a triage handoff — used to
+// take "several minutes or a manual refresh" to appear. This lighter refresh
+// re-fetches + re-renders the list WITHOUT loadSessions()'s auto-select /
+// incognito-cleanup / cold-launch side effects, and only when the set actually
+// changed. Wired to tab focus/visibility and a gentle background poll below.
+let _lastSessionsSig = null;
+let _lightRefreshInFlight = false;
+export async function refreshSessionListLight() {
+  if (_lightRefreshInFlight || _pendingChat) return;
+  // Don't clobber an in-progress interaction (inline rename or an open menu).
+  const sb = document.getElementById('sidebar');
+  const ae = document.activeElement;
+  if (sb && ae && sb.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return;
+  if (document.querySelector('.session-rename-input, .session-dropdown, .folder-submenu')) return;
+  _lightRefreshInFlight = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/sessions`);
+    if (!res.ok) return;
+    const fetched = await res.json();
+    fetched.forEach(s => { if (s.important && !s.is_important) s.is_important = true; });
+    // Only re-render when something the list cares about actually changed, so
+    // the poll doesn't churn the DOM (and its dropdowns) every tick.
+    const sig = JSON.stringify(fetched.map(s =>
+      [s.id, s.name, !!s.archived, !!s.is_important, s.folder || null]));
+    if (sig === _lastSessionsSig) return;
+    _lastSessionsSig = sig;
+    sessions = fetched;
+    renderSessionList();
+    const sessionsSection = uiModule.el('sessions-section');
+    if (sessionsSection) sessionsSection.classList.toggle('hidden', fetched.length === 0);
+  } catch { /* transient fetch failure — try again next tick */ }
+  finally { _lightRefreshInFlight = false; }
+}
+
+// Refresh the moment the tab regains focus/visibility (instant catch when the
+// thread was started elsewhere), plus a 12s background poll while visible.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshSessionListLight();
+});
+window.addEventListener('focus', () => refreshSessionListLight());
+setInterval(() => {
+  if (document.visibilityState === 'visible') refreshSessionListLight();
+}, 12000);
 
 export function hasPendingChat() { return !!_pendingChat; }
 export function getPendingChat() { return _pendingChat; }

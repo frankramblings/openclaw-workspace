@@ -40,6 +40,7 @@ const state = {
   companionSheetOpen: false, companionTab: 'terminal',
   quickCaptureOpen: false, captureType: 'remind', captureDraft: '',
   mConvSheetOpen: false, mModelSheetOpen: false,
+  mDrawerOpen: false, mDrawerSide: 'left',
   refreshing: false,
   // AGPL-3.0 §13: persistent offer of this running version's source. Seeded with
   // the upstream fallback; overwritten at boot from /api/config (source_url).
@@ -422,6 +423,9 @@ root.addEventListener('input', (e) => {
   if (field === 'inboxEditTask' && state.inboxEditFor) { state.inboxEditFor = { ...state.inboxEditFor, task: t.value }; return; }
   state[field] = t.value;
   if (field === 'draft') state.forceSlash = false; // typing manages the slash menu
+  // The conversation filter also fires a debounced semantic search over ALL
+  // chats' message content (title filtering stays instant + local below).
+  if (field === 'convFilter' && actions.convSearch) actions.convSearch(t.value);
 
   const fk = t.getAttribute('data-focus');
   // Auto-grow the chat composer to fit content (nothing else sets its height).

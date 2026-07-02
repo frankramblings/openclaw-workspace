@@ -575,7 +575,11 @@ def _map_history(messages: list) -> dict:
         if reply_text and reply_text.strip():
             content = reply_text
         else:
-            content = next((t for t in round_texts if t.strip()), "")
+            # The turn's canonical `content` must be the FINAL reply text (what the
+            # user saw last), not the first round's preamble. Picking the first
+            # non-empty round dropped the real answer on any reload/render path that
+            # reads `content` — e.g. a trailing message after tool calls vanished.
+            content = last_nonempty
         history.append({"role": "assistant", "content": content, "metadata": meta})
 
     for msg in messages:

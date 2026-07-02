@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, config, doctor, draft_mode, event_store, monitor, sessions_store, terminals, websearch
+from . import bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, monitor, sessions_store, terminals, websearch
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -50,14 +50,37 @@ from .resume_route import router as resume_router
 from .export_pdf import router as export_pdf_router
 from . import workspace_files
 
+async def _startup_reindex() -> None:
+    """Keep the semantic-search index fresh in the background. Runs the first
+    build shortly after boot (delayed so the app serves requests immediately),
+    then refreshes every 30 min. reindex() is incremental — sessions whose
+    `updated` stamp is unchanged are skipped — so each refresh only embeds new
+    or changed conversations. Failures are swallowed (log only) so a
+    gateway/Voyage hiccup can never crash boot or stop the loop."""
+    log = logging.getLogger("workspace.chat_search")
+    await asyncio.sleep(20)
+    while True:
+        try:
+            await chat_search.reindex()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - never let an index failure stop the loop
+            log.warning("periodic reindex failed", exc_info=True)
+        await asyncio.sleep(1800)  # 30 min — pick up new/updated conversations
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     # The persistent gateway monitor (status dot / restart awareness).
     task = asyncio.create_task(monitor.run())
+    # Non-blocking semantic-search index build (delayed; swallows failures).
+    search_task = asyncio.create_task(_startup_reindex())
     yield
     task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
+    search_task.cancel()
+    for t in (task, search_task):
+        with contextlib.suppress(asyncio.CancelledError):
+            await t
 
 
 app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)
@@ -1066,6 +1089,23 @@ async def search_test(payload: dict = Body(default=None)):
                 "provider": websearch.load_settings().get("search_provider")}
     except Exception as exc:  # noqa: BLE001 — surface any provider/network error
         return {"ok": False, "error": f"{exc!r}"}
+
+
+# --- Semantic search over all chat content -----------------------------------
+# Real embedding-based search (Voyage voyage-3.5-lite) over every session's
+# message content. Explicit routes — registered before the /api/{path} catch-all
+# below and preferred by FastAPI, so they aren't shadowed by it.
+@app.get("/api/search")
+async def search_chats(q: str = "", limit: int = 20):
+    return await chat_search.search(q, limit)
+
+
+@app.post("/api/search/reindex")
+async def search_reindex(force: bool = False):
+    """Kick a background reindex and return immediately (a full run makes many
+    gateway + Voyage calls, so it must not block the request)."""
+    asyncio.create_task(chat_search.reindex(force=force))
+    return {"status": "started"}
 
 
 # --- Catch-all for Odysseus feature tabs v1 doesn't implement yet ------------

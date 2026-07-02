@@ -6,7 +6,7 @@
 import { icon } from '../icons.js';
 import { renderCenter } from '../surfaces.js';
 import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore } from './mobile-surfaces.js';
-import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvSheet, renderModelSheet } from './mobile-sheets.js';
+import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvSheet, renderConvDrawer, renderModelSheet } from './mobile-sheets.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
 import { cardActions, isInvite, swipeIntent } from '../live/inbox-logic.js';
@@ -48,12 +48,14 @@ export function renderMobile(s) {
     (s.mConvSheetOpen ? renderConvSheet(s) : '') +
     (s.mModelSheetOpen ? renderModelSheet(s) : '');
 
-  return `<div class="m-app${composing ? ' kb-up' : ''}">${body}${showTabBar ? renderTabBar(s) : ''}${sheets}</div>`;
+  // The conversation drawer is ALWAYS in the DOM (off-screen when closed) so the
+  // edge-swipe gesture can finger-track it without rebuilding innerHTML mid-touch.
+  return `<div class="m-app${composing ? ' kb-up' : ''}">${body}${showTabBar ? renderTabBar(s) : ''}${sheets}${renderConvDrawer(s)}</div>`;
 }
 
 // ---- mobile action handlers (merged into the shared action map) -----------
 export function mobileActions(state) {
-  const closeSheets = () => { state.companionSheetOpen = false; state.quickCaptureOpen = false; state.mConvSheetOpen = false; state.mModelSheetOpen = false; };
+  const closeSheets = () => { state.companionSheetOpen = false; state.quickCaptureOpen = false; state.mConvSheetOpen = false; state.mModelSheetOpen = false; state.mDrawerOpen = false; };
   return {
     mGo: (tab) => { state.mTab = tab; state.mSub = null; state.mReader = false; state.keyboard = false; closeSheets(); },
     // Center "+" tap → start a fresh thread on the Chat tab (the expected mental
@@ -76,9 +78,17 @@ export function mobileActions(state) {
     companionTab: (t) => { state.companionTab = t; },
     openCapture: () => { state.quickCaptureOpen = true; state.captureType = state.captureType || 'remind'; },
     closeCapture: () => { state.quickCaptureOpen = false; },
-    openConvSheet: () => { closeSheets(); state.mConvSheetOpen = true; },
+    // Opening the conversations list is exactly when you're looking for a thread
+    // you just started — pull a fresh list so a newly-created (or out-of-band)
+    // thread is always there, regardless of send-timing. Fire-and-forget: the
+    // drawer opens instantly and re-renders when the list lands.
+    openConvSheet: () => { closeSheets(); state.mDrawerOpen = true; if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions(); },
     closeConvSheet: () => { state.mConvSheetOpen = false; },
-    mSelectSession: (id) => { state.mConvSheetOpen = false; if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(id); },
+    // Edge-swipe conversation drawer (the finger-tracked open/close lives in
+    // wireMobileGestures; these handle the tap affordances / scrim dismiss).
+    openConvDrawer: (side) => { closeSheets(); state.mDrawerSide = (side === 'right' ? 'right' : 'left'); state.mDrawerOpen = true; if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions(); },
+    closeDrawer: () => { state.mDrawerOpen = false; },
+    mSelectSession: (id) => { state.mConvSheetOpen = false; state.mDrawerOpen = false; if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(id); },
     openModelSheet: async () => {
       closeSheets();
       state.mModelSheetOpen = true;
@@ -312,4 +322,104 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   });
   root.addEventListener('pointerup', clearLp);
   root.addEventListener('pointercancel', clearLp);
+
+  // --- edge-swipe → conversation drawer ------------------------------------
+  // Swipe inward from the very left OR right screen edge to pull out the thread
+  // list; swipe it back toward its edge (or tap the scrim) to dismiss. The drawer
+  // markup is always in the DOM (renderConvDrawer), so we finger-track it by
+  // mutating transform directly — no innerHTML rebuild mid-gesture.
+  const EDGE = 26;              // px from a screen edge that arms an open-swipe
+  const DRAWER_W = () => Math.min(340, Math.round(window.innerWidth * 0.86));
+  const OPEN_AT = 0.32;         // fraction of drawer width that commits open/stays-open
+  const FLICK_V = 0.45;         // px/ms toward-open at release that commits regardless of distance
+  let edg = null;              // { side, startX, startY, active, closing, shown, lastX, lastT, vx }
+
+  const drawerEl = () => root.querySelector('[data-conv-drawer]');
+  const scrimEl = () => root.querySelector('.m-drawer-scrim');
+
+  const primeDrawer = (side) => {
+    const el = drawerEl(); const sc = scrimEl();
+    if (el) { el.classList.remove('left', 'right'); el.classList.add(side, 'dragging'); }
+    if (sc) sc.classList.add('dragging');
+  };
+  const applyDrawer = (side, shown, w) => {
+    const el = drawerEl(); const sc = scrimEl();
+    if (el) {
+      const off = side === 'left' ? shown - w : w - shown; // shown=0 → fully hidden
+      el.style.transform = `translateX(${off}px)`;
+    }
+    if (sc) { sc.style.opacity = String(Math.max(0, Math.min(1, shown / w))); sc.style.pointerEvents = shown > 4 ? 'auto' : 'none'; }
+  };
+  const finishDrawer = (side, open) => {
+    const el = drawerEl(); const sc = scrimEl();
+    state.mDrawerSide = side;
+    state.mDrawerOpen = open;
+    if (el) { el.classList.remove('dragging'); el.style.transform = ''; el.classList.toggle('open', open); }
+    if (sc) { sc.classList.remove('dragging'); sc.style.opacity = ''; sc.style.pointerEvents = ''; sc.classList.toggle('open', open); }
+    // Swipe-open commits here too (bypasses openConvDrawer) — refresh on open so
+    // a just-started thread is always in the list.
+    if (open && runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions();
+  };
+
+  root.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { edg = null; return; }
+    const t = e.touches[0];
+    if (state.mDrawerOpen) {
+      // Drawer is open — arm a drag-to-close only if the touch lands on the panel.
+      if (t.target && t.target.closest && t.target.closest('[data-conv-drawer]')) {
+        edg = { side: state.mDrawerSide === 'right' ? 'right' : 'left', startX: t.clientX, startY: t.clientY, active: false, closing: true, shown: DRAWER_W() };
+      } else { edg = null; }
+      return;
+    }
+    // Block opening while another surface owns the gesture layer.
+    if (state.quickCaptureOpen || state.companionSheetOpen || state.mConvSheetOpen || state.mModelSheetOpen || state.keyboard) { edg = null; return; }
+    const x = t.clientX;
+    if (x <= EDGE) edg = { side: 'left', startX: x, startY: t.clientY, active: false, closing: false, shown: 0 };
+    else if (x >= window.innerWidth - EDGE) edg = { side: 'right', startX: x, startY: t.clientY, active: false, closing: false, shown: 0 };
+    else edg = null;
+  }, { passive: true });
+
+  root.addEventListener('touchmove', (e) => {
+    if (!edg) return;
+    const t = e.touches[0];
+    const dx = t.clientX - edg.startX;
+    const dy = t.clientY - edg.startY;
+    const w = DRAWER_W();
+    if (!edg.active) {
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 8) { edg = null; return; } // vertical → let scroll win
+      // Opening drags inward; closing drags back toward the drawer's own edge.
+      const progress = edg.closing
+        ? (edg.side === 'left' ? -dx : dx)
+        : (edg.side === 'left' ? dx : -dx);
+      if (progress > 10) { edg.active = true; edg.lastX = t.clientX; edg.lastT = performance.now(); edg.vx = 0; primeDrawer(edg.side); }
+      else if (Math.abs(dx) > 10) { edg = null; return; } // wrong direction
+      else return;
+    }
+    // Track toward-open velocity (px/ms) for a flick-to-open on release.
+    const now = performance.now();
+    const dt = now - (edg.lastT || now);
+    if (dt > 0) {
+      const stepToward = edg.side === 'left' ? (t.clientX - edg.lastX) : (edg.lastX - t.clientX);
+      edg.vx = stepToward / dt;
+      edg.lastX = t.clientX; edg.lastT = now;
+    }
+    const base = edg.closing ? w : 0;
+    let shown = edg.side === 'left' ? base + dx : base - dx;
+    shown = Math.max(0, Math.min(w, shown));
+    edg.shown = shown;
+    applyDrawer(edg.side, shown, w);
+    e.preventDefault(); // beat native scroll / iOS edge-back once a real drag is armed
+  }, { passive: false });
+
+  const endEdge = () => {
+    if (!edg) return;
+    const ed = edg; edg = null;
+    if (!ed.active) return;
+    const w = DRAWER_W();
+    // Commit open on either enough travel OR a decisive inward flick.
+    const open = ed.shown >= w * OPEN_AT || (ed.vx || 0) >= FLICK_V;
+    finishDrawer(ed.side, open);
+  };
+  root.addEventListener('touchend', endEdge);
+  root.addEventListener('touchcancel', endEdge);
 }

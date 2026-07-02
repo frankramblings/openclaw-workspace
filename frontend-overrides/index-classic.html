@@ -2490,7 +2490,7 @@
 <script type="module" src="/static/js/assistant.js"></script>
 <script type="module" src="/static/app.js"></script>  <!-- app.js must be LAST; cache-bust via CACHE_NAME (sync-frontend.sh stamps it) — NEVER ?v= a module (double-instance bug) -->
 <script type="module" src="/static/js/init.js"></script>
-<script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}</script>
+<script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){var __hc=!!navigator.serviceWorker.controller,__rf=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(!__hc||__rf)return;__rf=true;window.location.reload();});navigator.serviceWorker.register('/sw.js').catch(()=>{});}</script>
   <script src="/static/js/cron.js" defer></script>
   <!-- Inbox tab: durable home for this tag. The sync script's injector only
        writes to frontend/ (gitignored), so the tag was silently lost whenever

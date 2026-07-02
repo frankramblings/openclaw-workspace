@@ -12,6 +12,8 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
+import { renderMarkdown } from '../markdown.js';
+import { AVATAR } from '../data.js';
 
 // ---- helpers --------------------------------------------------------------
 
@@ -63,36 +65,62 @@ function startOfDay(t) {
   return d.getTime();
 }
 
+const _MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+  'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+
+// Date bucket label for a session. Recent conversations get named buckets;
+// anything older than "last week" is grouped by month so the full history
+// stays reachable by scrolling (no hard cap — see buildGroups).
 function bucketFor(updated, now) {
   const today = startOfDay(now);
   const yesterday = today - 86400000;
+  // Week starts Monday, local time.
+  const dow = (new Date(now).getDay() + 6) % 7;
+  const weekStart = today - dow * 86400000;
+  const lastWeekStart = weekStart - 7 * 86400000;
   const u = startOfDay(updated || 0);
   if (u >= today) return 'TODAY';
   if (u >= yesterday) return 'YESTERDAY';
-  return 'EARLIER';
+  if (u >= weekStart) return 'THIS WEEK';
+  if (u >= lastWeekStart) return 'LAST WEEK';
+  const d = new Date(updated || 0);
+  const yr = d.getFullYear();
+  return yr === new Date(now).getFullYear()
+    ? _MONTHS[d.getMonth()]
+    : `${_MONTHS[d.getMonth()]} ${yr}`;
 }
 
+// Build the sidebar conversation groups from the FULL session list. Favorites
+// float to a ★ PINNED group; everything else is date-bucketed. There is no
+// item cap — all (non-archived) sessions render, and .conv-scroll scrolls the
+// whole history. Sessions arrive newest-first, so Map insertion order yields
+// TODAY → YESTERDAY → THIS WEEK → LAST WEEK → months (newest → oldest).
 function buildGroups(sessions, activeId) {
   const now = Date.now();
-  const order = ['TODAY', 'YESTERDAY', 'EARLIER'];
-  const byLabel = { TODAY: [], YESTERDAY: [], EARLIER: [] };
-  let count = 0;
-  for (const s of sessions) {
-    if (count >= 20) break;
+  const pinned = [];
+  const byLabel = new Map();
+  // Sort newest-activity first (the API sorts by `created`, but recency of the
+  // last message is what the date buckets and row order should reflect).
+  const ordered = [...sessions].sort(
+    (a, b) => (b.updated || b.created || 0) - (a.updated || a.created || 0));
+  for (const s of ordered) {
     if (s.archived) continue;
-    const label = bucketFor(s.updated, now);
-    byLabel[label].push({
+    const row = {
       id: s.id,
       title: s.name || 'New chat',
       term: !!s.gary_terminal,
       active: s.id === activeId,
       important: !!s.important,
-    });
-    count++;
+    };
+    if (s.important) { pinned.push(row); continue; }
+    const label = bucketFor(s.updated, now);
+    if (!byLabel.has(label)) byLabel.set(label, []);
+    byLabel.get(label).push(row);
   }
-  return order
-    .filter((label) => byLabel[label].length)
-    .map((label) => ({ label, rows: byLabel[label] }));
+  const groups = [];
+  if (pinned.length) groups.push({ label: '★ PINNED', rows: pinned });
+  for (const [label, rows] of byLabel) groups.push({ label, rows });
+  return groups;
 }
 
 function round1(n) {
@@ -555,6 +583,12 @@ async function dispatchSend(text, attachSnap) {
       if (!id) return;
       chat.activeId = id;
       storeActiveId(id);
+      // Surface the brand-new thread in the sidebar IMMEDIATELY — don't wait for
+      // the turn's `done` event (refreshSidebarUsage) to rebuild the list. Fire
+      // and forget so it never delays the send; the row appears the moment you
+      // send, so leaving the thread before the reply lands still lets you find
+      // it in the conversations list.
+      refreshSidebarUsage(state).catch(() => {});
     } catch (_) {
       return;
     }
@@ -774,7 +808,123 @@ function notifyTurnDone(chat, id) {
   } catch (_) { /* OS notifications unavailable */ }
 }
 
+// Build a self-contained, print-ready HTML document for a chat transcript.
+// Reuses the same renderMarkdown() as the live thread so code blocks, lists and
+// inline formatting survive into the PDF. Styling is light/print-friendly with a
+// __AGENT_NAME__ brand header. The browser's own "Save as PDF" does the render,
+// which keeps text selectable and crisp (no canvas rasterization).
+function buildTranscriptHtml(title, thread, meta) {
+  const safeTitle = String(title || 'Conversation');
+  const escHtml = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const rows = (thread || [])
+    .filter((m) => String(m.text || '').trim().length > 0 || (m.attach && m.attach.length))
+    .map((m) => {
+      const isUser = m.role === 'user';
+      const who = isUser ? 'You' : '__AGENT_NAME__';
+      const time = m.time ? `<span class="t-time">${escHtml(m.time)}</span>` : '';
+      const model = (!isUser && m.model) ? `<span class="t-model">${escHtml(m.model)}</span>` : '';
+      const body = String(m.text || '').trim() ? renderMarkdown(m.text) : '';
+      const av = isUser
+        ? '<div class="t-av t-av-you">Y</div>'
+        : `<div class="t-av"><img src="${escHtml(AVATAR)}" alt=""></div>`;
+      return `<article class="t-msg ${isUser ? 'is-you' : 'is-asst'}">
+        ${av}
+        <div class="t-main">
+          <div class="t-head"><span class="t-who">${escHtml(who)}</span>${model}${time}</div>
+          <div class="t-body">${body}</div>
+        </div>
+      </article>`;
+    }).join('\n');
+  const count = (thread || []).filter((m) => String(m.text || '').trim().length > 0).length;
+  const sub = escHtml(meta?.dateStr || '') + (count ? ` &middot; ${count} messages` : '');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>${escHtml(safeTitle)}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{ --ink:#1b1d22; --muted:#6b7280; --line:#e6e8ec; --accent:#2f6df6; --code-bg:#f5f6f8; }
+  @page{ margin:16mm 14mm; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{ font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+        color:var(--ink); background:#fff; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .t-wrap{ max-width:720px; margin:0 auto; padding:28px 22px 40px; }
+  .t-brand{ display:flex; align-items:center; gap:12px; padding-bottom:16px; margin-bottom:22px;
+            border-bottom:2px solid var(--accent); }
+  .t-brand .t-logo{ width:34px; height:34px; border-radius:9px; object-fit:cover;
+            background:linear-gradient(135deg,#22d3ee,#2f6df6); flex:none; }
+  .t-brand h1{ font-size:19px; margin:0; line-height:1.25; font-weight:650; }
+  .t-brand .t-sub{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .t-msg{ display:flex; gap:12px; padding:14px 0; border-bottom:1px solid var(--line);
+          break-inside:avoid; page-break-inside:avoid; }
+  .t-msg:last-child{ border-bottom:none; }
+  .t-av{ width:30px; height:30px; border-radius:8px; flex:none; overflow:hidden;
+         display:flex; align-items:center; justify-content:center; background:#eef1f5; }
+  .t-av img{ width:100%; height:100%; object-fit:cover; }
+  .t-av-you{ background:var(--accent); color:#fff; font-weight:650; font-size:13px; }
+  .t-main{ min-width:0; flex:1; }
+  .t-head{ display:flex; align-items:baseline; gap:8px; margin-bottom:3px; }
+  .t-who{ font-weight:650; font-size:13.5px; }
+  .is-asst .t-who{ color:var(--accent); }
+  .t-model{ font-size:10.5px; color:var(--muted); border:1px solid var(--line); border-radius:5px; padding:0 5px; }
+  .t-time{ font-size:11px; color:var(--muted); margin-left:auto; }
+  .t-body{ font-size:13.5px; }
+  .t-body p{ margin:0 0 8px; }
+  .t-body p:last-child{ margin-bottom:0; }
+  .t-body h1,.t-body h2,.t-body h3{ font-size:14.5px; margin:12px 0 6px; }
+  .t-body ul,.t-body ol{ margin:6px 0 8px; padding-left:22px; }
+  .t-body li{ margin:2px 0; }
+  .t-body code{ background:var(--code-bg); border-radius:4px; padding:1px 5px; font-size:12px;
+                font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .t-body pre{ background:var(--code-bg); border:1px solid var(--line); border-radius:8px;
+               padding:11px 13px; overflow-x:auto; break-inside:avoid; page-break-inside:avoid; }
+  .t-body pre code{ background:none; padding:0; font-size:12px; line-height:1.5; }
+  .t-body blockquote{ margin:6px 0; padding:2px 12px; border-left:3px solid var(--line); color:var(--muted); }
+  .t-body a{ color:var(--accent); text-decoration:none; }
+  .t-foot{ margin-top:26px; padding-top:12px; border-top:1px solid var(--line);
+           font-size:10.5px; color:var(--muted); text-align:center; }
+</style></head>
+<body>
+  <div class="t-wrap">
+    <header class="t-brand">
+      <img class="t-logo" src="${escHtml(AVATAR)}" alt="">
+      <div><h1>${escHtml(safeTitle)}</h1><div class="t-sub">${sub}</div></div>
+    </header>
+    ${rows || '<p style="color:#6b7280">This conversation has no messages yet.</p>'}
+    <div class="t-foot">Exported from __AGENT_NAME__ &middot; ${escHtml(meta?.dateStr || '')}</div>
+  </div>
+</body></html>`;
+}
+
+let _convSearchTimer = null;
+let _convSearchSeq = 0;
+
 export const actions = {
+  // Semantic search across ALL conversations by message CONTENT (not just the
+  // title substring the list filters on locally). Debounced; hits land in
+  // chat.searchResults and render as a MESSAGES section under the title matches
+  // (see surfaces.js convListBody). A short/empty query clears the results.
+  convSearch: (query) => {
+    const chat = runtime.state && runtime.state.live && runtime.state.live.chat;
+    if (!chat) return;
+    const q = (query || '').trim();
+    chat.searchQuery = q;
+    if (_convSearchTimer) { clearTimeout(_convSearchTimer); _convSearchTimer = null; }
+    if (q.length < 2) { chat.searchResults = null; chat.searchLoading = false; return; }
+    chat.searchLoading = true;
+    const seq = ++_convSearchSeq;
+    _convSearchTimer = setTimeout(async () => {
+      let res = [];
+      try { res = await apiGet(`/api/search?q=${encodeURIComponent(q)}&limit=20`); }
+      catch (_) { res = []; }
+      if (seq !== _convSearchSeq) return;  // a newer keystroke superseded this one
+      chat.searchResults = Array.isArray(res) ? res : [];
+      chat.searchLoading = false;
+      runtime.render();
+    }, 280);
+  },
+
   selectSession: async (id) => {
     const state = runtime.state;
     if (!state || !id) return;
@@ -1117,6 +1267,83 @@ export const actions = {
     } catch (_) {}
     runtime.render();
   },
+  // Export the transcript as a nicely-styled PDF, one-click download. Builds the
+  // same print-ready HTML (reusing renderMarkdown) and POSTs it to the backend,
+  // which renders it to a real PDF with headless Chrome and streams it back as a
+  // file — no print dialog, selectable text, identical styling. Falls back to
+  // the browser print dialog, then an .html download, if the endpoint is down.
+  exportChatPDF: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    state.chatMenuOpen = false;
+    const chat = ensureChat(state);
+    const title = chat.title || 'Conversation';
+    let thread = chat.thread || [];
+    // If the open chat's live thread is empty (e.g. reopened but not yet
+    // hydrated), pull the transcript from history so the export isn't blank.
+    if ((!thread || !thread.length) && chat.activeId) {
+      try {
+        const hist = await apiGet(`/api/history/${chat.activeId}?limit=500`);
+        const list = Array.isArray(hist?.history) ? hist.history : [];
+        thread = list.map((h) => ({ role: h.role === 'user' ? 'user' : 'assistant', text: h.content || '', model: h.metadata?.model }));
+      } catch (_) { thread = chat.thread || []; }
+    }
+    let dateStr = '';
+    try { dateStr = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch (_) {}
+    const html = buildTranscriptHtml(title, thread, { dateStr });
+    const safe = title.replace(/[^\w.-]+/g, '_') || 'conversation';
+
+    // Trigger a browser download from a blob.
+    const download = (blob, name) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
+    };
+
+    // Preferred path: server renders a real PDF → one-click file download.
+    try {
+      const res = await fetch(`${location.origin}/api/export/pdf`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ html, filename: `${safe}.pdf` }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob && blob.size) {
+          download(blob, `${safe}.pdf`);
+          runtime.render();
+          return;
+        }
+      }
+    } catch (_) { /* fall through to print/html fallbacks */ }
+
+    // Fallback 1: browser print dialog via sandboxed hidden iframe.
+    try {
+      const frame = document.createElement('iframe');
+      frame.setAttribute('aria-hidden', 'true');
+      frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+      document.body.appendChild(frame);
+      const doc = frame.contentWindow.document;
+      doc.open(); doc.write(html); doc.close();
+      const go = () => {
+        try {
+          frame.contentWindow.focus();
+          frame.contentWindow.print();
+        } catch (_) {}
+        setTimeout(() => { try { frame.remove(); } catch (_) {} }, 60000);
+      };
+      // Give images (avatar) a beat to load so they render in the PDF.
+      if (frame.contentWindow.document.readyState === 'complete') setTimeout(go, 250);
+      else frame.addEventListener('load', () => setTimeout(go, 250), { once: true });
+    } catch (_) {
+      // Fallback 2: hand over the styled HTML.
+      try { download(new Blob([html], { type: 'text/html' }), `${safe}.html`); } catch (_) {}
+    }
+    runtime.render();
+  },
 
   // Session list: archive a conversation → POST /api/session/{id}/archive.
   archiveSession: async (id) => {
@@ -1182,13 +1409,25 @@ export const actions = {
     try { await navigator.clipboard.writeText(msg.text); } catch (_) {}
   },
 
+  // Message toolbar: open/close the per-message download flyout (MD vs PDF).
+  toggleMsgMenu: (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    chat.msgMenuOpen = chat.msgMenuOpen === id ? null : id;
+    chat.rowMenuOpen = null;
+    state.chatMenuOpen = false;
+    runtime.render();
+  },
+
   // Message toolbar: download one message's text as a .md file (client-side).
   downloadMessage: (id) => {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
+    chat.msgMenuOpen = null;
     const msg = (chat.thread || []).find((m) => m.id === id);
-    if (!msg || !msg.text) return;
+    if (!msg || !msg.text) { runtime.render(); return; }
     const who = msg.role === 'user' ? 'you' : 'gary';
     const slug = (msg.text.split('\n')[0] || 'message').slice(0, 40).replace(/[^\w.-]+/g, '_');
     try {
@@ -1199,6 +1438,63 @@ export const actions = {
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
     } catch (_) {}
+    runtime.render();
+  },
+
+  // Message toolbar: download one message as a styled PDF. Reuses the same
+  // server render path as the whole-chat export, with a one-message thread.
+  downloadMessagePDF: async (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    chat.msgMenuOpen = null;
+    const msg = (chat.thread || []).find((m) => m.id === id);
+    if (!msg || !msg.text) { runtime.render(); return; }
+    const who = msg.role === 'user' ? 'you' : 'gary';
+    const slug = (msg.text.split('\n')[0] || 'message').slice(0, 40).replace(/[^\w.-]+/g, '_');
+    const safe = `${who}-${slug}` || 'message';
+    const title = chat.title || 'Message';
+    let dateStr = '';
+    try { dateStr = new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch (_) {}
+    const html = buildTranscriptHtml(title, [msg], { dateStr });
+    const download = (blob, name) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
+    };
+    runtime.render();
+    // Preferred: server renders a real PDF → one-click file download.
+    try {
+      const res = await fetch(`${location.origin}/api/export/pdf`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ html, filename: `${safe}.pdf` }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob && blob.size) { download(blob, `${safe}.pdf`); return; }
+      }
+    } catch (_) { /* fall through to print/html fallbacks */ }
+    // Fallback 1: browser print dialog via sandboxed hidden iframe.
+    try {
+      const frame = document.createElement('iframe');
+      frame.setAttribute('aria-hidden', 'true');
+      frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+      document.body.appendChild(frame);
+      const doc = frame.contentWindow.document;
+      doc.open(); doc.write(html); doc.close();
+      const go = () => {
+        try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (_) {}
+        setTimeout(() => { try { frame.remove(); } catch (_) {} }, 60000);
+      };
+      if (frame.contentWindow.document.readyState === 'complete') setTimeout(go, 250);
+      else frame.addEventListener('load', () => setTimeout(go, 250), { once: true });
+    } catch (_) {
+      try { download(new Blob([html], { type: 'text/html' }), `${safe}.html`); } catch (_) {}
+    }
   },
 
   // Swallow clicks on menu chrome so they neither select the row nor close the menu.

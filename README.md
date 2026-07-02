@@ -37,7 +37,11 @@ Two things make it different from a regular chatbot:
 > **📦 Requires [OpenClaw](https://github.com/openclaw/openclaw) (sold separately 😉).**
 > OpenClaw is the brain: it runs the AI models, memory, and tools. This project is the face, the app you actually work in, sitting on top. You point it at your OpenClaw agent, name your assistant once, and that name brands the whole app: the icon, the title bar, the chat header.
 
-<!-- TODO: drop demo.gif here. ~12s of a live chat + tool-call streaming. Biggest visual upgrade left. -->
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="Ask once. It checks your calendar, searches your inbox, drafts the reply, and hands it back ready to send." width="100%">
+  <br>
+  <em>Ask once. It reads your calendar, searches your inbox, and drafts the reply for you.</em>
+</p>
 
 ## What it does for you
 

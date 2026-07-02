@@ -4,7 +4,14 @@
   <img src="docs/assets/hero.png" alt="OpenClaw Workspace" width="100%">
 </div>
 
-**A personal AI command center.** A scored inbox that triages Gmail, Slack & Asana, a full email client, calendar, multi-step research, notes, and streaming chat — all talking to your own [OpenClaw](https://github.com/openclaw/openclaw) agent, from any browser.
+<div align="center">
+
+### A home for your AI assistant — one that can actually do your busywork.
+
+Not another chat box. A personal dashboard where your own AI assistant lives and works —<br>
+wired into your **email**, **calendar**, **to-dos**, and **notes**, so it can *do the thing*, not just talk about it.
+
+**`🗂️ triages your inbox`&nbsp;&nbsp;·&nbsp;&nbsp;`✉️ drafts your replies`&nbsp;&nbsp;·&nbsp;&nbsp;`📅 runs your calendar`&nbsp;&nbsp;·&nbsp;&nbsp;`🔎 researches with sources`&nbsp;&nbsp;·&nbsp;&nbsp;`🔒 runs on your own machine`**
 
 [![CI](https://github.com/frankramblings/openclaw-workspace/actions/workflows/ci.yml/badge.svg)](https://github.com/frankramblings/openclaw-workspace/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-4fe3d1.svg)](LICENSE)
@@ -12,16 +19,41 @@
 [![FastAPI](https://img.shields.io/badge/backend-FastAPI-4fe3d1.svg)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/docker-compose-4fe3d1.svg)](docker-compose.yml)
 
-[Quickstart](#quickstart) · [Surfaces](#surfaces) · [Architecture](#architecture) · [Security](#security) · [Config](#config)
+**[Quickstart](#quickstart)&nbsp; · &nbsp;[What's inside](#surfaces)&nbsp; · &nbsp;[How it works](#how-it-works)&nbsp; · &nbsp;[Architecture](#architecture)&nbsp; · &nbsp;[Security](#security)**
 
-> OpenClaw is the brain — model routing, memory, tools, skills, web search.  
-> **This is the place you talk to it**, from any browser, across every surface you actually work in.
+</div>
 
-You name your agent once at setup. That name propagates everywhere: the app icon, the title bar, the chat header, your terminal prompt.
+---
 
-**Why this exists.** Most agent UIs are a lone chat box; this one wires your agent into the surfaces you actually work in — inbox, mail, calendar, research, notes — so it can _act_, not just answer.
+## Why you'd want it
+
+Most AI apps are a lone chat window: you ask, it replies, and then *you* still have to go do the thing. This one wires the assistant into the places you already work, so it takes the next step for you.
+
+| | |
+|---|---|
+| 🗂️ **Tame the inbox** | One combined feed of Gmail, Slack, Asana & meeting notes — sorted by *what actually needs you* vs. *just FYI*, with a suggested reply or archive on each. |
+| ✉️ **Handle your mail** | A full email client where one tap drafts a reply, sends it, or summarizes a long thread. |
+| 📅 **Run your calendar** | See your schedule and add events in plain English — *"lunch with Sam Tuesday 1pm."* |
+| 🔎 **Do the research** | Ask a question and get a real answer with **cited sources**, not just a guess. |
+| 📝 **Keep your notes** | A shared notebook the assistant can read *and* write — what you jot and what it finds live in one place. |
+| 🔒 **Stay private** | Runs on your own computer, talks only to your own assistant. Nothing lives on someone else's server. |
+
+<sub>Under the hood, the assistant is powered by [OpenClaw](https://github.com/openclaw/openclaw) — the "brain" that handles the AI models, memory, and tools. **This project is the place you actually talk to it.** You name your assistant once at setup, and that name shows up everywhere: the app icon, the title bar, the chat header.</sub>
+
+## How it works
+
+Three steps from zero to a working command center:
+
+| | | |
+|:--:|:--:|:--:|
+| **1 · Connect** | **2 · Name it** | **3 · Go** |
+| Point it at your OpenClaw agent and the accounts you use — Gmail, calendar, Slack, Asana. | Give your assistant a name. It brands the whole app — icon, title bar, chat header. | Open it in any browser, on phone or laptop, and start handing off work. |
+
+<sub>Only the tabs you've set up show — a fresh install with just OpenClaw shows Chat, and the rest appear as you connect them.</sub>
 
 ## Surfaces
+
+The app is organized into tabs — each one a different part of your day. Here's what they look like:
 
 <table>
 <tr>
@@ -29,30 +61,32 @@ You name your agent once at setup. That name propagates everywhere: the app icon
 <td width="50%"><img src="docs/screenshots/inbox.png" alt="Inbox"></td>
 </tr>
 <tr>
-<td width="50%"><strong>Chat</strong> — Streaming conversations with live tool-call cards, a model picker reading the real gateway catalog, and a <code>/commands</code> palette.</td>
-<td width="50%"><strong>Inbox</strong> — A scored triage feed across Gmail, Slack, Asana &amp; meeting notes. Sorted by <em>needs you</em> vs. <em>FYI</em>; the agent suggests archive or reply.</td>
+<td width="50%">💬 <strong>Chat</strong> — Streaming conversations with live tool-call cards, a model picker reading the real gateway catalog, and a <code>/commands</code> palette.</td>
+<td width="50%">🗂️ <strong>Inbox</strong> — A scored triage feed across Gmail, Slack, Asana &amp; meeting notes. Sorted by <em>needs you</em> vs. <em>FYI</em>; the agent suggests archive or reply.</td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/screenshots/email.png" alt="Email"></td>
 <td width="50%"><img src="docs/screenshots/calendar.png" alt="Calendar"></td>
 </tr>
 <tr>
-<td width="50%"><strong>Email</strong> — A full mailbox: read, search, threaded reply, send. One tap to AI-draft, AI-reply, or summarize a thread.</td>
-<td width="50%"><strong>Calendar</strong> — Month / week / agenda over Google or CalDAV. Natural-language quick-add: <em>"lunch with Sam tue 1pm."</em></td>
+<td width="50%">✉️ <strong>Email</strong> — A full mailbox: read, search, threaded reply, send. One tap to AI-draft, AI-reply, or summarize a thread.</td>
+<td width="50%">📅 <strong>Calendar</strong> — Month / week / agenda over Google or CalDAV. Natural-language quick-add: <em>"lunch with Sam tue 1pm."</em></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/screenshots/research.png" alt="Research"></td>
 <td width="50%"><img src="docs/screenshots/notes.png" alt="Notes"></td>
 </tr>
 <tr>
-<td width="50%"><strong>Research</strong> — Multi-step web research with configurable rounds and cited inline sources <code>[n]</code>.</td>
-<td width="50%"><strong>Notes</strong> — A markdown vault shared with the agent. Your edits are agent-visible and vice versa, with version history + restore.</td>
+<td width="50%">🔎 <strong>Research</strong> — Multi-step web research with configurable rounds and cited inline sources <code>[n]</code>.</td>
+<td width="50%">📝 <strong>Notes</strong> — A markdown vault shared with the agent. Your edits are agent-visible and vice versa, with version history + restore.</td>
 </tr>
 </table>
 
-Two more round it out — **Library** (an indexed store of everything the agent has written or you've uploaded) and **Settings** (connect Ollama, Anthropic, OpenAI, DeepSeek, Groq, and toggle integrations).
+Two more round it out — 📚 **Library** (an indexed store of everything the agent has written or you've uploaded) and ⚙️ **Settings** (connect Ollama, Anthropic, OpenAI, DeepSeek, Groq, and toggle integrations).
 
-> **Tabs that aren't configured hide themselves.** A fresh install with only OpenClaw shows just Chat.
+---
+
+> The rest of this page is the technical setup — how to install and run it. If you just wanted to know what it is, you're all set. 👇
 
 ## Architecture
 

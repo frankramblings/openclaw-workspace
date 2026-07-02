@@ -11,7 +11,7 @@
 Not another chat box. A personal dashboard where your own AI assistant lives and works —<br>
 wired into your **email**, **calendar**, **to-dos**, and **notes**, so it can *do the thing*, not just talk about it.
 
-**`🗂️ triages your inbox`&nbsp;&nbsp;·&nbsp;&nbsp;`✉️ drafts your replies`&nbsp;&nbsp;·&nbsp;&nbsp;`📅 runs your calendar`&nbsp;&nbsp;·&nbsp;&nbsp;`🔎 researches with sources`&nbsp;&nbsp;·&nbsp;&nbsp;`🔒 runs on your own machine`**
+**`🧠 knows your world`&nbsp;&nbsp;·&nbsp;&nbsp;`🗂️ triages your inbox`&nbsp;&nbsp;·&nbsp;&nbsp;`✉️ drafts your replies`&nbsp;&nbsp;·&nbsp;&nbsp;`📅 runs your calendar`&nbsp;&nbsp;·&nbsp;&nbsp;`🔎 cited research`&nbsp;&nbsp;·&nbsp;&nbsp;`🔒 on your machine`**
 
 [![CI](https://github.com/frankramblings/openclaw-workspace/actions/workflows/ci.yml/badge.svg)](https://github.com/frankramblings/openclaw-workspace/actions/workflows/ci.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-4fe3d1.svg)](LICENSE)
@@ -39,6 +39,19 @@ Most AI apps are a lone chat window: you ask, it replies, and then *you* still h
 | 🔒 **Stay private** | Runs on your own computer, talks only to your own assistant. Nothing lives on someone else's server. |
 
 <sub>Under the hood, the assistant is powered by [OpenClaw](https://github.com/openclaw/openclaw) — the "brain" that handles the AI models, memory, and tools. **This project is the place you actually talk to it.** You name your assistant once at setup, and that name shows up everywhere: the app icon, the title bar, the chat header.</sub>
+
+## It actually knows *you*
+
+Here's the part a generic chatbot can never match: because it's wired into your real email, calendar, tasks, and notes, it builds a living picture of *your* world — your people, your projects, your deadlines, how you write. Every source you connect makes it sharper.
+
+That personal context cascades into everything it does:
+
+- **Drafts sound like you** — it's read your past replies, so it matches your voice instead of generic AI-speak.
+- **Answers know your context** — ask "when am I free to meet Sam?" and it already knows who Sam is, your calendar, and the thread you're planning around.
+- **Nothing falls through** — it connects dots across sources: the email that needs a calendar hold, the Slack ask that should become a task, the note that answers the question you just asked.
+- **It gets better the more you use it** — the picture sharpens over time, and it all stays on *your* machine, private to you.
+
+A chat box starts from zero every time. This starts from everything it already knows about your world.
 
 ## How it works
 

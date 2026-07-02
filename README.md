@@ -47,14 +47,12 @@ Two things make it different from a regular chatbot:
 
 Most AI apps are a lone chat window: you ask, it replies, and then *you* still have to go do the thing. This one takes the next step for you.
 
-| | |
-|---|---|
-| 🗂️ **Tame the inbox** | One combined feed of Gmail, Slack, Asana, and meeting notes, sorted by *what actually needs you* vs. *just FYI*, with a suggested reply or archive on each. |
-| ✉️ **Handle your mail** | A full email client where one tap drafts a reply, sends it, or summarizes a long thread. |
-| 📅 **Run your calendar** | See your schedule and add events in plain English, like *"lunch with Sam Tuesday 1pm."* |
-| 🔎 **Do the research** | Ask a question and get a real answer with **cited sources**, not just a guess. |
-| 📝 **Keep your notes** | A shared notebook the assistant can read *and* write, so what you jot and what it finds live in one place. |
-| 🔒 **Stay private** | Runs on your own computer, talks only to your own assistant. Nothing lives on someone else's server. |
+- 🗂️ **Tame the inbox.** One combined feed of Gmail, Slack, Asana, and meeting notes, sorted by *what actually needs you* vs. *just FYI*, with a suggested reply or archive on each.
+- ✉️ **Handle your mail.** A full email client where one tap drafts a reply, sends it, or summarizes a long thread.
+- 📅 **Run your calendar.** See your schedule and add events in plain English, like *"lunch with Sam Tuesday 1pm."*
+- 🔎 **Do the research.** Ask a question and get a real answer with **cited sources**, not just a guess.
+- 📝 **Keep your notes.** A shared notebook the assistant can read *and* write, so what you jot and what it finds live in one place.
+- 🔒 **Stay private.** Runs on your own computer, talks only to your own assistant. Nothing lives on someone else's server.
 
 ## Why it's different: it knows you
 

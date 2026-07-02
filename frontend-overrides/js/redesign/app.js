@@ -53,6 +53,7 @@ const state = {
 let researchTimer = null;
 let refreshTimer = null;
 let toastTimer = null;
+let _convFilterRenderTimer = null;  // mobile: coalesce conv-search re-renders
 const root = document.getElementById('oc-root');
 const mq = window.matchMedia('(max-width: 768px)');
 // Hide root until the first live-data render so mock sample data never flashes.
@@ -425,7 +426,20 @@ root.addEventListener('input', (e) => {
   if (field === 'draft') state.forceSlash = false; // typing manages the slash menu
   // The conversation filter also fires a debounced semantic search over ALL
   // chats' message content (title filtering stays instant + local below).
-  if (field === 'convFilter' && actions.convSearch) actions.convSearch(t.value);
+  if (field === 'convFilter') {
+    if (actions.convSearch) actions.convSearch(t.value);
+    // On mobile, do NOT render() on every keystroke — a wholesale root.innerHTML
+    // rebuild mid-type on a touch keyboard drops fast characters (same reason the
+    // mdraft composer skips render). The DOM already holds the typed text; state
+    // is synced above. Coalesce into ONE render after a short typing pause so the
+    // filtered list / MESSAGES section catch up without fighting the keyboard.
+    // (The semantic fetch also re-renders when its results resolve.)
+    if (isMobile()) {
+      if (_convFilterRenderTimer) clearTimeout(_convFilterRenderTimer);
+      _convFilterRenderTimer = setTimeout(() => { _convFilterRenderTimer = null; render(); }, 220);
+      return;
+    }
+  }
 
   const fk = t.getAttribute('data-focus');
   // Auto-grow the chat composer to fit content (nothing else sets its height).

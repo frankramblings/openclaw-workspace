@@ -19,15 +19,28 @@ wired into your **email**, **calendar**, **to-dos**, and **notes**, so it can *d
 [![FastAPI](https://img.shields.io/badge/backend-FastAPI-4fe3d1.svg)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/docker-compose-4fe3d1.svg)](docker-compose.yml)
 
-**[Quickstart](#quickstart)&nbsp; · &nbsp;[What's inside](#surfaces)&nbsp; · &nbsp;[How it works](#how-it-works)&nbsp; · &nbsp;[Architecture](#architecture)&nbsp; · &nbsp;[Security](#security)**
+**[What it does](#what-it-does-for-you)&nbsp; · &nbsp;[Why it's different](#why-its-different--it-knows-you)&nbsp; · &nbsp;[The tour](#take-the-tour)&nbsp; · &nbsp;[Get started](#get-started)&nbsp; · &nbsp;[Under the hood](#under-the-hood)**
 
 </div>
 
 ---
 
-## Why you'd want it
+## What is this?
 
-Most AI apps are a lone chat window: you ask, it replies, and then *you* still have to go do the thing. This one wires the assistant into the places you already work, so it takes the next step for you.
+A personal command center where your own AI assistant lives — reachable from any browser, on your phone or laptop.
+
+Two things make it different from a regular chatbot:
+
+- **It acts, it doesn't just answer.** It's plugged into the tools you actually use, so instead of telling you what to do, it does it — sorts the inbox, drafts the reply, adds the meeting, runs the search.
+- **It knows *you*.** Because it can see your real email, calendar, tasks, and notes, everything it does is shaped by *your* world — your people, your projects, your voice. Not generic AI answers.
+
+<sub>The assistant itself is powered by [OpenClaw](https://github.com/openclaw/openclaw) — the "brain" that handles AI models, memory, and tools. **This project is the place you talk to it.** You name your assistant once at setup and that name brands the whole app: the icon, the title bar, the chat header.</sub>
+
+<!-- TODO: drop demo.gif here — ~12s of a live chat + tool-call streaming. This is the single biggest visual upgrade. -->
+
+## What it does for you
+
+Most AI apps are a lone chat window: you ask, it replies, and then *you* still have to go do the thing. This one takes the next step for you.
 
 | | |
 |---|---|
@@ -38,35 +51,22 @@ Most AI apps are a lone chat window: you ask, it replies, and then *you* still h
 | 📝 **Keep your notes** | A shared notebook the assistant can read *and* write — what you jot and what it finds live in one place. |
 | 🔒 **Stay private** | Runs on your own computer, talks only to your own assistant. Nothing lives on someone else's server. |
 
-<sub>Under the hood, the assistant is powered by [OpenClaw](https://github.com/openclaw/openclaw) — the "brain" that handles the AI models, memory, and tools. **This project is the place you actually talk to it.** You name your assistant once at setup, and that name shows up everywhere: the app icon, the title bar, the chat header.</sub>
+## Why it's different — it knows you
 
-## It actually knows *you*
-
-Here's the part a generic chatbot can never match: because it's wired into your real email, calendar, tasks, and notes, it builds a living picture of *your* world — your people, your projects, your deadlines, how you write. Every source you connect makes it sharper.
+Here's the part a generic chatbot can never match: because it's wired into your real email, calendar, tasks, and notes, it builds a living picture of *your* world — your people, your projects, your deadlines, how you write. **Every source you connect makes it sharper**, and it all stays on your machine.
 
 That personal context cascades into everything it does:
 
 - **Drafts sound like you** — it's read your past replies, so it matches your voice instead of generic AI-speak.
-- **Answers know your context** — ask "when am I free to meet Sam?" and it already knows who Sam is, your calendar, and the thread you're planning around.
+- **Answers already have context** — ask *"when am I free to meet Sam?"* and it knows who Sam is, your calendar, and the thread you're planning around.
 - **Nothing falls through** — it connects dots across sources: the email that needs a calendar hold, the Slack ask that should become a task, the note that answers the question you just asked.
-- **It gets better the more you use it** — the picture sharpens over time, and it all stays on *your* machine, private to you.
+- **It compounds** — the more you use it, the sharper the picture gets.
 
-A chat box starts from zero every time. This starts from everything it already knows about your world.
+> A chat box starts from zero every time. **This starts from everything it already knows about your world.**
 
-## How it works
+## Take the tour
 
-Three steps from zero to a working command center:
-
-| | | |
-|:--:|:--:|:--:|
-| **1 · Connect** | **2 · Name it** | **3 · Go** |
-| Point it at your OpenClaw agent and the accounts you use — Gmail, calendar, Slack, Asana. | Give your assistant a name. It brands the whole app — icon, title bar, chat header. | Open it in any browser, on phone or laptop, and start handing off work. |
-
-<sub>Only the tabs you've set up show — a fresh install with just OpenClaw shows Chat, and the rest appear as you connect them.</sub>
-
-## Surfaces
-
-The app is organized into tabs — each one a different part of your day. Here's what they look like:
+The app is organized into tabs — each one a different part of your day.
 
 <table>
 <tr>
@@ -97,25 +97,15 @@ The app is organized into tabs — each one a different part of your day. Here's
 
 Two more round it out — 📚 **Library** (an indexed store of everything the agent has written or you've uploaded) and ⚙️ **Settings** (connect Ollama, Anthropic, OpenAI, DeepSeek, Groq, and toggle integrations).
 
+> **You only see the tabs you've set up.** A fresh install with just OpenClaw shows Chat; the rest appear as you connect them.
+
 ---
 
-> The rest of this page is the technical setup — how to install and run it. If you just wanted to know what it is, you're all set. 👇
+## Get started
 
-## Architecture
+Three steps from zero to a working command center:
 
-```
-OpenClaw gateway (ws://)
-        │
-  bridge.py  ←─── the load-bearing piece: WS → SSE, streams tool calls live
-        │
-  FastAPI /api  ─── per-tab adapters (email, calendar, inbox, notes, cron…)
-        │
-  Vanilla JS SPA  ─── frontend-overrides/ layered onto frontend-vendor/
-```
-
-The bridge is the heart of it: it renders every tool call the moment it fires — no polling, no page reload — while keeping you on your flat-rate OpenClaw plan rather than per-token API billing.
-
-## Quickstart
+**1 · Connect** it to your OpenClaw agent and the accounts you use &nbsp;→&nbsp; **2 · Name** your assistant &nbsp;→&nbsp; **3 · Go** — open it in any browser and start handing off work.
 
 ```bash
 # clone & enter
@@ -136,7 +126,7 @@ uvicorn backend.app:app --port 8800   # → http://127.0.0.1:8800
 Prefer one command? `scripts/dev.sh` creates the venv, installs deps, and runs with hot-reload.
 
 <details>
-<summary>Docker</summary>
+<summary>Run with Docker</summary>
 
 ```bash
 cp .env.example .env           # set gateway WS + password
@@ -160,7 +150,22 @@ By default the port binds to `127.0.0.1` — **not reachable from the LAN**. The
 
 > ⚠️ The token gate covers HTTP only. The terminal PTY WebSocket is gated by your reverse proxy. Don't expose the workspace on an untrusted network on the strength of a token alone — **the terminal is a real shell.**
 
-## Config
+## Under the hood
+
+```
+OpenClaw gateway (ws://)
+        │
+  bridge.py  ←─── the load-bearing piece: WS → SSE, streams tool calls live
+        │
+  FastAPI /api  ─── per-tab adapters (email, calendar, inbox, notes, cron…)
+        │
+  Vanilla JS SPA  ─── frontend-overrides/ layered onto frontend-vendor/
+```
+
+The bridge is the heart of it: it renders every tool call the moment it fires — no polling, no page reload — while keeping you on your flat-rate OpenClaw plan rather than per-token API billing.
+
+<details>
+<summary>Configuration reference</summary>
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -169,6 +174,8 @@ By default the port binds to `127.0.0.1` — **not reachable from the LAN**. The
 | `WORKSPACE_SOURCE_URL` | upstream repo | Source link shown in the UI (AGPL §13). **Forks must point this at their own repo.** |
 | `OPENCLAW_GATEWAY_WS` | from `openclaw.json` | Gateway WebSocket URL |
 | `OPENCLAW_DEFAULT_MODEL` | `agents.list[0]` | Model for new chats |
+
+</details>
 
 ---
 

@@ -14,7 +14,9 @@ When a token IS configured every request must present it via:
   - workspace_auth   cookie
 
 Allowlist (always open, even with a token configured):
-  /api/health    — container health check
+  /api/health              — container health check
+  /api/followup/register   — bin/followup wrapper (enforces its own token,
+  /api/followup/complete     see backend/followup.py _authorized)
 
 Browser convenience: a successful ?token= auth sets the workspace_auth cookie
 (HttpOnly, SameSite=Lax) on the response so later requests work without it. The

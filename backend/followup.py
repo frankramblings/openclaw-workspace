@@ -157,6 +157,7 @@ def seed_text(label: str, *, exit_code=None, duration_s=None, tail: str = "",
     """The user-role message that seeds the follow-up turn. Line format is a
     CONTRACT with history_card() below — first three lines are marker, Task,
     Result."""
+    tail = tail or ""
     if overdue:
         result = "no completion signal by the deadline — the task never reported back"
     else:

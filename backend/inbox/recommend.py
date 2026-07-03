@@ -14,6 +14,7 @@ ALLOWED = {
     "asana": {"complete", "gary", "none"},
     "obsidian": {"reviewed", "dismiss", "add_asana", "complete", "gary", "none"},
     "documents": {"gary", "none"},
+    "entities": {"confirm", "reclassify", "not_entity", "gary", "none"},
 }
 
 # Strip the "YYYY-MM-DD - " prefix from a meeting-note filename so recurring
@@ -123,6 +124,7 @@ def build_triage_prompt(items: list[dict], cap: int = TRIAGE_CAP):
         "  asana: complete|gary|none",
         "  obsidian: add_asana|reviewed|gary|none",
         "  documents: gary|none",
+        "  entities: confirm|reclassify|not_entity|gary|none",
         "(reply = I should answer this email; gary = hand to my assistant "
         "with context. Prefer archive for newsletters/notifications, delete "
         "for obvious junk, none when unsure.)",

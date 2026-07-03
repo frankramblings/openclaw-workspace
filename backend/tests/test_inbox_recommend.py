@@ -178,3 +178,9 @@ def test_history_rec_learns_obsidian_by_meeting():
     stats = {"obsidian:mtg:brand team bi-weekly": {"add_asana": 5}}
     rec = recommend.history_rec(_obsidian(assignee=None), stats)
     assert rec["action"] == "add_asana" and rec["by"] == "history"
+
+
+def test_entities_allowed_actions():
+    from backend.inbox import recommend
+    assert "entities" in recommend.ALLOWED
+    assert {"confirm", "reclassify", "not_entity", "none"} <= recommend.ALLOWED["entities"]

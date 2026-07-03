@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 
 from .. import bridge, calendar_google, config, email_himalaya, sessions_store
 from ..research import _agent_turn
-from . import recommend, settings, state
+from . import entities_store, recommend, settings, state
 from .sources import asana, calendar, documents_stale, entities, gmail, obsidian, slack
 
 router = APIRouter()
@@ -196,6 +196,22 @@ async def action(payload: dict):
                 task_name, notes, due_on, settings.asana_section_gid())
             state.dismiss(source, item_id, "added_to_asana")
             undo = {"asana_delete_gid": gid}
+        elif source == "entities":
+            canon = meta.get("canon") or item_id
+            name = meta.get("name") or title or item_id
+            if act in ("confirm", "reclassify"):
+                etype = payload.get("type") or meta.get("guessType") or "other"
+                prior = entities_store.set_override(canon, etype, verified=True)
+                state.dismiss(source, item_id, "verified")
+                undo = {"entity_override": canon, "entity_prior": prior}
+            elif act == "not_entity":
+                prior = entities_store.set_override(canon, "noise", verified=True)
+                added = entities_store.append_denylist(name)
+                state.dismiss(source, item_id, "denylisted")
+                undo = {"entity_override": canon, "entity_prior": prior,
+                        "entity_denylist": name if added else None}
+            else:
+                return _bad(f"unknown action '{act}' for source '{source}'")
         else:
             return _bad(f"unknown action '{act}' for source '{source}'")
     except Exception as exc:  # noqa: BLE001 - surface to the card toast
@@ -244,6 +260,11 @@ async def items_undo(payload: dict):
             await calendar_google.rsvp(
                 undo["rsvp_event"], undo.get("rsvp_cal") or "primary",
                 "needsAction")
+        elif "entity_override" in undo:                # entity confirm/not_entity
+            entities_store.restore_override(
+                undo["entity_override"], undo.get("entity_prior"))
+            if undo.get("entity_denylist"):
+                entities_store.remove_denylist(undo["entity_denylist"])
         # 'local' undo (dismiss/snooze/reviewed/mark_read): nothing remote.
     except Exception as exc:  # noqa: BLE001
         # restore the history entry so the user can retry

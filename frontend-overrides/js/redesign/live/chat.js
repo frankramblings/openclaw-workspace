@@ -176,6 +176,9 @@ async function fetchThread(id, fallbackModel, name) {
       time: fmtTime(meta.timestamp),
       model: meta.model || model,
     };
+    // Backend rewrites followup seeds to a compact ⚙️ line; render as a
+    // centered system card, not a user bubble (surfaces.js chatMsg).
+    if (msg.role === 'user' && /^⚙️ Background task/.test(msg.text)) msg.sys = true;
     // Image attachments persisted by the backend sidecar (the gateway transcript
     // only keeps text) → rehydrate so sent images survive a refresh.
     if (Array.isArray(h.attachments) && h.attachments.length) {
@@ -745,6 +748,14 @@ async function _notifyTick() {
       || [...now].some((id) => !prevWorking.has(id)))) changed = true;
 
   chat.activeTurns = now;
+  // A turn started server-side in the thread you're LOOKING at (a follow-up
+  // promise firing) — attach the live tail so it streams in like any turn.
+  // liveES/turn guards: skip when a tail is already attached or this client
+  // is mid-send (its own POST is the stream).
+  if (!liveES && !turn && chat.activeId && now.has(chat.activeId)
+      && _isViewing(state, chat.activeId)) {
+    resumeIfActive(chat, state, chat.activeId);
+  }
   _prevActive = now;
   if (changed) { annotateConvRows(chat); runtime.render(); }
 }

@@ -89,13 +89,21 @@ def main(argv):
 
     tail = collections.deque(maxlen=TAIL_LINES)
     t0 = time.time()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True)
-    for line in proc.stdout:
-        sys.stdout.write(line)
-        sys.stdout.flush()
-        tail.append(line.rstrip("\n"))
-    rc = proc.wait()
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                errors="replace")
+        for line in proc.stdout:
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            tail.append(line.rstrip("\n"))
+        rc = proc.wait()
+    except OSError as exc:
+        # Launch failure (missing binary, permissions): the promise must
+        # still resolve NOW, not hours later via the deadline sweeper.
+        print(f"followup: could not run command: {exc}", file=sys.stderr)
+        tail.append(f"[followup wrapper] launch failed: {exc}")
+        rc = 127
 
     if pid:
         post(f"{base}/api/followup/complete", args.token,

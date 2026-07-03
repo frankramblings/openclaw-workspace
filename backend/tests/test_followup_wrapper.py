@@ -69,3 +69,21 @@ def test_wrapper_runs_command_even_when_backend_down():
     assert r.returncode == 0
     assert "work happened" in r.stdout
     assert "could not register" in r.stderr.lower()
+
+
+def test_wrapper_pings_completion_when_command_cannot_launch():
+    _Stub.calls = []
+    srv = _serve()
+    url = f"http://127.0.0.1:{srv.server_port}"
+    r = subprocess.run(
+        [sys.executable, WRAPPER, "run", "--url", url, "--token", "tok",
+         "--session", "abc123def456", "--label", "ghost", "--",
+         "/nonexistent/binary/hopefully", "--flag"],
+        capture_output=True, text=True, timeout=30)
+    srv.shutdown()
+    assert r.returncode == 127
+    paths = [c[0] for c in _Stub.calls]
+    assert paths == ["/api/followup/register", "/api/followup/complete"]
+    comp = _Stub.calls[1][1]
+    assert comp["exit_code"] == "127"
+    assert "launch failed" in comp["tail"]

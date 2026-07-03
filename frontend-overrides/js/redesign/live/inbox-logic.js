@@ -169,9 +169,12 @@ export function chipRowHtml(counts, opts, esc) {
 
 // Render the ordered action row for a card. `esc` is the caller's HTML-escaper.
 // primary → solid btn; ghost → ghost btn; icon → small affordance; x → the ✕.
-export function cardButtonsHtml(item, esc) {
+export function cardButtonsHtml(item, esc, opts) {
   const id = esc(String(item && item.id));
-  const btns = cardActions(item).map((b) => {
+  const moreOpen = !!(opts && opts.moreOpen);
+  const acts = cardActions(item);
+  const overflow = acts.filter((b) => b.role === 'overflow');
+  const btns = acts.filter((b) => b.role !== 'overflow').map((b) => {
     if (b.role === 'x') {
       return `<button class="inbox-x" data-act="dismiss" data-arg="${id}" title="Dismiss">✕</button>`;
     }
@@ -182,7 +185,16 @@ export function cardButtonsHtml(item, esc) {
     const cls = b.role === 'primary' ? 'btn-sm' : 'btn-sm ghost';
     return `<button class="${cls}" data-act="${esc(b.action)}" data-arg="${id}">${esc(b.label)}</button>`;
   });
-  return `<div class="card-actions">${btns.join('')}</div>`;
+  if (overflow.length) {
+    btns.push(`<button class="ic-btn more-btn" data-act="toggleMore" data-arg="${id}" title="More">⋯</button>`);
+  }
+  let overflowHtml = '';
+  if (overflow.length && moreOpen) {
+    const items = overflow.map((b) =>
+      `<button class="btn-sm ghost" data-act="${esc(b.action)}" data-arg="${id}">${esc(b.label)}</button>`).join('');
+    overflowHtml = `<div class="card-overflow">${items}</div>`;
+  }
+  return `<div class="card-actions">${btns.join('')}</div>${overflowHtml}`;
 }
 
 // --- snoozeUntilMs: maps a snooze preset to an absolute epoch-ms value ------

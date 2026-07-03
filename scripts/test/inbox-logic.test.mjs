@@ -129,7 +129,8 @@ const idEsc = (x) => String(x);
 const html = cardButtonsHtml(
   { id: 'a1', source: 'gmail', actions: ['archive', 'delete', 'dismiss', 'snooze'] }, idEsc);
 assert.ok(html.includes('data-act="archive"'), 'primary archive button present');
-assert.ok(html.includes('data-act="delete"'), 'ghost delete button present');
+assert.ok(html.includes('data-act="toggleMore"'), '⋯ More toggle present (delete now lives in overflow)');
+assert.ok(!html.includes('data-act="delete"'), 'delete is collapsed into overflow, not in the default row');
 assert.ok(html.includes('data-act="open"'), 'open affordance present');
 assert.ok(html.includes('data-act="snooze"'), 'snooze affordance present');
 assert.ok(html.includes('data-act="gary"'), 'hand-to-gary affordance present');
@@ -201,6 +202,22 @@ assert.equal(swipeIntent(40, 360), null,         'small right swipe → null');
   // Invariant main row: exactly one primary + the icon affordances, no ghost/overflow inline.
   const rowRoles = gmail.filter((a) => a.role === 'primary' || a.role === 'icon').map((a) => a.action);
   assert.deepEqual(rowRoles, ['archive', 'open', 'snooze', 'gary'], 'gmail main row is Primary+open+snooze+gary');
+}
+
+// --- Phase 1: cardButtonsHtml renders ⋯ toggle + collapsible overflow ---
+{
+  const esc = (x) => String(x);
+  const item = { id: 'g1', source: 'gmail', actions: ['archive', 'delete', 'dismiss', 'snooze'] };
+  const collapsed = cardButtonsHtml(item, esc);
+  assert.ok(collapsed.includes('data-act="toggleMore"'), 'renders a ⋯ More toggle when overflow exists');
+  assert.ok(!collapsed.includes('data-act="delete"'), 'overflow (delete) hidden while collapsed');
+
+  const open = cardButtonsHtml(item, esc, { moreOpen: true });
+  assert.ok(open.includes('data-act="delete"'), 'overflow (delete) shown when moreOpen');
+  assert.ok(open.includes('card-overflow'), 'overflow buttons live in a .card-overflow group');
+
+  const noOverflow = cardButtonsHtml({ id: 's1', source: 'slack', actions: ['mark_read', 'dismiss', 'snooze'] }, esc);
+  assert.ok(!noOverflow.includes('data-act="toggleMore"'), 'no ⋯ toggle when there is nothing to overflow');
 }
 
 console.log('inbox-logic: all assertions OK');

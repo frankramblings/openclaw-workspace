@@ -892,7 +892,11 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
     for m in data.get("history", []):
         if m.get("role") == "user":
             content = websearch.strip_context_block(m.get("content"))
-            m["content"] = terminals.strip_capability_note(content)
+            content = terminals.strip_capability_note(content)
+            # A followup seed is machinery, not something Frank typed — show
+            # the compact ⚙️ card line instead (frontend styles it).
+            card = followup.history_card(content)
+            m["content"] = card if card is not None else content
     # The terminal-attach flow records the prompt twice (the two messages differ
     # only in the stripped terminal-control note), so after stripping they're
     # identical — collapse a user message that duplicates the one just before it.

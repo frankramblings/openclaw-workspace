@@ -193,3 +193,77 @@ def history_card(content) -> str | None:
         elif line.startswith("Result: "):
             result = line[8:].strip()
     return f"⚙️ Background task · {label}" + (f" — {result}" if result else "")
+
+
+# --- HTTP surface ------------------------------------------------------------
+import hmac
+
+from fastapi import APIRouter, Form, Request
+from fastapi.responses import JSONResponse
+
+from . import sessions_store
+
+router = APIRouter()
+
+
+async def fire_followup(pid: str, *, overdue: bool = False) -> bool:
+    """Drive the follow-up turn for a resolved promise. Implemented in the
+    internal-turn task; the router spawns it fire-and-forget."""
+    return False   # replaced by the real driver (Task 3)
+
+
+def _authorized(request: Request) -> bool:
+    tok = config.followup_token()
+    if not tok:
+        return True
+    provided = (request.headers.get("x-workspace-token") or "").strip()
+    if not provided:
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            provided = auth[7:].strip()
+    return bool(provided) and hmac.compare_digest(provided.encode(), tok.encode())
+
+
+def _resolve_session(session: str) -> dict | None:
+    """Accept the SPA 12-hex id OR the gateway sessionKey."""
+    rec = sessions_store.get(session)
+    if rec:
+        return rec
+    sid = sessions_store.id_for_session_key(session)
+    return sessions_store.get(sid) if sid else None
+
+
+@router.post("/api/followup/register")
+async def register(request: Request, session: str = Form(...),
+                   label: str = Form(...),
+                   deadline_s: int = Form(default=14400)):
+    if not _authorized(request):
+        return JSONResponse(status_code=401, content={"error": "bad followup token"})
+    rec = _resolve_session(session.strip())
+    if not rec:
+        return JSONResponse(status_code=404, content={"error": "no such session"})
+    p = create_promise(rec["id"], rec["sessionKey"], label, deadline_s)
+    return {"id": p["id"]}
+
+
+@router.post("/api/followup/complete")
+async def complete(request: Request, id: str = Form(...),
+                   exit_code: int = Form(...),
+                   duration_s: float = Form(default=0.0),
+                   tail: str = Form(default="")):
+    if not _authorized(request):
+        return JSONResponse(status_code=401, content={"error": "bad followup token"})
+    if get_promise(id) is None:
+        return JSONResponse(status_code=404, content={"error": "no such promise"})
+    if not record_completion(id, exit_code=exit_code, duration_s=duration_s, tail=tail):
+        return {"ok": True, "ignored": True}
+    # Fire-and-forget: the sweeper (see sweeper()) is the crash backstop —
+    # a recorded-but-unfired completion is re-fired on the next sweep.
+    from . import app as app_module  # deferred: app imports this router
+    app_module._spawn(fire_followup(id))
+    return {"ok": True}
+
+
+@router.get("/api/followup/list")
+async def list_all():
+    return {"promises": list_promises()}

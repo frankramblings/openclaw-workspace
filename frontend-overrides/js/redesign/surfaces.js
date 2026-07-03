@@ -177,6 +177,9 @@ function renderRounds(m, s) {
 export function chatMsg(m, s) {
   const hasText = String(m.text || '').trim().length > 0;
   const paras = hasText ? renderMarkdown(m.text) : '';
+  if (m.role === 'user' && m.sys) {
+    return `<div class="msg-sys" data-msg-id="${esc(m.id)}"><span class="msg-sys-txt">${esc(m.text)}</span></div>`;
+  }
   if (m.role === 'user') {
     const attachHtml = renderAttachments(m.attach);
     return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div>`;

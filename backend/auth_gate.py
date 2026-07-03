@@ -20,7 +20,9 @@ but they DO send the workspace_auth cookie (from a prior HTTP ?token= auth) and
 can pass ?token= on the socket URL, so real clients authenticate the same way.
 
 Allowlist (always open, even with a token configured):
-  /api/health    — container health check
+  /api/health              — container health check
+  /api/followup/register   — bin/followup wrapper (enforces its own token,
+  /api/followup/complete     see backend/followup.py _authorized)
 
 Browser convenience: a successful ?token= auth sets the workspace_auth cookie
 (HttpOnly, SameSite=Lax) on the response so later requests work without it. The
@@ -35,7 +37,13 @@ from urllib.parse import parse_qs
 from . import config
 
 # Paths that bypass the auth gate regardless of token config.
-_ALLOWLIST: frozenset[str] = frozenset({"/api/health"})
+# The followup wrapper endpoints enforce their own bearer token in
+# backend/followup.py (_authorized) — see followup_token().
+_ALLOWLIST: frozenset[str] = frozenset({
+    "/api/health",
+    "/api/followup/register",
+    "/api/followup/complete",
+})
 
 _COOKIE_NAME = "workspace_auth"
 _COOKIE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days

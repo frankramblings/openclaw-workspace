@@ -176,6 +176,9 @@ async function fetchThread(id, fallbackModel, name) {
       time: fmtTime(meta.timestamp),
       model: meta.model || model,
     };
+    // Backend rewrites followup seeds to a compact ⚙️ line; render as a
+    // centered system card, not a user bubble (surfaces.js chatMsg).
+    if (msg.role === 'user' && /^⚙️ Background task/.test(msg.text)) msg.sys = true;
     // Image attachments persisted by the backend sidecar (the gateway transcript
     // only keeps text) → rehydrate so sent images survive a refresh.
     if (Array.isArray(h.attachments) && h.attachments.length) {
@@ -294,6 +297,7 @@ let liveES = null;           // active EventSource tail (resume / re-attach)
 let renderTimer = null;      // throttle handle for stream deltas
 let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
+let _notifyResuming = null;  // session id with a notifier-driven resume in flight
 
 function throttledRender() {
   if (renderTimer) return;
@@ -745,6 +749,19 @@ async function _notifyTick() {
       || [...now].some((id) => !prevWorking.has(id)))) changed = true;
 
   chat.activeTurns = now;
+  // A turn started server-side in the thread you're LOOKING at (a follow-up
+  // promise firing) — attach the live tail so it streams in like any turn.
+  // liveES/turn guards: skip when a tail is already attached or this client
+  // is mid-send (its own POST is the stream). _notifyResuming closes the race
+  // where resumeIfActive's initial fetch outlives the poll interval (liveES/turn
+  // are only set after it) and a second tick would fire a concurrent attach.
+  if (!liveES && !turn && chat.activeId && _notifyResuming !== chat.activeId
+      && now.has(chat.activeId) && _isViewing(state, chat.activeId)) {
+    _notifyResuming = chat.activeId;
+    resumeIfActive(chat, state, chat.activeId)
+      .catch(() => { /* non-fatal: next tick retries */ })
+      .finally(() => { _notifyResuming = null; });
+  }
   _prevActive = now;
   if (changed) { annotateConvRows(chat); runtime.render(); }
 }

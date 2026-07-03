@@ -267,6 +267,10 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .code-card pre{margin:0;padding:13px 14px;font-family:var(--mono);font-size:13px;line-height:1.7;color:#cfd3da;overflow-x:auto}
 .tok-kw{color:var(--violet)} .tok-fn{color:var(--gold)} .tok-str{color:var(--green)} .tok-com{color:var(--faint)} .tok-prop{color:var(--blue)}
 .msg-user-wrap{display:flex;justify-content:flex-end;margin-bottom:30px}
+/* Followup system card: the ⚙️ seed line for a background-task follow-up —
+   machinery, not a user message, so centered + muted. */
+.msg-sys{display:flex;justify-content:center;margin:10px 0}
+.msg-sys-txt{font-size:12px;color:var(--faint);background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--bd);border-radius:999px;padding:4px 12px;max-width:82%;text-align:center;line-height:1.4}
 .msg-user{max-width:520px;background:var(--tealtint);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent);border-radius:12px 12px 4px 12px;padding:13px 16px}
 .msg-attachments{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
 .msg-attach-img{max-width:100%;max-height:280px;border-radius:8px;display:block;object-fit:contain}

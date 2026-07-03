@@ -45,6 +45,9 @@ export function mChatMsg(m, s) {
   // Assistant text is markdown — render it the same way the desktop thread does
   // (headings, lists, bold, links, code) instead of dumping raw markup as plain text.
   const paras = hasText ? renderMarkdown(m.text) : '';
+  if (m.role === 'user' && m.sys) {
+    return `<div class="msg-sys" data-msg-id="${esc(m.id)}"><span class="msg-sys-txt">${esc(m.text)}</span></div>`;
+  }
   if (m.role === 'user') {
     const attachHtml = (m.attach && m.attach.length) ? m.attach.map((a) => {
       const isImg = /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(a.name || '');

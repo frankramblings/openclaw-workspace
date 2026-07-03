@@ -228,6 +228,13 @@ def auth_token() -> str | None:
     return os.environ.get("WORKSPACE_AUTH_TOKEN") or None
 
 
+def followup_token() -> str | None:
+    """Token bin/followup must present to register/complete promises. Falls
+    back to the workspace auth token so a token-gated deploy is closed by
+    default; unset both → open (local single-user default)."""
+    return os.environ.get("FOLLOWUP_TOKEN") or auth_token()
+
+
 # --- Workspace user (human, not the agent) ------------------------------------
 # Used by /api/auth/status.  Env > "admin" (the default neutral value).
 # Set WORKSPACE_USER to your chosen display name (e.g. "alex") if you wish.

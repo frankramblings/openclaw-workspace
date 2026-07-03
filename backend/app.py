@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, monitor, sessions_store, terminals, websearch
+from . import bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -75,6 +75,8 @@ async def _lifespan(_app: FastAPI):
     task = asyncio.create_task(monitor.run())
     # Non-blocking semantic-search index build (delayed; swallows failures).
     search_task = asyncio.create_task(_startup_reindex())
+    # Followup promises: deadline + crash-recovery backstop.
+    followup_task = asyncio.create_task(followup.sweeper())
     yield
     # Reap every PTY shell so its `bash -i` child (and descendants) get
     # SIGHUP→SIGKILL right now. Otherwise they ignore the SIGTERM systemd sends
@@ -90,9 +92,24 @@ async def _lifespan(_app: FastAPI):
             pass
     task.cancel()
     search_task.cancel()
-    for t in (task, search_task):
+    followup_task.cancel()
+    for t in (task, search_task, followup_task):
         with contextlib.suppress(asyncio.CancelledError):
             await t
+
+
+# Fire-and-forget background tasks. asyncio holds only a WEAK reference to a
+# bare create_task(), so a long one can be garbage-collected mid-flight; keep
+# a strong ref here and drop it when it finishes.
+_BG_TASKS: set = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    """create_task + keep a strong reference until the task completes."""
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+    return task
 
 
 app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)
@@ -119,6 +136,7 @@ app.include_router(calendar_router)
 app.include_router(settings_router)
 app.include_router(notes_router)
 app.include_router(documents_router)
+app.include_router(followup.router)
 app.include_router(uploads_router)
 app.include_router(research_router)
 app.include_router(emoji_router)
@@ -949,7 +967,11 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
     for m in data.get("history", []):
         if m.get("role") == "user":
             content = websearch.strip_context_block(m.get("content"))
-            m["content"] = terminals.strip_capability_note(content)
+            content = terminals.strip_capability_note(content)
+            # A followup seed is machinery, not something Frank typed — show
+            # the compact ⚙️ card line instead (frontend styles it).
+            card = followup.history_card(content)
+            m["content"] = card if card is not None else content
     # The terminal-attach flow records the prompt twice (the two messages differ
     # only in the stripped terminal-control note), so after stripping they're
     # identical — collapse a user message that duplicates the one just before it.

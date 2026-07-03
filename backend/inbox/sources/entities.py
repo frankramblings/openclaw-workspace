@@ -8,6 +8,9 @@ written back by the action router via `entities_store` — see backend/inbox/ent
 from __future__ import annotations
 
 import re
+import time
+
+from .. import entities_store, settings
 
 # Keyword precedence: event/other first, then project, then org; person only if
 # it looks like an actual "First Last" name. Ambiguous → other (never person).
@@ -45,3 +48,53 @@ def guess_type(name: str) -> str:
         # Two TitleCase tokens with no other signal: treat as a name.
         return "person"
     return "other"
+
+
+_BLOCK = re.compile(r"^##\s+(.+?)\n```yaml\n(.*?)\n```", re.MULTILINE | re.DOTALL)
+
+
+def _field(block: str, key: str) -> str:
+    m = re.search(rf"^{key}:\s*\"?(.*?)\"?\s*$", block, re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+def map_items(pending_md: str, overrides: dict, denylist: set,
+              now_ms: int) -> list[dict]:
+    items: list[dict] = []
+    for heading, block in _BLOCK.findall(pending_md or ""):
+        name = (_field(block, "name") or heading).strip()
+        canon = entities_store.canon_name(name)
+        ov = overrides.get(canon)
+        if (ov and ov.get("verified")) or canon in denylist:
+            continue  # decided already — never resurface
+        first_seen = _field(block, "first_seen_in")
+        refs = re.findall(r"-\s+\"([^\"]+)\"", block)
+        guess = guess_type(name)
+        items.append({
+            "id": canon,
+            "source": "entities",
+            "title": name,
+            "subtitle": f"guessed: {guess}",
+            "snippet": first_seen,
+            "ts": now_ms,
+            "ageHours": 0.0,
+            "score": 40,
+            "meta": {"canon": canon, "guessType": guess, "name": name,
+                     "evidence": refs, "file": first_seen},
+            "actions": ["confirm", "reclassify", "not_entity",
+                        "open", "gary", "snooze", "dismiss"],
+        })
+    items.sort(key=lambda i: i["title"].lower())
+    return items
+
+
+async def fetch() -> list[dict]:
+    path = settings.entities_dir() / "People_Pending.md"
+    try:
+        pending_md = path.read_text(encoding="utf-8")
+    except Exception:
+        return []
+    overrides = entities_store.load_overrides()
+    denylist = entities_store.load_denylist()
+    return map_items(pending_md, overrides, denylist,
+                     now_ms=int(time.time() * 1000))

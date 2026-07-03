@@ -366,6 +366,12 @@ root.addEventListener('click', (e) => {
       if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; }
       render();
     }
+    // Clicking outside a card also closes an open ⋯ overflow / snooze menu.
+    if (state.inboxSnoozeFor || state.inboxMoreFor) {
+      state.inboxSnoozeFor = null;
+      state.inboxMoreFor = null;
+      render();
+    }
     return;
   }
   // The composer Send button is driven off pointerup (below), not click, to

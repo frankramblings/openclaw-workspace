@@ -297,6 +297,12 @@ export const actions = {
     state.inboxSnoozeFor = state.inboxSnoozeFor === String(id) ? null : String(id);
     runtime.render();
   },
+  // Toggle the ⋯ overflow row for a card (pure UI; no network call).
+  toggleMore: (id) => {
+    const state = runtime.state;
+    state.inboxMoreFor = state.inboxMoreFor === String(id) ? null : String(id);
+    runtime.render();
+  },
   openSnooze: (id) => {
     runtime.state.inboxSnoozeFor = String(id);
     runtime.render();

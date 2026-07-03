@@ -141,7 +141,7 @@ export function mInbox(s) {
       <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
         <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>
         <div class="body"${mBodyAttr(it)}>${esc(stripMd(it.body))}</div>
-        <div class="actions">${cardButtonsHtml(it, esc)}</div>
+        <div class="actions">${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}</div>
       </div>
     </div>`;
   };
@@ -150,7 +150,7 @@ export function mInbox(s) {
       <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span></div>
       <div class="body"${mBodyAttr(it)}>${esc(stripMd(it.body))}</div>
       <button class="m-ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
-      <div class="actions">${cardButtonsHtml(it, esc)}</div>
+      <div class="actions">${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}</div>
     </div>`;
 
   const mReaderBody = (r) => {

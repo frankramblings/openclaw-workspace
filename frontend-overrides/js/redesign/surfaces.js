@@ -566,7 +566,7 @@ function inboxSurface(s) {
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
       <div class="body"${bodyAttr(it)}>${esc(stripMd(it.body))}</div>
       ${when(it.source === 'obsidian' && it.rec && it.rec.due, `<div class="ai-pill">✦ task · due ${esc((it.rec || {}).due || '')}</div>`)}
-      ${cardButtonsHtml(it, esc)}
+      ${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}
       ${snoozeMenu(it)}
     </div>`;
   const fyiCard = (it) => `
@@ -574,7 +574,7 @@ function inboxSurface(s) {
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
       <div class="body"${bodyAttr(it)}>${esc(stripMd(it.body))}</div>
       <button class="ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
-      ${cardButtonsHtml(it, esc)}
+      ${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}
       ${snoozeMenu(it)}
     </div>`;
 

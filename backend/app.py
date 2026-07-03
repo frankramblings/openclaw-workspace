@@ -84,9 +84,18 @@ async def _lifespan(_app: FastAPI):
             await t
 
 
-def _spawn(coro):
-    """Fire-and-forget: spawn a coroutine without waiting for it."""
-    return asyncio.create_task(coro)
+# Fire-and-forget background tasks. asyncio holds only a WEAK reference to a
+# bare create_task(), so a long one can be garbage-collected mid-flight; keep
+# a strong ref here and drop it when it finishes.
+_BG_TASKS: set = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    """create_task + keep a strong reference until the task completes."""
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+    return task
 
 
 app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)

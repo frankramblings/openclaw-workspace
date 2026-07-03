@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, monitor, sessions_store, terminals, websearch
+from . import bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -35,7 +35,6 @@ from .cron import router as cron_router
 from .documents import router as documents_router
 from .email_himalaya import router as email_router
 from .emoji_proxy import router as emoji_router
-from .followup import router as followup_router
 from .inbox import router as inbox_router
 from .jobs import router as jobs_router
 from .memory import router as memory_router
@@ -76,10 +75,13 @@ async def _lifespan(_app: FastAPI):
     task = asyncio.create_task(monitor.run())
     # Non-blocking semantic-search index build (delayed; swallows failures).
     search_task = asyncio.create_task(_startup_reindex())
+    # Followup promises: deadline + crash-recovery backstop.
+    followup_task = asyncio.create_task(followup.sweeper())
     yield
     task.cancel()
     search_task.cancel()
-    for t in (task, search_task):
+    followup_task.cancel()
+    for t in (task, search_task, followup_task):
         with contextlib.suppress(asyncio.CancelledError):
             await t
 
@@ -122,7 +124,7 @@ app.include_router(calendar_router)
 app.include_router(settings_router)
 app.include_router(notes_router)
 app.include_router(documents_router)
-app.include_router(followup_router)
+app.include_router(followup.router)
 app.include_router(uploads_router)
 app.include_router(research_router)
 app.include_router(emoji_router)

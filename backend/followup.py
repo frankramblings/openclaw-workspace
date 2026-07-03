@@ -288,6 +288,10 @@ async def fire_followup(pid: str, *, overdue: bool = False,
                 mark(pid, "failed", error="session busy for 30m")
                 return False
             await _sleep(_BUSY_POLL_S)
+        # A competing fire (endpoint spawn vs. sweeper, or a prior retry loop
+        # elsewhere) may have resolved this promise while we waited.
+        if (get_promise(pid) or {}).get("state") != "pending":
+            return False
         run_info: dict = {}
         task = app_module._start_turn_recorder(
             session_key,
@@ -363,11 +367,62 @@ async def complete(request: Request, id: str = Form(...),
         return {"ok": True, "ignored": True}
     # Fire-and-forget: the sweeper (see sweeper()) is the crash backstop —
     # a recorded-but-unfired completion is re-fired on the next sweep.
-    from . import app as app_module  # deferred: app imports this router
-    app_module._spawn(fire_followup(id))
+    # _spawn_fire is the shared chokepoint with the sweeper, so a sweep that
+    # already claimed this pid (or a duplicate complete ping) can't double-fire.
+    _spawn_fire(id)
     return {"ok": True}
 
 
 @router.get("/api/followup/list")
 async def list_all():
     return {"promises": list_promises()}
+
+
+# --- sweeper (deadline + crash backstop) --------------------------------------
+_SWEEP_INTERVAL_S = 30.0
+# Promise ids with a fire_followup in flight THIS process — stops the sweeper
+# double-firing what the complete endpoint already spawned. The promise state
+# machine (mark() only transitions from pending) makes a lost race harmless.
+_INFLIGHT: set[str] = set()
+
+
+def _spawn_fire(pid: str, *, overdue: bool = False) -> bool:
+    """Single chokepoint for launching fire_followup: skips pids already in
+    flight THIS process (endpoint spawn racing an overdue sweep) and holds
+    the in-flight marker until the fire resolves. Returns True if spawned."""
+    if pid in _INFLIGHT:
+        return False
+    _INFLIGHT.add(pid)
+
+    async def _run():
+        try:
+            await fire_followup(pid, overdue=overdue)
+        finally:
+            _INFLIGHT.discard(pid)
+
+    from . import app as app_module  # deferred: app imports this module
+    app_module._spawn(_run())
+    return True
+
+
+def _sweep_once() -> list[str]:
+    """Spawn fire_followup for every due promise not already in flight.
+    Returns the pids spawned (tests key off this)."""
+    spawned: list[str] = []
+    for pid, overdue in due_promises(_now_ms()):
+        if _spawn_fire(pid, overdue=overdue):
+            spawned.append(pid)
+    return spawned
+
+
+async def sweeper(_sleep=asyncio.sleep) -> None:
+    """30s loop. First pass runs shortly after boot so promises left pending
+    across a restart (recorded-but-unfired, or already past deadline) fire
+    without waiting for new traffic."""
+    await _sleep(10.0)  # let the gateway monitor/warm socket settle first
+    while True:
+        try:
+            _sweep_once()
+        except Exception:  # noqa: BLE001 - the backstop must never die
+            _log.warning("followup sweep failed", exc_info=True)
+        await _sleep(_SWEEP_INTERVAL_S)

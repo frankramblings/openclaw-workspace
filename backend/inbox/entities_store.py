@@ -9,12 +9,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from pathlib import Path
 
 from . import settings
 
 OVERRIDES_NAME = "People_Pending_Overrides.json"
 DENYLIST_NAME = "Entity_Denylist.md"
+_LOCK = threading.Lock()
 
 
 def _base(base: Path | None) -> Path:
@@ -56,26 +58,28 @@ def _save_overrides(base: Path, data: dict[str, dict]) -> None:
 
 def set_override(canon: str, etype: str, verified: bool = True,
                  base: Path | None = None) -> dict | None:
-    b = _base(base)
-    data = load_overrides(b)
-    c = canon_name(canon)
-    prior = dict(data[c]) if c in data else None
-    data[c] = {"type": etype, "verified": bool(verified)}
-    _save_overrides(b, data)
-    return prior
+    with _LOCK:
+        b = _base(base)
+        data = load_overrides(b)
+        c = canon_name(canon)
+        prior = dict(data[c]) if c in data else None
+        data[c] = {"type": etype, "verified": bool(verified)}
+        _save_overrides(b, data)
+        return prior
 
 
 def restore_override(canon: str, prior: dict | None,
                      base: Path | None = None) -> None:
-    b = _base(base)
-    data = load_overrides(b)
-    c = canon_name(canon)
-    if prior is None:
-        data.pop(c, None)
-    else:
-        data[c] = {"type": str(prior.get("type", "person")),
-                   "verified": bool(prior.get("verified", False))}
-    _save_overrides(b, data)
+    with _LOCK:
+        b = _base(base)
+        data = load_overrides(b)
+        c = canon_name(canon)
+        if prior is None:
+            data.pop(c, None)
+        else:
+            data[c] = {"type": str(prior.get("type", "person")),
+                       "verified": bool(prior.get("verified", False))}
+        _save_overrides(b, data)
 
 
 def _denylist_lines(base: Path) -> list[str]:
@@ -96,30 +100,32 @@ def load_denylist(base: Path | None = None) -> set[str]:
 
 
 def append_denylist(name: str, base: Path | None = None) -> bool:
-    b = _base(base)
-    if canon_name(name) in load_denylist(b):
-        return False
-    path = _base(b) / DENYLIST_NAME
-    body = ""
-    try:
-        body = path.read_text(encoding="utf-8")
-    except Exception:
-        body = "# Entity Denylist (Noise / Suppress)\n\n"
-    if body and not body.endswith("\n"):
-        body += "\n"
-    body += f"- {name.strip()}\n"
-    _atomic_write(path, body)
-    return True
+    with _LOCK:
+        b = _base(base)
+        if canon_name(name) in load_denylist(b):
+            return False
+        path = _base(b) / DENYLIST_NAME
+        body = ""
+        try:
+            body = path.read_text(encoding="utf-8")
+        except Exception:
+            body = "# Entity Denylist (Noise / Suppress)\n\n"
+        if body and not body.endswith("\n"):
+            body += "\n"
+        body += f"- {name.strip()}\n"
+        _atomic_write(path, body)
+        return True
 
 
 def remove_denylist(name: str, base: Path | None = None) -> None:
-    b = _base(base)
-    path = _base(b) / DENYLIST_NAME
-    target = canon_name(name)
-    kept = []
-    for line in _denylist_lines(b):
-        m = re.match(r"^-\s+(.+)$", line.strip())
-        if m and canon_name(m.group(1)) == target:
-            continue
-        kept.append(line)
-    _atomic_write(path, "\n".join(kept) + ("\n" if kept else ""))
+    with _LOCK:
+        b = _base(base)
+        path = _base(b) / DENYLIST_NAME
+        target = canon_name(name)
+        kept = []
+        for line in _denylist_lines(b):
+            m = re.match(r"^-\s+(.+)$", line.strip())
+            if m and canon_name(m.group(1)) == target:
+                continue
+            kept.append(line)
+        _atomic_write(path, "\n".join(kept) + ("\n" if kept else ""))

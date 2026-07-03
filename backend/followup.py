@@ -195,21 +195,125 @@ def history_card(content) -> str | None:
     return f"⚙️ Background task · {label}" + (f" — {result}" if result else "")
 
 
+# --- internal turn driver ------------------------------------------------------
+import asyncio
+import logging
+
+from . import bridge, sessions_store
+
+_log = logging.getLogger(__name__)
+
+# Wait-for-free-session poll interval / cap, and no-ack retry backoff.
+_BUSY_POLL_S = 2.0
+_BUSY_CAP_S = 1800.0
+_RETRY_DELAYS_S = (30.0, 60.0)
+
+
+async def _turn_source(seed: str, session_key: str, rec: dict, run_info: dict,
+                       card_cmd: str, card_out: str):
+    """SSE source for ONE follow-up turn, drained by app._record_turn (which
+    owns begin/end_turn, event_store writes, and the terminal [DONE]). Mirrors
+    the essential parts of chat_stream's _drive_turn: gateway relay + the
+    late-reply salvage for message-tool deliveries that land post-lifecycle."""
+    from . import app as app_module  # deferred: app imports this module
+
+    yield bridge._sse({"type": "tool_start", "tool": "followup",
+                       "tool_id": "followup", "command": card_cmd, "round": 1})
+    yield bridge._sse({"type": "tool_output", "tool": "followup",
+                       "tool_id": "followup", "exit_code": 0, "output": card_out})
+    text_seen = False
+    try:
+        async for chunk in bridge.stream_turn(seed, session_key=session_key,
+                                              model_ref=app_module._model_ref(rec),
+                                              run_info=run_info):
+            if "[DONE]" in chunk:
+                continue  # recorder lands the terminal DONE after late-reply
+            frame = app_module._sse_frame(chunk)
+            if isinstance(frame, dict) and frame.get("delta") \
+                    and not frame.get("thinking"):
+                text_seen = True
+            yield chunk
+        if not text_seen:
+            late = await app_module._late_reply(session_key, seed)
+            if late:
+                yield bridge._sse({"type": "agent_step"})  # fresh bubble
+                yield bridge._sse({"delta": late})
+    except Exception as exc:  # noqa: BLE001 - never leave the recorder hanging
+        yield bridge._sse({"type": "tool_output", "tool": "followup",
+                           "tool_id": "followup",
+                           "output": f"follow-up turn error: {exc!r}",
+                           "exit_code": 1})
+
+
+async def fire_followup(pid: str, *, overdue: bool = False,
+                        _sleep=asyncio.sleep) -> bool:
+    """Drive the follow-up turn for promise `pid` through app's detached
+    recorder. Waits out a user turn in progress, retries when the gateway
+    never acks, and resolves the promise state. Never raises."""
+    from . import app as app_module  # deferred: app imports this module
+
+    p = get_promise(pid)
+    if not p or p.get("state") != "pending":
+        return False
+    rec = sessions_store.get(p["session_id"])
+    if not rec or rec.get("archived"):
+        mark(pid, "failed", error="session missing or archived")
+        return False
+    session_key = rec["sessionKey"]
+    seed = seed_text(p["label"], exit_code=p.get("exit_code"),
+                     duration_s=p.get("duration_s"), tail=p.get("tail") or "",
+                     overdue=overdue)
+    if overdue:
+        card_out = "no completion signal by the deadline — asking Gary to investigate"
+    else:
+        card_out = (f"exit {p.get('exit_code')} after "
+                    f"{_fmt_duration(p.get('duration_s'))} — asking Gary to report")
+    card_cmd = f"background task finished · {p['label']}"
+
+    for attempt_delay in (0.0,) + _RETRY_DELAYS_S:
+        if attempt_delay:
+            await _sleep(attempt_delay)
+        # Wait for the session to be free. _start_turn_recorder would silently
+        # attach us to an in-flight USER turn otherwise (its guard returns the
+        # existing task without calling our source factory). The cap is
+        # measured on the wall clock (not accumulated per-iteration) so a
+        # zero-delay test `_sleep` can't spin through 30 nominal minutes in a
+        # handful of real milliseconds.
+        wait_start = time.monotonic()
+        while True:
+            prev = app_module._TURN_TASKS.get(session_key)
+            if prev is None or prev.done():
+                break
+            if time.monotonic() - wait_start >= _BUSY_CAP_S:
+                mark(pid, "failed", error="session busy for 30m")
+                return False
+            await _sleep(_BUSY_POLL_S)
+        run_info: dict = {}
+        task = app_module._start_turn_recorder(
+            session_key,
+            lambda: _turn_source(seed, session_key, rec, run_info,
+                                 card_cmd, card_out))
+        try:
+            await task
+        except Exception:  # noqa: BLE001 - recorder failures land as retries
+            pass
+        if run_info.get("timing", {}).get("t_ack"):
+            mark(pid, "overdue" if overdue else "completed")
+            return True
+        # No ack: gateway down, or our start raced a user turn and the guard
+        # attached us to THEIRS (run_info untouched either way) → retry.
+        _log.warning("followup %s: turn not acked (attempt), retrying", pid)
+    mark(pid, "failed", error="gateway never acked after retries")
+    return False
+
+
 # --- HTTP surface ------------------------------------------------------------
 import hmac
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import JSONResponse
 
-from . import sessions_store
-
 router = APIRouter()
-
-
-async def fire_followup(pid: str, *, overdue: bool = False) -> bool:
-    """Drive the follow-up turn for a resolved promise. Implemented in the
-    internal-turn task; the router spawns it fire-and-forget."""
-    return False   # replaced by the real driver (Task 3)
 
 
 def _authorized(request: Request) -> bool:

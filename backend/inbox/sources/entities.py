@@ -68,7 +68,7 @@ def map_items(pending_md: str, overrides: dict, denylist: set,
         if (ov and ov.get("verified")) or canon in denylist:
             continue  # decided already — never resurface
         first_seen = _field(block, "first_seen_in")
-        refs = re.findall(r"-\s+\"([^\"]+)\"", block)
+        refs = re.findall(r"-\s+\"([^\"]+)\"", block.partition("source_refs:")[2])
         guess = guess_type(name)
         items.append({
             "id": canon,

@@ -58,3 +58,34 @@ def test_map_items_shape_and_guess():
     assert "confirm" in auto["actions"] and "not_entity" in auto["actions"]
     assert by_name["Allie Joel"]["meta"]["guessType"] == "person"
     assert auto["ts"] <= NOW and auto["ageHours"] >= 0.0
+
+
+PENDING_WITH_ALIASES = '''# People Pending Verification
+
+## Jayde Powell
+```yaml
+name: "Jayde Powell"
+type: person
+first_seen_in: "99_Ingest/Processed/gmail_important_latest.jsonl#L2"
+verified: false
+aliases:
+  - "JP"
+  - "J.P."
+source_refs:
+  - "99_Ingest/Processed/gmail_important_latest.jsonl#L2"
+  - "99_Ingest/Processed/gmail_important_latest.jsonl#L5"
+```
+'''
+
+
+def test_evidence_scoped_to_source_refs():
+    items = entities.map_items(PENDING_WITH_ALIASES, {}, set(), now_ms=NOW)
+    assert len(items) == 1
+    item = items[0]
+    assert item["title"] == "Jayde Powell"
+    evidence = item["meta"]["evidence"]
+    assert "JP" not in evidence
+    assert "J.P." not in evidence
+    assert "99_Ingest/Processed/gmail_important_latest.jsonl#L2" in evidence
+    assert "99_Ingest/Processed/gmail_important_latest.jsonl#L5" in evidence
+    assert len(evidence) == 2

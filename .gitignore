@@ -45,3 +45,9 @@ frontend-overrides/.redesign.css.*
 
 # Personal native iOS shell (carries private tailnet host; not for public repo)
 /native/
+
+# Internal planning / handoff material (superpowers plans, specs, handoffs).
+# Not user docs, and it carries private tailnet hostnames/IPs + /home paths, so
+# it's excluded from the publish-bound repo. Already-tracked files must also be
+# untracked once: `git rm -r --cached docs/superpowers/`.
+/docs/superpowers/

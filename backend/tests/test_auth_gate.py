@@ -161,6 +161,72 @@ class TestAuthFeatures:
         assert r.json()["auth_required"] is True
 
 
+# ---------------------------------------------------------------------------
+# Part B — auth gate covers WebSockets (the terminal shell is a WS)
+# ---------------------------------------------------------------------------
+
+def _ws_app():
+    """Minimal Starlette app with one WS echo route behind the auth gate — keeps
+    the test off the real terminal handler (which would fork a PTY)."""
+    from starlette.applications import Starlette
+    from starlette.routing import WebSocketRoute
+    from starlette.middleware import Middleware
+    from backend import auth_gate
+
+    async def ws_echo(websocket):
+        await websocket.accept()
+        await websocket.send_text("ok")
+        await websocket.close()
+
+    return Starlette(routes=[WebSocketRoute("/ws", ws_echo)],
+                     middleware=[Middleware(auth_gate.AuthGateMiddleware)])
+
+
+def test_websocket_open_when_no_token(monkeypatch):
+    from starlette.testclient import TestClient
+    monkeypatch.setattr(config, "auth_token", lambda: None)
+    client = TestClient(_ws_app())
+    with client.websocket_connect("/ws") as ws:
+        assert ws.receive_text() == "ok"
+
+
+def test_websocket_rejected_without_credential(monkeypatch):
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+    monkeypatch.setattr(config, "auth_token", lambda: "secret-token")
+    client = TestClient(_ws_app())
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws"):
+            pass
+
+
+def test_websocket_rejected_with_wrong_token(monkeypatch):
+    from starlette.testclient import TestClient
+    from starlette.websockets import WebSocketDisconnect
+    monkeypatch.setattr(config, "auth_token", lambda: "secret-token")
+    client = TestClient(_ws_app())
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws?token=nope"):
+            pass
+
+
+def test_websocket_accepted_with_query_token(monkeypatch):
+    from starlette.testclient import TestClient
+    monkeypatch.setattr(config, "auth_token", lambda: "secret-token")
+    client = TestClient(_ws_app())
+    with client.websocket_connect("/ws?token=secret-token") as ws:
+        assert ws.receive_text() == "ok"
+
+
+def test_websocket_accepted_with_cookie(monkeypatch):
+    from starlette.testclient import TestClient
+    monkeypatch.setattr(config, "auth_token", lambda: "secret-token")
+    client = TestClient(_ws_app())
+    client.cookies.set("workspace_auth", "secret-token")
+    with client.websocket_connect("/ws") as ws:
+        assert ws.receive_text() == "ok"
+
+
 def test_streaming_response_not_buffered_through_gate(monkeypatch):
     """The gate must not buffer streaming bodies (chat SSE is load-bearing).
     Drive a multi-chunk StreamingResponse through the ASGI middleware and assert

@@ -173,3 +173,17 @@ def unsubscribe(session_key: str, queue: "asyncio.Queue") -> None:
             subs.discard(queue)
             if not subs:
                 _SUBSCRIBERS.pop(session_key, None)
+
+
+def drop_session(session_key: str) -> None:
+    """Forget all in-memory state for a session (event log, seq counter, turn
+    markers, subscribers). Called when a chat is deleted: the per-session maps
+    are otherwise never evicted, so on a long-uptime process they accumulate
+    every session's buffer for the interpreter's lifetime. Idempotent."""
+    with _LOCK:
+        _EVENTS.pop(session_key, None)
+        _NEXT_SEQ.pop(session_key, None)
+        _TURN_START.pop(session_key, None)
+        _TURN_ACTIVE.pop(session_key, None)
+        _TURN_START_MS.pop(session_key, None)
+        _SUBSCRIBERS.pop(session_key, None)

@@ -58,7 +58,16 @@ def _safe_filename(name: str | None) -> str:
 
 @router.post("/api/export/pdf")
 async def export_pdf(payload: dict = Body(...)):
-    """Render client-supplied transcript HTML to a downloadable PDF."""
+    """Render client-supplied transcript HTML to a downloadable PDF.
+
+    Security posture (deliberate): headless Chrome renders caller-supplied HTML
+    with normal network access, so a remote subresource (`<img src=http://...>`)
+    is fetched server-side — an SSRF vector if the port is reachable by an
+    untrusted party. We accept this: the app's boundary is the tailnet perimeter
+    (loopback bind + `tailscale serve`), and when WORKSPACE_AUTH_TOKEN is set the
+    auth gate also covers this route. If the app is ever exposed more broadly,
+    revisit (e.g. route Chrome through a dead proxy to block remote fetches while
+    keeping loopback + data: images)."""
     html = (payload or {}).get("html")
     if not isinstance(html, str) or not html.strip():
         return JSONResponse({"error": "missing html"}, status_code=400)

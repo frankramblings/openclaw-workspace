@@ -20,6 +20,13 @@
       <string>__PORT__</string>
       <string>--log-level</string>
       <string>warning</string>
+      <!-- The app always holds long-lived SSE/WS streams (jobs feed, chat tail,
+           terminals) that never drain on their own, so cap the graceful-shutdown
+           wait: otherwise uvicorn stalls the full window on every stop and launchd
+           SIGKILLs it. Turns persist + resume by cursor and clients auto-reconnect,
+           so an abrupt cut is safe. -->
+      <string>--timeout-graceful-shutdown</string>
+      <string>2</string>
     </array>
 
     <key>WorkingDirectory</key>

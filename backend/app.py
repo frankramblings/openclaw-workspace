@@ -76,6 +76,18 @@ async def _lifespan(_app: FastAPI):
     # Non-blocking semantic-search index build (delayed; swallows failures).
     search_task = asyncio.create_task(_startup_reindex())
     yield
+    # Reap every PTY shell so its `bash -i` child (and descendants) get
+    # SIGHUP→SIGKILL right now. Otherwise they ignore the SIGTERM systemd sends
+    # the whole cgroup, holding the unit open until TimeoutStopSec forces a
+    # SIGKILL of everything — the intermittent restart hang / 502 window. We call
+    # PtySession.close() directly (not close_session) so we DON'T also unlink the
+    # persistent per-session image-attachment registry; scrollback/cwd are
+    # already flushed by close() and restored on the next attach.
+    for _sess in list(getattr(terminals, "_sessions", {}).values()):
+        try:
+            _sess.close()
+        except Exception:  # noqa: BLE001 - best-effort teardown, never block exit
+            pass
     task.cancel()
     search_task.cancel()
     for t in (task, search_task):
@@ -121,6 +133,21 @@ app.include_router(export_pdf_router)
 # only the browser-side fetch died, while the codex run kept burning.
 _ACTIVE_RUNS: dict[str, dict] = {}
 
+# Fire-and-forget background tasks (memory auto-extract, gateway-side session
+# delete, on-demand reindex). asyncio holds only a WEAK reference to a bare
+# create_task(), so a long one can be garbage-collected mid-flight; keep a
+# strong ref here and drop it when it finishes.
+_BG_TASKS: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> asyncio.Task:
+    """create_task + keep a strong reference until the task completes."""
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+    return task
+
+
 # session_key -> the detached asyncio.Task that drives ONE turn's frames into
 # the resumable event_store. The recorder is deliberately decoupled from any
 # browser: the gateway agent keeps working (and we keep recording) even after
@@ -150,7 +177,7 @@ async def _record_turn(session_key: str, source) -> None:
                 event_store.append(session_key, chunk)
             except Exception:  # noqa: BLE001 - event log issue can't break the turn
                 pass
-            if "[DONE]" in chunk:
+            if _is_done_frame(chunk):
                 done_emitted = True
     finally:
         if not done_emitted:
@@ -256,6 +283,20 @@ def _thinking_for_speed(speed: str | None) -> str | None:
 
 
 _DONE_SSE = "data: [DONE]\n\n"
+
+
+def _is_done_frame(chunk: str) -> bool:
+    """True only for the exact terminal marker `data: [DONE]` — NOT for a delta
+    whose text merely CONTAINS the literal "[DONE]". Frames are single
+    `data: <body>` SSE messages; comparing the stripped body exactly stops a
+    real reply (or a message about this very code) that mentions [DONE] from
+    being dropped mid-stream or cutting the tail short."""
+    for line in chunk.splitlines():
+        if line.startswith("data:") and line[5:].strip() == "[DONE]":
+            return True
+    return False
+
+
 _TITLE_SESSION_KEY = f"{config.web_session_prefix()}-titler"
 # "{base} 1:56:53 PM" / "{base} 14:05:09" — the SPA's placeholder name.
 _PLACEHOLDER_RE = re.compile(r".+\s\d{1,2}:\d{2}:\d{2}(\s?[AP]M)?$", re.I)
@@ -616,6 +657,26 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     """
     rec = sessions_store.get(session) if session else None
     session_key = rec["sessionKey"] if rec else config.web_session_key()
+
+    # One turn per session at a time. The detached recorder already guards
+    # against a second concurrent turn for this sessionKey, so if we proceeded
+    # here the new message's _drive_turn would never run — the gateway would
+    # never see it and this POST would silently tail the PREVIOUS turn as if it
+    # were the answer. Tell the client instead (a fresh chat and a second unsaved
+    # chat both share config.web_session_key(), so this also covers double-send).
+    prev_turn = _TURN_TASKS.get(session_key)
+    if prev_turn is not None and not prev_turn.done():
+        async def _busy():
+            yield bridge._sse({"type": "tool_start", "tool": "bridge",
+                               "tool_id": "busy", "command": "turn in progress",
+                               "round": 1})
+            yield bridge._sse({"type": "tool_output", "tool": "bridge",
+                               "tool_id": "busy", "exit_code": 1,
+                               "output": "A turn is already running for this chat — "
+                                         "wait for it to finish, then resend."})
+            yield _DONE_SSE
+        return StreamingResponse(_busy(), media_type="text/event-stream")
+
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
     chat_attachments = _resolve_attachments(attachments)  # image uploads → vision
     # Persist the image refs (keyed by the SPA session id) so they survive a
@@ -698,7 +759,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                                                   attachments=turn_attachments,
                                                   run_info=run_info,
                                                   thinking=_thinking_for_speed((rec or {}).get("speed"))):
-                if "[DONE]" in chunk:
+                if _is_done_frame(chunk):
                     continue  # hold DONE until the title settles, then send our own
                 frame = _sse_frame(chunk)
                 if isinstance(frame, dict):
@@ -772,8 +833,18 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                         sessions_store.update(rec["id"], name=ai)
                 except Exception:  # noqa: BLE001 - keep the first-chars fallback
                     title_task.cancel()
+            # Touch the session's `updated` stamp so the semantic-search reindex
+            # re-embeds this turn. It's otherwise bumped only on metadata edits
+            # (title/rename/archive), so every message after a chat is first
+            # titled would be invisible to search — the incremental reindex keys
+            # its skip check on exactly this stamp.
+            if rec:
+                try:
+                    sessions_store.update(rec["id"])
+                except Exception:  # noqa: BLE001 - never break the turn close
+                    pass
             # Auto-extract memories (gated inside: toggle pref + cooldown).
-            asyncio.create_task(maybe_auto_extract(session_key))
+            _spawn(maybe_auto_extract(session_key))
             yield _DONE_SSE
 
     # Detach the turn from any single reader: a background recorder drains the
@@ -799,7 +870,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                     replayed_max = max(replayed_max, int(eid))
                 except (TypeError, ValueError):
                     pass
-                if "[DONE]" in payload:
+                if _is_done_frame(payload):
                     return
             while True:
                 try:
@@ -817,7 +888,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                 if seq is not None:
                     replayed_max = seq
                 yield f"id: {eid}\n{payload}"
-                if "[DONE]" in payload:
+                if _is_done_frame(payload):
                     return
         finally:
             event_store.unsubscribe(session_key, queue)
@@ -865,7 +936,11 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
         # reliably for every provider, so read the newest window from it.
         # (Tail-only: a transcript longer than the window won't lazy-load older
         # pages — an acceptable trade vs. silently losing the assistant's replies.)
-        mapped = await bridge.fetch_history(sess["sessionKey"], limit=max(limit, 1000))
+        # Floor at 1000 so a reload gets the full window (not a truncated tail);
+        # cap at 1000 because chat.history returns EMPTY for limits above ~1000
+        # (a blank thread), so limit>1000 must not pass through.
+        mapped = await bridge.fetch_history(sess["sessionKey"],
+                                            limit=min(max(limit, 1000), 1000))
         data = {"history": mapped.get("history", []),
                 "model": mapped.get("model"),
                 "hasMore": False, "nextCursor": None}
@@ -927,7 +1002,8 @@ async def delete_session(session_id: str):
     rec = sessions_store.get(session_id)
     ok = sessions_store.delete(session_id)
     if ok and rec and rec.get("sessionKey"):
-        asyncio.create_task(_delete_gateway_session(rec["sessionKey"]))
+        event_store.drop_session(rec["sessionKey"])  # free the in-memory event log
+        _spawn(_delete_gateway_session(rec["sessionKey"]))
     return {"ok": ok}
 
 
@@ -1104,7 +1180,7 @@ async def search_chats(q: str = "", limit: int = 20):
 async def search_reindex(force: bool = False):
     """Kick a background reindex and return immediately (a full run makes many
     gateway + Voyage calls, so it must not block the request)."""
-    asyncio.create_task(chat_search.reindex(force=force))
+    _spawn(chat_search.reindex(force=force))
     return {"status": "started"}
 
 

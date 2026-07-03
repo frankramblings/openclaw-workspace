@@ -13,6 +13,12 @@ When a token IS configured every request must present it via:
   - ?token=<token>   query parameter
   - workspace_auth   cookie
 
+WebSockets are gated too (the terminal shell at /api/terminal/.../stream is a
+WebSocket — leaving it open would mean the token protects everything EXCEPT the
+most dangerous endpoint). Browsers can't set custom headers on a WS handshake,
+but they DO send the workspace_auth cookie (from a prior HTTP ?token= auth) and
+can pass ?token= on the socket URL, so real clients authenticate the same way.
+
 Allowlist (always open, even with a token configured):
   /api/health    — container health check
 
@@ -77,8 +83,9 @@ def _credential(scope) -> tuple[str | None, bool]:
 
 
 class AuthGateMiddleware:
-    """Pure-ASGI gate. Rejects unauthenticated HTTP requests when
-    WORKSPACE_AUTH_TOKEN is set; otherwise a transparent passthrough.
+    """Pure-ASGI gate. Rejects unauthenticated HTTP requests AND WebSocket
+    handshakes when WORKSPACE_AUTH_TOKEN is set; otherwise a transparent
+    passthrough.
 
     Reads the token at request-time (not construction) so tests can monkeypatch
     config.auth_token between cases without rebuilding the app.
@@ -88,7 +95,8 @@ class AuthGateMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
+        stype = scope["type"]
+        if stype not in ("http", "websocket"):          # lifespan etc. — untouched
             return await self.app(scope, receive, send)
 
         token = config.auth_token()
@@ -100,10 +108,16 @@ class AuthGateMiddleware:
 
         provided, from_query = _credential(scope)
         if not provided or not _token_matches(provided, token):
-            await _send_401(send)
+            if stype == "websocket":
+                await _reject_ws(receive, send)         # decline handshake → 403
+            else:
+                await _send_401(send)
             return
 
-        if not from_query:
+        # Authenticated. A WebSocket handshake can't carry a Set-Cookie the way
+        # an HTTP response can, so just forward it — the browser already holds
+        # the workspace_auth cookie (or passed ?token= on the socket URL).
+        if stype == "websocket" or not from_query:
             return await self.app(scope, receive, send)
 
         # Authenticated via ?token= → set the cookie by rewriting ONLY the
@@ -119,6 +133,15 @@ class AuthGateMiddleware:
             await send(message)
 
         return await self.app(scope, receive, send_with_cookie)
+
+
+async def _reject_ws(receive, send) -> None:
+    """Decline a WebSocket handshake carrying a missing/invalid token. Consume
+    the guaranteed-first `websocket.connect` event, then close BEFORE accept —
+    uvicorn turns a pre-accept close into an HTTP 403, so the socket (e.g. the
+    terminal shell) never opens. 1008 = policy violation."""
+    await receive()
+    await send({"type": "websocket.close", "code": 1008})
 
 
 async def _send_401(send) -> None:

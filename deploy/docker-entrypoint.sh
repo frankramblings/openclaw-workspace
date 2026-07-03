@@ -31,4 +31,10 @@ if [[ -n "${WORKSPACE_AGENT_NAME:-}" ]]; then
   fi
 fi
 
-exec uvicorn backend.app:app --host 0.0.0.0 --port "$PORT"
+# --timeout-graceful-shutdown 2: the app always holds long-lived SSE/WS streams
+# (jobs feed, chat tail, terminals) that never drain on their own, so without a
+# short cap uvicorn waits the full default window on every `docker stop` and gets
+# SIGKILLed. The app is built for abrupt stream death (turns persist + resume by
+# cursor; clients auto-reconnect), so 2s is safe and keeps restarts quick.
+exec uvicorn backend.app:app --host 0.0.0.0 --port "$PORT" \
+  --timeout-graceful-shutdown 2

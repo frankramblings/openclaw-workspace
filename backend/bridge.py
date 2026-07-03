@@ -429,7 +429,8 @@ async def run_text(prompt: str, session_key: str) -> str:
     return "".join(chunks).strip()
 
 
-async def fetch_history(session_key: str, limit: int = 200) -> dict:
+async def fetch_history(session_key: str, limit: int = 200,
+                        strict: bool = False) -> dict:
     """Read a session's transcript from the brain via chat.history and map it to
     the SPA's history shape: {"history": [{role, content}], "model": str|None}.
 
@@ -440,13 +441,23 @@ async def fetch_history(session_key: str, limit: int = 200) -> dict:
 
     Routed through the warm socket when it's free (so the late-reply poll and
     chat-open history loads stop opening a fresh socket each time).
+
+    By default a WS error or `ok:false` degrades to an empty transcript — right
+    for UI reads (a blank thread beats a 500). Callers that must not confuse
+    "genuinely empty" with "read failed" pass strict=True to get a raised
+    RuntimeError instead: the search reindexer relies on this so a transient
+    gateway blip can't be mistaken for an emptied session and wipe its index.
     """
     try:
         res = await _warm_request("chat.history",
                                   {"sessionKey": session_key, "limit": limit})
-    except Exception:  # noqa: BLE001 - transient WS trouble → empty history
+    except Exception as exc:  # noqa: BLE001 - transient WS trouble → empty history
+        if strict:
+            raise RuntimeError(f"chat.history request failed: {exc!r}") from exc
         return {"history": [], "model": None}
     if not res.get("ok"):
+        if strict:
+            raise RuntimeError(f"chat.history returned not-ok: {res!r}")
         return {"history": [], "model": None}
     return _map_history((res.get("payload") or {}).get("messages") or [])
 
@@ -569,7 +580,10 @@ def _map_history(messages: list) -> dict:
         # renders the last round_text as the reply bubble — unless it's already the
         # trailing text, so the terse "Done — …" note no longer wins on reload.
         last_nonempty = next((t for t in reversed(round_texts) if t.strip()), "")
-        if reply_text and reply_text.strip() and reply_text != last_nonempty:
+        # Compare stripped: a mcp__openclaw__message reply that matches the
+        # trailing text block except for surrounding whitespace is the SAME
+        # reply — appending it would render the bubble twice on reload.
+        if reply_text and reply_text.strip() and reply_text.strip() != last_nonempty.strip():
             round_texts.append(reply_text)
         meta["round_texts"] = round_texts
         if reply_text and reply_text.strip():

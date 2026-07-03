@@ -178,8 +178,23 @@ async def _reindex_session(conn: sqlite3.Connection, session: dict,
         if row is not None and row[0] == updated:
             return "skipped", 0
 
-    hist = await bridge.fetch_history(session["sessionKey"], limit=_HISTORY_LIMIT)
+    # strict=True: a gateway/WS failure raises instead of returning an empty
+    # transcript. Without this a transient blip looks like "0 chunks" and the
+    # DELETE below would wipe this session's good index (and re-stamp it current,
+    # so it's never rebuilt). The caller catches and skips on the raise.
+    hist = await bridge.fetch_history(session["sessionKey"], limit=_HISTORY_LIMIT,
+                                      strict=True)
     chunks = _extract_chunks(session, hist.get("history") or [])
+    if not chunks:
+        # Defense in depth for the non-raising empty case (e.g. gateway returns
+        # ok:true with an empty payload mid-restart): if we previously indexed
+        # real content for this session, treat the sudden emptiness as suspect
+        # and skip rather than delete. A truly-emptied transcript is impossible
+        # here (transcripts only grow), so this never strands live content.
+        prior = conn.execute(
+            "SELECT msg_count FROM indexed WHERE session_id=?", (sid,)).fetchone()
+        if prior is not None and prior[0]:
+            return "skipped", 0
 
     embeddings: list[list[float]] = []
     if chunks:
@@ -226,7 +241,7 @@ async def reindex(force: bool = False) -> dict:
 
     async with _reindex_lock:
         conn = _connect()
-        indexed = total_chunks = skipped = 0
+        indexed = total_chunks = skipped = pruned = 0
         active_ids: set[str] = set()
         try:
             for s in sessions_store.list_sessions():
@@ -247,7 +262,6 @@ async def reindex(force: bool = False) -> dict:
             # Prune sessions that are no longer present-and-active (deleted or
             # newly archived) so search never returns dead hits that open a
             # missing/hidden conversation.
-            pruned = 0
             cur = conn.execute("SELECT session_id FROM indexed")
             for (sid,) in cur.fetchall():
                 if sid not in active_ids:
@@ -258,7 +272,15 @@ async def reindex(force: bool = False) -> dict:
                 conn.commit()
         finally:
             conn.close()
-        _invalidate_matrix_cache()
+            # Only bust the cached matrix when the db actually changed — the
+            # common every-30-min "nothing new" run must not force a full
+            # re-read + re-vstack of every embedding on the next search. Runs in
+            # `finally` (not after it) so a mid-prune exception, which may have
+            # left committed per-session writes behind, still invalidates. The
+            # db-mtime cache key can't be relied on here: WAL commits don't touch
+            # the main db file's mtime until a checkpoint.
+            if indexed or pruned:
+                _invalidate_matrix_cache()
         log.info("chat_search: reindex done — indexed=%d chunks=%d skipped=%d pruned=%d",
                  indexed, total_chunks, skipped, pruned)
         return {"sessions_indexed": indexed, "chunks": total_chunks,
@@ -326,7 +348,10 @@ async def search(query: str, limit: int = 20) -> list[dict]:
     query = (query or "").strip()
     if not query:
         return []
-    matrix, meta = _load_matrix()
+    # _load_matrix reads sqlite and (on a cache miss) vstacks the whole embedding
+    # matrix — offload it so a cold search can't stall the event loop (and every
+    # in-flight SSE chat stream) while it runs.
+    matrix, meta = await asyncio.to_thread(_load_matrix)
     if matrix is None or not meta:
         return []
     q_emb = await _embed([query], "query")

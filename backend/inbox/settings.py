@@ -239,6 +239,30 @@ def calendar_enabled() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Entities
+# ---------------------------------------------------------------------------
+
+def entities_enabled() -> bool:
+    """Entities classifier. Env INBOX_ENTITIES_ENABLED > inbox.json > True."""
+    env = os.environ.get("INBOX_ENTITIES_ENABLED")
+    if env is not None:
+        return env.lower() not in ("0", "false", "no", "off")
+    val = _coll("entities").get("enabled")
+    return val if val is not None else True   # default ON
+
+
+def entities_dir() -> Path:
+    """Entities directory.
+    Env INBOX_ENTITIES_DIR > inbox.json entities_dir >
+    /home/frank/.openclaw/workspace/OpenClaw_Vault/20_Reference/Knowledge/Entities.
+    """
+    raw = (os.environ.get("INBOX_ENTITIES_DIR")
+           or inbox_config().get("entities_dir")
+           or "/home/frank/.openclaw/workspace/OpenClaw_Vault/20_Reference/Knowledge/Entities")
+    return Path(raw).expanduser()
+
+
+# ---------------------------------------------------------------------------
 # Enabled collector list
 # ---------------------------------------------------------------------------
 

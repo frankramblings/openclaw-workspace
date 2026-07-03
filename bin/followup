@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Run a background task and have Gary follow up in the web chat when it ends.
+
+    followup run --session <id> --label "render 566" [--deadline 4h] -- cmd args...
+
+Registers a promise with the workspace backend, runs the command (output
+streams through untouched), then pings completion with the exit code and the
+last 50 output lines — success AND failure both trigger Gary's follow-up turn.
+If the backend is unreachable the command still runs (the work must never
+depend on the messenger); the backend's deadline sweeper is the backstop.
+
+Env: FOLLOWUP_URL (default http://127.0.0.1:8800),
+     FOLLOWUP_TOKEN or WORKSPACE_AUTH_TOKEN (sent as X-Workspace-Token).
+Session: accepts the web chat's 12-hex id or the gateway sessionKey.
+Exit code: the wrapped command's, always.
+"""
+import argparse
+import collections
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+RETRY_DELAYS_S = (2, 5, 10)
+TAIL_LINES = 50
+
+
+def post(url, token, form, timeout=10):
+    """POST form-encoded with retries. Returns parsed JSON or None."""
+    data = urllib.parse.urlencode(form).encode()
+    for i, delay in enumerate((0,) + RETRY_DELAYS_S):
+        if delay:
+            time.sleep(delay)
+        req = urllib.request.Request(url, data=data, method="POST")
+        if token:
+            req.add_header("X-Workspace-Token", token)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode() or "{}")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            err = exc
+    print(f"followup: giving up after retries: {err}", file=sys.stderr)
+    return None
+
+
+def parse_deadline(text):
+    """'90s'/'45m'/'4h'/'2d' → seconds. '0' disables. Bare digits = seconds."""
+    m = re.fullmatch(r"(\d+)([smhd]?)", text.strip())
+    if not m:
+        raise argparse.ArgumentTypeError(f"bad deadline: {text!r}")
+    n, unit = int(m.group(1)), m.group(2)
+    return n * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
+
+
+def main(argv):
+    if "--" not in argv:
+        print("followup: missing '--' before the command", file=sys.stderr)
+        return 2
+    split = argv.index("--")
+    own, cmd = argv[:split], argv[split + 1:]
+    ap = argparse.ArgumentParser(prog="followup")
+    sub = ap.add_subparsers(dest="sub", required=True)
+    run = sub.add_parser("run")
+    run.add_argument("--session", required=True)
+    run.add_argument("--label", required=True)
+    run.add_argument("--deadline", type=parse_deadline, default=4 * 3600)
+    run.add_argument("--url", default=os.environ.get("FOLLOWUP_URL",
+                                                     "http://127.0.0.1:8800"))
+    run.add_argument("--token", default=os.environ.get("FOLLOWUP_TOKEN")
+                     or os.environ.get("WORKSPACE_AUTH_TOKEN"))
+    args = ap.parse_args(own)
+    if not cmd:
+        print("followup: empty command after '--'", file=sys.stderr)
+        return 2
+
+    base = args.url.rstrip("/")
+    reg = post(f"{base}/api/followup/register", args.token,
+               {"session": args.session, "label": args.label,
+                "deadline_s": args.deadline})
+    pid = (reg or {}).get("id")
+    if not pid:
+        print("followup: could not register promise — running the command "
+              "anyway (no follow-up will fire)", file=sys.stderr)
+
+    tail = collections.deque(maxlen=TAIL_LINES)
+    t0 = time.time()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True)
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        tail.append(line.rstrip("\n"))
+    rc = proc.wait()
+
+    if pid:
+        post(f"{base}/api/followup/complete", args.token,
+             {"id": pid, "exit_code": rc,
+              "duration_s": round(time.time() - t0, 1),
+              "tail": "\n".join(tail)[-4096:]})
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

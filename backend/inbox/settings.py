@@ -290,4 +290,6 @@ def enabled_collectors() -> list[str]:
         out.append("documents")
     if calendar_enabled():
         out.append("calendar")
+    if entities_enabled():
+        out.append("entities")
     return out

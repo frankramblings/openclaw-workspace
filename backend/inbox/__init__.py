@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from .. import bridge, calendar_google, config, email_himalaya, sessions_store
 from ..research import _agent_turn
 from . import recommend, settings, state
-from .sources import asana, calendar, documents_stale, gmail, obsidian, slack
+from .sources import asana, calendar, documents_stale, entities, gmail, obsidian, slack
 
 router = APIRouter()
 
@@ -30,6 +30,7 @@ SOURCES = {
     "obsidian": obsidian.fetch,
     "documents": documents_stale.fetch,
     "calendar": calendar.fetch,
+    "entities": entities.fetch,
 }
 
 # Per-source cache: (ts_ms, items). Cleared by actions on that source.

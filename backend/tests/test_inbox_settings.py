@@ -315,6 +315,7 @@ class TestEnabledCollectors:
         monkeypatch.setenv("INBOX_OBSIDIAN_ENABLED", "false")
         monkeypatch.setenv("INBOX_DOCUMENTS_ENABLED", "false")
         monkeypatch.setenv("INBOX_CALENDAR_ENABLED", "false")
+        monkeypatch.setenv("INBOX_ENTITIES_ENABLED", "false")
         assert settings.enabled_collectors() == []
 
     def test_order_is_stable(self, tmp_path, monkeypatch):
@@ -449,6 +450,7 @@ class TestCapabilitiesInbox:
         monkeypatch.setenv("INBOX_OBSIDIAN_ENABLED", "false")
         monkeypatch.setenv("INBOX_DOCUMENTS_ENABLED", "false")
         monkeypatch.setenv("INBOX_CALENDAR_ENABLED", "false")
+        monkeypatch.setenv("INBOX_ENTITIES_ENABLED", "false")
         result = caps.snapshot()
         assert result["inbox"]["available"] is False
         assert "collector" in result["inbox"]["reason"]
@@ -486,3 +488,9 @@ def test_asana_section_gid_from_inbox_json(monkeypatch):
     monkeypatch.delenv("ASANA_SECTION_GID", raising=False)
     monkeypatch.setattr(settings, "_coll", lambda name: {"section_gid": "JSONSEC"})
     assert settings.asana_section_gid() == "JSONSEC"
+
+
+def test_entities_in_enabled_collectors(monkeypatch):
+    from backend.inbox import settings
+    monkeypatch.setattr(settings, "entities_enabled", lambda: True)
+    assert "entities" in settings.enabled_collectors()

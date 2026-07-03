@@ -220,4 +220,16 @@ assert.equal(swipeIntent(40, 360), null,         'small right swipe → null');
   assert.ok(!noOverflow.includes('data-act="toggleMore"'), 'no ⋯ toggle when there is nothing to overflow');
 }
 
+// --- Phase 2: entity card view model ---
+{
+  const { entityView } = await import('../../frontend-overrides/js/redesign/live/inbox-logic.js');
+  const v = entityView({ source: 'entities', id: 'automation suite',
+    meta: { guessType: 'project', canon: 'automation suite', name: 'Automation Suite' } });
+  assert.equal(v.confirmLabel, 'Confirm project', 'primary confirms the guess');
+  const chipTypes = v.chips.map((c) => c.type);
+  assert.ok(!chipTypes.includes('project'), 'reclassify chips exclude the current guess');
+  assert.deepEqual(chipTypes, ['person', 'org', 'event', 'other'],
+    'reclassify chips are the other four types in order');
+}
+
 console.log('inbox-logic: all assertions OK');

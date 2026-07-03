@@ -4,7 +4,7 @@
 
 import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
-import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml } from './live/inbox-logic.js';
+import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import {
   AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES,
@@ -580,6 +580,26 @@ function inboxSurface(s) {
       ${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}
       ${snoozeMenu(it)}
     </div>`;
+  // Bespoke card for the `entities` source: no cardActions/cardButtonsHtml (the
+  // backend actions[] list is confirm/reclassify/not_entity, not the universal
+  // clear-verb set) — confirm is the primary, the other four types are ghost
+  // reclassify chips, and the corner ✕ means "not an entity" (not dismiss).
+  const entityCard = (it) => {
+    const v = entityView(it);
+    return `
+    <div class="inbox-card entity-card">
+      <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">ENTITY</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· guessed: ${esc(v.guess)}</span><button class="inbox-x" data-act="notEntity" data-arg="${esc(it.id)}" title="Not an entity">${I.x()}</button></div>
+      <div class="body">${esc(stripMd(it.body))}</div>
+      <div class="card-actions">
+        <button class="btn-sm" data-act="confirm" data-arg="${esc(it.id)}">${esc(v.confirmLabel)}</button>
+        ${v.chips.map((c) => `<button class="btn-sm ghost" data-act="reclassify" data-arg="${esc(it.id + ':' + c.type)}">${esc(c.label)}</button>`).join('')}
+        <button class="ic-btn" data-act="open" data-arg="${esc(it.id)}" title="Open source">↗</button>
+        <button class="ic-btn" data-act="snooze" data-arg="${esc(it.id)}" title="Snooze">⏰</button>
+      </div>
+      ${snoozeMenu(it)}
+    </div>`;
+  };
+  const inboxCard = (it) => it.source === 'entities' ? entityCard(it) : (it.group === 'fyi' ? fyiCard(it) : needsCard(it));
 
   return `
   <div class="inbox-col" style="position:relative">
@@ -596,8 +616,8 @@ function inboxSurface(s) {
         esc)}
     </div>
     <div class="inbox-scroll">
-      ${when(needs.length > 0, `<div class="grp-label"><span class="lbl needs">NEEDS YOU</span><span class="n">${needs.length}</span><div class="sect-divider"></div></div>${map(needs, needsCard)}`)}
-      ${when(fyi.length > 0, `<div class="grp-label fyi"><span class="lbl fyilbl">AI-SUGGESTED · FYI</span><span class="n">${fyi.length}</span><div class="sect-divider"></div></div>${map(fyi, fyiCard)}`)}
+      ${when(needs.length > 0, `<div class="grp-label"><span class="lbl needs">NEEDS YOU</span><span class="n">${needs.length}</span><div class="sect-divider"></div></div>${map(needs, inboxCard)}`)}
+      ${when(fyi.length > 0, `<div class="grp-label fyi"><span class="lbl fyilbl">AI-SUGGESTED · FYI</span><span class="n">${fyi.length}</span><div class="sect-divider"></div></div>${map(fyi, inboxCard)}`)}
       ${when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed. Nothing left to triage.</div></div>`)}
     </div>
     ${when(!!s.inboxEditFor, `

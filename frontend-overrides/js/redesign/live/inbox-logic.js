@@ -15,11 +15,29 @@ const SRC_STYLE = {
   OBSIDIAN: { srcColor: 'var(--purple, #b794f6)', srcBg: 'rgba(183,148,246,.12)' },
   DOCUMENTS: { srcColor: 'var(--blue, #6aa6f0)', srcBg: 'rgba(106,166,240,.12)' },
   CALENDAR: { srcColor: 'var(--teal, #45d3c7)', srcBg: 'rgba(69,211,199,.12)' },
+  ENTITIES: { srcColor: 'var(--violet)', srcBg: 'rgba(169,155,245,.12)' },
 };
 const MUTED = { srcColor: 'var(--muted)', srcBg: 'rgba(255,255,255,.06)' };
 
 export function srcStyle(source) {
   return SRC_STYLE[String(source || '').toUpperCase()] || MUTED;
+}
+
+// --- entityView: pure view model for the `entities` source card -------------
+// Backend guesses a type (person/org/event/project/other) for a name found in
+// the workspace; the card confirms the guess or reclassifies to one of the
+// other four types. No guess-type chip is duplicated in `chips`.
+const ENTITY_TYPES = ['person', 'org', 'event', 'project', 'other'];
+const ENTITY_LABEL = { person: 'Person', org: 'Org', event: 'Event', project: 'Project', other: 'Other' };
+
+export function entityView(item) {
+  const guess = ((item && item.meta && item.meta.guessType) || 'other');
+  return {
+    name: (item && item.meta && item.meta.name) || (item && item.title) || '',
+    guess,
+    confirmLabel: `Confirm ${guess}`,
+    chips: ENTITY_TYPES.filter((t) => t !== guess).map((t) => ({ type: t, label: ENTITY_LABEL[t] })),
+  };
 }
 
 // Human labels for backend action verbs. Unknown verbs are humanized

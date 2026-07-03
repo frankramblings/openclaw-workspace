@@ -36,6 +36,8 @@ function toItem(it) {
   const src = String(it.source || '').toUpperCase();
   const style = srcStyle(it.source);
   const rec = it.rec || null;
+  const meta = it.meta || {};
+  const isEntity = it.source === 'entities';
   // FYI = the AI/heuristic wants this gone (archive). Everything else needs you.
   const group = rec && rec.action === 'archive' ? 'fyi' : 'needs';
   return {
@@ -43,15 +45,18 @@ function toItem(it) {
     source: it.source,            // for action dispatch
     actions: Array.isArray(it.actions) ? it.actions : [],
     rec,                          // { action, by, reason, confidence }
-    meta: it.meta || {},
+    meta,
     group,
     src,
     srcColor: style.srcColor,
     srcBg: style.srcBg,
-    who: it.title || '',
+    // entities: name lives on meta.name (title mirrors it); body is the
+    // evidence line the guesser found, not the "guessed: <type>" subtitle
+    // (that's rendered separately via entityView's `guess`).
+    who: isEntity ? (meta.name || it.title || '') : (it.title || ''),
     time: ageLabel(it.ageHours),
     unread: !!(it.meta && it.meta.unread),
-    body: it.snippet || it.subtitle || '',
+    body: isEntity ? (meta.evidence || '') : (it.snippet || it.subtitle || ''),
     // labels used by the mobile mock card
     primary: primaryLabel(it.actions),
     secondary: 'Mark read',
@@ -148,11 +153,56 @@ async function runRsvp(id, response) {
   runtime.render();
 }
 
+// Entity triage: confirm the guessed type, reclassify to a different type, or
+// flag as not-an-entity. Optimistic remove → POST → revert on failure,
+// undo-able toast on success — mirrors runAction/runRsvp above.
+async function runEntity(id, action, type) {
+  const state = runtime.state;
+  const item = findItem(state, id);
+  if (!item) return;
+  const meta = item.meta || {};
+  const payload = {
+    source: 'entities', id: String(id), action,
+    title: meta.name || item.who || '', meta,
+  };
+  if (type) payload.type = type;
+
+  markDismissed(state, id);
+  runtime.render();
+  try {
+    const r = await apiJson('/api/items/action', payload);
+    if (r && r.ok === false) throw new Error(r.error || 'action failed');
+    if (r && r.undoTs) {
+      state._lastUndoTs = r.undoTs;
+      state.inboxToast = { msg: action === 'not_entity' ? 'Marked not an entity' : 'Verified', undoTs: r.undoTs };
+    }
+  } catch (e) {
+    unmarkDismissed(state, id);
+    state.inboxToast = { msg: "Couldn't save — retry", undoTs: null };
+    runtime.render();
+    return;
+  }
+  runtime.render();
+}
+
 export const actions = {
   // Calendar invite RSVP — write Yes/Maybe/No straight to Google Calendar.
   rsvpYes: (id) => runRsvp(id, 'accepted'),
   rsvpMaybe: (id) => runRsvp(id, 'tentative'),
   rsvpNo: (id) => runRsvp(id, 'declined'),
+
+  // Entity triage (entityCard in surfaces.js): confirm the guessed type,
+  // reclassify to one of the other four, or flag as not-an-entity. arg for
+  // reclassify is "<id>:<type>" (mirrors the "<id>:<preset>" convention used
+  // by snoozeFor below).
+  confirm: (id) => runEntity(id, 'confirm'),
+  reclassify: (arg) => {
+    const sep = String(arg || '').indexOf(':');
+    const id = sep > -1 ? arg.slice(0, sep) : String(arg);
+    const type = sep > -1 ? arg.slice(sep + 1) : '';
+    return runEntity(id, 'reclassify', type);
+  },
+  notEntity: (id) => runEntity(id, 'not_entity'),
 
   // Obsidian capture: create an Asana task from the surfaced commitment.
   // Alias so the backend action name `add_asana` (the primary card button's

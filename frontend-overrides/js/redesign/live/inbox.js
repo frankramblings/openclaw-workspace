@@ -197,9 +197,18 @@ export const actions = {
     const sep = s.lastIndexOf(':');
     const id = sep > -1 ? s.slice(0, sep) : s;
     const type = sep > -1 ? s.slice(sep + 1) : '';
+    // Mobile's generic card buttons dispatch the bare id (no ":type" suffix)
+    // for entries in an item's raw actions[] list, so `type` comes back empty
+    // here. Without a target type the backend would confirm the current guess
+    // as verified — a mislabeled write of possibly-wrong data — so do nothing.
+    if (!type) return;
     return runEntity(id, 'reclassify', type);
   },
   notEntity: (id) => runEntity(id, 'not_entity'),
+  // Alias so the backend action name `not_entity` (mobile's generic card
+  // buttons dispatch the raw actions[] string, no camel-casing step) also
+  // reaches this — desktop's entityCard already calls it via `notEntity`.
+  not_entity: (id) => actions.notEntity(id),
 
   // Obsidian capture: create an Asana task from the surfaced commitment.
   // Alias so the backend action name `add_asana` (the primary card button's
@@ -360,12 +369,15 @@ export const actions = {
   },
 
   // Commit a snooze preset: optimistic dismiss + POST + revert on failure.
-  // arg format: "<id>:<preset>" e.g. "42:tomorrow"
+  // arg format: "<id>:<preset>" e.g. "42:tomorrow". Entity ids may themselves
+  // contain colons (see the `reclassify` comment above); presets are a fixed
+  // colon-free enum, so split on the LAST colon, same as reclassify.
   snoozeFor: async (arg) => {
     const state = runtime.state;
-    const sep = String(arg || '').indexOf(':');
-    const id = sep > -1 ? arg.slice(0, sep) : String(arg);
-    const preset = sep > -1 ? arg.slice(sep + 1) : 'later';
+    const s = String(arg || '');
+    const sep = s.lastIndexOf(':');
+    const id = sep > -1 ? s.slice(0, sep) : s;
+    const preset = sep > -1 ? s.slice(sep + 1) : 'later';
     const item = findItem(state, id);
     if (!item) return;
     const source = item.source;

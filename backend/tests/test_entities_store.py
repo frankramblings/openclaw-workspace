@@ -48,6 +48,24 @@ def test_restore_none_deletes_key(base):
     assert "impact report" not in es.load_overrides(base)
 
 
+def test_set_override_corrupt_file_raises_and_leaves_file_untouched(base):
+    path = base / "People_Pending_Overrides.json"
+    path.write_text("{not valid json")
+    with pytest.raises(json.JSONDecodeError):
+        es.set_override("automation suite", "project", True, base=base)
+    # the corrupt file must not have been silently replaced.
+    assert path.read_text() == "{not valid json"
+
+
+def test_set_override_missing_file_still_works(base):
+    path = base / "People_Pending_Overrides.json"
+    path.unlink()
+    prior = es.set_override("automation suite", "project", True, base=base)
+    assert prior is None
+    ov = json.loads(path.read_text())
+    assert ov["automation suite"] == {"type": "project", "verified": True}
+
+
 def test_append_denylist_idempotent(base):
     assert es.append_denylist("Meeting Summary", base=base) is True
     assert es.append_denylist("meeting summary", base=base) is False  # canon dupe

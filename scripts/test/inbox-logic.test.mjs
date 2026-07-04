@@ -153,6 +153,10 @@ assert.ok(/data-arg="GMAIL"[^>]*class="[^"]*active/.test(chips) ||
   'active class on the filtered chip');
 assert.ok(chips.includes('⚠'), 'error badge shown for slack');
 
+// entities gets its own chip too (21 real pending entities need a filter).
+const entChips = chipRowHtml({ all: 5, ENTITIES: 21 }, { filter: null, errors: {} }, (x) => String(x));
+assert.ok(entChips.includes('data-arg="ENTITIES"'), 'entities chip present when counts include entities');
+
 // --- dueChipToISO: maps Add-to-Asana date chips to ISO YYYY-MM-DD ----------
 import { dueChipToISO } from '../../frontend-overrides/js/redesign/live/inbox-logic.js';
 const MON = Date.UTC(2026, 5, 29, 12, 0, 0); // 2026-06-29 is a Monday (UTC noon)

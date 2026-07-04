@@ -34,12 +34,7 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def load_overrides(base: Path | None = None) -> dict[str, dict]:
-    path = _base(base) / OVERRIDES_NAME
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+def _normalize_overrides(raw: dict | None) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for k, v in (raw or {}).items():
         out[canon_name(k)] = {
@@ -47,6 +42,33 @@ def load_overrides(base: Path | None = None) -> dict[str, dict]:
             "verified": bool((v or {}).get("verified", False)),
         }
     return out
+
+
+def load_overrides(base: Path | None = None) -> dict[str, dict]:
+    path = _base(base) / OVERRIDES_NAME
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return _normalize_overrides(raw)
+
+
+def _load_overrides_strict(base: Path | None = None) -> dict[str, dict]:
+    """Like load_overrides, but only a MISSING file is treated as empty.
+
+    Used by the mutators (set_override/restore_override) before they rewrite
+    the file. A missing file is a legitimate "no overrides yet" state, but a
+    CORRUPT file must not be silently replaced by a single new entry — that
+    would destroy every prior decision. So only FileNotFoundError collapses
+    to {}; a JSONDecodeError (corrupt contents) or other OSError propagates,
+    aborting the mutation with the file on disk left untouched.
+    """
+    path = _base(base) / OVERRIDES_NAME
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    return _normalize_overrides(raw)
 
 
 def _save_overrides(base: Path, data: dict[str, dict]) -> None:
@@ -60,7 +82,7 @@ def set_override(canon: str, etype: str, verified: bool = True,
                  base: Path | None = None) -> dict | None:
     with _LOCK:
         b = _base(base)
-        data = load_overrides(b)
+        data = _load_overrides_strict(b)
         c = canon_name(canon)
         prior = dict(data[c]) if c in data else None
         data[c] = {"type": etype, "verified": bool(verified)}
@@ -72,7 +94,7 @@ def restore_override(canon: str, prior: dict | None,
                      base: Path | None = None) -> None:
     with _LOCK:
         b = _base(base)
-        data = load_overrides(b)
+        data = _load_overrides_strict(b)
         c = canon_name(canon)
         if prior is None:
             data.pop(c, None)

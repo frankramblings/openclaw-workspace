@@ -168,7 +168,7 @@ export function openUrlFor(item) {
 // Chip-row color dots, one per known source.
 const CHIP_DOT = { GMAIL: 'var(--red)', SLACK: 'var(--green)', ASANA: 'var(--gold)',
   OBSIDIAN: 'var(--purple, #b794f6)', DOCUMENTS: 'var(--blue, #6aa6f0)',
-  CALENDAR: 'var(--teal, #45d3c7)' };
+  CALENDAR: 'var(--teal, #45d3c7)', ENTITIES: 'var(--violet)' };
 
 export function chipRowHtml(counts, opts, esc) {
   const filter = (opts && opts.filter) || null;
@@ -180,7 +180,7 @@ export function chipRowHtml(counts, opts, esc) {
     const warn = errUp[key] ? ' <span class="chip-warn" title="source error">⚠</span>' : '';
     return `<span class="src-chip${active ? ' active' : ''}" data-act="setFilter" data-arg="${key}">${dot}${esc(label)} ${n || 0}${warn}</span>`;
   };
-  const order = ['GMAIL', 'SLACK', 'ASANA', 'OBSIDIAN', 'DOCUMENTS', 'CALENDAR'];
+  const order = ['GMAIL', 'SLACK', 'ASANA', 'OBSIDIAN', 'DOCUMENTS', 'CALENDAR', 'ENTITIES'];
   const present = order.filter((k) => k in counts || errUp[k]);
   return `<div class="src-chips">${chip('ALL', 'All', counts.all)}${present.map((k) => chip(k, k.toLowerCase(), counts[k])).join('')}</div>`;
 }

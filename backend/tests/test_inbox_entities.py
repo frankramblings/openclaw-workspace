@@ -78,6 +78,51 @@ source_refs:
 '''
 
 
+PENDING_WITH_DATE_JUNK = '''# People Pending Verification
+
+## Mon Jul
+```yaml
+name: "Mon Jul"
+type: person
+first_seen_in: "x#L1"
+verified: false
+aliases: []
+source_refs:
+  - "x#L1"
+```
+
+## Thu Dec
+```yaml
+name: "Thu Dec"
+type: person
+first_seen_in: "x#L2"
+verified: false
+aliases: []
+source_refs:
+  - "x#L2"
+```
+
+## Erica Griffith
+```yaml
+name: "Erica Griffith"
+type: person
+first_seen_in: "x#L3"
+verified: false
+aliases: []
+source_refs:
+  - "x#L3"
+```
+'''
+
+
+def test_map_items_drops_date_fragments():
+    # Day/month scraps ("Mon Jul", "Thu Dec") are not entities and must not
+    # surface at all; a real name in the same file still comes through.
+    items = entities.map_items(PENDING_WITH_DATE_JUNK, {}, set(), now_ms=NOW)
+    names = [i["title"] for i in items]
+    assert names == ["Erica Griffith"]
+
+
 def test_evidence_scoped_to_source_refs():
     items = entities.map_items(PENDING_WITH_ALIASES, {}, set(), now_ms=NOW)
     assert len(items) == 1

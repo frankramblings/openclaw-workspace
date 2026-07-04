@@ -25,10 +25,31 @@ _ORG = re.compile(
 
 # Small common-given-name set: a strong positive signal for "person".
 _GIVEN_NAMES = {
-    "allie", "ash", "aubry", "chris", "elise", "frank", "jayde", "laura",
-    "marissa", "shaunna", "sylvie", "taylor", "tim", "kelly", "andrew",
-    "natasha", "kathleen",
+    "allie", "ash", "aubry", "chris", "elise", "erica", "frank", "jayde",
+    "laura", "marissa", "shaunna", "sylvie", "taylor", "tim", "kelly",
+    "andrew", "natasha", "kathleen",
 }
+
+# Day/month tokens — a name made ENTIRELY of these is a date scrap, not an
+# entity (e.g. "Mon Jul", "Thu Dec"). Guarded so a real name that merely
+# contains a month ("May Smith") is not dropped.
+_DATE_TOKENS = {
+    "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "sept",
+    "oct", "nov", "dec", "january", "february", "march", "april", "june",
+    "july", "august", "september", "october", "november", "december",
+}
+
+
+def looks_like_date_fragment(name: str) -> bool:
+    """True when every token is a day/month word or a bare number — a date
+    scrap the upstream extractor surfaced, not a real entity."""
+    toks = [re.sub(r"[^a-z0-9]", "", t.lower()) for t in (name or "").split()]
+    toks = [t for t in toks if t]
+    if not toks:
+        return False
+    return all(t in _DATE_TOKENS or t.isdigit() for t in toks)
 
 
 def guess_type(name: str) -> str:
@@ -42,10 +63,12 @@ def guess_type(name: str) -> str:
     if _ORG.search(n):
         return "org"
     tokens = n.split()
-    if len(tokens) == 2 and all(t[:1].isupper() for t in tokens):
-        if tokens[0].lower() in _GIVEN_NAMES:
-            return "person"
-        # Two TitleCase tokens with no other signal: treat as a name.
+    # Person ONLY when it looks like an actual "First Last" name — i.e. the
+    # first token is a known given name. A bare two-word phrase with no such
+    # signal ("Social Videos", "Promote School") is ambiguous → other, never
+    # person. (Matches this module's stated contract.)
+    if (len(tokens) == 2 and all(t[:1].isupper() for t in tokens)
+            and tokens[0].lower() in _GIVEN_NAMES):
         return "person"
     return "other"
 
@@ -63,6 +86,8 @@ def map_items(pending_md: str, overrides: dict, denylist: set,
     items: list[dict] = []
     for heading, block in _BLOCK.findall(pending_md or ""):
         name = (_field(block, "name") or heading).strip()
+        if looks_like_date_fragment(name):
+            continue  # day/month scrap, not an entity — drop it entirely
         canon = entities_store.canon_name(name)
         ov = overrides.get(canon)
         if (ov and ov.get("verified")) or canon in denylist:

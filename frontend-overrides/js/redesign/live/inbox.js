@@ -36,8 +36,6 @@ function toItem(it) {
   const src = String(it.source || '').toUpperCase();
   const style = srcStyle(it.source);
   const rec = it.rec || null;
-  const meta = it.meta || {};
-  const isEntity = it.source === 'entities';
   // FYI = the AI/heuristic wants this gone (archive). Everything else needs you.
   const group = rec && rec.action === 'archive' ? 'fyi' : 'needs';
   return {
@@ -45,18 +43,15 @@ function toItem(it) {
     source: it.source,            // for action dispatch
     actions: Array.isArray(it.actions) ? it.actions : [],
     rec,                          // { action, by, reason, confidence }
-    meta,
+    meta: it.meta || {},
     group,
     src,
     srcColor: style.srcColor,
     srcBg: style.srcBg,
-    // entities: name lives on meta.name (title mirrors it); body is the
-    // evidence line the guesser found, not the "guessed: <type>" subtitle
-    // (that's rendered separately via entityView's `guess`).
-    who: isEntity ? (meta.name || it.title || '') : (it.title || ''),
+    who: it.title || '',
     time: ageLabel(it.ageHours),
     unread: !!(it.meta && it.meta.unread),
-    body: isEntity ? (meta.evidence || '') : (it.snippet || it.subtitle || ''),
+    body: it.snippet || it.subtitle || '',
     // labels used by the mobile mock card
     primary: primaryLabel(it.actions),
     secondary: 'Mark read',
@@ -193,13 +188,15 @@ export const actions = {
 
   // Entity triage (entityCard in surfaces.js): confirm the guessed type,
   // reclassify to one of the other four, or flag as not-an-entity. arg for
-  // reclassify is "<id>:<type>" (mirrors the "<id>:<preset>" convention used
-  // by snoozeFor below).
+  // reclassify is "<id>:<type>". Entity ids are canonicalized free-text names
+  // that may themselves contain colons; the type is a fixed enum that never
+  // does — so split on the LAST colon.
   confirm: (id) => runEntity(id, 'confirm'),
   reclassify: (arg) => {
-    const sep = String(arg || '').indexOf(':');
-    const id = sep > -1 ? arg.slice(0, sep) : String(arg);
-    const type = sep > -1 ? arg.slice(sep + 1) : '';
+    const s = String(arg || '');
+    const sep = s.lastIndexOf(':');
+    const id = sep > -1 ? s.slice(0, sep) : s;
+    const type = sep > -1 ? s.slice(sep + 1) : '';
     return runEntity(id, 'reclassify', type);
   },
   notEntity: (id) => runEntity(id, 'not_entity'),

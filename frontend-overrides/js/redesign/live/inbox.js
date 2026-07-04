@@ -8,7 +8,7 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
-import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs } from './inbox-logic.js';
+import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs, triageSummary } from './inbox-logic.js';
 import { detailEndpoint } from './inbox-detail.js';
 
 const ageLabel = (h) => {
@@ -180,6 +180,14 @@ async function runEntity(id, action, type) {
   runtime.render();
 }
 
+// Apply-all routing: rec action verb → the actions-map key that executes it.
+// Only these (the batch-applyable clearing verbs, mirroring APPLY_ALL_ACTIONS
+// in inbox-logic.js) participate in Apply-all; each sets state._lastUndoTs.
+const APPLY_FN = {
+  archive: 'archive', delete: 'delete', mark_read: 'mark_read',
+  complete: 'complete', reviewed: 'reviewed', add_asana: 'addAsana',
+};
+
 export const actions = {
   // Calendar invite RSVP — write Yes/Maybe/No straight to Google Calendar.
   rsvpYes: (id) => runRsvp(id, 'accepted'),
@@ -232,11 +240,15 @@ export const actions = {
       if (r && r.ok === false) throw new Error(r.error || 'add failed');
       if (r && r.undoTs) {
         state._lastUndoTs = r.undoTs;
-        state.inboxToast = { msg: `Added → ${payload.due ? 'due ' + payload.due : 'no due date'}`, undoTs: r.undoTs };
+        // During an Apply-all batch the batch toast owns the message — don't
+        // flash a per-item toast (applyAll reads _lastUndoTs for the batch).
+        if (!state.inboxApplying) {
+          state.inboxToast = { msg: `Added → ${payload.due ? 'due ' + payload.due : 'no due date'}`, undoTs: r.undoTs };
+        }
       }
     } catch (e) {
       unmarkDismissed(state, id);
-      state.inboxToast = { msg: "Couldn't add to Asana — retry", undoTs: null };
+      if (!state.inboxApplying) state.inboxToast = { msg: "Couldn't add to Asana — retry", undoTs: null };
     }
     runtime.render();
   },
@@ -421,10 +433,52 @@ export const actions = {
       const r = await apiJson('/api/items/triage', {});
       if (r && r.ok === false) throw new Error(r.error || 'triage failed');
       await reloadInbox(state);   // refetch so rec chips appear
+      // Surface the Apply-all summary bar for this fresh pass (Option A:
+      // suggest → you review → you Apply-all; nothing acts until you tap).
+      state.inboxTriaged = true;
+      state.inboxTriageReviewed = false;
       state.inboxToast = { msg: `Triaged ${r.scored ?? 0} items`, undoTs: null };
     } catch (e) {
       state.inboxToast = { msg: "Triage unavailable — try again", undoTs: null };
     }
+    runtime.render();
+  },
+
+  // [Review] on the summary bar — hide the bar and let Frank work the per-card
+  // ✦ chips one at a time. Non-destructive; recs stay on the cards.
+  reviewTriage: () => {
+    runtime.state.inboxTriageReviewed = true;
+    runtime.render();
+  },
+
+  // [Apply all] — Option A batch. Runs every batch-applyable rec as ONE pass,
+  // collecting each action's undoTs, then shows a single toast with ONE Undo
+  // that reverses the whole batch. Items with rec 'none' are never touched.
+  applyAll: async () => {
+    const state = runtime.state;
+    const items = (state.live && state.live.inbox && state.live.inbox.items) || [];
+    const { work } = triageSummary(items, state.dismissed || []);
+    if (!work.length) return;
+    state.inboxApplying = { done: 0, total: work.length };
+    state.inboxToast = { msg: `Applying 0/${work.length}…`, undoTs: null };
+    runtime.render();
+    const batch = [];
+    for (const w of work) {
+      const fn = APPLY_FN[w.action] && actions[APPLY_FN[w.action]];
+      if (fn) {
+        state._lastUndoTs = null;
+        try { await fn(w.id); } catch (_) { /* per-item failure already reverted the card */ }
+        if (state._lastUndoTs) batch.push(state._lastUndoTs);
+      }
+      state.inboxApplying.done += 1;
+      state.inboxToast = { msg: `Applying ${state.inboxApplying.done}/${work.length}…`, undoTs: null };
+      runtime.render();
+    }
+    state.inboxApplying = null;
+    state.inboxTriageReviewed = true;   // batch done — retire the summary bar
+    state.inboxToast = batch.length
+      ? { msg: `Applied ${batch.length}`, undoTs: null, undoBatch: batch }
+      : { msg: 'Nothing applied', undoTs: null };
     runtime.render();
   },
 
@@ -458,6 +512,18 @@ export const actions = {
     // Local un-dismiss: no server round-trip, just restore the card.
     if (toast && toast.undoLocal) {
       unmarkDismissed(state, toast.undoLocal);
+      state.inboxToast = null;
+      runtime.render();
+      return;
+    }
+    // Batch un-apply: reverse every action from an Apply-all pass, then refetch.
+    if (toast && Array.isArray(toast.undoBatch) && toast.undoBatch.length) {
+      state.inboxToast = { msg: 'Undoing…', undoTs: null };
+      runtime.render();
+      for (const ts of toast.undoBatch) {
+        try { await apiJson('/api/items/undo', { ts }); } catch (_) { /* skip failures */ }
+      }
+      await reloadInbox(state);
       state.inboxToast = null;
       runtime.render();
       return;

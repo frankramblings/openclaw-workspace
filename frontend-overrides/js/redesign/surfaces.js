@@ -4,7 +4,7 @@
 
 import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
-import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView } from './live/inbox-logic.js';
+import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import {
   AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES,
@@ -615,6 +615,19 @@ function inboxSurface(s) {
         { filter: s.inboxFilter, errors: s.live?.inbox?.errors || {} },
         esc)}
     </div>
+    ${(() => {
+      // Apply-all summary bar (Option A): appears after a "Triage with __AGENT_NAME__"
+      // pass, until Frank taps Apply all or Review. Nothing acts without a tap.
+      if (!s.inboxTriaged || s.inboxTriageReviewed) return '';
+      const sum = triageSummary(items, s.dismissed || []);
+      if (!sum.total) return '';
+      return `<div class="triage-summary">
+        <span class="ts-label">✦ __AGENT_NAME__ suggests: ${esc(triageSummaryText(sum.counts))}</span>
+        <div class="oc-spacer"></div>
+        <button class="btn-sm" data-act="applyAll">Apply all</button>
+        <button class="btn-sm ghost" data-act="reviewTriage">Review</button>
+      </div>`;
+    })()}
     <div class="inbox-scroll">
       ${when(needs.length > 0, `<div class="grp-label"><span class="lbl needs">NEEDS YOU</span><span class="n">${needs.length}</span><div class="sect-divider"></div></div>${map(needs, inboxCard)}`)}
       ${when(fyi.length > 0, `<div class="grp-label fyi"><span class="lbl fyilbl">AI-SUGGESTED · FYI</span><span class="n">${fyi.length}</span><div class="sect-divider"></div></div>${map(fyi, inboxCard)}`)}
@@ -635,7 +648,7 @@ function inboxSurface(s) {
     ${when(!!s.inboxToast, s.inboxToast ? `
       <div class="inbox-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:8px;padding:10px 14px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:80;white-space:nowrap">
         <span>${esc(s.inboxToast.msg)}</span>
-        ${(s.inboxToast.undoTs || s.inboxToast.undoLocal) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
+        ${(s.inboxToast.undoTs || s.inboxToast.undoLocal || (s.inboxToast.undoBatch && s.inboxToast.undoBatch.length)) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
         <span data-act="dismissToast" style="cursor:pointer;color:var(--faint);margin-left:4px">✕</span>
       </div>` : '')}
   </div>`;

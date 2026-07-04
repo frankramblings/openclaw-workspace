@@ -236,4 +236,31 @@ assert.equal(swipeIntent(40, 360), null,         'small right swipe → null');
     'reclassify chips are the other four types in order');
 }
 
+// --- Phase 4: triageSummary worklist + summary text -------------------------
+import { triageSummary, triageSummaryText } from '../../frontend-overrides/js/redesign/live/inbox-logic.js';
+{
+  const items = [
+    { id: 'g1', rec: { action: 'archive' } },
+    { id: 'g2', rec: { action: 'archive' } },
+    { id: 's1', rec: { action: 'mark_read' } },
+    { id: 'o1', rec: { action: 'add_asana' } },
+    { id: 'n1', rec: { action: 'none' } },     // stays in Needs-You — excluded
+    { id: 'r1', rec: { action: 'reply' } },    // needs composing — excluded
+    { id: 'h1', rec: { action: 'gary' } },     // spins off a session — excluded
+    { id: 'e1', rec: { action: 'confirm' } },  // entity flow — excluded
+    { id: 'x1', rec: { action: 'archive' } },  // dismissed below — excluded
+    { id: 'nR', /* no rec */ },                // untriaged — excluded
+  ];
+  const sum = triageSummary(items, ['x1']);
+  assert.equal(sum.total, 4, 'only batch-applyable, non-dismissed recs count');
+  assert.deepEqual(sum.counts, { archive: 2, mark_read: 1, add_asana: 1 }, 'per-action counts');
+  assert.deepEqual(sum.work.map((w) => w.id), ['g1', 'g2', 's1', 'o1'], 'worklist ids in feed order');
+  assert.ok(sum.work.every((w) => w.action), 'each work item carries its action');
+
+  assert.equal(triageSummaryText(sum.counts), 'archive 2 · mark read 1 · to Asana 1',
+    'summary text ordered by APPLY_ALL_ACTIONS with human labels');
+  assert.equal(triageSummaryText({}), '', 'empty counts → empty text');
+  assert.equal(triageSummary([], []).total, 0, 'no items → nothing to apply');
+}
+
 console.log('inbox-logic: all assertions OK');

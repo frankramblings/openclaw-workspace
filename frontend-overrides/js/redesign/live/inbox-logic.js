@@ -262,3 +262,40 @@ export function dueChipToISO(chip, nowMs) {
   if (c === 'nextweek') { const add = ((1 - dow + 7) % 7) || 7; return _iso(nowMs + add * DAY); }
   return null;
 }
+
+// --- triageSummary: the Apply-all worklist + counts for the summary bar ------
+// After a "Triage with __AGENT_NAME__" pass, items carry a rec {action,...}.
+// Apply-all batches only the unambiguous, undoable CLEARING verbs below —
+// never 'reply' (needs composing), 'gary' (spins off a session, not undoable),
+// entity verbs (their own card flow), or 'none' (stays in Needs-You).
+export const APPLY_ALL_ACTIONS = ['archive', 'delete', 'mark_read', 'complete', 'reviewed', 'add_asana'];
+const _APPLY_SET = new Set(APPLY_ALL_ACTIONS);
+const _APPLY_LABEL = {
+  archive: 'archive', delete: 'delete', mark_read: 'mark read',
+  complete: 'complete', reviewed: 'review', add_asana: 'to Asana',
+};
+
+// Pure: given the feed items + the dismissed id list, return the batch work
+// list and per-action counts. Excludes already-dismissed items and any rec
+// whose action isn't batch-applyable.
+export function triageSummary(items, dismissed) {
+  const done = new Set((dismissed || []).map(String));
+  const counts = {};
+  const work = [];
+  for (const it of (items || [])) {
+    if (done.has(String(it.id))) continue;
+    const a = it && it.rec && it.rec.action;
+    if (!a || !_APPLY_SET.has(a)) continue;
+    counts[a] = (counts[a] || 0) + 1;
+    work.push({ id: String(it.id), action: a });
+  }
+  return { total: work.length, counts, work };
+}
+
+// "archive 14 · mark read 6 · to Asana 2" — ordered by APPLY_ALL_ACTIONS.
+export function triageSummaryText(counts) {
+  return APPLY_ALL_ACTIONS
+    .filter((a) => counts && counts[a])
+    .map((a) => `${_APPLY_LABEL[a]} ${counts[a]}`)
+    .join(' · ');
+}

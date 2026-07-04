@@ -9,7 +9,7 @@ import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
-import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts } from '../live/inbox-logic.js';
+import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 
 const ic = {
@@ -216,6 +216,17 @@ export function mInbox(s) {
     <div class="m-head-row" style="margin-top:11px;gap:7px">
       ${chipRowHtml(sourceCounts(items, { dismissed: s.dismissed }, s.live?.inbox?.sources), { filter: s.inboxFilter, errors: s.live?.inbox?.errors || {} }, esc)}
     </div>
+    ${(() => {
+      if (!s.inboxTriaged || s.inboxTriageReviewed) return '';
+      const sum = triageSummary(items, s.dismissed || []);
+      if (!sum.total) return '';
+      return `<div class="triage-summary" style="margin-top:11px">
+        <span class="ts-label">✦ suggests: ${esc(triageSummaryText(sum.counts))}</span>
+        <div class="m-spacer"></div>
+        <button class="btn-sm" data-act="applyAll">Apply all</button>
+        <button class="btn-sm ghost" data-act="reviewTriage">Review</button>
+      </div>`;
+    })()}
   </div>
   <div class="m-scroll m-feed" data-ptr="1">
     ${mPtr(s, 'Checking for new…')}
@@ -227,7 +238,7 @@ export function mInbox(s) {
   ${s.inboxToast ? `
     <div class="inbox-toast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:8px;padding:10px 14px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:80;white-space:nowrap;max-width:90vw">
       <span>${esc(s.inboxToast.msg)}</span>
-      ${(s.inboxToast.undoTs || s.inboxToast.undoLocal) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
+      ${(s.inboxToast.undoTs || s.inboxToast.undoLocal || (s.inboxToast.undoBatch && s.inboxToast.undoBatch.length)) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
       <span data-act="dismissToast" style="cursor:pointer;color:var(--faint);margin-left:4px">✕</span>
     </div>` : ''}`;
 }

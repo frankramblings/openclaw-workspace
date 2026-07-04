@@ -44,9 +44,19 @@ def test_parse_triage_reply_tolerates_fences_and_junk():
                                "reason": "asks a question", "ts": 42}}
 
 
-def test_parse_triage_reply_garbage_returns_empty():
+def test_parse_triage_reply_garbage_returns_none():
+    # No parseable JSON array at all → None (a real stall the caller 503s on).
     assert recommend.parse_triage_reply("sorry, I had a stall", {"1": "gmail"},
-                                        now_ms=1) == {}
+                                        now_ms=1) is None
+
+
+def test_parse_triage_reply_valid_but_nothing_actionable_returns_empty():
+    # The model responded with a well-formed array, but every entry filters out
+    # (here: a calendar invite it tagged "none", and calendar has no allowed
+    # actions). That's {} — "nothing to triage" — NOT None (not an error).
+    reply = '[{"id": "c1", "action": "none", "confidence": "med", "reason": "invite"}]'
+    out = recommend.parse_triage_reply(reply, {"c1": "calendar"}, now_ms=1)
+    assert out == {}, "valid-but-empty parse is {}, distinct from a None stall"
 
 
 def test_parse_triage_reply_tolerates_trailing_prose_with_brackets():
@@ -84,8 +94,9 @@ def client(tmp_path, monkeypatch):
 
 @pytest.mark.anyio
 async def test_triage_endpoint_caches_and_items_show_rec(client, monkeypatch):
-    async def fake_run_text(prompt, session_key):
+    async def fake_run_text(prompt, session_key, model_ref=None):
         assert session_key == inbox.config.inbox_triage_session_key()
+        assert model_ref == inbox.config.inbox_triage_model()
         return '[{"id": "1", "action": "archive", "confidence": "high", "reason": "bulk"}]'
     monkeypatch.setattr(inbox.bridge, "run_text", fake_run_text)
     async with client as c:
@@ -99,12 +110,26 @@ async def test_triage_endpoint_caches_and_items_show_rec(client, monkeypatch):
 
 @pytest.mark.anyio
 async def test_triage_garbled_brain_503(client, monkeypatch):
-    async def fake_run_text(prompt, session_key):
+    async def fake_run_text(prompt, session_key, model_ref=None):
         return "no json here, codex stalled"
     monkeypatch.setattr(inbox.bridge, "run_text", fake_run_text)
     async with client as c:
         r = await c.post("/api/items/triage", json={})
     assert r.status_code == 503
+
+
+@pytest.mark.anyio
+async def test_triage_valid_but_nothing_actionable_is_scored_zero(client, monkeypatch):
+    # The model responds well-formed but everything is "none"/unsupported. This
+    # must be a clean scored:0 (ok), NOT a 503 — otherwise the UI reads "triage
+    # does nothing" when the model actually worked.
+    async def fake_run_text(prompt, session_key, model_ref=None):
+        return '[{"id": "zzz", "action": "none", "confidence": "low", "reason": "n/a"}]'
+    monkeypatch.setattr(inbox.bridge, "run_text", fake_run_text)
+    async with client as c:
+        r = await c.post("/api/items/triage", json={})
+    assert r.status_code == 200
+    assert r.json().get("scored") == 0
 
 
 @pytest.mark.anyio

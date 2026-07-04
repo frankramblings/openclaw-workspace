@@ -291,18 +291,23 @@ async def triage(payload: dict | None = None):
     prompt, chosen = recommend.build_triage_prompt(pending)
     try:
         reply = await bridge.run_text(
-            prompt, session_key=config.inbox_triage_session_key())
+            prompt, session_key=config.inbox_triage_session_key(),
+            model_ref=config.inbox_triage_model())
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502,
                             content={"ok": False, "error": str(exc)})
     valid = {i["id"]: i["source"] for i in chosen}
     new = recommend.parse_triage_reply(reply, valid,
                                        now_ms=int(time.time() * 1000))
-    if not new:
+    if new is None:
+        # Genuine failure: the model returned no parseable JSON array.
         return JSONResponse(status_code=503, content={
             "ok": False,
             "error": "triage produced no usable JSON (codex stall/throttle?) "
                      "— nothing cached, try again"})
+    # new may be {} — the model responded but nothing was actionable (e.g. the
+    # only pending items are calendar invites it rightly tagged "none"). That's
+    # a clean scored:0, not an error.
     live = {f"{i['source']}:{i['id']}" for i in feed["items"]}
     state.set_recs(new, live_keys=live)
     return {"scored": len(new), "skipped": len(feed["items"]) - len(pending),

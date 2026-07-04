@@ -102,6 +102,14 @@ def inbox_triage_session_key() -> str:
             or f"agent:{agent_id()}:inbox-triage")
 
 
+def inbox_triage_model() -> str:
+    """Model for the inbox triage pass. Triage is fast JSON tagging over the
+    whole feed — the heavy shared `main` model stalls/throttles on the full
+    prompt, so pin a cheap fast model (like auto-titles do). Overridable."""
+    return (os.environ.get("OPENCLAW_INBOX_TRIAGE_MODEL")
+            or "openai/gpt-5.4-mini")
+
+
 # Where the workspace persists its own lightweight session METADATA (id↔gateway
 # sessionKey, name, model, flags). Message CONTENT is never stored here — it
 # lives in the brain and is read back via chat.history. Gitignored.

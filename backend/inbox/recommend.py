@@ -166,12 +166,17 @@ def _extract_json_array(text: str) -> list | None:
     return None
 
 
-def parse_triage_reply(text: str, valid: dict, now_ms: int) -> dict:
+def parse_triage_reply(text: str, valid: dict, now_ms: int) -> dict | None:
     """valid: {item_id: source}. Returns {\"source:id\": rec} with everything
-    invalid dropped (unknown ids, disallowed actions, malformed entries)."""
+    invalid dropped (unknown ids, disallowed actions, malformed entries).
+
+    Returns None when the model produced no parseable JSON array at all (a real
+    stall/throttle) — distinct from {} (it responded fine but nothing was
+    actionable, e.g. every pending item is a calendar invite tagged \"none\").
+    Callers must treat None as an error and {} as \"nothing to triage\"."""
     arr = _extract_json_array(text or "")
     if arr is None:
-        return {}
+        return None
     out: dict = {}
     for e in arr if isinstance(arr, list) else []:
         if not isinstance(e, dict):

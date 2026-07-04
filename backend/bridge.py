@@ -406,15 +406,19 @@ async def _warm_request(method: str, params: dict | None = None,
             return await _request(ws, method, params or {})
 
 
-async def run_text(prompt: str, session_key: str) -> str:
+async def run_text(prompt: str, session_key: str,
+                   model_ref: str | None = None) -> str:
     """One brain turn → just the assistant text (no SSE plumbing).
 
     Shared helper for backend features that need a single utility turn
     (memory extraction, titles, email drafting). Runs on whatever session_key
     the caller picks — use a dedicated key for utility work so it doesn't
-    pollute a visible chat thread's history."""
+    pollute a visible chat thread's history. Pass `model_ref` to pin the turn
+    to a specific (usually cheap/fast) model instead of the session default —
+    utility work like JSON tagging shouldn't run on the heavy shared model."""
     chunks: list[str] = []
-    async for sse in stream_turn(prompt, session_key=session_key):
+    async for sse in stream_turn(prompt, session_key=session_key,
+                                 model_ref=model_ref):
         if not sse.startswith("data:"):
             continue
         body = sse[5:].strip()

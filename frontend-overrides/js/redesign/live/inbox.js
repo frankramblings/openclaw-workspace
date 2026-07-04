@@ -317,6 +317,9 @@ export const actions = {
     const item = findItem(state, id);
     const source = item ? item.source : undefined;
     markDismissed(state, id);
+    // Dismiss is local-only (no server undoTs), but it IS locally reversible —
+    // surface an Undo so an accidental swipe-flick can be taken back.
+    state.inboxToast = { msg: 'Dismissed', undoTs: null, undoLocal: String(id) };
     runtime.render();
     try {
       const r = await apiJson('/api/items/action', { source, id: String(id), action: 'dismiss' });
@@ -451,7 +454,15 @@ export const actions = {
 
   undo: async () => {
     const state = runtime.state;
-    const ts = state.inboxToast && state.inboxToast.undoTs;
+    const toast = state.inboxToast;
+    // Local un-dismiss: no server round-trip, just restore the card.
+    if (toast && toast.undoLocal) {
+      unmarkDismissed(state, toast.undoLocal);
+      state.inboxToast = null;
+      runtime.render();
+      return;
+    }
+    const ts = toast && toast.undoTs;
     if (!ts) return;
     try {
       const r = await apiJson('/api/items/undo', { ts });

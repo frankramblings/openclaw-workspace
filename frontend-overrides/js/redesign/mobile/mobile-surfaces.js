@@ -227,7 +227,7 @@ export function mInbox(s) {
   ${s.inboxToast ? `
     <div class="inbox-toast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:8px;padding:10px 14px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:80;white-space:nowrap;max-width:90vw">
       <span>${esc(s.inboxToast.msg)}</span>
-      ${s.inboxToast.undoTs ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
+      ${(s.inboxToast.undoTs || s.inboxToast.undoLocal) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
       <span data-act="dismissToast" style="cursor:pointer;color:var(--faint);margin-left:4px">✕</span>
     </div>` : ''}`;
 }

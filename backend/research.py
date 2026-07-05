@@ -31,6 +31,7 @@ from fastapi import APIRouter
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from . import bridge, config, sessions_store
+from .research_render import render_html
 from .vault_store import (WORKSPACE, dump_frontmatter, ensure_dir, new_id,
                           now_iso, parse_frontmatter)
 
@@ -60,6 +61,7 @@ class Job:
     result: str | None = None
     sources: list = field(default_factory=list)
     findings: list = field(default_factory=list)
+    comparison: dict | None = None    # {title,col_a,col_b,rows[...]} when the query is a comparison
     category: str = ""
     subscribers: list = field(default_factory=list)   # asyncio.Queue per stream
     task: asyncio.Task | None = None
@@ -257,7 +259,12 @@ only where it is uncontroversial). Output ONLY clean markdown (no preamble, no \
 code fence around it):
 
 # <a specific, descriptive title>
-…well-structured sections with the key facts and analysis, citing sources \
+
+## Bottom Line
+<2-4 sentences that directly answer the question first — the decision/verdict, \
+not background. This leads the report.>
+
+…then well-structured sections with the key facts and analysis, citing sources \
 inline as [1], [2]…
 
 ## Sources
@@ -302,6 +309,77 @@ async def _turn(prompt: str, session_key: str, model_ref: str | None,
         if expect(best):
             break
     return best
+
+
+_COMPARE_RE = re.compile(
+    r"\bvs\.?\b|\bversus\b|\bcompar(?:e|ison|ing)\b|\bdifference[s]?\b"
+    r"|\bbetter\b|\bwhich (?:one|is|should)\b|\b(?:pros and cons|head[- ]to[- ]head)\b",
+    re.I)
+
+
+def _is_comparison(query: str) -> bool:
+    """Cheap gate: does this query ask us to weigh two options against each other?
+    Keeps the extra extraction turn off non-comparison reports."""
+    return bool(_COMPARE_RE.search(query or ""))
+
+
+_COMPARE_PROMPT = """The finished report below compares options. Extract a \
+side-by-side comparison matrix as STRICT JSON so it can render as a grid.
+
+Rules:
+- Exactly two columns (the two things being compared). Pick their real names for `col_a`/`col_b`.
+- 5-11 rows, each a distinct dimension actually discussed in the report.
+- Keep every cell short (a value/phrase, not a sentence). Preserve inline \
+citation markers like [4] where the report has them.
+- `winner`: "a", "b", or omit if even/NA. `conflict`: true only when the sources \
+disagree on that row.
+- If the report is NOT actually a two-way comparison, output exactly: null
+
+Output ONLY a fenced ```json block, nothing else:
+```json
+{{"title":"X vs Y — at a glance","dimension_label":"Feature","col_a":"X","col_b":"Y",
+"rows":[{{"label":"...","a":"...","b":"...","winner":"a","conflict":false}}]}}
+```
+
+Query: {query}
+
+Report:
+{report}"""
+
+
+def _parse_comparison(text: str) -> dict | None:
+    m = re.search(r"```json\s*(.+?)```", text, re.S) or re.search(r"(\{.*\}|null)", text, re.S)
+    if not m:
+        return None
+    blob = m.group(1).strip()
+    if blob == "null":
+        return None
+    try:
+        data = json.loads(blob)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("rows"), list) or not data["rows"]:
+        return None
+    # keep only well-formed rows
+    data["rows"] = [r for r in data["rows"] if isinstance(r, dict) and r.get("label")]
+    return data if data["rows"] else None
+
+
+async def _maybe_compare(job: Job, session_key: str, model_ref: str | None) -> None:
+    """For comparison queries, run one extra writer turn to distill a matrix.
+    Best-effort: any failure just leaves the report without a grid."""
+    if not _is_comparison(job.query) or not job.result:
+        return
+    try:
+        text = await asyncio.wait_for(
+            _turn(_COMPARE_PROMPT.format(query=job.query, result=job.result,
+                                         report=job.result[:12000]),
+                  f"{session_key}-compare", model_ref,
+                  expect=lambda t: "```json" in t or "null" in t),
+            timeout=180)
+        job.comparison = _parse_comparison(text)
+    except Exception:  # noqa: BLE001 - grid is an enrichment, never fatal
+        job.comparison = None
 
 
 async def _run(job: Job) -> None:
@@ -350,6 +428,10 @@ async def _run(job: Job) -> None:
 
         job.result = report
         job.sources = extract_sources(job.findings, report)
+        # Smart layout: comparison queries get a side-by-side grid distilled
+        # from the report (best-effort; skipped for non-comparisons).
+        _publish(job, phase="writing", total_findings=len(job.findings))
+        await _maybe_compare(job, session_key, model_ref)
         _save_record(job, rounds)
         _finish(job, "done")
     except asyncio.CancelledError:
@@ -385,6 +467,8 @@ def _save_record(job: Job, rounds: int) -> None:
         "sources": job.sources,
         "findings": job.findings,
     }
+    if job.comparison:
+        meta["comparison"] = job.comparison
     _record_path(job.id).write_text(dump_frontmatter(meta, job.result or ""),
                                     encoding="utf-8")
 
@@ -596,19 +680,28 @@ _REPORT_PAGE = """<!doctype html>
 
 @router.get("/api/research/report/{rid}")
 async def report(rid: str):
-    job = _JOBS.get(rid)
-    rec = {"query": job.query, "result": job.result, "duration": "",
-           "source_count": len(job.sources)} if job and job.result else _load_record(rid)
+    # Prefer the persisted record (carries sources/findings/rounds/model/
+    # comparison for the rich renderer); fall back to a live job that hasn't
+    # been saved yet.
+    rec = _load_record(rid)
+    if not rec:
+        job = _JOBS.get(rid)
+        if job and job.result:
+            rec = {"query": job.query, "result": job.result,
+                   "sources": job.sources, "findings": job.findings,
+                   "source_count": len(job.sources), "model": job.model}
     if not rec or not rec.get("result"):
         return HTMLResponse("<h1>No report (yet)</h1>", status_code=404)
-    md = rec["result"].replace("</script", "<\\/script")  # keep the inline block intact
-    meta_bits = [rec.get("query") or "", f"{rec.get('source_count') or 0} sources"]
-    if rec.get("duration"):
-        meta_bits.append(rec["duration"])
-    page = _REPORT_PAGE.format(title=(rec.get("query") or "Research")[:80],
-                               meta=" · ".join(b for b in meta_bits if b),
-                               md=md)
-    return HTMLResponse(page)
+    try:
+        return HTMLResponse(render_html(rec))
+    except Exception:  # noqa: BLE001 - never 500 the report; degrade to text
+        md = (rec.get("result") or "").replace("</script", "<\\/script")
+        meta_bits = [rec.get("query") or "", f"{rec.get('source_count') or 0} sources"]
+        if rec.get("duration"):
+            meta_bits.append(rec["duration"])
+        return HTMLResponse(_REPORT_PAGE.format(
+            title=(rec.get("query") or "Research")[:80],
+            meta=" · ".join(b for b in meta_bits if b), md=md))
 
 
 @router.get("/api/model-endpoints")

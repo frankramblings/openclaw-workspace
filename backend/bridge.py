@@ -30,7 +30,7 @@ def _sse(payload: dict | str) -> str:
 
 
 def _connect_params() -> dict:
-    return {
+    params = {
         # Running gateway negotiates protocol 4 (newer than the v3 source tree).
         "minProtocol": 3,
         "maxProtocol": 4,
@@ -61,10 +61,15 @@ def _connect_params() -> dict:
             "operator.pairing",
             "operator.talk.secrets",
         ],
-        # Shared-password auth reads auth.password (auth.token is for device/bearer
-        # tokens) — putting it in "token" yields AUTH_PASSWORD_MISSING.
-        "auth": {"password": config.gateway_password()},
     }
+    # Shared-password auth reads auth.password (auth.token is for device/bearer
+    # tokens) — putting it in "token" yields AUTH_PASSWORD_MISSING. Only send it
+    # when a password is configured: a passwordless loopback gateway rejects a
+    # null password ("invalid connect params: at /auth/password: must be string").
+    pw = config.gateway_password()
+    if pw:
+        params["auth"] = {"password": pw}
+    return params
 
 
 async def _recv_json(ws):

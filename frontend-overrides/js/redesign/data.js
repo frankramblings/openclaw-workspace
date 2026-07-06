@@ -2,7 +2,10 @@
 // In production these become live fetches (sessions, inbox connectors, IMAP,
 // CalDAV, research runs, library, notes vault, config, workspace file tree).
 
-export const AVATAR = '/static/redesign-assets/gary-outline.png';
+// Prefix with the deploy base path (set by the server when hosted under a
+// subpath, e.g. /marissa) so the avatar resolves there; empty string at root.
+export const AVATAR = (typeof window !== 'undefined' && window.__WS_BASE__ || '')
+  + '/static/redesign-assets/gary-outline.png';
 
 // ---- chat slash commands --------------------------------------------------
 export const SLASH_COMMANDS = [

@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Body, FastAPI, Form
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -1223,16 +1223,88 @@ async def service_worker():
 # Mounted last so /api/* routes win. The SPA lives in frontend/ (copied from
 # Odysseus static/). index.html is the entry; everything else is static assets.
 
+def _spa_html(filename: str):
+    """Serve an SPA HTML entrypoint.
+
+    When config.BASE_PATH is set (app hosted under a stripping subpath proxy),
+    rewrite browser-facing URLs so absolute /static and /api references resolve
+    under the prefix: markup asset refs are rewritten, an import map remaps
+    absolute dynamic imports, and a tiny network shim prefixes fetch/EventSource/
+    WebSocket calls. Backend routes are untouched (the proxy strips the prefix).
+    With no BASE_PATH the raw file is served byte-for-byte (default install)."""
+    path = config.FRONTEND_DIR / filename
+    if not path.exists():
+        return JSONResponse(status_code=404, content={"error": f"{filename} not built"})
+    base = config.BASE_PATH
+    if not base:
+        return FileResponse(str(path))
+    html = path.read_text(encoding="utf-8")
+    html = html.replace('="/static/', f'="{base}/static/').replace('="/api/', f'="{base}/api/')
+    b = json.dumps(base)
+    inject = (
+        '<script type="importmap">{"imports":{"/static/":"' + base + '/static/"}}</script>'
+        '<script>(function(){var B=' + b + ';'
+        'window.__WS_BASE__=B;'  # asset constants (e.g. AVATAR) prefix with this
+        'function fix(u){try{'
+        'if(u&&typeof u==="object"&&typeof Request!=="undefined"&&u instanceof Request){return new Request(fix(u.url),u);}'
+        'u=String(u);'
+        'if(/^[a-z]+:\\/\\//i.test(u)){var x=new URL(u);'
+        'if(x.host===location.host&&x.pathname.slice(0,B.length+1)!==B+"/"){x.pathname=B+x.pathname;}return x.toString();}'
+        'if(u.slice(0,2)==="//")return u;'
+        'if(u.charAt(0)==="/"&&u.slice(0,B.length+1)!==B+"/")return B+u;'
+        'return u;}catch(e){return u;}}'
+        'var f=window.fetch;if(f)window.fetch=function(i,n){return f(fix(i),n);};'
+        'var E=window.EventSource;if(E){var NE=function(u,o){return new E(fix(u),o);};'
+        'NE.prototype=E.prototype;try{NE.CONNECTING=E.CONNECTING;NE.OPEN=E.OPEN;NE.CLOSED=E.CLOSED;}catch(e){}window.EventSource=NE;}'
+        'var W=window.WebSocket;if(W){var NW=function(u,p){return p===undefined?new W(fix(u)):new W(fix(u),p);};'
+        'NW.prototype=W.prototype;try{NW.CONNECTING=W.CONNECTING;NW.OPEN=W.OPEN;NW.CLOSING=W.CLOSING;NW.CLOSED=W.CLOSED;}catch(e){}window.WebSocket=NW;}'
+        '})();</script>'
+    )
+    html = html.replace("<head>", "<head>" + inject, 1)
+    return HTMLResponse(html)
+
+
+def _manifest_response(filename: str = "manifest.json"):
+    """Serve the PWA manifest, base-path-corrected.
+
+    Like _spa_html: when BASE_PATH is set, absolute /static icon srcs and the
+    root start_url/scope must resolve under the prefix, or an installed PWA
+    pulls icons from the origin root (the wrong tenant on a shared funnel) and
+    launches at /. Served byte-for-byte when no BASE_PATH (default install)."""
+    path = config.FRONTEND_DIR / filename
+    if not path.exists():
+        return JSONResponse(status_code=404, content={"error": f"{filename} not built"})
+    base = config.BASE_PATH
+    if not base:
+        return FileResponse(str(path), media_type="application/manifest+json")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for icon in data.get("icons", []):
+        src = icon.get("src", "")
+        if isinstance(src, str) and src.startswith("/") and not src.startswith(base + "/"):
+            icon["src"] = base + src
+    for k in ("start_url", "scope"):
+        v = data.get(k)
+        if isinstance(v, str) and v.startswith("/") and not v.startswith(base + "/"):
+            data[k] = base + v
+    return JSONResponse(data, media_type="application/manifest+json")
+
+
 if config.FRONTEND_DIR.exists():
+    # Registered BEFORE the /static mount so this explicit route wins over the
+    # StaticFiles handler (which would otherwise serve the raw manifest).
+    @app.get("/static/manifest.json")
+    async def manifest_json():
+        return _manifest_response("manifest.json")
+
     app.mount("/static", StaticFiles(directory=str(config.FRONTEND_DIR)), name="static")
 
     @app.get("/")
     async def index():
-        return FileResponse(str(config.FRONTEND_DIR / "index.html"))
+        return _spa_html("index.html")
 
     @app.get("/classic")
     async def index_classic():
-        return FileResponse(str(config.FRONTEND_DIR / "index-classic.html"))
+        return _spa_html("index-classic.html")
 else:
     @app.get("/")
     async def index_missing():

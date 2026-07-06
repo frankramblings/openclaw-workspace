@@ -18,6 +18,13 @@ BACKEND_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BACKEND_DIR.parent
 FRONTEND_DIR = Path(os.environ.get("WORKSPACE_FRONTEND_DIR", REPO_ROOT / "frontend"))
 
+# Optional base path for hosting the app under a subpath (e.g. behind a reverse
+# proxy that mounts it at "/marissa"). Empty (default) = served at the origin
+# root. The proxy MUST strip this prefix before forwarding (Tailscale funnel
+# `--set-path` does), so backend routes stay at root; only the browser-facing
+# URLs in the served HTML are rewritten to include the prefix. See _spa_html().
+BASE_PATH = os.environ.get("WORKSPACE_BASE_PATH", "").rstrip("/")
+
 
 @lru_cache(maxsize=1)
 def _openclaw_json() -> dict:
@@ -57,10 +64,14 @@ def default_model() -> tuple[str, str]:
     """
     raw = os.environ.get("OPENCLAW_DEFAULT_MODEL")
     if not raw:
-        try:
-            raw = _openclaw_json()["agents"]["list"][0]["model"]
-        except (KeyError, IndexError, TypeError):
-            raw = "openai/gpt-5.5"
+        agents = _openclaw_json().get("agents", {})
+        lst = agents.get("list") or []
+        if lst and isinstance(lst[0], dict) and lst[0].get("model"):
+            raw = lst[0]["model"]
+        else:
+            # Minimal configs (e.g. a fresh single-tenant install) carry no
+            # agents.list and set the active model under agents.defaults.model.
+            raw = agents.get("defaults", {}).get("model") or "openai/gpt-5.5"
     if isinstance(raw, dict):  # {"primary": "...", "fallbacks": [...]}
         raw = raw.get("primary") or "openai/gpt-5.5"
     provider, _, model = raw.partition("/")
@@ -234,6 +245,38 @@ def save_connection(**fields) -> dict:
 def auth_token() -> str | None:
     """Return the configured auth token, or None when unset (auth gate off)."""
     return os.environ.get("WORKSPACE_AUTH_TOKEN") or None
+
+
+def auth_session_secret() -> bytes | None:
+    """HMAC key for validating a browser session cookie minted by an external
+    password/passkey login on the SAME origin (e.g. the media-share wall). When
+    set, the auth gate also accepts a valid signed session cookie — so a public
+    deploy can sit behind a Face-ID/password wall instead of a bare token URL.
+    Falls back to SHARE_SECRET so it can share one login with that wall."""
+    val = os.environ.get("WORKSPACE_AUTH_SECRET") or os.environ.get("SHARE_SECRET")
+    return val.encode() if val else None
+
+
+def auth_session_cookie() -> str:
+    """Name of the shared session cookie to honor (default matches the media
+    share so one login covers both)."""
+    return os.environ.get("WORKSPACE_AUTH_SESSION_COOKIE") or "share_session"
+
+
+def auth_session_max_age() -> int:
+    return int(os.environ.get("SHARE_SESSION_DAYS", "30")) * 86400
+
+
+def auth_login_url() -> str | None:
+    """If set, unauthenticated HTML navigations are 302-redirected here (with a
+    ?next= back-link) instead of getting a bare 401 — routes browsers to the
+    login wall. API/JSON and WebSocket requests still get 401 / handshake-close."""
+    return os.environ.get("WORKSPACE_AUTH_LOGIN_URL") or None
+
+
+def auth_active() -> bool:
+    """The gate engages when either a token OR a session secret is configured."""
+    return bool(auth_token() or auth_session_secret())
 
 
 def followup_token() -> str | None:

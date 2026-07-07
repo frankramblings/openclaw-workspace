@@ -20,3 +20,7 @@ export function cancelMobileEdit(state) {
   state.draft = '';
   state.focus = null;
 }
+
+export function commitMobileEditIfPending(state) {
+  if (state.mobileEditingPending) state.mobileEditingPending = null;
+}

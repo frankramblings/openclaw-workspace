@@ -13,7 +13,7 @@ import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
-import { editPendingOnMobile, cancelMobileEdit } from './mobile/edit-flow.js';
+import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
 import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
@@ -458,6 +458,9 @@ root.addEventListener('pointerup', (e) => {
   const fn = actions[name];
   if (!fn) return;
   fn(sb.getAttribute('data-arg'), e);
+  if (name === 'send') {
+    commitMobileEditIfPending(state);
+  }
   render();
   loadActive();
 });

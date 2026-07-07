@@ -121,8 +121,9 @@ function semanticHits(s, titleGroups) {
 
 // Per-message hover toolbar: client-side Copy + Download, bound to the message id.
 // Download expands to a small flyout offering Markdown or PDF.
-function msgTools(m, openId) {
+function msgTools(m, openId, ctx) {
   const open = openId === m.id;
+  const canEdit = !!(ctx && ctx.canEdit && m.role === 'user');
   const menu = open
     ? `<div class="msg-dl-menu" data-act="noop" role="menu">`
         + `<button class="msg-dl-item" data-act="downloadMessage" data-arg="${esc(m.id)}" role="menuitem"><span class="msg-dl-ic">${I.download(13)}</span>Markdown</button>`
@@ -131,6 +132,10 @@ function msgTools(m, openId) {
     : '';
   return `<div class="msg-tools">`
     + `<button class="msg-tool" data-act="copyMessage" data-arg="${esc(m.id)}" title="Copy message" aria-label="Copy message">${I.copy(15)}</button>`
+    + `<button class="msg-tool" data-act="branchFromMessage" data-arg="${esc(m.id)}" title="Branch conversation here" aria-label="Branch here">${I.branch(15)}</button>`
+    + (canEdit
+        ? `<button class="msg-tool" data-act="editMessage" data-arg="${esc(m.id)}" title="Edit message" aria-label="Edit">${I.edit(15)}</button>`
+        : '')
     + `<div class="msg-dl-wrap">`
       + `<button class="msg-tool${open ? ' on' : ''}" data-act="toggleMsgMenu" data-arg="${esc(m.id)}" title="Download message" aria-label="Download message" aria-haspopup="menu" aria-expanded="${open}">${I.download(15)}</button>`
       + menu
@@ -183,7 +188,9 @@ export function chatMsg(m, s) {
   }
   if (m.role === 'user') {
     const attachHtml = renderAttachments(m.attach);
-    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div>`;
+    const canEdit = !!(s.live?.chat?.pendingSend && s.live.chat.pendingSend.messageId === m.id);
+    const ctx = { canEdit };
+    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an
@@ -194,7 +201,8 @@ export function chatMsg(m, s) {
   const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
-  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div></div>`;
+  const asstCtx = { canEdit: false };
+  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
 }
 
 

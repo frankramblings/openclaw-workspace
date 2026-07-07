@@ -287,104 +287,115 @@ git commit -m "backend: branch_context store for pending-context (write/read/con
 
 ---
 
-## Task 3: `POST /api/session/branch` endpoint
+## Task 3: `POST /api/session/branch` endpoint (FastAPI)
 
-Creates a new session inheriting model/endpoint/speed from source, computes the
-prefix from source transcript up to `up_to_message_id` inclusive, builds a
-preamble string, and hands both back to the client while persisting them for the
-first-send hook.
+**REVISION (post-probe):** `backend/app.py` is FastAPI (not aiohttp), and
+`bridge.fetch_history()` returns messages WITHOUT ids — the frontend synthesizes
+positional `h${i}` ids client-side over its own paginated `/api/history` view.
+Attempting to re-slice server-side introduces a paging/dedup mismatch bug.
+Solution: **the client sends the prefix payload itself.** The client already
+rendered the prefix and knows exactly which bubbles are above the branch point;
+the server just trusts, stashes, and echoes it back. No `bridge.fetch_history`
+call, no id lookup, no possibility of divergence.
+
+Creates a new session inheriting model/endpoint/speed from source, stores the
+client-provided prefix + a derived preamble in `branch_context`, and returns
+the new session details.
 
 **Files:**
-- Modify: `backend/app.py` — add handler + route
+- Modify: `backend/app.py` — add handler + FastAPI route
 - Create: `backend/tests/test_session_branch.py`
 
 **Interfaces:**
-- Consumes: `bridge.fetch_history`, `sessions_store.create`, `sessions_store.get`, `sessions_store.delete`, `branch_context.write`.
-- Produces: `POST /api/session/branch` with form fields `source_session_id`, `up_to_message_id`, optional `name`, `model`, `speed`. Response `{"session_id": str, "session_key": str, "prefix": list[dict]}`. Called by frontend Task 6.
+- Consumes: `sessions_store.create`, `sessions_store.get`, `sessions_store.delete`, `branch_context.write`.
+- Produces: `POST /api/session/branch` with JSON body `{source_session_id: str, prefix: list[{role, text}], name?: str, model?: str, speed?: str}`. Response `{"session_id": str, "session_key": str, "prefix": list[dict]}`. Called by frontend Task 8.
 
-- [ ] **Step 1: Locate existing session-create HTTP handler**
+- [ ] **Step 1: Locate existing session-create HTTP handler and follow its patterns**
 
-Run: `cd /home/frank/openclaw-workspace && grep -n "sessions_store.create\|async def.*session\|add_post.*session" backend/app.py | head -30`
+Run: `cd /home/frank/openclaw-workspace && grep -n "@app.post.*session\|sessions_store.create\|async def.*session" backend/app.py | head -30`
 
-Read the surrounding handler to match its auth/parse/response conventions.
+Read the surrounding handler(s) to match FastAPI conventions used in this codebase (Pydantic body, `Form(...)`, `JSONResponse`, response shape). Match whichever pattern the neighbors use — do not introduce new conventions.
+
+Also read `backend/tests/test_chat_stream_draft.py` to see the FastAPI `TestClient` + `monkeypatch.setattr` pattern this codebase uses for endpoint tests.
 
 - [ ] **Step 2: Write failing tests**
 
-Create `backend/tests/test_session_branch.py`:
+Create `backend/tests/test_session_branch.py` using the codebase's existing FastAPI TestClient pattern. Skeleton (adapt import paths to match neighbors):
 
 ```python
-import pytest
-from unittest.mock import AsyncMock, patch
-from aiohttp.test_utils import AioHTTPTestCase
-from backend import app as backend_app, sessions_store, bridge, branch_context
+from fastapi.testclient import TestClient
+from backend import app as backend_app, sessions_store, branch_context
+
+client = TestClient(backend_app.app)  # or however app is exposed — match neighbors
 
 
-class BranchTestCase(AioHTTPTestCase):
-    async def get_application(self):
-        return backend_app.build_app()
+def test_branch_happy_path():
+    src = sessions_store.create(name="src", model=None,
+                                endpoint_url=None, endpoint_id=None, speed=None)
+    prefix = [
+        {"role": "user", "text": "hi"},
+        {"role": "assistant", "text": "hello"},
+    ]
+    r = client.post("/api/session/branch", json={
+        "source_session_id": src["id"],
+        "prefix": prefix,
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert "session_id" in body and body["session_id"] != src["id"]
+    assert body["prefix"] == prefix
+    ctx = branch_context.read(body["session_id"])
+    assert ctx is not None
+    assert "hi" in ctx["preamble"]
+    assert "hello" in ctx["preamble"]
+    sessions_store.delete(src["id"])
+    sessions_store.delete(body["session_id"])
 
-    async def test_branch_happy_path(self):
-        src = sessions_store.create(name="src", model=None,
-                                    endpoint_url=None, endpoint_id=None, speed=None)
-        history = [
-            {"id": "m1", "role": "user", "text": "hi"},
-            {"id": "m2", "role": "assistant", "text": "hello"},
-            {"id": "m3", "role": "user", "text": "next"},
-        ]
-        with patch.object(bridge, "fetch_history",
-                          new=AsyncMock(return_value=history)):
-            resp = await self.client.post("/api/session/branch", data={
-                "source_session_id": src["id"],
-                "up_to_message_id": "m2",
-            })
-            assert resp.status == 200
-            body = await resp.json()
-            assert "session_id" in body and body["session_id"] != src["id"]
-            assert len(body["prefix"]) == 2
-            assert body["prefix"][0]["id"] == "m1"
-            # Persisted for first-send hook
-            ctx = branch_context.read(body["session_id"])
-            assert ctx is not None
-            assert "hi" in ctx["preamble"]
-            assert "hello" in ctx["preamble"]
-        sessions_store.delete(src["id"])
-        sessions_store.delete(body["session_id"])
 
-    async def test_branch_missing_message_id_is_404(self):
-        src = sessions_store.create(name="src2", model=None,
-                                    endpoint_url=None, endpoint_id=None, speed=None)
-        with patch.object(bridge, "fetch_history",
-                          new=AsyncMock(return_value=[{"id": "m1", "role": "user", "text": "hi"}])):
-            resp = await self.client.post("/api/session/branch", data={
-                "source_session_id": src["id"],
-                "up_to_message_id": "nope",
-            })
-            assert resp.status == 404
-        sessions_store.delete(src["id"])
+def test_branch_missing_source_is_404():
+    r = client.post("/api/session/branch", json={
+        "source_session_id": "no-such-session",
+        "prefix": [{"role": "user", "text": "hi"}],
+    })
+    assert r.status_code == 404
 
-    async def test_branch_missing_source_is_404(self):
-        resp = await self.client.post("/api/session/branch", data={
-            "source_session_id": "no-such-session",
-            "up_to_message_id": "m1",
-        })
-        assert resp.status == 404
+
+def test_branch_empty_prefix_is_400():
+    src = sessions_store.create(name="src2", model=None,
+                                endpoint_url=None, endpoint_id=None, speed=None)
+    r = client.post("/api/session/branch", json={
+        "source_session_id": src["id"],
+        "prefix": [],
+    })
+    assert r.status_code == 400
+    sessions_store.delete(src["id"])
 ```
 
 - [ ] **Step 3: Run tests to verify failure**
 
-Run: `cd /home/frank/openclaw-workspace && python3 -m pytest backend/tests/test_session_branch.py -v`
-Expected: FAIL — endpoint not routed.
+Run: `cd /home/frank/openclaw-workspace && .venv/bin/python -m pytest backend/tests/test_session_branch.py -v`
+Expected: FAIL — endpoint not routed (404 on POST, or import error).
 
 - [ ] **Step 4: Implement the endpoint**
 
-Add to `backend/app.py` (near other session HTTP handlers):
+Add to `backend/app.py`. Match the FastAPI-style used by existing session handlers (Pydantic body, imports, JSON responses).
 
 ```python
-from . import branch_context  # top-of-file with other imports
+from . import branch_context  # near other backend imports
+from pydantic import BaseModel  # if not already imported
+
+
+class _BranchPayload(BaseModel):
+    source_session_id: str
+    prefix: list[dict]
+    name: str | None = None
+    model: str | None = None
+    speed: str | None = None
+
 
 def _build_preamble(prefix: list[dict]) -> str:
     """Compact serialization of the branched-from transcript prefix, used as
-    the first-send context preamble. Kept short: role + text, one per line."""
+    the first-send context preamble. Role + text, one per line."""
     lines = []
     for m in prefix:
         role = (m.get("role") or "user").strip()
@@ -402,56 +413,48 @@ def _build_preamble(prefix: list[dict]) -> str:
     )
 
 
-async def _api_session_branch(request):
-    """POST /api/session/branch — create a new session and stash the transcript
-    prefix as pending context. The frontend renders the prefix client-side; the
-    next composer submit into this session will consume the pending context and
-    prepend a preamble to the outgoing chat.send."""
-    data = await request.post()
-    src_id = (data.get("source_session_id") or "").strip()
-    upto = (data.get("up_to_message_id") or "").strip()
-    if not src_id or not upto:
-        return web.json_response({"error": "missing source_session_id or up_to_message_id"}, status=400)
+@app.post("/api/session/branch")
+async def _api_session_branch(payload: _BranchPayload):
+    """POST /api/session/branch — create a new session and stash a
+    client-provided transcript prefix as pending context. The frontend
+    already knows the prefix (it rendered those bubbles); we trust its slice
+    verbatim and echo it back. The next composer submit into this session
+    will consume the pending context and prepend a preamble."""
+    if not payload.source_session_id.strip():
+        raise HTTPException(status_code=400, detail="missing source_session_id")
+    if not payload.prefix:
+        raise HTTPException(status_code=400, detail="prefix must not be empty")
 
-    src = sessions_store.get(src_id)
+    src = sessions_store.get(payload.source_session_id)
     if src is None:
-        return web.json_response({"error": "source session not found"}, status=404)
+        raise HTTPException(status_code=404, detail="source session not found")
 
-    hist = await bridge.fetch_history(src["sessionKey"], limit=1000)
-    idx = None
-    for i, m in enumerate(hist):
-        if m.get("id") == upto:
-            idx = i
-            break
-    if idx is None:
-        return web.json_response({"error": "up_to_message_id not in transcript"}, status=404)
-    prefix = hist[: idx + 1]
-
-    name_override = (data.get("name") or "").strip()
-    new_name = name_override or f"↳ {src.get('name') or 'chat'} — from msg {idx + 1}"
+    new_name = (payload.name or "").strip() or (
+        f"↳ {src.get('name') or 'chat'} — from msg {len(payload.prefix)}"
+    )
     new_sess = sessions_store.create(
         name=new_name,
-        model=data.get("model") or src.get("model"),
+        model=payload.model or src.get("model"),
         endpoint_url=src.get("endpoint_url"),
         endpoint_id=src.get("endpoint_id"),
-        speed=data.get("speed") or src.get("speed"),
+        speed=payload.speed or src.get("speed"),
     )
-
-    preamble = _build_preamble(prefix)
-    branch_context.write(new_sess["id"], src_id, prefix, preamble)
-
-    return web.json_response({
+    preamble = _build_preamble(payload.prefix)
+    branch_context.write(new_sess["id"], payload.source_session_id, payload.prefix, preamble)
+    return {
         "session_id": new_sess["id"],
         "session_key": new_sess["sessionKey"],
-        "prefix": prefix,
-    })
+        "prefix": payload.prefix,
+    }
 ```
 
-Register the route: `app.router.add_post("/api/session/branch", _api_session_branch)`
+If the existing session handlers use `Form(...)` instead of Pydantic body, match that pattern instead — do not introduce Pydantic if the file avoids it. Adapt the response shape (`JSONResponse` vs. plain dict) to match neighbors.
+
+Match whichever exception style neighbors use (`HTTPException` vs. explicit `JSONResponse(..., status_code=...)`). Import `HTTPException` from fastapi if it isn't already.
 
 - [ ] **Step 5: Run tests to verify pass**
 
-Run: `cd /home/frank/openclaw-workspace && python3 -m pytest backend/tests/test_session_branch.py -v`
+Run: `cd /home/frank/openclaw-workspace && .venv/bin/python -m pytest backend/tests/test_session_branch.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 6: Commit**
@@ -459,7 +462,7 @@ Expected: 3 passed.
 ```bash
 cd /home/frank/openclaw-workspace
 git add backend/app.py backend/tests/test_session_branch.py
-git commit -m "backend: POST /api/session/branch — stash prefix as pending context"
+git commit -m "backend: POST /api/session/branch — stash client-provided prefix as pending context"
 ```
 
 ---
@@ -873,11 +876,25 @@ Run: `cd /home/frank/openclaw-workspace && grep -n "data-act\|dataset.act\|copyM
 async function branchFromMessage(msgId) {
   const sess = getActiveSession();
   if (!sess) return;
+  // Slice the prefix from the client's own rendered message list — the server
+  // never re-fetches or re-slices (backend's gateway history returns no ids;
+  // synthesizing them server-side would risk paging/dedup divergence). The
+  // client already has the truth of what's above this bubble.
+  const msgs = sess.live?.chat?.messages || [];
+  const idx = msgs.findIndex(x => x.id === msgId);
+  if (idx < 0) { toast(`Couldn't find that message`); return; }
+  const prefixSlice = msgs.slice(0, idx + 1).map(m => ({
+    role: m.role, text: m.text,
+  }));
   try {
-    const fd = new FormData();
-    fd.append('source_session_id', sess.id);
-    fd.append('up_to_message_id', msgId);
-    const r = await fetch('/api/session/branch', { method: 'POST', body: fd });
+    const r = await fetch('/api/session/branch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        source_session_id: sess.id,
+        prefix: prefixSlice,
+      }),
+    });
     if (!r.ok) throw new Error(`branch failed: ${r.status}`);
     const { session_id, prefix } = await r.json();
     await refreshSessions();

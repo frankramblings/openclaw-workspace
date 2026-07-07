@@ -633,41 +633,18 @@ function beginTurn(chat, modelLabel, sessionId) {
   return { onEvent, ensureActivity };
 }
 
-// The actual send: optimistic user bubble + POST /api/chat_stream. Shared by the
-// composer `send` action and the queued-message auto-send (flushQueued). Assumes
-// the caller already cleared the draft/pendingAttach.
-async function dispatchSend(text, attachSnap) {
+// The network half of a send: detach any prior live reader, open a turn, and
+// POST /api/chat_stream. Shared by the immediate path (dispatchSend) and the
+// buffered composer flow (flushPending) — in both cases the optimistic bubble
+// is already sitting in chat.thread by the time this runs.
+function fireSend(sessionId, text, attachSnap) {
   const state = runtime.state;
   if (!state) return;
   const chat = ensureChat(state);
   const attachIds = (attachSnap || []).map((a) => a.id);
-  if (!text && !attachIds.length) return;
   // Sending is a user gesture — a good moment to ask for OS-notification
   // permission so a reply finishing while you're elsewhere can notify you.
   ensureNotifyPermission();
-
-  if (!chat.activeId) {
-    try {
-      const id = await createSession(chat.model);
-      if (!id) return;
-      chat.activeId = id;
-      storeActiveId(id);
-      // Surface the brand-new thread in the sidebar IMMEDIATELY — don't wait for
-      // the turn's `done` event (refreshSidebarUsage) to rebuild the list. Fire
-      // and forget so it never delays the send; the row appears the moment you
-      // send, so leaving the thread before the reply lands still lets you find
-      // it in the conversations list.
-      refreshSidebarUsage(state).catch(() => {});
-    } catch (_) {
-      return;
-    }
-  }
-  const sessionId = chat.activeId;
-
-  if (!Array.isArray(chat.thread)) chat.thread = [];
-  chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
-  runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
-  runtime.render();
 
   // Detach any prior live reader. Safe now: the server-side recorder owns the
   // turn, so aborting the reader only drops THIS client's stream.
@@ -692,6 +669,117 @@ async function dispatchSend(text, attachSnap) {
     },
     onEvent,
   );
+}
+
+// Ensure a session exists for the active chat, creating one on first send.
+// Returns the session id, or null if creation failed.
+async function ensureSessionId(chat) {
+  if (chat.activeId) return chat.activeId;
+  try {
+    const id = await createSession(chat.model);
+    if (!id) return null;
+    chat.activeId = id;
+    storeActiveId(id);
+    // Surface the brand-new thread in the sidebar IMMEDIATELY — don't wait for
+    // the turn's `done` event (refreshSidebarUsage) to rebuild the list. Fire
+    // and forget so it never delays the send; the row appears the moment you
+    // send, so leaving the thread before the reply lands still lets you find
+    // it in the conversations list.
+    refreshSidebarUsage(runtime.state).catch(() => {});
+    return id;
+  } catch (_) {
+    return null;
+  }
+}
+
+// The unbuffered send: optimistic user bubble + immediate POST /api/chat_stream.
+// Used by the queued-message auto-send (flushQueued), which already had its own
+// review pass in the composer before it got queued. Assumes the caller already
+// cleared the draft/pendingAttach.
+async function dispatchSend(text, attachSnap) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  const attachIds = (attachSnap || []).map((a) => a.id);
+  if (!text && !attachIds.length) return;
+
+  const sessionId = await ensureSessionId(chat);
+  if (!sessionId) return;
+
+  if (!Array.isArray(chat.thread)) chat.thread = [];
+  chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
+  runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
+  runtime.render();
+
+  fireSend(sessionId, text, attachSnap);
+}
+
+// ---- composer send-buffer (700ms edit window) ------------------------------
+// Gives Frank a brief window to fix a just-sent message before it actually
+// hits the gateway. The optimistic bubble renders immediately — with a
+// draining countdown ring (see chatMsg's m._optimistic branch in surfaces.js)
+// — while the real POST is deferred until the buffer elapses or something
+// explicitly flushes it early (a second send, or Task 8's Save & Send).
+const BUFFER_MS = 700;
+let _pendingRAF = 0;
+
+function pendingRAFTick() {
+  const chat = runtime.state && ensureChat(runtime.state);
+  if (!chat || !chat.pendingSend) { _pendingRAF = 0; return; }
+  runtime.render();
+  _pendingRAF = requestAnimationFrame(pendingRAFTick);
+}
+function armPendingRAF() {
+  if (!_pendingRAF) _pendingRAF = requestAnimationFrame(pendingRAFTick);
+}
+
+// Buffered composer submit: append the optimistic bubble now (with
+// `_optimistic`/`_deadline` so it renders the countdown ring + the Edit
+// affordance), and defer the real network fire for BUFFER_MS.
+async function submitFromComposer(text, attachSnap) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  const attachIds = (attachSnap || []).map((a) => a.id);
+  if (!text && !attachIds.length) return;
+
+  // A message is already buffered → flush it now, in submission order, before
+  // this new one claims its own buffer window.
+  if (chat.pendingSend) flushPending(chat.pendingSend.sessionId);
+
+  const sessionId = await ensureSessionId(chat);
+  if (!sessionId) return;
+
+  const messageId = 'live-u-' + Date.now();
+  const deadline = Date.now() + BUFFER_MS;
+  if (!Array.isArray(chat.thread)) chat.thread = [];
+  chat.thread.push({
+    id: messageId, role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [],
+    _optimistic: true, _deadline: deadline,
+  });
+  chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0 };
+  runtime.wantChatBottom = true;
+  runtime.render();
+  armPendingRAF();
+  chat.pendingSend.timerId = setTimeout(() => flushPending(sessionId), BUFFER_MS);
+}
+
+// Fires a buffered send early — timer expiry, a second send arriving, or (in
+// Task 8) an explicit Save & Send mid-edit. Clears pendingSend + the
+// optimistic flags before handing off to fireSend, so msgTools' canEdit
+// predicate flips false (the Edit button disappears) the instant this runs.
+function flushPending(sessionId) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  const p = chat.pendingSend;
+  if (!p) return;
+  if (p.timerId) clearTimeout(p.timerId);
+  chat.pendingSend = null;
+  const msg = (chat.thread || []).find((m) => m.id === p.messageId);
+  if (msg) { msg.text = p.text; delete msg._optimistic; delete msg._deadline; }
+  runtime.render();
+  fireSend(sessionId || p.sessionId, p.text, p.attachSnap);
 }
 
 // When a turn ends, fire any message the user queued while it was streaming.
@@ -1110,7 +1198,7 @@ export const actions = {
 
     state.draft = '';
     state.pendingAttach = []; // consumed by this turn
-    await dispatchSend(text, attachSnap);
+    await submitFromComposer(text, attachSnap);
   },
 
   // Pull a queued message back into the composer to edit/recall it.

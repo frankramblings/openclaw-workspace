@@ -885,6 +885,15 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-tool.on{color:var(--fg);background:var(--row-hover)}
 /* Keep the toolbar visible while its download flyout is open (no hover needed). */
 .msg-tools:has(.msg-dl-menu){opacity:1;transform:none}
+
+/* 700ms composer send-buffer countdown ring (Task 7): drains from full to
+   empty next to the just-sent bubble's timestamp while the real POST is
+   still deferred, so an edit made during the window still has time to land. */
+.msg-pending-ring{
+  display:inline-block;width:9px;height:9px;margin:0 6px;border-radius:50%;
+  background:conic-gradient(var(--accent,#4a90e2) calc(var(--pct,1) * 360deg), transparent 0);
+  vertical-align:middle;flex:none;
+}
 .msg-dl-wrap{position:relative;display:flex}
 /* Opens UPWARD from the icon (the toolbar sits low, near the composer) and
    aligns to the icon's left edge. Same panel language as .conv-menu. */

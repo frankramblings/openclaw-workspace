@@ -1721,6 +1721,18 @@ export const actions = {
       return;
     }
     const text = state.editDraft != null ? state.editDraft : chat.pendingSend.text;
+    // Empty-text guard: if Frank cleared the textarea, treat Save & Send as
+    // "drop the buffered send" — better UX than posting an empty message and
+    // safer than fireSend, which no longer has its own empty guard on this path.
+    if (!text.trim() && !(chat.pendingSend.attachSnap && chat.pendingSend.attachSnap.length)) {
+      clearTimeout(chat.pendingSend.timerId);
+      chat.pendingSend = null;
+      const idx = (chat.thread || []).findIndex((m) => m.id === msgId);
+      if (idx >= 0) chat.thread.splice(idx, 1);
+      state.editDraft = null;
+      runtime.render();
+      return;
+    }
     chat.pendingSend.text = text;
     const msg = (chat.thread || []).find((m) => m.id === msgId);
     if (msg) msg.text = text;

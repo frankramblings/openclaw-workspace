@@ -236,8 +236,9 @@ Buffer discipline:
    or does the aborted user turn stay in the log? This determines whether the
    "reissued" path is truly clean or falls back to Edit-B (correction append)
    after the 300ms buffer closes. Verify during implementation with a small
-   probe; if unclean, we shorten the buffer to 700ms and drop the reissue path
-   entirely (edits after buffer close return 409).
+   probe; if unclean, we lengthen the buffer to ~700ms (giving Frank more time
+   inside the clean window) and drop the reissue path entirely (edits after
+   buffer close return 409).
 
 2. **`chat.inject` role support** — the handler honors an arbitrary `role`
    field (chat-BA3ikhey.js:1150), but the wrapping function is named

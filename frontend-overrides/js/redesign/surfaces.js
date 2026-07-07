@@ -193,12 +193,15 @@ export function chatMsg(m, s) {
     const ctx = { canEdit };
     // While the 700ms send-buffer is armed (Task 7), a small ring next to the
     // timestamp drains as the deadline approaches — the visible countdown
-    // before this bubble actually hits the gateway.
+    // before this bubble actually hits the gateway. The drain itself is a
+    // pure CSS animation (see .msg-pending-ring / @keyframes ring-drain in
+    // redesign.css) driven off this element's own mount time — no per-frame
+    // JS render loop needed, so it never competes with the surgical-patch
+    // rendering the rest of chat.js relies on.
     let pendingRing = '';
     if (m._optimistic && m._deadline) {
       const remaining = Math.max(0, m._deadline - Date.now());
-      const pct = Math.max(0, Math.min(1, remaining / 700));
-      pendingRing = `<span class="msg-pending-ring" style="--pct:${pct}" title="Sending in ${Math.ceil(remaining / 100) / 10}s — edit to change it"></span>`;
+      pendingRing = `<span class="msg-pending-ring" title="Sending in ${Math.ceil(remaining / 100) / 10}s — edit to change it"></span>`;
     }
     return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span>${pendingRing}<span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
   }

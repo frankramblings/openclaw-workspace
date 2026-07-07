@@ -888,11 +888,29 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 
 /* 700ms composer send-buffer countdown ring (Task 7): drains from full to
    empty next to the just-sent bubble's timestamp while the real POST is
-   still deferred, so an edit made during the window still has time to land. */
+   still deferred, so an edit made during the window still has time to land.
+   Driven purely by a CSS animation on --pct — NOT a per-frame JS
+   runtime.render() loop. A rAF loop that re-renders the whole tree ~42x
+   during the window would collide with the surgical-patch convention used
+   everywhere else for high-frequency UI (see chat.js's throttledRender /
+   patchMessage comment) — full re-renders drop text selection, scroll
+   position, and composer typing mid-animation. Registering --pct as an
+   animatable custom property lets the browser tween the conic-gradient
+   angle on the compositor with zero DOM/JS work per frame. */
+@property --pct{
+  syntax:'<number>';
+  inherits:false;
+  initial-value:1;
+}
+@keyframes ring-drain{
+  from{--pct:1}
+  to{--pct:0}
+}
 .msg-pending-ring{
   display:inline-block;width:9px;height:9px;margin:0 6px;border-radius:50%;
   background:conic-gradient(var(--accent,#4a90e2) calc(var(--pct,1) * 360deg), transparent 0);
   vertical-align:middle;flex:none;
+  animation:ring-drain 700ms linear forwards;
 }
 .msg-dl-wrap{position:relative;display:flex}
 /* Opens UPWARD from the icon (the toolbar sits low, near the composer) and
@@ -908,6 +926,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
   .msg-tools{transition:none;transform:none}
   .conv-kebab,.cm-item,.msg-tool,.msg-dl-item{transition:none}
   .conv-menu,.msg-dl-menu{animation:none}
+  .msg-pending-ring{animation:none;--pct:1}
 }
 
 /* branch-carried prefix bubbles — messages rendered above the live transcript

@@ -721,17 +721,6 @@ async function dispatchSend(text, attachSnap) {
 // — while the real POST is deferred until the buffer elapses or something
 // explicitly flushes it early (a second send, or Task 8's Save & Send).
 const BUFFER_MS = 700;
-let _pendingRAF = 0;
-
-function pendingRAFTick() {
-  const chat = runtime.state && ensureChat(runtime.state);
-  if (!chat || !chat.pendingSend) { _pendingRAF = 0; return; }
-  runtime.render();
-  _pendingRAF = requestAnimationFrame(pendingRAFTick);
-}
-function armPendingRAF() {
-  if (!_pendingRAF) _pendingRAF = requestAnimationFrame(pendingRAFTick);
-}
 
 // Buffered composer submit: append the optimistic bubble now (with
 // `_optimistic`/`_deadline` so it renders the countdown ring + the Edit
@@ -759,8 +748,12 @@ async function submitFromComposer(text, attachSnap) {
   });
   chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0 };
   runtime.wantChatBottom = true;
+  // The countdown ring's drain is a pure CSS animation keyed off its own
+  // mount time (see .msg-pending-ring / @keyframes ring-drain in
+  // redesign.css) — no rAF re-render loop needed here. This one render()
+  // mounts the ring; the only other render this buffer window needs is the
+  // flush below.
   runtime.render();
-  armPendingRAF();
   chat.pendingSend.timerId = setTimeout(() => flushPending(sessionId), BUFFER_MS);
 }
 
@@ -780,6 +773,22 @@ function flushPending(sessionId) {
   if (msg) { msg.text = p.text; delete msg._optimistic; delete msg._deadline; }
   runtime.render();
   fireSend(sessionId || p.sessionId, p.text, p.attachSnap);
+}
+
+// A buffered send that's still sitting in its 700ms window when the tab
+// closes was, until now, silently dropped: the setTimeout backing it never
+// fires because the page is gone, so the "sent" optimistic bubble the user
+// saw never actually hit the gateway. `pagehide` fires reliably on tab
+// close/navigation (and, as a bonus, on iOS Safari backgrounding, which never
+// fires 'unload'); flush synchronously so the request goes out before the
+// page tears down. Guarded for non-browser test environments, where
+// `window.addEventListener` doesn't exist.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', () => {
+    const state = runtime.state;
+    const chat = state && state.live && state.live.chat;
+    if (chat && chat.pendingSend) flushPending(chat.pendingSend.sessionId);
+  });
 }
 
 // When a turn ends, fire any message the user queued while it was streaming.

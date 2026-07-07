@@ -501,6 +501,13 @@ root.addEventListener('input', (e) => {
   // pure CSS (:placeholder-shown), so skipping render here is safe. Desktop
   // keeps its live render — it drives the slash-command palette as you type.
   if (fk === 'mdraft') return;
+  // The inline message editor (Task 8, msg-edit-ta / data-focus="msgEdit") has
+  // no slash palette to drive, so there's no reason for it to pay render()'s
+  // cost of re-running chatMsg→renderMarkdown for every message in the thread
+  // on each keystroke — the same lag the draft/mdraft composers already skip.
+  // State is synced above so saveEdit() sees the typed text; the DOM already
+  // holds it, so skipping the rebuild here is safe.
+  if (fk === 'msgEdit') return;
   // Typing in the desktop composer must not move the thread at all. render()
   // rebuilds the DOM and re-focuses the textarea; pin the chat scroll to exactly
   // where it was so a keystroke changes nothing in the viewport.

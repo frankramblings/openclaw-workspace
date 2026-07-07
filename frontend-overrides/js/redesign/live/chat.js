@@ -473,7 +473,7 @@ const branchPrefixKey = (sessionId) => `branchPrefix:${sessionId}`;
 // surfaces.js) have done their job: the backend already prepended the
 // preamble to that first send. Clear both the in-memory flag and its
 // localStorage backing so a reload doesn't resurrect stale carried bubbles.
-function clearBranchPrefixIfStarted(state, chat) {
+export function clearBranchPrefixIfStarted(state, chat) {
   if (state.branchPrefix && Array.isArray(chat.thread) && chat.thread.length > 0) {
     state.branchPrefix = null;
     try { if (chat.activeId) localStorage.removeItem(branchPrefixKey(chat.activeId)); } catch (_) {}

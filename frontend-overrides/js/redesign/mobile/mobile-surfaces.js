@@ -56,7 +56,11 @@ export function mChatMsg(m, s) {
         ? `<img class="m-attach-img" src="${esc(a.url)}" alt="${esc(a.name || 'image')}">`
         : `<span class="m-attach-chip">📎 ${esc(a.name || a.id)}</span>`;
     }).join('') : '';
-    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div></div>`;
+    const pending = !!(m._optimistic && m._deadline);
+    const ring = pending ? `<span class="m-msg-pending-ring" title="Sending…"></span>` : '';
+    const chip = pending ? `<button class="m-msg-edit-chip" data-act="editPendingOnMobile" data-arg="${esc(m.id)}">Tap to edit</button>` : '';
+    const meta = pending ? `<div class="m-msg-user-meta">${ring}${chip}</div>` : '';
+    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div>${meta}</div>`;
   }
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`

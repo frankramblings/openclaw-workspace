@@ -163,6 +163,11 @@ html.native .m-tabbar {
 .m-md .md-list li::marker { color: var(--faint); }
 .m-md .md-quote { margin: 0 0 9px; padding: 1px 0 1px 12px; border-left: 2px solid var(--bd); color: var(--mut); }
 .m-md .md-code { margin: 0 0 9px; padding: 10px 12px; background: #121317; border: 1px solid var(--bd); border-radius: 9px; overflow-x: auto; font-family: var(--mono); font-size: 11.5px; line-height: 1.6; color: #cfd3da; }
+.m-md .md-table { margin: 0 0 12px; border-collapse: collapse; max-width: 100%; display: block; overflow-x: auto; font-size: 13.5px; line-height: 1.5; }
+.m-md .md-table th, .m-md .md-table td { border: 1px solid var(--bd); padding: 6px 9px; text-align: left; vertical-align: top; white-space: nowrap; }
+.m-md .md-table th { background: #15161a; font-weight: 650; color: var(--fg); }
+.m-md .md-table td { color: #e1e5ec; }
+.m-md .md-table tr:nth-child(2n) td { background: rgba(255,255,255,.02); }
 .m-md a { color: var(--teal); text-decoration: none; }
 .m-md strong { color: var(--fg); font-weight: 600; }
 .m-code-card { border: 1px solid var(--bd); border-radius: 9px; overflow: hidden; background: #121317; }
@@ -477,3 +482,43 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-model-row.sel { background: var(--tealtint); }
 .m-model-name { flex: 1; font-size: 13.5px; color: var(--fg); }
 .m-sheet.model-sheet .m-cap-head { padding: 0 16px 10px; margin-bottom: 0; }
+
+/* ---- First-run "Add to Home Screen" hint (mobile only) ------------------- */
+#pwa-install-hint { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+#pwa-install-hint .pwa-hint-scrim {
+  position: absolute; inset: 0; background: rgba(8,9,11,.28);
+  opacity: 0; transition: opacity .24s ease; pointer-events: auto;
+}
+#pwa-install-hint.show .pwa-hint-scrim { opacity: 1; }
+#pwa-install-hint .pwa-hint-card {
+  position: absolute; left: 12px; right: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  background: var(--panel); border: 1px solid var(--bd); border-radius: 18px;
+  box-shadow: 0 -6px 30px rgba(0,0,0,.5); padding: 16px 16px 14px;
+  transform: translateY(140%); opacity: 0;
+  transition: transform .26s cubic-bezier(.22,1,.36,1), opacity .26s ease;
+  pointer-events: auto;
+}
+#pwa-install-hint.show .pwa-hint-card { transform: translateY(0); opacity: 1; }
+#pwa-install-hint .pwa-hint-close {
+  position: absolute; top: 10px; right: 10px; width: 32px; height: 32px;
+  border: none; background: none; color: var(--mut); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+#pwa-install-hint .pwa-hint-close:active { background: var(--row-hover); }
+#pwa-install-hint .pwa-hint-body { padding-right: 30px; }
+#pwa-install-hint .pwa-hint-title { font-size: 15.5px; font-weight: 650; color: var(--fg); margin-bottom: 4px; }
+#pwa-install-hint .pwa-hint-text { font-size: 13px; line-height: 1.5; color: var(--mut); }
+#pwa-install-hint .pwa-hint-text b { color: var(--fg); font-weight: 600; }
+#pwa-install-hint .pwa-hint-glyph {
+  display: inline-flex; vertical-align: -4px; color: var(--blue); margin: 0 1px;
+}
+#pwa-install-hint .pwa-hint-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+#pwa-install-hint .pwa-hint-btn {
+  font: inherit; font-size: 13.5px; font-weight: 600; padding: 9px 16px;
+  border-radius: 11px; cursor: pointer; border: 1px solid var(--bd);
+}
+#pwa-install-hint .pwa-hint-btn.ghost { background: none; color: var(--mut); }
+#pwa-install-hint .pwa-hint-btn.ghost:active { background: var(--row-hover); }
+#pwa-install-hint .pwa-hint-btn.primary { background: var(--teal); border-color: var(--teal); color: #04211f; }
+#pwa-install-hint .pwa-hint-btn.primary:active { filter: brightness(.94); }

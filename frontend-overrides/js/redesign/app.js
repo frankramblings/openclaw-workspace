@@ -369,6 +369,33 @@ function doRefresh() {
 }
 actions.refreshChat = doRefresh;
 
+// Code-block copy button. Handled at capture phase and short-circuited so
+// the delegated dispatcher below doesn't trigger a render() that would wipe
+// the transient "Copied" state on the button.
+root.addEventListener('click', (e) => {
+  const btn = e.target.closest('.md-copy-btn');
+  if (!btn) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const pre = btn.closest('pre.md-code');
+  const code = pre && pre.querySelector('code');
+  const text = code ? code.textContent : '';
+  const done = () => {
+    btn.classList.add('is-copied');
+    btn.setAttribute('title', 'Copied');
+    setTimeout(() => { btn.classList.remove('is-copied'); btn.setAttribute('title', 'Copy'); }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => { /* silent */ });
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (_) {}
+    document.body.removeChild(ta);
+  }
+}, true);
+
 // ---- event delegation -----------------------------------------------------
 root.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');

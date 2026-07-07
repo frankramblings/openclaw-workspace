@@ -21,6 +21,7 @@ import * as emailInbox from './emailInbox.js';
 import codeRunnerModule from './codeRunner.js';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js';
 import createResearchSynapse from './researchSynapse.js';
+import { newThinkTagState, advanceThinkTags } from './think-tag-state.js';
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000; // unused since the one-mode change; kept for reference
 
@@ -519,6 +520,10 @@ import createResearchSynapse from './researchSynapse.js';
 
     // Declare accumulated outside try block so it's accessible in catch
     let accumulated = '';
+    // Incremental <think>/</think> tracking — avoids O(n) accumulated.includes()
+    // scans per delta (which were O(n²) over a stream and ran for backgrounded
+    // threads too, janking the composer). See think-tag-state.js.
+    const _thinkState = newThinkTagState();
     let holder = null;
     let finalMeta = null;
     let finalModelName = null;
@@ -1144,6 +1149,29 @@ import createResearchSynapse from './researchSynapse.js';
         return (text || '').slice(last.index + last[0].length).trimStart();
       }
 
+      // --- TEMP render profiler (gated by localStorage.chatPerf) ---------
+      // Accumulates wall-time per render sub-step into window.__chatPerf so a
+      // single long-reply reproduction shows exactly which pass dominates.
+      // Remove once the hotspot is identified.
+      const _perfOn = (() => { try { return !!localStorage.getItem('chatPerf'); } catch (e) { return false; } })();
+      const _perf = (label, fn) => {
+        if (!_perfOn) return fn();
+        const t0 = performance.now();
+        const r = fn();
+        const dt = performance.now() - t0;
+        const p = (window.__chatPerf = window.__chatPerf || {});
+        const s = (p[label] = p[label] || { ms: 0, n: 0, max: 0 });
+        s.ms += dt; s.n += 1; if (dt > s.max) s.max = dt;
+        return r;
+      };
+      window.__chatPerfDump = () => {
+        const p = window.__chatPerf || {};
+        const rows = Object.entries(p).map(([k, v]) => ({ step: k, totalMs: +v.ms.toFixed(1), calls: v.n, avgMs: +(v.ms / v.n).toFixed(2), maxMs: +v.max.toFixed(1) }));
+        rows.sort((a, b) => b.totalMs - a.totalMs);
+        console.table(rows);
+        return rows;
+      };
+
       // Direct render helper for streaming text
       _renderStream = () => {
         let dt = stripToolBlocks(roundText);
@@ -1189,12 +1217,12 @@ import createResearchSynapse from './researchSynapse.js';
             }
           }
           if (replyTrimmed) {
-            const replyHtml = markdownModule.mdToHtml(markdownModule.squashOutsideCode(replyTrimmed));
+            const replyHtml = _perf('parse', () => markdownModule.mdToHtml(markdownModule.squashOutsideCode(replyTrimmed)));
             const prevLen = liveReply._prevTextLen || 0;
-            liveReply.innerHTML = replyHtml;
-            _fadeNewTokens(liveReply, prevLen);
+            _perf('innerHTML', () => { liveReply.innerHTML = replyHtml; });
+            _perf('fade', () => _fadeNewTokens(liveReply, prevLen));
             liveReply._prevTextLen = liveReply.textContent.length;
-            if (window.hljs) liveReply.querySelectorAll('pre code').forEach((b) => window.hljs.highlightElement(b));
+            if (window.hljs) _perf('hljs', () => liveReply.querySelectorAll('pre code').forEach((b) => window.hljs.highlightElement(b)));
           }
           // Reply empty or not — preserve thinking bar, don't fall through to full re-render
           uiModule.scrollHistory();
@@ -1216,7 +1244,7 @@ import createResearchSynapse from './researchSynapse.js';
           uiModule.scrollHistory();
           return;
         }
-        const html = markdownModule.processWithThinking(markdownModule.squashOutsideCode(dt));
+        const html = _perf('parse', () => markdownModule.processWithThinking(markdownModule.squashOutsideCode(dt)));
 
         // Smooth expand only for regular chat text (not thinking/agent blocks)
         const _hasThinking = html.includes('thinking-section');
@@ -1234,6 +1262,7 @@ import createResearchSynapse from './researchSynapse.js';
             _measureDiv = document.createElement('div');
             _measureDiv.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;z-index:-1;';
           }
+          _perf('measure', () => {
           _measureDiv.style.width = contentEl.offsetWidth + 'px';
           _measureDiv.className = contentEl.className;
           _measureDiv.innerHTML = html;
@@ -1243,31 +1272,57 @@ import createResearchSynapse from './researchSynapse.js';
           const curMin = parseFloat(contentEl.style.minHeight) || 0;
           contentEl.style.minHeight = Math.max(curMin, measuredH) + 'px';
           contentEl._lastMeasuredLen = contentEl.textContent.length;
+          });
         }
 
-        contentEl.innerHTML = html;
-        _fadeNewTokens(contentEl, prevLen);
+        _perf('innerHTML', () => { contentEl.innerHTML = html; });
+        _perf('fade', () => _fadeNewTokens(contentEl, prevLen));
         contentEl._prevTextLen = contentEl.textContent.length;
-        if (window.hljs) contentEl.querySelectorAll('pre code').forEach((b) => window.hljs.highlightElement(b));
+        if (window.hljs) _perf('hljs', () => contentEl.querySelectorAll('pre code').forEach((b) => window.hljs.highlightElement(b)));
         uiModule.scrollHistory();
       };
 
       // Per-delta renders are O(full message) — markdown re-parse, offscreen
-      // height measure (forced reflow), innerHTML swap, hljs. Coalesce bursts
-      // to one render per animation frame; structural call sites (tool_start,
-      // agent_step, think-close, stream-end) still call _renderStream()
-      // directly because they need the DOM current before their next line.
+      // height measure (forced reflow), innerHTML swap, hljs. Coalescing to one
+      // render per animation frame caps frame COUNT, but each frame's cost still
+      // grows with the message, so a long reply degrades to O(n^2): ~60 frames/s
+      // each re-parsing an ever-larger buffer starves the main thread and janks
+      // keystrokes. So we also back the cadence OFF as the buffer grows —
+      // short replies (< 2k chars, the common case) still render every frame and
+      // feel instant; long replies stretch to at most one render per ~240ms,
+      // which bounds total render work. The final complete state is always
+      // painted by the direct _renderStream() call at stream end, so throttled
+      // frames never drop content. Structural call sites (tool_start, agent_step,
+      // think-close, stream-end) still call _renderStream() directly.
       let _renderQueued = false;
+      let _lastRenderTs = 0;
+      let _trailingTimer = 0;
+      const _flushRender = () => {
+        _renderQueued = false;
+        _lastRenderTs = Date.now();
+        // A queued render firing after the round finalized / the stream
+        // completed / agent_step reset the round would stomp newer DOM.
+        if (roundFinalized || _streamSawDone || !roundText) return;
+        _renderStream();
+      };
       const _queueRenderStream = () => {
-        if (_renderQueued) return;
-        _renderQueued = true;
-        requestAnimationFrame(() => {
-          _renderQueued = false;
-          // A queued render firing after the round finalized / the stream
-          // completed / agent_step reset the round would stomp newer DOM.
-          if (roundFinalized || _streamSawDone || !roundText) return;
-          _renderStream();
-        });
+        if (_renderQueued || _trailingTimer) return;
+        // Grows from 33ms (1 frame) at <=2k chars to a 240ms ceiling on very
+        // long replies — keeps small replies buttery, throttles big ones.
+        const minInterval = Math.min(240, 33 + Math.max(0, roundText.length - 2000) / 200);
+        const since = Date.now() - _lastRenderTs;
+        if (since >= minInterval) {
+          _renderQueued = true;
+          requestAnimationFrame(_flushRender);
+        } else {
+          // Too soon — defer to the end of the interval, then paint on the
+          // next frame. Coalesces every delta that arrives while we wait.
+          _trailingTimer = setTimeout(() => {
+            _trailingTimer = 0;
+            _renderQueued = true;
+            requestAnimationFrame(_flushRender);
+          }, minInterval - since);
+        }
       };
 
       // Walk text nodes, skip past `prevLen` characters of old text,
@@ -1302,7 +1357,7 @@ import createResearchSynapse from './researchSynapse.js';
       while (true) {
         const { done, value } = await reader.read();
         _lastReaderActivity = Date.now();
-        if (done) break;
+        if (done) { if (_perfOn) { console.log('[chatPerf] render sub-step totals for this reply:'); window.__chatPerfDump(); window.__chatPerf = {}; } break; }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -1440,13 +1495,9 @@ import createResearchSynapse from './researchSynapse.js';
                 if (_threadAbove && _threadAbove.classList.contains('agent-thread') && !_threadAbove.classList.contains('has-bottom')) {
                   _threadAbove.classList.add('has-bottom');
                 }
-                // VLLM reasoning tokens: wrap in <think> tags for the thinking UI
-                let _delta = json.delta;
-                if (json.thinking) {
-                  if (!accumulated.includes('<think>')) _delta = '<think>' + _delta;
-                } else if (accumulated.includes('<think>') && !accumulated.includes('</think>')) {
-                  _delta = '</think>' + _delta;
-                }
+                // VLLM reasoning tokens: wrap in <think> tags for the thinking UI.
+                // Incremental tag tracking (no full-accumulated rescan per delta).
+                let _delta = advanceThinkTags(_thinkState, json.delta, json.thinking);
                 const wasEmpty = !accumulated;
                 accumulated += _delta;
                 roundText += _delta;

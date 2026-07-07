@@ -57,7 +57,8 @@ export function mChatMsg(m, s) {
     }).join('') : '';
     return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div></div>`;
   }
-  return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"><div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}</div></div>`;
+  const streamAttr = m.streaming ? ' data-streaming="1"' : '';
+  return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}><div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}</div></div>`;
 }
 
 // Pull-to-refresh indicator. Any .m-scroll marked data-ptr="1" with this as its

@@ -87,3 +87,37 @@ test('empty / nullish input is safe', () => {
   assert.equal(renderMarkdown(''), '');
   assert.equal(renderMarkdown(null), '');
 });
+
+test('GFM table: header + delimiter + rows render as a real table', () => {
+  const html = renderMarkdown('| Test | Result |\n|------|--------|\n| api | 401 |\n| nav | 302 |');
+  assert.match(html, /<table class="md-table">/);
+  assert.match(html, /<thead><tr><th[^>]*>Test<\/th><th[^>]*>Result<\/th><\/tr><\/thead>/);
+  assert.match(html, /<tbody>.*<td[^>]*>api<\/td><td[^>]*>401<\/td>.*<\/tbody>/s);
+  assert.doesNotMatch(html, /\|/); // no raw pipes leak through
+});
+
+test('GFM table: cells get inline formatting and are XSS-safe', () => {
+  const html = renderMarkdown('| Col |\n|-----|\n| **b** |\n| <img src=x> |');
+  assert.match(html, /<td[^>]*><strong>b<\/strong><\/td>/);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img/);
+});
+
+test('GFM table: colon alignment sets text-align', () => {
+  const html = renderMarkdown('| L | C | R |\n|:--|:-:|--:|\n| a | b | c |');
+  assert.match(html, /<th style="text-align:left">L<\/th>/);
+  assert.match(html, /<th style="text-align:center">C<\/th>/);
+  assert.match(html, /<th style="text-align:right">R<\/th>/);
+});
+
+test('a lone line with a pipe but no delimiter row stays a paragraph', () => {
+  const html = renderMarkdown('a | b | c is just prose');
+  assert.match(html, /<p>a \| b \| c is just prose<\/p>/);
+  assert.doesNotMatch(html, /<table/);
+});
+
+test('table directly under a paragraph (no blank line) still renders', () => {
+  const html = renderMarkdown('Results below:\n| K | V |\n|---|---|\n| x | 1 |');
+  assert.match(html, /<p>Results below:<\/p>/);
+  assert.match(html, /<table class="md-table">/);
+});

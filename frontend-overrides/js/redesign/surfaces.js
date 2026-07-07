@@ -12,6 +12,7 @@ import {
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
 import { renderActivity } from './chat-activity.js';
+import './task-rows.js'; // side-effect: starts polling /api/tasks/active and injecting live rows
 import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
 
@@ -192,7 +193,8 @@ export function chatMsg(m, s) {
     : '';
   const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
-  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div></div>`;
+  const streamAttr = m.streaming ? ' data-streaming="1"' : '';
+  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div></div>`;
 }
 
 

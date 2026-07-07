@@ -319,7 +319,11 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-body .md-quote,.msg-user .md-quote{margin:0 0 18px;padding:1px 0 1px 13px;border-left:2px solid var(--bd);color:var(--mut)}
 .msg-body .md-quote :last-child,.msg-user .md-quote :last-child{margin-bottom:0}
 .msg-body .md-hr,.msg-user .md-hr{border:none;border-top:1px solid var(--bd2);margin:16px 0}
-.msg-body .md-code,.msg-user .md-code{margin:0 0 18px;padding:11px 13px;background:#121317;border:1px solid var(--bd);border-radius:10px;overflow-x:auto}
+.msg-body .md-code,.msg-user .md-code{position:relative;margin:0 0 18px;padding:11px 13px;background:#121317;border:1px solid var(--bd);border-radius:10px;overflow-x:auto}
+.msg-body .md-code .md-copy-btn,.msg-user .md-code .md-copy-btn{position:absolute;top:6px;right:6px;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;background:rgba(30,32,38,.85);border:1px solid var(--bd);border-radius:6px;color:var(--faint,#9aa0a6);cursor:pointer;opacity:0;transition:opacity .12s ease,color .12s ease,background .12s ease;backdrop-filter:blur(4px)}
+.msg-body .md-code:hover .md-copy-btn,.msg-user .md-code:hover .md-copy-btn,.msg-body .md-code .md-copy-btn:focus-visible,.msg-user .md-code .md-copy-btn:focus-visible{opacity:1}
+.msg-body .md-code .md-copy-btn:hover,.msg-user .md-code .md-copy-btn:hover{color:var(--fg,#e6e8ec);background:rgba(45,48,56,.95)}
+.msg-body .md-code .md-copy-btn.is-copied,.msg-user .md-code .md-copy-btn.is-copied{opacity:1;color:#7ed492}
 .msg-body .md-code:last-child,.msg-user .md-code:last-child{margin-bottom:0}
 .msg-body .md-code code,.msg-user .md-code code{font-family:var(--mono);font-size:13px;line-height:1.7;color:#cfd3da;white-space:pre}
 .msg-body .md-table,.msg-user .md-table{margin:0 0 18px;border-collapse:collapse;max-width:100%;display:block;overflow-x:auto;font-size:15px;line-height:1.6}
@@ -955,3 +959,4 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-meta .name  { font-family: var(--prose); font-size: 14px; font-weight: 600; letter-spacing: -0.006em; }
 .msg-meta .model { font-family: var(--mono); font-size: 11.5px; }
 .msg-meta .time  { font-family: var(--mono); font-size: 11.5px; }
+

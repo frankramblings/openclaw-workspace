@@ -87,6 +87,22 @@ def main(argv):
         print("followup: could not register promise — running the command "
               "anyway (no follow-up will fire)", file=sys.stderr)
 
+    # ALSO register a workspace task row so the PWA shows a live-status pill in
+    # the message that started this follow-up. Best-effort — if bin/task isn't
+    # present, the command still runs and the pinger still pings.
+    task_id = None
+    task_bin = os.path.expanduser("~/.openclaw/workspace/bin/task")
+    if os.path.isfile(task_bin) and os.access(task_bin, os.X_OK):
+        try:
+            r = subprocess.run(
+                [task_bin, "start", "--label", args.label,
+                 "--kind", "followup"],
+                capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                task_id = (r.stdout or "").strip()
+        except (OSError, subprocess.SubprocessError):
+            pass
+
     tail = collections.deque(maxlen=TAIL_LINES)
     t0 = time.time()
     try:
@@ -110,6 +126,20 @@ def main(argv):
              {"id": pid, "exit_code": rc,
               "duration_s": round(time.time() - t0, 1),
               "tail": "\n".join(tail)[-4096:]})
+
+    if task_id:
+        try:
+            if rc == 0:
+                subprocess.run([task_bin, "done", task_id],
+                               capture_output=True, timeout=5)
+            else:
+                last = tail[-1] if tail else ""
+                err  = f"exit {rc}" + (f" — {last[:120]}" if last else "")
+                subprocess.run([task_bin, "fail", task_id, "--error", err],
+                               capture_output=True, timeout=5)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
     return rc
 
 

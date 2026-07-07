@@ -299,6 +299,20 @@ let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
 let _notifyResuming = null;  // session id with a notifier-driven resume in flight
 
+// Adaptive render cadence: each patch re-parses the WHOLE active message
+// (markdown + re-highlight every code block via chatMsg), so per-render cost
+// grows with the message. A fixed 60ms tick on a long reply = ~16 ever-larger
+// renders/sec → O(n²) main-thread work that starves keystrokes ("type slow or
+// it arrives in a burst"). So we stretch the interval as the message grows:
+// short replies stay at 60ms (instant), long ones back off toward a 260ms
+// ceiling, bounding total render work. No content is lost — the trailing
+// flushRender() on 'done' always paints the final complete state.
+function renderDelay() {
+  const len = (turn && turn.asstMsg && turn.asstMsg.text ? turn.asstMsg.text.length : 0);
+  if (len < 2000) return 60;
+  return Math.min(260, 60 + Math.floor((len - 2000) / 100));
+}
+
 function throttledRender() {
   if (renderTimer) return;
   renderTimer = setTimeout(() => {
@@ -308,12 +322,52 @@ function throttledRender() {
     // that's what killed text selection, scroll, and composer typing mid-stream.
     // Fall back to a full render if the bubble isn't mounted yet.
     if (!(turn && runtime.patchMessage && runtime.patchMessage(turn.msgId))) runtime.render();
-  }, 60);
+  }, renderDelay());
 }
 
 function flushRender() {
   if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
   runtime.render();
+}
+
+// ---- buttery streaming pump -----------------------------------------------
+// Server chunks arrive bursty (whole sentences at a time). Appending them
+// straight to the DOM feels choppy. Instead we buffer incoming text on
+// `turn.pending` and drain a handful of chars per animation frame — so a
+// 400-char burst plays out as a smooth typewriter over ~1s. Adaptive: if the
+// buffer grows, we drain faster so we never fall behind the model.
+function drainStreamBuffer() {
+  if (!turn || !turn.asstMsg || !turn.pending) { if (turn) turn.pumpRAF = 0; return; }
+  const q = turn.pending;
+  // Chars per frame: floor 2, scale up with backlog so a big burst catches up
+  // in ~30 frames (~0.5s at 60fps). Never more than half the buffer per frame,
+  // so the tail still animates instead of dumping.
+  const perFrame = Math.max(1, Math.min(Math.ceil(q.length / 60), Math.ceil(q.length / 2)));
+  const take = q.slice(0, perFrame);
+  turn.pending = q.slice(perFrame);
+  turn.asstMsg.text += take;
+  // Paint EVERY frame during the pump — the throttled path coalesces at 60–260ms
+  // which makes 2-char-per-frame progress land as 15-char chunks. Bypass it so
+  // each frame's small edit actually reaches the DOM.
+  if (!(turn && runtime.patchMessage && runtime.patchMessage(turn.msgId))) runtime.render();
+  if (turn.pending.length > 0) {
+    turn.pumpRAF = requestAnimationFrame(drainStreamBuffer);
+  } else {
+    turn.pumpRAF = 0;
+  }
+}
+function enqueueStreamText(delta) {
+  if (!turn || !turn.asstMsg) return;
+  turn.pending = (turn.pending || '') + delta;
+  if (!turn.pumpRAF) turn.pumpRAF = requestAnimationFrame(drainStreamBuffer);
+}
+function flushStreamBuffer() {
+  if (!turn) return;
+  if (turn.pumpRAF) { cancelAnimationFrame(turn.pumpRAF); turn.pumpRAF = 0; }
+  if (turn.pending && turn.asstMsg) {
+    turn.asstMsg.text += turn.pending;
+    turn.pending = '';
+  }
 }
 
 // ---- activity-trail mapping (live SSE → step model) -----------------------
@@ -468,8 +522,15 @@ function beginTurn(chat, modelLabel, sessionId) {
 
   const onEvent = (ev) => {
     if (!ev) return;
+    // Guard against stray frames arriving after the turn was torn down
+    // (turn = null on 'done'/'error'/404). A late delta or a trailing event
+    // from a resumed EventSource tail would otherwise deref null → the
+    // "Cannot read properties of null (reading 'asstMsg')" crash. Drop it.
+    if (!turn) return;
 
     if (ev.type === 'done') {
+      flushStreamBuffer();
+      if (turn.asstMsg) turn.asstMsg.streaming = false;
       if (turn.thinkStep) finalizeStep(turn.thinkStep);
       const a = turn.activity;
       if (a) {
@@ -494,6 +555,8 @@ function beginTurn(chat, modelLabel, sessionId) {
       return;
     }
     if (ev.type === 'error') {
+      flushStreamBuffer();
+      if (turn.asstMsg) turn.asstMsg.streaming = false;
       if (ev.status === 404) { turn.got404 = true; return; }
       const m = ensureAsst();
       m.error = true;
@@ -514,6 +577,8 @@ function beginTurn(chat, modelLabel, sessionId) {
     // a message-tool delivery). Drop the text shown so far so the final reply
     // isn't doubled ("Sent…Hey 👋"). Tool/thinking steps are kept.
     if (ev.type === 'reply_reset') {
+      if (turn.pumpRAF) { cancelAnimationFrame(turn.pumpRAF); turn.pumpRAF = 0; }
+      turn.pending = '';
       if (turn.asstMsg) turn.asstMsg.text = '';
       throttledRender();
       return;
@@ -531,8 +596,8 @@ function beginTurn(chat, modelLabel, sessionId) {
       if (turn.thinkStep) finalizeStep(turn.thinkStep);
       if (turn.activity) finalizeTools(turn.activity);
       ensureAsst();
-      turn.asstMsg.text += ev.delta;
-      throttledRender();
+      turn.asstMsg.streaming = true;
+      enqueueStreamText(ev.delta);
       return;
     }
     // tool start → a running tool step (prior running tools check off)

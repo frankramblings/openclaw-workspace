@@ -24,11 +24,14 @@ import asyncio
 import json
 import os
 import re
+import shutil
+import tempfile
 import time
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (HTMLResponse, JSONResponse, Response,
+                               StreamingResponse)
 
 from . import bridge, config, sessions_store
 from .research_render import render_html
@@ -695,7 +698,7 @@ async def report(rid: str):
     if not rec or not rec.get("result"):
         return HTMLResponse("<h1>No report (yet)</h1>", status_code=404)
     try:
-        return HTMLResponse(render_html(rec))
+        return HTMLResponse(render_html(rec, pdf_url=f"/api/research/report/{rid}/pdf"))
     except Exception:  # noqa: BLE001 - never 500 the report; degrade to text
         md = (rec.get("result") or "").replace("</script", "<\\/script")
         meta_bits = [rec.get("query") or "", f"{rec.get('source_count') or 0} sources"]
@@ -704,6 +707,74 @@ async def report(rid: str):
         return HTMLResponse(_REPORT_PAGE.format(
             title=(rec.get("query") or "Research")[:80],
             meta=" · ".join(b for b in meta_bits if b), md=md))
+
+
+# Headless Chrome renders the same interactive HTML to a print-styled PDF. The
+# report's @media print CSS expands accordions, drops the interactive chrome,
+# and keeps cards/rows from splitting across pages.
+_CHROME = (shutil.which("google-chrome") or shutil.which("google-chrome-stable")
+           or shutil.which("chromium") or shutil.which("chromium-browser")
+           or "/usr/bin/google-chrome")
+
+
+def _pdf_filename(rec: dict, rid: str) -> str:
+    s = re.sub(r"[^\w\s-]", "", (rec.get("query") or "research")).strip()
+    s = re.sub(r"[\s_-]+", "-", s)[:60].strip("-") or "research"
+    return f"{s}-{rid[:8]}.pdf"
+
+
+async def _html_to_pdf(html_str: str) -> bytes | None:
+    """Render an HTML string to PDF via headless Chrome. None on failure."""
+    tmp = tempfile.mkdtemp(prefix="research-pdf-")
+    hp, pp = os.path.join(tmp, "r.html"), os.path.join(tmp, "r.pdf")
+    try:
+        with open(hp, "w", encoding="utf-8") as f:
+            f.write(html_str)
+        cmd = [_CHROME, "--headless=new", "--no-sandbox", "--disable-gpu",
+               "--hide-scrollbars", "--no-pdf-header-footer",
+               f"--user-data-dir={tmp}/prof",
+               "--run-all-compositor-stages-before-draw",
+               "--virtual-time-budget=5000",
+               f"--print-to-pdf={pp}", f"file://{hp}"]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE)
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=60)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return None
+        if not os.path.exists(pp) or os.path.getsize(pp) == 0:
+            return None
+        with open(pp, "rb") as f:
+            return f.read()
+    except Exception:  # noqa: BLE001 - caller degrades to a 500 JSON
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@router.get("/api/research/report/{rid}/pdf")
+async def report_pdf(rid: str):
+    rec = _load_record(rid)
+    if not rec:
+        job = _JOBS.get(rid)
+        if job and job.result:
+            rec = {"query": job.query, "result": job.result,
+                   "sources": job.sources, "findings": job.findings,
+                   "source_count": len(job.sources), "model": job.model}
+    if not rec or not rec.get("result"):
+        return JSONResponse(status_code=404, content={"detail": "no such research"})
+    try:
+        html_str = render_html(rec, for_print=True)  # expanded sections, no button
+    except Exception:  # noqa: BLE001
+        return JSONResponse(status_code=500, content={"detail": "render failed"})
+    pdf = await _html_to_pdf(html_str)
+    if pdf is None:
+        return JSONResponse(status_code=500,
+                            content={"detail": "pdf generation failed"})
+    return Response(content=pdf, media_type="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="{_pdf_filename(rec, rid)}"'})
 
 
 @router.get("/api/model-endpoints")

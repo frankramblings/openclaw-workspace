@@ -12,6 +12,7 @@ import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
+import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
@@ -283,6 +284,16 @@ const actions = {
   toggleGroup: (id) => { const g = state.chatUI.group; g[id] = !g[id]; },
   stopRun: () => { /* overridden by the live chat module to abort the stream */ },
 
+  // mobile message action sheet (long-press on a user bubble)
+  openMobileMsgSheet: (msgId) => {
+    if (!state.live?.chat) return;
+    state.live.chat.mobileSheetMsgId = msgId || null;
+  },
+  closeMobileMsgSheet: () => {
+    if (!state.live?.chat) return;
+    state.live.chat.mobileSheetMsgId = null;
+  },
+
   // companion
   compTab: (tab) => { state.compTab = tab; state.compSplit = false; state.compHidden = false; },
   toggleSplit: () => { state.compSplit = !state.compSplit; },
@@ -445,6 +456,32 @@ root.addEventListener('pointerup', (e) => {
   render();
   loadActive();
 });
+
+// Long-press on a mobile user bubble → open the message action sheet.
+// Uses a pure state machine (mobile/longpress.js) so behavior is unit-tested.
+const lpState = { active: null };
+const lpIO = {
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (t) => clearTimeout(t),
+  dispatch: (name, arg) => {
+    const fn = actions[name];
+    if (fn) { fn(arg); render(); }
+  },
+};
+root.addEventListener('pointerdown', (e) => {
+  const bubble = e.target.closest('.m-msg-user');
+  if (!bubble) return;
+  const wrap = bubble.closest('[data-msg-id]');
+  if (!wrap) return;
+  const msgId = wrap.getAttribute('data-msg-id');
+  startLongPress(lpState, { msgId, x: e.clientX, y: e.clientY }, lpIO);
+});
+root.addEventListener('pointermove', (e) => {
+  moveLongPress(lpState, { x: e.clientX, y: e.clientY }, lpIO);
+});
+root.addEventListener('pointerup', () => endLongPress(lpState, lpIO));
+root.addEventListener('pointercancel', () => resetLongPress(lpState, lpIO));
+document.addEventListener('scroll', () => resetLongPress(lpState, lpIO), true);
 
 // live-bound inputs/textareas
 // Grow the composer to fit its text so you never have to scroll the field to

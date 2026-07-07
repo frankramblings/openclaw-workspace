@@ -546,7 +546,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 }
 .m-msg-tool:hover, .m-msg-tool.on {
   background: color-mix(in srgb, var(--teal) 14%, transparent);
-  color: var(--text, #e1e5ec);
+  color: var(--fg);
 }
 .m-msg-dl-wrap { position: relative; }
 .m-msg-dl-menu {
@@ -570,7 +570,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   padding: 9px 12px;
   background: transparent;
   border: 0;
-  color: var(--text, #e1e5ec);
+  color: var(--fg);
   font-size: 14px;
   text-align: left;
   cursor: pointer;
@@ -621,7 +621,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   padding: 0 14px;
   background: transparent;
   border: 0;
-  color: var(--text, #e1e5ec);
+  color: var(--fg);
   font-size: 15.5px;
   text-align: left;
   cursor: pointer;

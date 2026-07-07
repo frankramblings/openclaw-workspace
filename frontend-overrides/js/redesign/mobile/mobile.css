@@ -184,7 +184,7 @@ html.native .m-tabbar {
 .msg-sys { display: flex; justify-content: center; margin: 10px 0; }
 .msg-sys-txt { font-size: 12px; color: var(--faint); background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--bd); border-radius: 999px; padding: 4px 12px; max-width: 82%; text-align: center; line-height: 1.4; }
 .m-msg-user-wrap { display: flex; justify-content: flex-end; }
-.m-msg-user { max-width: 74%; background: var(--tealtint); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); border-radius: 13px 13px 4px 13px; padding: 11px 14px; font-size: 15.5px; line-height: 1.55; color: #dfe4ea; overflow-wrap: anywhere; }
+.m-msg-user { max-width: 74%; background: var(--tealtint); border: 1px solid color-mix(in srgb, var(--teal) 22%, transparent); border-radius: 13px 13px 4px 13px; padding: 11px 14px; font-size: 15.5px; line-height: 1.55; color: #dfe4ea; overflow-wrap: anywhere; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .m-msg-attachments { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 7px; }
 .m-attach-img { max-width: 100%; max-height: 220px; border-radius: 7px; display: block; object-fit: contain; }
 .m-attach-chip { display: inline-flex; align-items: center; gap: 4px; background: rgba(255,255,255,.07); border: 1px solid color-mix(in srgb,var(--teal) 22%,transparent); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--mut); }

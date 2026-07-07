@@ -1,0 +1,280 @@
+/* chat-window-redesign.css — docked chat surface in redesign UI.
+ *
+ * The docked window (chatWindow.js) now renders redesign-native markup —
+ * .chat-thread / .msg-user / .msg-asst / .composer — so message bubbles,
+ * composer, and typography inherit directly from redesign.css. This file
+ * only styles the modal SHELL + HEADER + reflow, plus a few docked-context
+ * tweaks (tighter padding, borderless when snapped to an edge).
+ */
+
+/* ── Modal shell ─────────────────────────────────────────────────────────── */
+.chat-window-modal .modal-content.chat-window-content {
+  background: var(--bg, #15161a) !important;
+  border: 1px solid var(--bd, #2b2d33);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  color: var(--fg, #e6e7ea);
+  overflow: hidden;
+  width: min(640px, 46vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+/* Snapped to an edge: seamless — no rounded corner, no shadow. */
+.chat-window-modal.modal-left-docked .modal-content.chat-window-content,
+.chat-window-modal.modal-right-docked .modal-content.chat-window-content {
+  border-radius: 0;
+  box-shadow: none;
+  max-height: 100vh !important;
+  height: 100vh !important;
+  border-top: none;
+  border-bottom: none;
+  width: 100% !important;
+}
+.chat-window-modal.modal-left-docked .modal-content.chat-window-content {
+  border-left: none;
+}
+.chat-window-modal.modal-right-docked .modal-content.chat-window-content {
+  border-right: none;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.chat-window-modal .modal-header.chat-window-head {
+  background: var(--panel, #1b1c21);
+  border-bottom: 1px solid var(--bd, #2b2d33);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  flex: none;
+}
+.chat-window-modal .chat-window-head-inner {
+  min-width: 0;
+  flex: 1;
+}
+.chat-window-modal .chat-window-title {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fg, #e6e7ea);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-window-modal .chat-window-close {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--mut, #a1a5ad);
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  flex: none;
+}
+.chat-window-modal .chat-window-close:hover {
+  background: var(--panel2, #212329);
+  border-color: var(--bd, #2b2d33);
+  color: var(--fg, #e6e7ea);
+}
+
+/* ── Thread + composer: rely on redesign.css, tighten for docked context ── */
+.chat-window-modal .chat-thread.chat-window-history {
+  padding: 18px 20px !important;
+  flex: 1;
+  min-height: 0;
+}
+.chat-window-modal .composer-wrap.chat-window-composer-wrap {
+  padding: 0 16px 14px !important;
+  position: relative;
+  flex: none;
+}
+/* Same responsive-wrap treatment for the docked chat's own composer row —
+ * the send + attach buttons should always be visible even when the user
+ * drags the dock down to a narrow width. */
+.chat-window-modal .composer .composer-row {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.chat-window-modal .composer .composer-row > div[style*="flex:1"] {
+  min-width: 0;
+  flex: 1 1 40px !important;
+}
+
+/* Send button — mirror the redesign accent-square style, since we're not using
+ * the redesign's own send SVG button (that one dispatches through the global
+ * data-act system, which the docked surface intentionally doesn't share). */
+.chat-window-modal .chat-window-send {
+  background: var(--accent, #4fe3d1);
+  color: #0a1416;
+  border: none;
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: filter 120ms ease, transform 120ms ease;
+  flex: none;
+}
+.chat-window-modal .chat-window-send:hover { filter: brightness(1.08); }
+.chat-window-modal .chat-window-send:active { transform: scale(0.97); }
+.chat-window-modal .chat-window-send svg { display: block; }
+
+/* Input — inherit redesign's .composer textarea, just neutralize any leftover
+ * classic overrides. */
+.chat-window-modal .chat-window-input {
+  background: transparent !important;
+  border: none !important;
+  color: var(--fg, #e6e7ea);
+  font-family: var(--sans, inherit);
+  outline: none;
+}
+
+/* ── Attach button + attachment chip row + drop-hover state ─────────────── */
+.chat-window-modal .chat-window-attach {
+  background: transparent;
+  border: 1px solid var(--bd, #2b2d33);
+  border-radius: 9px;
+  width: 32px;
+  height: 32px;
+  color: var(--mut, #a1a5ad);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  flex: none;
+  padding: 0;
+}
+.chat-window-modal .chat-window-attach:hover {
+  background: var(--panel2, #212329);
+  color: var(--fg, #e6e7ea);
+  border-color: color-mix(in srgb, var(--accent, #4fe3d1) 40%, var(--bd, #2b2d33));
+}
+.chat-window-modal .chat-window-attach svg { display: block; }
+
+.chat-window-modal .chat-window-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--bd, #2b2d33);
+}
+.chat-window-modal .chat-window-attach-row[hidden] { display: none; }
+
+/* Drop-hover indication when the user drags files over the docked window. */
+.chat-window-modal .modal-content.chat-window-drop-hover {
+  outline: 2px dashed var(--accent, #4fe3d1);
+  outline-offset: -6px;
+}
+
+/* ── Dock-inner-edge resize grip (docked only) ───────────────────────────── */
+.chat-window-modal .chat-window-dock-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 6;
+  background: transparent;
+  transition: background 120ms ease;
+  display: none;
+}
+/* Left dock: grip on the RIGHT edge (that's the "barrier" toward the main chat). */
+.chat-window-modal.modal-left-docked .chat-window-dock-grip {
+  display: block;
+  right: -3px;
+}
+/* Right dock: grip on the LEFT edge. */
+.chat-window-modal.modal-right-docked .chat-window-dock-grip {
+  display: block;
+  left: -3px;
+}
+.chat-window-modal .chat-window-dock-grip:hover,
+body:has(.chat-window-dock-grip:active) .chat-window-dock-grip {
+  background: color-mix(in srgb, var(--accent, #4fe3d1) 55%, transparent);
+}
+
+/* ── SE resize handle (undocked only) ────────────────────────────────────── */
+.chat-window-modal .chat-window-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  z-index: 5;
+  /* subtle chevron: two 1px diagonal lines drawn with a gradient */
+  background:
+    linear-gradient(135deg, transparent 0 45%, var(--mut, #a1a5ad) 45% 55%, transparent 55%) no-repeat,
+    linear-gradient(135deg, transparent 0 70%, var(--mut, #a1a5ad) 70% 80%, transparent 80%) no-repeat;
+  background-size: 10px 10px, 6px 6px;
+  background-position: right 2px bottom 2px, right 2px bottom 2px;
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+.chat-window-modal .chat-window-resize:hover { opacity: 1; }
+/* Hide the handle when docked to an edge or fullscreen — the window size is
+ * controlled by the dock in those states. */
+.chat-window-modal.modal-left-docked .chat-window-resize,
+.chat-window-modal.modal-right-docked .chat-window-resize,
+.chat-window-modal.chat-window-fullscreen .chat-window-resize {
+  display: none;
+}
+
+/* ── Belt-and-suspenders: no page-level overflow on the app shell ────────── *
+ * The workspace app fills the viewport (.oc-app is 100vh); any overflow at the
+ * page level is a bug that lets the user nudge the whole UI off-screen. Lock
+ * both axes so a runaway width/height can't scroll the shell. */
+html, body {
+  overflow: hidden !important;
+  height: 100vh;
+}
+
+/* ── Center chat composer stays responsive when the center is squeezed ──── *
+ * When a right (or left) dock narrows the center column, .composer-row's
+ * icons + model picker + Agent/Chat toggle + send button run out of room and
+ * would previously overflow the composer's rounded card. Let the row wrap,
+ * let the model chip shrink+ellipsize, and pin the send button so it's
+ * always visible on the last row. */
+.oc-center .composer-row,
+.oc-main .composer-row {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.oc-center .composer .model-tag,
+.oc-center .composer [data-act="openModelMenu"],
+.oc-center .composer .model-btn {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Force redesign main to reflow when a chat is docked ─────────────────── */
+body.left-dock-active .oc-center,
+body.left-dock-active .oc-main {
+  padding-left: var(--left-dock-w, 0) !important;
+  transition: padding-left 140ms ease;
+}
+body.right-dock-active .oc-center,
+body.right-dock-active .oc-main {
+  padding-right: var(--right-dock-w, 0) !important;
+  transition: padding-right 140ms ease;
+}
+body.left-dock-active.right-dock-active .oc-center,
+body.left-dock-active.right-dock-active .oc-main {
+  padding-left: var(--left-dock-w, 0) !important;
+  padding-right: var(--right-dock-w, 0) !important;
+}

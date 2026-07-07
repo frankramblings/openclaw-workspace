@@ -61,7 +61,7 @@ class Job:
     result: str | None = None
     sources: list = field(default_factory=list)
     findings: list = field(default_factory=list)
-    comparison: dict | None = None    # {title,col_a,col_b,rows[...]} when the query is a comparison
+    comparison: dict | None = None    # {title,columns[...],rows[{label,cells[...]}]} when the query is a comparison
     category: str = ""
     subscribers: list = field(default_factory=list)   # asyncio.Queue per stream
     task: asyncio.Task | None = None
@@ -327,18 +327,20 @@ _COMPARE_PROMPT = """The finished report below compares options. Extract a \
 side-by-side comparison matrix as STRICT JSON so it can render as a grid.
 
 Rules:
-- Exactly two columns (the two things being compared). Pick their real names for `col_a`/`col_b`.
+- One column per option actually compared (2 to 5). Put their real names in \
+`columns`, ordered as the report emphasizes them.
 - 5-11 rows, each a distinct dimension actually discussed in the report.
-- Keep every cell short (a value/phrase, not a sentence). Preserve inline \
-citation markers like [4] where the report has them.
-- `winner`: "a", "b", or omit if even/NA. `conflict`: true only when the sources \
-disagree on that row.
-- If the report is NOT actually a two-way comparison, output exactly: null
+- Each row's `cells` array MUST have exactly one entry per column, in the same \
+order as `columns`. Keep every cell short (a value/phrase, not a sentence). \
+Preserve inline citation markers like [4] where the report has them.
+- `winner`: the 0-based index of the best column for that row, or null if even/NA. \
+`conflict`: true only when the sources disagree on that row.
+- If the report is NOT actually a comparison of 2 or more options, output exactly: null
 
 Output ONLY a fenced ```json block, nothing else:
 ```json
-{{"title":"X vs Y — at a glance","dimension_label":"Feature","col_a":"X","col_b":"Y",
-"rows":[{{"label":"...","a":"...","b":"...","winner":"a","conflict":false}}]}}
+{{"title":"X vs Y vs Z — at a glance","dimension_label":"Feature","columns":["X","Y","Z"],
+"rows":[{{"label":"...","cells":["...","...","..."],"winner":0,"conflict":false}}]}}
 ```
 
 Query: {query}

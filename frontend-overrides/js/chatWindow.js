@@ -24,6 +24,11 @@
 import { makeWindowDraggable } from './windowDrag.js';
 import { applyEdgeDock } from './modalSnap.js';
 import markdownModule from './markdown.js';
+// Redesign-native rendering: use the same markup + tokens the center chat uses
+// so docked windows are visually indistinguishable from the main surface.
+import { renderMarkdown as _redesignRenderMarkdown } from './redesign/markdown.js';
+import { esc as _redesignEsc } from './redesign/dom.js';
+import { AVATAR as _REDESIGN_AVATAR } from './redesign/data.js';
 
 const API_BASE = window.location.origin;
 const FLAG_KEY = 'openclaw_dual_session';
@@ -104,8 +109,86 @@ export function openChatWindow(sessionId, opts = {}) {
     // the center column reflows via the existing body.{left,right}-dock-active
     // padding rules (style.css) — no new CSS needed.
     try { applyEdgeDock(built.modal, side); } catch (_) {}
+    // Redesign layout uses .oc-rail + .oc-secondary (not classic #sidebar /
+    // #icon-rail), so modalSnap's _leftNavRight() returns 0 and left-docked
+    // windows cover the sidebar. Re-anchor left docks against the redesign
+    // sidebar right edge here; right docks are unaffected.
+    _anchorRedesignLeftDock(built.modal);
+    // Right dock (and all subsequent dock changes) also need the reflow — the
+    // classic --left/right-dock-w flow doesn't survive on the redesign shell.
+    _applyRedesignReflow();
   }
   return built;
+}
+
+// Compute the right edge of the redesign left navigation (rail + secondary
+// panel) and pin the modal-content there. Also updates --left-dock-w so
+// .oc-center reflow padding stays correct (dock takes: sidebar-right → dock-w).
+function _redesignLeftNavRight() {
+  let x = 0;
+  const rail = document.querySelector('.oc-rail');
+  if (rail && window.getComputedStyle(rail).display !== 'none') {
+    const r = rail.getBoundingClientRect();
+    if (r.width) x = Math.max(x, r.right);
+  }
+  // The .oc-secondary panel is the conversations list; it sits to the right of
+  // the rail and is visible on the chat surface. Only count it when visible.
+  const sec = document.querySelector('.oc-secondary');
+  if (sec && window.getComputedStyle(sec).display !== 'none') {
+    const r = sec.getBoundingClientRect();
+    if (r.width) x = Math.max(x, r.right);
+  }
+  return x;
+}
+function _anchorRedesignLeftDock(modal) {
+  if (!modal) return;
+  if (!modal.classList.contains('modal-left-docked')) return;
+  const content = modal.querySelector('.modal-content');
+  if (!content) return;
+  const left = _redesignLeftNavRight();
+  if (!left) return;
+  content.style.left = left + 'px';
+  // Keep the docked window from spilling past what's visible on the right.
+  const w = content.getBoundingClientRect().width;
+  const maxW = Math.max(280, window.innerWidth - left - 40);
+  const newW = Math.min(w, maxW);
+  content.style.width = newW + 'px';
+  content.style.maxWidth = newW + 'px';
+  document.documentElement.style.setProperty('--left-dock-w', newW + 'px');
+  // Belt-and-suspenders: set the padding directly on .oc-center as an inline
+  // style so it can't be lost to a stale CSS-var / observer race. Re-apply
+  // whenever any left dock is active (this method covers both open + resize).
+  _applyRedesignReflow();
+}
+
+// Directly write the reflow padding on .oc-center for whichever docks are open,
+// so we don't depend on modalSnap's --left/right-dock-w CSS var and body-class
+// flow (which was designed for the classic UI's email/doc splits).
+function _applyRedesignReflow() {
+  const center = document.querySelector('.oc-center');
+  if (!center) return;
+  const leftMod = _windows.left?.modal;
+  const rightMod = _windows.right?.modal;
+  const leftW = leftMod ? (leftMod.querySelector('.modal-content')?.getBoundingClientRect().width || 0) : 0;
+  const rightW = rightMod ? (rightMod.querySelector('.modal-content')?.getBoundingClientRect().width || 0) : 0;
+  center.style.paddingLeft = leftW ? leftW + 'px' : '';
+  center.style.paddingRight = rightW ? rightW + 'px' : '';
+  center.style.transition = 'padding 140ms ease';
+}
+// Wipe the reflow padding when a dock closes.
+function _clearRedesignReflow(side) {
+  const center = document.querySelector('.oc-center');
+  if (!center) return;
+  if (side === 'left') center.style.paddingLeft = '';
+  if (side === 'right') center.style.paddingRight = '';
+  // If neither remains, clear transition too.
+  if (!_windows.left && !_windows.right) center.style.transition = '';
+}
+// Re-anchor on viewport resize so the left dock keeps following the sidebar.
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', () => {
+    if (_windows.left) _anchorRedesignLeftDock(_windows.left.modal);
+  });
 }
 
 export function closeChatWindow(side) {
@@ -115,6 +198,7 @@ export function closeChatWindow(side) {
   try { w.modal.remove(); } catch (_) {}  // MutationObserver in modalSnap tears down the dock push
   _windows[side] = null;
   setDockedSession(side, null);
+  _clearRedesignReflow(side);
 }
 
 // Swap the left and right docked windows (⌘⇧→ / ⌘⇧←). Re-docks each modal on
@@ -134,24 +218,38 @@ function _buildWindow(sessionId, side) {
   const modal = document.createElement('div');
   modal.className = 'modal chat-window-modal';
   modal.id = 'chat-window-' + side;
+  // Use the redesign UI's own semantic classes (.chat-thread / .composer-wrap /
+  // .composer) so styling is inherited straight from redesign.css — the docked
+  // window is visually native, not a skinned classic modal.
   modal.innerHTML = `
-    <div class="modal-content chat-window-content" style="width:min(640px, 46vw);max-height:85vh;background:var(--bg);display:flex;flex-direction:column;">
-      <div class="modal-header">
-        <h4 style="display:flex;align-items:center;gap:6px;">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <div class="modal-content chat-window-content">
+      <div class="modal-header chat-window-head">
+        <div class="chat-window-head-inner">
           <span class="chat-window-title">Chat</span>
-        </h4>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <button class="close-btn chat-window-close" title="Close split chat">✖</button>
+        </div>
+        <button class="close-btn chat-window-close" title="Close split chat" aria-label="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="chat-thread chat-window-history" role="log" aria-live="polite"></div>
+      <div class="composer-wrap chat-window-composer-wrap">
+        <div class="composer chat-window-form">
+          <div class="chat-window-attach-row" hidden></div>
+          <textarea class="chat-window-input" rows="1" placeholder="Message Gary…"></textarea>
+          <div class="composer-row">
+            <button type="button" class="chat-window-attach" title="Attach files (or paste an image)" aria-label="Attach">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <input type="file" class="chat-window-file-input" hidden multiple accept="image/*,application/pdf,.txt,.md,.json,.csv,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.yaml,.yml,.toml">
+            <div style="flex:1"></div>
+            <button type="button" class="chat-window-send" title="Send" aria-label="Send">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
         </div>
       </div>
-      <div class="modal-body chat-window-body" style="display:flex;flex-direction:column;gap:8px;overflow:hidden;flex:1;">
-        <div class="chat-window-history" role="log" aria-live="polite" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px;"></div>
-        <form class="chat-window-form" style="display:flex;gap:6px;align-items:flex-end;">
-          <textarea class="chat-window-input" rows="1" placeholder="Message…" style="flex:1;resize:none;max-height:140px;"></textarea>
-          <button type="submit" class="send-btn chat-window-send" title="Send">➤</button>
-        </form>
-      </div>
+      <div class="chat-window-resize" aria-hidden="true" title="Drag to resize"></div>
+      <div class="chat-window-dock-grip" aria-hidden="true" title="Drag to resize dock"></div>
     </div>
   `;
   document.body.appendChild(modal);
@@ -208,6 +306,126 @@ function _buildWindow(sessionId, side) {
     });
   }
 
+  // Bottom-right resize handle — SE-grip. Only active when the window is
+  // free-floating (not docked to an edge, not fullscreen). Uses pointer events
+  // so mouse + touch behave the same.
+  const _resizeHandle = modal.querySelector('.chat-window-resize');
+  if (_resizeHandle && content) {
+    let start = null;
+    const isFree = () =>
+      !modal.classList.contains('modal-left-docked')
+      && !modal.classList.contains('modal-right-docked')
+      && !modal.classList.contains('chat-window-fullscreen');
+    _resizeHandle.addEventListener('pointerdown', (e) => {
+      if (!isFree()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = content.getBoundingClientRect();
+      start = { x: e.clientX, y: e.clientY, w: rect.width, h: rect.height };
+      _resizeHandle.setPointerCapture(e.pointerId);
+      document.body.style.cursor = 'nwse-resize';
+      document.body.style.userSelect = 'none';
+    });
+    _resizeHandle.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      // Cap so the window never shrinks below usable size or exceeds viewport.
+      const nw = Math.max(320, Math.min(window.innerWidth - 40, start.w + (e.clientX - start.x)));
+      const nh = Math.max(240, Math.min(window.innerHeight - 40, start.h + (e.clientY - start.y)));
+      content.style.width = nw + 'px';
+      content.style.maxWidth = 'none';
+      content.style.height = nh + 'px';
+      content.style.maxHeight = 'none';
+    });
+    const end = (e) => {
+      if (!start) return;
+      start = null;
+      try { _resizeHandle.releasePointerCapture(e.pointerId); } catch (_) {}
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    _resizeHandle.addEventListener('pointerup', end);
+    _resizeHandle.addEventListener('pointercancel', end);
+  }
+
+  // Docked-inner-edge resize grip — a vertical bar on the inner edge of the
+  // docked window (right edge if left-docked, left edge if right-docked).
+  // Drag to widen/narrow the dock; updates content width + --left/right-dock-w
+  // so the center column reflows in real time. Persisted per side.
+  const _grip = modal.querySelector('.chat-window-dock-grip');
+  if (_grip && content) {
+    const KEY = 'openclaw_dock_widths';
+    const _readWidths = () => {
+      try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (_) { return {}; }
+    };
+    const _writeWidth = (dockSide, w) => {
+      const cur = _readWidths();
+      cur[dockSide] = w;
+      try { localStorage.setItem(KEY, JSON.stringify(cur)); } catch (_) {}
+    };
+    // Restore a persisted width on next frame (after applyEdgeDock lands).
+    requestAnimationFrame(() => {
+      const dockedSide = modal.classList.contains('modal-left-docked') ? 'left'
+        : modal.classList.contains('modal-right-docked') ? 'right' : null;
+      if (!dockedSide) return;
+      const saved = _readWidths()[dockedSide];
+      if (!saved || saved < 280) return;
+      _applyDockWidth(dockedSide, saved);
+    });
+    function _applyDockWidth(dockSide, w) {
+      // Leave at least MIN_CENTER px of usable center-chat width so the main UI
+      // can't be squeezed off the page. Also account for the OTHER docked window
+      // if one is present on the opposite side.
+      const MIN_CENTER = 360;
+      const sidebarOffset = _redesignLeftNavRight() || 0;
+      const otherSide = dockSide === 'left' ? 'right' : 'left';
+      const other = _windows[otherSide];
+      const otherW = other ? other.modal.querySelector('.modal-content')?.getBoundingClientRect().width || 0 : 0;
+      const available = Math.max(320, window.innerWidth - sidebarOffset - MIN_CENTER - otherW);
+      const clamped = Math.max(320, Math.min(available, w));
+      content.style.width = clamped + 'px';
+      content.style.maxWidth = clamped + 'px';
+      if (dockSide === 'left') {
+        // Left dock in redesign is offset by the sidebar's right edge.
+        if (sidebarOffset) content.style.left = sidebarOffset + 'px';
+        document.documentElement.style.setProperty('--left-dock-w', clamped + 'px');
+      } else {
+        document.documentElement.style.setProperty('--right-dock-w', clamped + 'px');
+      }
+      // Reflow the center chat by writing padding directly (survives observers).
+      _applyRedesignReflow();
+    }
+    let start = null;
+    _grip.addEventListener('pointerdown', (e) => {
+      const dockedSide = modal.classList.contains('modal-left-docked') ? 'left'
+        : modal.classList.contains('modal-right-docked') ? 'right' : null;
+      if (!dockedSide) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = content.getBoundingClientRect();
+      start = { x: e.clientX, w: rect.width, side: dockedSide };
+      _grip.setPointerCapture(e.pointerId);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    });
+    _grip.addEventListener('pointermove', (e) => {
+      if (!start) return;
+      // Left dock: dragging right widens; right dock: dragging left widens.
+      const delta = start.side === 'left' ? (e.clientX - start.x) : (start.x - e.clientX);
+      _applyDockWidth(start.side, start.w + delta);
+    });
+    const end = (e) => {
+      if (!start) return;
+      const finalW = content.getBoundingClientRect().width;
+      _writeWidth(start.side, finalW);
+      start = null;
+      try { _grip.releasePointerCapture(e.pointerId); } catch (_) {}
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    _grip.addEventListener('pointerup', end);
+    _grip.addEventListener('pointercancel', end);
+  }
+
   // Close button.
   modal.querySelector('.chat-window-close')?.addEventListener('click', () => {
     // Find which side this modal currently owns (it may have been re-docked).
@@ -220,6 +438,10 @@ function _buildWindow(sessionId, side) {
     titleEl: modal.querySelector('.chat-window-title'),
     formEl: modal.querySelector('.chat-window-form'),
     inputEl: modal.querySelector('.chat-window-input'),
+    sendEl: modal.querySelector('.chat-window-send'),
+    attachBtnEl: modal.querySelector('.chat-window-attach'),
+    fileInputEl: modal.querySelector('.chat-window-file-input'),
+    attachRowEl: modal.querySelector('.chat-window-attach-row'),
   });
   surface.load();
 
@@ -257,24 +479,40 @@ export function createChatSurface(rootEl, sessionId, els = {}) {
   const _scroll = () => { try { rootEl.scrollTop = rootEl.scrollHeight; } catch (_) {} };
 
   function _bubble(role, html) {
-    const div = document.createElement('div');
-    div.className = 'msg msg-' + (role === 'user' ? 'user' : 'ai');
-    div.style.cssText = 'max-width:100%;padding:6px 10px;border-radius:10px;'
-      + (role === 'user'
-        ? 'align-self:flex-end;background:var(--user-bubble-bg, var(--accent-primary, #2563eb));color:#fff;'
-        : 'align-self:flex-start;background:var(--ai-bubble-bg, var(--bg-secondary, #f1f1f1));');
-    const body = document.createElement('div');
-    body.className = 'body';
+    // Emit the same .msg-user / .msg-asst markup the redesign uses so all the
+    // typography, bubble colors, avatars, meta rows come free from redesign.css.
+    if (role === 'user') {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg-user-wrap';
+      wrap.innerHTML = `<div class="msg-user"><div class="meta"><span class="you">You</span></div><div class="body"></div></div>`;
+      const body = wrap.querySelector('.body');
+      body.innerHTML = html || '';
+      rootEl.appendChild(wrap);
+      _scroll();
+      return body;
+    }
+    const el = document.createElement('div');
+    el.className = 'msg-asst';
+    el.innerHTML = `
+      <div class="msg-av"><img src="${_redesignEsc(_REDESIGN_AVATAR)}" alt="Gary"></div>
+      <div class="msg-body">
+        <div class="msg-meta"><span class="name">Gary</span></div>
+        <div class="body"></div>
+      </div>`;
+    const body = el.querySelector('.msg-body > .body');
     body.innerHTML = html || '';
-    div.appendChild(body);
-    rootEl.appendChild(div);
+    rootEl.appendChild(el);
     _scroll();
     return body;
   }
 
   function _render(md) {
-    try { return markdownModule.renderContent(md); }
-    catch (_) { return (md || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+    // Prefer redesign's markdown renderer so bubble prose matches the center chat
+    // (headings, code fences, lists, links styled identically). Fall back to the
+    // classic renderer, then to raw-escape.
+    try { return _redesignRenderMarkdown(md || ''); } catch (_) {}
+    try { return markdownModule.renderContent(md); } catch (_) {}
+    return (md || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   }
 
   async function load() {
@@ -290,8 +528,22 @@ export function createChatSurface(rootEl, sessionId, els = {}) {
         const text = typeof m.content === 'string' ? m.content : String(m.content || '');
         _bubble(m.role, _render(text));
       }
-      // Surface the session name in the window title if the backend supplies it.
-      const name = data.name || data.session_name;
+      // Surface the session name. /api/history doesn't return one, so fall back
+      // to reading it out of the sidebar row that was just dragged in — the
+      // redesign renders <div class="conv-row" data-arg="{sid}"><span class="conv-title">…</span>.
+      let name = data.name || data.session_name;
+      if (!name) {
+        try {
+          const row = document.querySelector(`.conv-row[data-arg="${sessionId}"] .conv-title`);
+          if (row) name = row.textContent.trim();
+        } catch (_) {}
+      }
+      if (!name) {
+        try {
+          const row = document.querySelector(`.list-item[data-session-id="${sessionId}"] .item-title`);
+          if (row) name = row.textContent.trim();
+        } catch (_) {}
+      }
       if (els.titleEl && name) els.titleEl.textContent = name;
       _scroll();
     } catch (e) {
@@ -299,16 +551,87 @@ export function createChatSurface(rootEl, sessionId, els = {}) {
     }
   }
 
+  // Pending attachments (uploaded, awaiting send). Each: { id, name, url }.
+  let _pending = [];
+
+  const _IMG_EXTS = new Set(['jpg','jpeg','png','gif','webp','svg','bmp','avif','ico']);
+  function _extOf(name) { return (name.split('.').pop() || '').toLowerCase(); }
+
+  function _renderAttachRow() {
+    if (!els.attachRowEl) return;
+    if (!_pending.length) {
+      els.attachRowEl.hidden = true;
+      els.attachRowEl.innerHTML = '';
+      return;
+    }
+    els.attachRowEl.hidden = false;
+    els.attachRowEl.innerHTML = _pending.map((a) => {
+      const ext = _extOf(a.name || a.id);
+      if (_IMG_EXTS.has(ext)) {
+        return `<div class="atch-chip atch-img" data-id="${a.id}" title="${_redesignEsc(a.name)}">`
+          + `<img src="/api/upload/${_redesignEsc(a.id)}" alt="">`
+          + `<button type="button" class="atch-rm" data-id="${a.id}" title="Remove">✕</button></div>`;
+      }
+      return `<div class="atch-chip atch-file" data-id="${a.id}">`
+        + `<span class="atch-ext">${_redesignEsc(ext.slice(0,4) || 'file')}</span>`
+        + `<span class="atch-name" title="${_redesignEsc(a.name)}">${_redesignEsc(a.name)}</span>`
+        + `<button type="button" class="atch-rm" data-id="${a.id}" title="Remove">✕</button></div>`;
+    }).join('');
+    // Chip remove clicks.
+    els.attachRowEl.querySelectorAll('.atch-rm').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const id = btn.getAttribute('data-id');
+        _pending = _pending.filter((a) => a.id !== id);
+        _renderAttachRow();
+      });
+    });
+  }
+
+  async function _uploadFiles(fileList) {
+    if (!fileList || !fileList.length) return;
+    const fd = new FormData();
+    for (const f of fileList) fd.append('files', f, f.name || 'upload');
+    try {
+      const res = await fetch(`${API_BASE}/api/upload`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        body: fd,
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const saved = (data && data.files) || [];
+      _pending = [..._pending, ...saved.map((s) => ({ id: s.id, name: s.name, url: s.url }))];
+      _renderAttachRow();
+    } catch (_) { /* soft fail */ }
+  }
+
   async function send(message) {
     if (_destroyed || _streaming) return;
     const text = (message || '').trim();
-    if (!text) return;
-    _bubble('user', _render(text));
+    const attachSnap = _pending.slice();
+    if (!text && !attachSnap.length) return;
+    // Render the user bubble with any image previews inlined so the docked
+    // thread mirrors the main chat's user attachments.
+    const attachHtml = attachSnap.map((a) => {
+      const ext = _extOf(a.name || a.id);
+      if (_IMG_EXTS.has(ext)) {
+        return `<div class="msg-user-att"><img src="/api/upload/${_redesignEsc(a.id)}" alt="${_redesignEsc(a.name)}" style="max-width:100%;border-radius:8px;margin:4px 0"></div>`;
+      }
+      return `<div class="msg-user-att atch-chip atch-file" style="margin:4px 0"><span class="atch-ext">${_redesignEsc(ext.slice(0,4) || 'file')}</span><span class="atch-name">${_redesignEsc(a.name)}</span></div>`;
+    }).join('');
+    _bubble('user', attachHtml + (text ? _render(text) : ''));
+    // Clear pending immediately so the composer resets even before the stream returns.
+    _pending = [];
+    _renderAttachRow();
 
     const fd = new FormData();
     fd.append('message', text);
     fd.append('session', sessionId);
     fd.append('mode', 'chat');  // docked windows default to plain chat mode
+    if (attachSnap.length) {
+      fd.append('attachments', JSON.stringify(attachSnap.map((a) => a.id)));
+    }
 
     _abort = new AbortController();
     _streaming = true;
@@ -363,24 +686,76 @@ export function createChatSurface(rootEl, sessionId, els = {}) {
     }
   }
 
-  // Wire the surface's own composer (independent focus/scroll from center).
-  if (els.formEl && els.inputEl) {
-    els.formEl.addEventListener('submit', (e) => {
-      e.preventDefault();
+  // Wire the surface's own composer. The redesign shell is a div, not a form,
+  // so send is triggered by the button or Enter (Shift+Enter inserts a newline).
+  if (els.inputEl) {
+    const doSend = () => {
       const v = els.inputEl.value;
       els.inputEl.value = '';
       els.inputEl.style.height = 'auto';
       send(v);
-    });
+    };
+    if (els.sendEl) els.sendEl.addEventListener('click', doSend);
     els.inputEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        els.formEl.requestSubmit ? els.formEl.requestSubmit() : els.formEl.dispatchEvent(new Event('submit'));
+        doSend();
       }
     });
     els.inputEl.addEventListener('input', () => {
       els.inputEl.style.height = 'auto';
       els.inputEl.style.height = Math.min(140, els.inputEl.scrollHeight) + 'px';
+    });
+    // Paste image support: capture image blobs pasted into the textarea (Cmd/Ctrl+V
+    // from a screenshot). Named as .png with a timestamp so backend sidecar sees a filename.
+    els.inputEl.addEventListener('paste', (e) => {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      const files = [];
+      for (const it of items) {
+        if (it.kind === 'file' && it.type && it.type.startsWith('image/')) {
+          const f = it.getAsFile();
+          if (f) {
+            const ext = (f.type.split('/')[1] || 'png').split(';')[0];
+            const stamped = new File([f], `pasted-${Date.now()}.${ext}`, { type: f.type });
+            files.push(stamped);
+          }
+        }
+      }
+      if (files.length) {
+        e.preventDefault();
+        _uploadFiles(files);
+      }
+    });
+  }
+  // Attach button → open file picker.
+  if (els.attachBtnEl && els.fileInputEl) {
+    els.attachBtnEl.addEventListener('click', () => els.fileInputEl.click());
+    els.fileInputEl.addEventListener('change', (e) => {
+      const files = e.target.files;
+      if (files && files.length) _uploadFiles(files);
+      // Reset so the same file can be re-picked later.
+      e.target.value = '';
+    });
+  }
+  // Drag-and-drop into the whole window.
+  if (rootEl && rootEl.parentElement) {
+    const dropZone = rootEl.closest('.chat-window-content') || rootEl.parentElement;
+    dropZone.addEventListener('dragover', (e) => {
+      if (Array.from(e.dataTransfer?.types || []).includes('Files')) {
+        e.preventDefault();
+        dropZone.classList.add('chat-window-drop-hover');
+      }
+    });
+    dropZone.addEventListener('dragleave', (e) => {
+      if (e.target === dropZone) dropZone.classList.remove('chat-window-drop-hover');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer?.files;
+      if (files && files.length) {
+        e.preventDefault();
+        dropZone.classList.remove('chat-window-drop-hover');
+        _uploadFiles(files);
+      }
     });
   }
 

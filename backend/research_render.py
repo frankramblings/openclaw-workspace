@@ -45,40 +45,93 @@ def _md_inline(text: str) -> str:
     return text
 
 
+def _is_table_sep(s: str) -> bool:
+    """A GFM table separator row, e.g. `|---|:--:|---|`."""
+    return bool(re.match(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$", s or ""))
+
+
+def _split_row(s: str) -> list:
+    s = s.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [c.strip() for c in s.split("|")]
+
+
+def _render_table(header: list, rows: list) -> str:
+    n = len(header)
+    head = "".join("<th>%s</th>" % _md_inline(c) for c in header)
+    body = []
+    for r in rows:
+        cells = (r + [""] * n)[:n]
+        body.append("<tr>%s</tr>" % "".join("<td>%s</td>" % _md_inline(c) for c in cells))
+    return ('<div class="tbl"><table><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>'
+            % (head, "".join(body)))
+
+
+# Sections already surfaced elsewhere (the answer card) — don't repeat in the body.
+_SKIP_BODY_SECTIONS = {"bottom line", "tl;dr", "tldr"}
+
+
 def _md_to_html(body: str):
     """Minimal markdown -> html, scoped to what these reports emit. Returns
-    (title, html) — title is the first H1 (used as the page title, not repeated
-    in the body)."""
+    (title, html). Title is the first H1 (page title, not repeated in body).
+    H2 sections become collapsed-by-default accordions so the report reads
+    answer-first instead of as one wall of text; GFM pipe tables render as
+    real tables."""
     body = re.split(r"\n##\s+Sources\s*\n", body)[0]  # drop the flat source list
     lines = body.split("\n")
-    out, i, in_ul, title = [], 0, False, None
+    title = None
+    sections = []            # [(heading|None, [html_parts])]
+    cur_head, cur = None, []
+    in_ul = [False]
 
     def close_ul():
-        nonlocal in_ul
-        if in_ul:
-            out.append("</ul>")
-            in_ul = False
+        if in_ul[0]:
+            cur.append("</ul>")
+            in_ul[0] = False
 
-    while i < len(lines):
+    def flush_section():
+        nonlocal cur_head, cur
+        close_ul()
+        sections.append((cur_head, cur))
+        cur_head, cur = None, []
+
+    i, n = 0, len(lines)
+    while i < n:
         line = lines[i]
         h = re.match(r"^(#{1,4})\s+(.*)$", line)
         if h:
             close_ul()
-            level, txt = len(h.group(1)), _md_inline(h.group(2))
+            level, txt = len(h.group(1)), h.group(2)
             if level == 1 and title is None:
-                title = h.group(2)
+                title = txt
             elif level == 2:
-                out.append("<h2>%s</h2>" % txt)
+                flush_section()
+                cur_head = txt
             else:
-                out.append("<h%d>%s</h%d>" % (level, txt, level))
+                cur.append("<h%d>%s</h%d>" % (level, _md_inline(txt), level))
             i += 1
+            continue
+        # GFM table: a pipe row immediately followed by a separator row.
+        if "|" in line and i + 1 < n and _is_table_sep(lines[i + 1]):
+            close_ul()
+            header = _split_row(line)
+            j = i + 2
+            trows = []
+            while j < n and "|" in lines[j] and lines[j].strip():
+                trows.append(_split_row(lines[j]))
+                j += 1
+            cur.append(_render_table(header, trows))
+            i = j
             continue
         li = re.match(r"^\s*-\s+(.*)$", line)
         if li:
-            if not in_ul:
-                out.append("<ul>")
-                in_ul = True
-            out.append("<li>%s</li>" % _md_inline(li.group(1)))
+            if not in_ul[0]:
+                cur.append("<ul>")
+                in_ul[0] = True
+            cur.append("<li>%s</li>" % _md_inline(li.group(1)))
             i += 1
             continue
         if line.strip() == "":
@@ -88,12 +141,31 @@ def _md_to_html(body: str):
         close_ul()
         para = [line]
         j = i + 1
-        while j < len(lines) and lines[j].strip() != "" and not re.match(r"^\s*-\s+|^#{1,4}\s+", lines[j]):
+        while (j < n and lines[j].strip() != ""
+               and not re.match(r"^\s*-\s+|^#{1,4}\s+", lines[j])
+               and not ("|" in lines[j] and j + 1 < n and _is_table_sep(lines[j + 1]))):
             para.append(lines[j])
             j += 1
-        out.append("<p>%s</p>" % _md_inline(" ".join(p.strip() for p in para)))
+        cur.append("<p>%s</p>" % _md_inline(" ".join(p.strip() for p in para)))
         i = j
-    close_ul()
+    flush_section()
+
+    out, first_open_used = [], False
+    for head, parts in sections:
+        inner = "\n".join(parts).strip()
+        if head is None:
+            if inner:
+                out.append(inner)
+            continue
+        if head.strip().lower() in _SKIP_BODY_SECTIONS:
+            continue
+        if not inner:
+            continue
+        open_attr = " open" if not first_open_used else ""
+        first_open_used = True
+        out.append('<details class="sec"%s><summary>%s</summary>'
+                    '<div class="sec-body">%s</div></details>'
+                    % (open_attr, _md_inline(head), inner))
     return title, "\n".join(out)
 
 
@@ -175,6 +247,24 @@ article h2{font:600 20px/1.3 Georgia,serif;margin:34px 0 10px}
 article h3{font:600 16px/1.3 sans-serif;margin:22px 0 6px}
 article h4{font:600 14px/1.3 sans-serif;margin:16px 0 4px;color:var(--muted)}
 article p{margin:10px 0}article ul{margin:10px 0;padding-left:20px}article li{margin:5px 0}
+.sec{border:1px solid var(--line);border-radius:12px;margin:0 0 11px;background:var(--card);
+box-shadow:var(--shadow);overflow:hidden}
+.sec>summary{cursor:pointer;list-style:none;padding:15px 18px;font:600 16.5px/1.3 Georgia,serif;
+display:flex;align-items:center;justify-content:space-between;gap:12px;user-select:none}
+.sec>summary::-webkit-details-marker{display:none}
+.sec>summary::after{content:"+";color:var(--muted);font:400 21px/1 sans-serif;flex:0 0 auto}
+.sec[open]>summary::after{content:"\\2013"}
+.sec>summary:hover{background:#fbfaf8}
+.sec[open]>summary{border-bottom:1px solid var(--line)}
+.sec-body{padding:4px 18px 16px}
+.sec-body>:first-child{margin-top:10px}
+.tbl{overflow-x:auto;margin:14px 0;border:1px solid var(--line);border-radius:10px}
+.tbl table{border-collapse:collapse;width:100%;font-size:13.5px}
+.tbl th,.tbl td{padding:9px 12px;text-align:left;vertical-align:top;border-top:1px solid var(--line);
+border-left:1px solid var(--line)}
+.tbl tr:first-child th{border-top:0}.tbl th:first-child,.tbl td:first-child{border-left:0}
+.tbl th{background:#f5f2ee;font-weight:600;color:var(--ink)}
+.tbl tbody tr:nth-child(even) td{background:#fbfaf8}
 .cite{font:600 10px/1 ui-monospace,monospace;color:var(--accent);background:var(--accent-soft);
 border:1px solid #d9d5ff;border-radius:6px;padding:1px 5px;margin:0 1px;cursor:pointer;vertical-align:super;transition:.12s}
 .cite:hover,.cite.active{background:var(--accent);color:#fff}
@@ -222,20 +312,53 @@ addEventListener('scroll',hide,{passive:true});addEventListener('resize',hide);
 
 
 def _render_matrix(mx: dict) -> str:
-    rows = ['<div class="grow head"><div>%s</div><div>%s</div><div>%s</div></div>' % (
-        html.escape(mx.get("dimension_label", "Feature")),
-        html.escape(mx.get("col_a", "A")), html.escape(mx.get("col_b", "B")))]
+    # Column headers: prefer the N-column `columns` list; fall back to the
+    # legacy two-column `col_a`/`col_b` shape so older reports keep rendering.
+    cols = mx.get("columns")
+    if not isinstance(cols, list) or not cols:
+        cols = [mx.get("col_a", "A"), mx.get("col_b", "B")]
+    n = len(cols)
+    # One label column (1.1fr) plus one equal column per option.
+    tmpl = "1.1fr " + " ".join(["1fr"] * n)
+
+    def _cells(r: dict) -> list:
+        c = r.get("cells")
+        if isinstance(c, list) and c:
+            vals = list(c)
+        else:  # legacy a/b
+            vals = [r.get("a", ""), r.get("b", "")]
+        return (vals + [""] * n)[:n]
+
+    def _winner_idx(r: dict):
+        w = r.get("winner")
+        if w is None or w == "" or isinstance(w, bool):
+            return None
+        if isinstance(w, int):
+            return w
+        s = str(w).strip()
+        if s.isdigit():
+            return int(s)
+        legacy = {"a": 0, "b": 1}.get(s.lower())
+        if legacy is not None:
+            return legacy
+        for i, cn in enumerate(cols):  # allow naming the winning column outright
+            if str(cn).strip().lower() == s.lower():
+                return i
+        return None
+
+    head = '<div class="grow head" style="grid-template-columns:%s"><div>%s</div>%s</div>' % (
+        tmpl, html.escape(mx.get("dimension_label", "Feature")),
+        "".join("<div>%s</div>" % html.escape(str(c)) for c in cols))
+    rows = [head]
     for r in mx.get("rows", []):
         cls = "grow conflict" if r.get("conflict") else "grow"
-
-        def cell(v, win):
-            return '<div class="%s">%s</div>' % ("win" if win else "", _md_inline(str(v)))
-
         flag = '<span class="flag">CONFLICT</span>' if r.get("conflict") else ""
-        rows.append('<div class="%s"><div>%s%s</div>%s%s</div>' % (
-            cls, html.escape(str(r.get("label", ""))), flag,
-            cell(r.get("a", ""), r.get("winner") == "a"),
-            cell(r.get("b", ""), r.get("winner") == "b")))
+        win = _winner_idx(r)
+        cell_html = "".join(
+            '<div class="%s">%s</div>' % ("win" if win == i else "", _md_inline(str(v)))
+            for i, v in enumerate(_cells(r)))
+        rows.append('<div class="%s" style="grid-template-columns:%s"><div>%s%s</div>%s</div>' % (
+            cls, tmpl, html.escape(str(r.get("label", ""))), flag, cell_html))
     return ('<section class="matrix"><h2>%s</h2><div class="grid">%s</div></section>'
             % (html.escape(mx.get("title", "At a glance")), "\n".join(rows)))
 

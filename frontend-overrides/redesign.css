@@ -302,6 +302,12 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-body .md-code,.msg-user .md-code{margin:0 0 18px;padding:11px 13px;background:#121317;border:1px solid var(--bd);border-radius:10px;overflow-x:auto}
 .msg-body .md-code:last-child,.msg-user .md-code:last-child{margin-bottom:0}
 .msg-body .md-code code,.msg-user .md-code code{font-family:var(--mono);font-size:13px;line-height:1.7;color:#cfd3da;white-space:pre}
+.msg-body .md-table,.msg-user .md-table{margin:0 0 18px;border-collapse:collapse;max-width:100%;display:block;overflow-x:auto;font-size:15px;line-height:1.6}
+.msg-body .md-table:last-child,.msg-user .md-table:last-child{margin-bottom:0}
+.msg-body .md-table th,.msg-body .md-table td,.msg-user .md-table th,.msg-user .md-table td{border:1px solid var(--bd);padding:7px 12px;text-align:left;vertical-align:top}
+.msg-body .md-table th,.msg-user .md-table th{background:#15161a;font-weight:650;color:var(--fg)}
+.msg-body .md-table td,.msg-user .md-table td{color:#dfe3e8}
+.msg-body .md-table tr:nth-child(2n) td,.msg-user .md-table tr:nth-child(2n) td{background:rgba(255,255,255,.02)}
 
 .composer-wrap{flex:none;padding:0 22px 18px;position:relative}
 .composer{border:1px solid var(--bd);background:var(--panel);border-radius:16px;padding:12px 14px 10px}

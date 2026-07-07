@@ -79,6 +79,11 @@ function _wireDualDragForRow(row, sessionId) {
   if (row._dualDragWired) return;
   row._dualDragWired = true;
   row.setAttribute('draggable', 'true');
+  // Suppress text selection so mousedown on the row body initiates a drag
+  // instead of a text-selection gesture (the redesign .conv-row has selectable
+  // text labels; without this the browser wins the gesture and drag never fires).
+  row.style.userSelect = 'none';
+  row.style.webkitUserSelect = 'none';
 
   row.addEventListener('dragstart', (e) => {
     if (!dualSessionEnabled() || window.innerWidth <= 768) return;
@@ -104,9 +109,51 @@ function _wireDualDragForRow(row, sessionId) {
 // _postRenderSessionList so it re-binds after each list re-render.
 function _wireDualDragForList(list) {
   if (!dualSessionEnabled() || window.innerWidth <= 768) return;
+  // Classic UI rows.
   list.querySelectorAll('.list-item[data-session-id]').forEach(row => {
     _wireDualDragForRow(row, row.getAttribute('data-session-id'));
   });
+  // Redesign UI rows: <div class="conv-row" data-act="selectSession" data-arg="{sid}">
+  // The redesign sidebar re-renders on its own cadence (not via _postRenderSessionList),
+  // so we also install a MutationObserver below to catch late-mounted rows.
+  list.querySelectorAll('.conv-row[data-act="selectSession"][data-arg]').forEach(row => {
+    _wireDualDragForRow(row, row.getAttribute('data-arg'));
+  });
+}
+
+// The redesign sidebar (surfaces.js) rebuilds its rows outside of _postRenderSessionList,
+// so hook into the DOM directly: observe added nodes and (re-)wire dock-drag on any
+// new .conv-row. Debounced with rAF; idempotent because _wireDualDragForRow tracks
+// row._dualDragWired.
+let _dualDragObserverInstalled = false;
+function _installDualDragObserver() {
+  if (_dualDragObserverInstalled) return;
+  if (typeof MutationObserver === 'undefined') return;
+  _dualDragObserverInstalled = true;
+  let pending = false;
+  const rescan = () => {
+    pending = false;
+    if (!dualSessionEnabled() || window.innerWidth <= 768) return;
+    _wireDualDragForList(document);
+  };
+  const obs = new MutationObserver((records) => {
+    if (pending) return;
+    // Cheap filter: only schedule if any record touches subtree structure.
+    for (const r of records) {
+      if (r.addedNodes && r.addedNodes.length) { pending = true; break; }
+    }
+    if (pending) requestAnimationFrame(rescan);
+  });
+  obs.observe(document.body, { childList: true, subtree: true });
+  // Kick once now in case rows are already mounted.
+  rescan();
+}
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _installDualDragObserver, { once: true });
+  } else {
+    _installDualDragObserver();
+  }
 }
 
 const API_BASE = window.location.origin;

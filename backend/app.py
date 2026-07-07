@@ -543,6 +543,161 @@ def _resolve_attachments(raw: str) -> list[dict]:
     return out
 
 
+# Non-image files: extract text and inline into the message body. Total across
+# all files per turn is capped so a huge upload can't blow the context.
+_TEXT_ATTACH_TOTAL_MAX = 200 * 1024
+_TEXT_ATTACH_PER_FILE_MAX = 100 * 1024
+_TEXT_RAW_EXTS = {".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".log",
+                  ".xml", ".yaml", ".yml", ".ini", ".conf", ".toml", ".env",
+                  ".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".htm", ".css",
+                  ".scss", ".sh", ".bash", ".zsh", ".fish", ".rb", ".go", ".rs",
+                  ".java", ".kt", ".swift", ".c", ".h", ".cpp", ".hpp", ".cc",
+                  ".cs", ".php", ".sql", ".rst", ".org", ".vue", ".svelte",
+                  ".lua", ".pl", ".r", ".dockerfile", ".makefile", ".gradle",
+                  ".diff", ".patch"}
+
+
+def _extract_file_text(path: Path, mime: str) -> str | None:
+    """Best-effort text extraction. Returns None for formats we can't read (e.g.
+    .numbers without libreoffice); the caller silently skips those."""
+    ext = path.suffix.lower()
+    try:
+        if ext in _TEXT_RAW_EXTS or mime.startswith("text/") or mime == "application/json":
+            return path.read_text(errors="replace")
+        if ext == ".xlsx" or mime in (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ):
+            from openpyxl import load_workbook
+            wb = load_workbook(path, read_only=True, data_only=True)
+            parts: list[str] = []
+            for sheet in wb.worksheets:
+                parts.append(f"## Sheet: {sheet.title}")
+                for row in sheet.iter_rows(values_only=True):
+                    cells = ["" if v is None else str(v) for v in row]
+                    if any(c.strip() for c in cells):
+                        parts.append("\t".join(cells))
+            wb.close()
+            return "\n".join(parts)
+        if ext == ".pdf" or mime == "application/pdf":
+            from pypdf import PdfReader
+            reader = PdfReader(str(path))
+            out: list[str] = []
+            for i, page in enumerate(reader.pages, start=1):
+                text = (page.extract_text() or "").strip()
+                if text:
+                    out.append(f"## Page {i}\n{text}")
+            return "\n\n".join(out)
+        if ext == ".docx" or mime == (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ):
+            from docx import Document
+            doc = Document(str(path))
+            parts: list[str] = [p.text for p in doc.paragraphs if p.text.strip()]
+            for tbl in doc.tables:
+                for row in tbl.rows:
+                    cells = [c.text.strip() for c in row.cells]
+                    if any(cells):
+                        parts.append("\t".join(cells))
+            return "\n".join(parts)
+        if ext == ".pptx" or mime == (
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        ):
+            from pptx import Presentation
+            pres = Presentation(str(path))
+            parts: list[str] = []
+            for i, slide in enumerate(pres.slides, start=1):
+                parts.append(f"## Slide {i}")
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        for para in shape.text_frame.paragraphs:
+                            line = "".join(r.text for r in para.runs).strip()
+                            if line:
+                                parts.append(line)
+                    if getattr(shape, "has_table", False):
+                        for row in shape.table.rows:
+                            cells = [c.text.strip() for c in row.cells]
+                            if any(cells):
+                                parts.append("\t".join(cells))
+                if slide.has_notes_slide:
+                    notes = slide.notes_slide.notes_text_frame.text.strip()
+                    if notes:
+                        parts.append(f"[Speaker notes] {notes}")
+            return "\n".join(parts)
+    except Exception as e:  # noqa: BLE001
+        _log.warning("Text extraction failed for %s (%s): %s", path.name, ext, e)
+        return None
+    return None
+
+
+def _extract_text_attachments(raw: str) -> tuple[list[dict], list[str]]:
+    """Return (files, skipped). `files` is [{name, text}] for uploads we could
+    read; `skipped` is names of non-image uploads whose content we couldn't
+    extract (unsupported format, empty output, or budget exceeded). Images are
+    handled by `_resolve_attachments` and are neither returned nor skipped
+    here."""
+    if not raw:
+        return [], []
+    try:
+        ids = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return [], []
+    out: list[dict] = []
+    skipped: list[str] = []
+    total = 0
+    for fid in ids if isinstance(ids, list) else []:
+        if not isinstance(fid, str):
+            continue
+        safe = "".join(c for c in fid if c.isalnum() or c in "-_.")
+        path = ATTACH_DIR / safe
+        if not path.exists() or not path.is_file():
+            continue
+        mime = mimetypes.guess_type(str(path))[0] or ""
+        if mime.startswith("image/"):
+            continue  # image path handles these
+        text = _extract_file_text(path, mime)
+        if not text or not text.strip():
+            skipped.append(path.name)
+            continue
+        text = text.strip()
+        if len(text) > _TEXT_ATTACH_PER_FILE_MAX:
+            text = text[:_TEXT_ATTACH_PER_FILE_MAX] + "\n... [truncated]"
+        if total + len(text) > _TEXT_ATTACH_TOTAL_MAX:
+            _log.warning("Text-attach total exceeded %d bytes; dropping %s",
+                         _TEXT_ATTACH_TOTAL_MAX, path.name)
+            skipped.append(path.name)
+            continue
+        total += len(text)
+        out.append({"name": path.name, "text": text})
+    return out, skipped
+
+
+def _prepend_text_attachments(message: str, files: list[dict],
+                              skipped: list[str] | None = None) -> str:
+    """Inline extracted file text into the user message so it reaches the model
+    regardless of vision/file-type support. The gateway only forwards image
+    attachments; everything else has to arrive as text."""
+    skipped = skipped or []
+    if not files and not skipped:
+        return message
+    parts: list[str] = []
+    if files:
+        parts.append("The user attached the following file(s):\n")
+        for f in files:
+            parts.append(f"── {f['name']} ──")
+            parts.append(f["text"])
+            parts.append("")
+        parts.append("──\n")
+    if skipped:
+        parts.append(
+            "[System note: couldn't extract text from these attachments — "
+            "unsupported format or empty content: "
+            + ", ".join(skipped) + ". Tell the user which files were dropped "
+            "so they can convert or resend.]\n"
+        )
+    parts.append(message or "")
+    return "\n".join(parts)
+
+
 _CHAT_ATTACH_DIR = ATTACH_DIR.parent / ".chat-attachments"
 
 
@@ -689,6 +844,13 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
 
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
     chat_attachments = _resolve_attachments(attachments)  # image uploads → vision
+    # Non-image uploads (CSV, XLSX, DOCX, PPTX, PDF, text): extract and inline
+    # into the message so they reach the model (the gateway drops non-image
+    # bytes). Skipped files are surfaced as a system note so the assistant can
+    # tell the user which files were dropped.
+    text_files, skipped_files = _extract_text_attachments(attachments)
+    if text_files or skipped_files:
+        message = _prepend_text_attachments(message, text_files, skipped_files)
     # Persist the image refs (keyed by the SPA session id) so they survive a
     # reload — the gateway transcript only keeps the user's text.
     if session and attachments:

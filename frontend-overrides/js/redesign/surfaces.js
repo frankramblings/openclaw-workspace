@@ -191,6 +191,23 @@ export function chatMsg(m, s) {
     const attachHtml = renderAttachments(m.attach);
     const canEdit = !!(s.live?.chat?.pendingSend && s.live.chat.pendingSend.messageId === m.id);
     const ctx = { canEdit };
+    // Inline editor (Task 8): app.js's editMessage sets chat.editingId rather
+    // than touching the DOM directly, because every action dispatch is
+    // followed by a full render() that rebuilds root.innerHTML wholesale —
+    // any manual DOM swap would be wiped the instant the click handler
+    // returns. So the textarea + Save/Cancel bar is template output, gated on
+    // state, same as everything else here.
+    if (canEdit && s.live?.chat?.editingId === m.id) {
+      const val = s.editDraft != null ? s.editDraft : m.text;
+      const rows = Math.max(2, String(val || '').split('\n').length + 1);
+      return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user msg-editing">`
+        + `<textarea class="msg-edit-ta" data-model="editDraft" data-focus="msgEdit" rows="${rows}">${esc(val || '')}</textarea>`
+        + `<div class="msg-edit-bar">`
+          + `<button class="msg-edit-cancel ocbtn" data-act="cancelEdit" data-arg="${esc(m.id)}">Cancel</button>`
+          + `<button class="msg-edit-save ocbtn" data-act="saveEdit" data-arg="${esc(m.id)}">Save &amp; send</button>`
+        + `</div>`
+      + `</div></div>`;
+    }
     // While the 700ms send-buffer is armed (Task 7), a small ring next to the
     // timestamp drains as the deadline approaches — the visible countdown
     // before this bubble actually hits the gateway. The drain itself is a

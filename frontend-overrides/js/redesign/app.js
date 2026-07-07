@@ -558,6 +558,23 @@ root.addEventListener('compositionend', (e) => {
   }
 });
 
+// Inline message editor (Task 8): ⌘/Ctrl+Enter saves & sends, Esc cancels.
+// Scoped to .msg-edit-ta so it never shadows the composer's own shortcuts.
+root.addEventListener('keydown', (e) => {
+  const ta = e.target.closest && e.target.closest('.msg-edit-ta');
+  if (!ta) return;
+  const wrap = ta.closest('[data-msg-id]');
+  const id = wrap && wrap.getAttribute('data-msg-id');
+  if (!id) return;
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    if (actions.saveEdit) { actions.saveEdit(id); render(); }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if (actions.cancelEdit) { actions.cancelEdit(id); render(); }
+  }
+});
+
 // file inputs: composer attach (data-upload) and workspace upload (data-ws-upload)
 root.addEventListener('change', (e) => {
   const t = e.target;

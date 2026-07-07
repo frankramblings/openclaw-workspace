@@ -451,6 +451,35 @@ async function refreshSidebarUsage(state) {
   runtime.render();
 }
 
+// Pure slicing step for branchFromMessage — split out so it's unit-testable
+// without a DOM/fetch/localStorage environment (see
+// __tests__/redesign-branch-from-message.test.js). Returns null if msgId
+// isn't in the thread; otherwise the {role,text} (+id) prefix through and
+// including that message, in thread order.
+export function sliceBranchPrefix(thread, msgId) {
+  const list = Array.isArray(thread) ? thread : [];
+  const idx = list.findIndex((m) => m.id === msgId);
+  if (idx < 0) return null;
+  return list.slice(0, idx + 1).map((m) => ({ id: m.id, role: m.role, text: m.text }));
+}
+
+// localStorage key a branched session's carried prefix is stashed under —
+// shared by branchFromMessage (write), selectSession (rehydrate on reopen),
+// and clearBranchPrefixIfStarted (delete once the branch has a real message).
+const branchPrefixKey = (sessionId) => `branchPrefix:${sessionId}`;
+
+// Once a live message actually lands in a branched session's thread, the
+// carried prefix bubbles (state.branchPrefix, rendered by chatSurface — see
+// surfaces.js) have done their job: the backend already prepended the
+// preamble to that first send. Clear both the in-memory flag and its
+// localStorage backing so a reload doesn't resurrect stale carried bubbles.
+function clearBranchPrefixIfStarted(state, chat) {
+  if (state.branchPrefix && Array.isArray(chat.thread) && chat.thread.length > 0) {
+    state.branchPrefix = null;
+    try { if (chat.activeId) localStorage.removeItem(branchPrefixKey(chat.activeId)); } catch (_) {}
+  }
+}
+
 async function createSession(model) {
   let endpoint_url = '';
   let endpoint_id = '';
@@ -708,6 +737,7 @@ async function dispatchSend(text, attachSnap) {
 
   if (!Array.isArray(chat.thread)) chat.thread = [];
   chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
+  clearBranchPrefixIfStarted(state, chat);
   runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
   runtime.render();
 
@@ -747,6 +777,7 @@ async function submitFromComposer(text, attachSnap) {
     _optimistic: true, _deadline: deadline,
   });
   chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0 };
+  clearBranchPrefixIfStarted(state, chat);
   runtime.wantChatBottom = true;
   // The countdown ring's drain is a pure CSS animation keyed off its own
   // mount time (see .msg-pending-ring / @keyframes ring-drain in
@@ -974,6 +1005,24 @@ function showChatToast(text, id) {
   } catch (_) { /* DOM unavailable */ }
 }
 
+// Lightweight, non-clickable info/error toast (branch/edit failures). Reuses
+// the same #oc-toast-host as showChatToast but drops the "Open" affordance —
+// there's no session to jump to for "couldn't branch" / "too late to edit".
+function toast(text) {
+  try {
+    let host = document.getElementById('oc-toast-host');
+    if (!host) { host = document.createElement('div'); host.id = 'oc-toast-host'; document.body.appendChild(host); }
+    const el = document.createElement('div');
+    el.className = 'oc-toast';
+    el.style.cursor = 'default';
+    el.innerHTML = '<span class="oc-toast-dot"></span><span class="oc-toast-msg"></span>';
+    el.querySelector('.oc-toast-msg').textContent = text;
+    host.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('in'));
+    setTimeout(() => { el.classList.remove('in'); setTimeout(() => el.remove(), 220); }, 4500);
+  } catch (_) { /* DOM unavailable */ }
+}
+
 // A reply finished in a thread you weren't viewing — surface it: in-app toast
 // always, plus an OS notification when the user has granted permission.
 function notifyTurnDone(chat, id) {
@@ -1116,8 +1165,17 @@ export const actions = {
     turn = null;
     chat.rowMenuOpen = null;
     chat.activeId = id;
+    chat.editingId = null;
     if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
     storeActiveId(id);
+    // Rehydrate a carried branch prefix (Task 8): branchFromMessage stashes it
+    // in localStorage keyed by the NEW session's id before switching to it, so
+    // this covers both the initial jump into a freshly-branched thread and any
+    // later reopen (e.g. after a reload) before its first real message lands.
+    try {
+      const raw = localStorage.getItem(branchPrefixKey(id));
+      state.branchPrefix = raw ? JSON.parse(raw) : null;
+    } catch (_) { state.branchPrefix = null; }
     if (Array.isArray(chat.groups)) {
       for (const g of chat.groups) {
         for (const r of g.rows) r.active = r.id === id;
@@ -1139,6 +1197,9 @@ export const actions = {
       if (t.title) chat.title = t.title;
       chat.subtitle = t.subtitle;
       if (t.model) chat.model = t.model;
+      // A reopened session that already has real history (e.g. another tab
+      // already sent its first message) shouldn't still show carried bubbles.
+      clearBranchPrefixIfStarted(state, chat);
       runtime.wantChatBottom = true;   // land on the latest message once loaded
     } catch (_) { /* keep prior */ }
     // Re-attach to an in-flight turn for this thread, if one is still running
@@ -1162,9 +1223,11 @@ export const actions = {
     stopElapsed();
     turn = null;
     chat.activeId = null;
+    chat.editingId = null;
     storeActiveId(null);
     chat.thread = [];
     chat.title = 'New chat';
+    state.branchPrefix = null; // a fresh chat carries no branch context
     if (Array.isArray(chat.groups)) {
       for (const g of chat.groups) for (const r of g.rows) r.active = false;
     }
@@ -1586,6 +1649,94 @@ export const actions = {
     const msg = (chat.thread || []).find((m) => m.id === id);
     if (!msg || !msg.text) return;
     try { await navigator.clipboard.writeText(msg.text); } catch (_) {}
+  },
+
+  // Message toolbar: branch a NEW session off the transcript up through this
+  // message. The client already rendered these bubbles, so it slices its own
+  // `chat.thread` rather than trusting the server to re-fetch/re-slice history
+  // (see backend's /api/session/branch docstring — same reasoning). Stash the
+  // echoed-back prefix in localStorage BEFORE switching sessions so
+  // selectSession's rehydrate step (above) picks it up as part of the same
+  // open, whether this is the initial jump or a later reopen.
+  branchFromMessage: async (msgId) => {
+    const state = runtime.state;
+    if (!state || !msgId) return;
+    const chat = ensureChat(state);
+    const sourceId = chat.activeId;
+    const prefixSlice = sliceBranchPrefix(chat.thread, msgId);
+    if (!prefixSlice) { toast(`Couldn't find that message`); return; }
+    if (!sourceId) { toast(`Couldn't branch: no active session`); return; }
+    let body = {};
+    try {
+      const res = await fetch('/api/session/branch', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_session_id: sourceId, prefix: prefixSlice }),
+      });
+      try { body = await res.json(); } catch (_) { body = {}; }
+      if (!res.ok) { toast(`Couldn't branch: ${body.error || res.status}`); return; }
+    } catch (e) {
+      toast(`Couldn't branch: ${String(e && e.message || e)}`);
+      return;
+    }
+    const { session_id, prefix } = body;
+    if (!session_id) { toast(`Couldn't branch: no session returned`); return; }
+    try { await refreshSidebarUsage(state); } catch (_) { /* sidebar refresh is best-effort */ }
+    try { localStorage.setItem(branchPrefixKey(session_id), JSON.stringify(prefix || prefixSlice)); } catch (_) {}
+    await actions.selectSession(session_id);
+  },
+
+  // Message toolbar: open the inline editor for the still-buffered optimistic
+  // bubble (msgTools' canEdit only shows the button while pendingSend.messageId
+  // matches — this re-checks server-side-of-the-click in case the 700ms window
+  // lapsed between render and click). Actual DOM swap happens through state:
+  // chatMsg (surfaces.js) renders a textarea + Save/Cancel bar when
+  // chat.editingId === m.id, since render() rebuilds root.innerHTML wholesale
+  // on every action dispatch (direct DOM surgery here would be wiped the
+  // instant this handler returns).
+  editMessage: (msgId) => {
+    const state = runtime.state;
+    if (!state || !msgId) return;
+    const chat = ensureChat(state);
+    if (!chat.pendingSend || chat.pendingSend.messageId !== msgId) return;
+    chat.editingId = msgId;
+    state.editDraft = chat.pendingSend.text;
+    runtime.render();
+  },
+
+  // Save & Send: commit the textarea's value into the still-buffered message
+  // and flush immediately — Frank made his final call, no reason to wait out
+  // the rest of the 700ms window.
+  saveEdit: (msgId) => {
+    const state = runtime.state;
+    if (!state || !msgId) return;
+    const chat = ensureChat(state);
+    chat.editingId = null;
+    if (!chat.pendingSend || chat.pendingSend.messageId !== msgId) {
+      // The buffer already flushed (timer won the race) — too late to edit.
+      toast(`Too late to edit — __AGENT_NAME__ already started`);
+      state.editDraft = null;
+      runtime.render();
+      return;
+    }
+    const text = state.editDraft != null ? state.editDraft : chat.pendingSend.text;
+    chat.pendingSend.text = text;
+    const msg = (chat.thread || []).find((m) => m.id === msgId);
+    if (msg) msg.text = text;
+    state.editDraft = null;
+    flushPending(chat.activeId);
+  },
+
+  // Cancel: close the inline editor, keep the original buffered text/deadline
+  // untouched (it still fires on its own timer, or on the next explicit flush).
+  cancelEdit: (msgId) => {
+    const state = runtime.state;
+    if (!state) return;
+    const chat = ensureChat(state);
+    if (chat.editingId === msgId) chat.editingId = null;
+    state.editDraft = null;
+    runtime.render();
   },
 
   // Message toolbar: open/close the per-message download flyout (MD vs PDF).

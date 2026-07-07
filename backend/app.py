@@ -876,6 +876,12 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
         consume this directly — they tail event_store — so the turn survives any
         reader leaving."""
         brain_message = message
+        if session:
+            # First send into a freshly-branched session: splice in the
+            # pending prefix's preamble (see branch_context.py + Task 3's
+            # POST /api/session/branch). consume() deletes the pending record,
+            # so every send after the first for this session id is untouched.
+            brain_message = await _compose_outgoing_for_session(session, brain_message)
         text_seen = False    # any non-thinking {"delta"} relayed this turn?
         tools_seen = False   # any tool card relayed (fresh bubble needed)?
         failed = False       # bridge/agent error or user abort — no reply coming
@@ -1084,6 +1090,19 @@ async def create_session(name: str = Form(default=""), model: str = Form(default
                                  endpoint_url=endpoint_url or None,
                                  endpoint_id=endpoint_id or None,
                                  speed=speed or None)
+
+
+async def _compose_outgoing_for_session(session_id: str, user_text: str) -> str:
+    """Consume any pending branch-context for this session and prepend its
+    preamble to the outgoing text. Idempotent per session: `consume` deletes
+    the pending record on read, so only the FIRST call after a branch prepends
+    the preamble — every subsequent call for the same session_id returns
+    user_text unchanged."""
+    ctx = branch_context.consume(session_id)
+    if not ctx:
+        return user_text
+    preamble = ctx.get("preamble") or ""
+    return f"{preamble}\n\nFrank: {user_text}" if preamble else user_text
 
 
 def _build_preamble(prefix: list[dict]) -> str:

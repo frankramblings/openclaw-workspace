@@ -119,6 +119,7 @@ export function mChat(s) {
   <div class="m-scroll m-thread${thread.length ? '' : ' empty'}" data-ptr="1">${mPtr(s, 'Refreshing chat…')}${threadHtml}</div>
   <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;bottom:calc(env(safe-area-inset-bottom,0px) + 122px)">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
   <div class="m-composer${focused ? ' focused' : ''}">
+    ${when(s.mobileEditingPending, `<div class="m-comp-edit-chip"><span class="m-comp-edit-lbl">Editing message</span><button class="m-comp-edit-cancel" data-act="cancelMobileEdit">Cancel</button></div>`)}
     ${when(s.live?.chat?.queued, `<div class="m-queued" data-act="queueRecall"><span class="q-ico">⏳</span><span class="q-txt">Queued${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 50))}` : ' · image'}</span><button class="m-q-x" data-act="queueCancel">✕</button></div>`)}
     ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], (a) => `<span class="m-attach-chip"><span class="nm">${esc(a.name || a.id)}</span><span class="x" data-act="removeAttach" data-arg="${esc(a.id)}">✕</span></span>`)}</div>`)}
     <div class="bar">
@@ -126,7 +127,7 @@ export function mChat(s) {
       <textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message __AGENT_NAME__…">
 ${esc(s.draft || '')}</textarea>
       <button class="m-round-btn m-hide-kb">${ic.mic()}</button>
-      <button class="m-send" data-act="send">${I.send(16)}</button>
+      <button class="m-send${s.mobileEditingPending ? ' editing' : ''}" data-act="send">${I.send(16)}${s.mobileEditingPending ? `<span class="m-send-lbl">Save</span>` : ''}</button>
     </div>
   </div>
   ${sheetHtml}`;

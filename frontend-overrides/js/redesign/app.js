@@ -13,6 +13,7 @@ import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
+import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
@@ -434,6 +435,7 @@ root.addEventListener('click', (e) => {
   const fn = actions[name];
   if (!fn) return;
   fn(t.getAttribute('data-arg'), e);
+  applyCloseSheet(state, t.getAttribute('data-close-sheet'));
   render();
   loadActive(); // fetch live data for any newly-activated surface (idempotent)
 });
@@ -482,6 +484,27 @@ root.addEventListener('pointermove', (e) => {
 root.addEventListener('pointerup', () => endLongPress(lpState, lpIO));
 root.addEventListener('pointercancel', () => resetLongPress(lpState, lpIO));
 document.addEventListener('scroll', () => resetLongPress(lpState, lpIO), true);
+
+// Swipe-down on the message action sheet dismisses it.
+let sheetTouchStart = null;
+root.addEventListener('touchstart', (e) => {
+  const sheet = e.target.closest('.m-msg-sheet');
+  if (!sheet) { sheetTouchStart = null; return; }
+  const t = e.touches[0];
+  sheetTouchStart = { y: t.clientY, ts: Date.now() };
+}, { passive: true });
+root.addEventListener('touchmove', (e) => {
+  if (!sheetTouchStart) return;
+  const t = e.touches[0];
+  const dy = t.clientY - sheetTouchStart.y;
+  const dtMs = Date.now() - sheetTouchStart.ts;
+  if (shouldSwipeDismiss({ dy, dtMs })) {
+    const fn = actions.closeMobileMsgSheet;
+    if (fn) { fn(); render(); }
+    sheetTouchStart = null;
+  }
+}, { passive: true });
+root.addEventListener('touchend', () => { sheetTouchStart = null; }, { passive: true });
 
 // live-bound inputs/textareas
 // Grow the composer to fit its text so you never have to scroll the field to

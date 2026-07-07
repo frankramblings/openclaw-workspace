@@ -27,7 +27,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
+from . import branch_context, bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -1084,6 +1084,59 @@ async def create_session(name: str = Form(default=""), model: str = Form(default
                                  endpoint_url=endpoint_url or None,
                                  endpoint_id=endpoint_id or None,
                                  speed=speed or None)
+
+
+def _build_preamble(prefix: list[dict]) -> str:
+    """Compact serialization of the branched-from transcript prefix, used as
+    the first-send context preamble. Role + text, one per line."""
+    lines = []
+    for m in prefix:
+        role = (m.get("role") or "user").strip()
+        text = (m.get("text") or m.get("content") or "").strip()
+        if not text:
+            continue
+        who = "Frank" if role == "user" else "Gary"
+        lines.append(f"{who}: {text}")
+    body = "\n".join(lines)
+    return (
+        "For context, this conversation was branched from an earlier thread. "
+        "Here is what was said before, verbatim:\n\n"
+        f"{body}\n\n"
+        "Continue from here."
+    )
+
+
+@app.post("/api/session/branch")
+async def branch_session(payload: dict = Body(default=None)):
+    """Create a new session and stash a client-provided transcript prefix as
+    pending context. The frontend already knows the prefix (it rendered those
+    bubbles); we trust its slice verbatim and echo it back — no
+    bridge.fetch_history call, no server-side re-slicing (see
+    .superpowers/sdd/task-3-brief.md). The next composer submit into this
+    session consumes the pending context and prepends a preamble."""
+    payload = payload or {}
+    source_session_id = str(payload.get("source_session_id") or "").strip()
+    prefix = payload.get("prefix") or []
+    if not source_session_id:
+        return JSONResponse(status_code=400, content={"error": "source_session_id required"})
+    if not prefix:
+        return JSONResponse(status_code=400, content={"error": "prefix must not be empty"})
+
+    src = sessions_store.get(source_session_id)
+    if src is None:
+        return JSONResponse(status_code=404, content={"error": "source session not found"})
+
+    name = (payload.get("name") or "").strip() or f"↳ {src.get('name') or 'chat'}"
+    new_sess = sessions_store.create(
+        name=name,
+        model=payload.get("model") or src.get("model"),
+        endpoint_url=src.get("endpoint_url"),
+        endpoint_id=src.get("endpoint_id"),
+        speed=payload.get("speed") or src.get("speed"),
+    )
+    preamble = _build_preamble(prefix)
+    branch_context.write(new_sess["id"], source_session_id, prefix, preamble)
+    return {"session_id": new_sess["id"], "session_key": new_sess["sessionKey"], "prefix": prefix}
 
 
 @app.get("/api/history/{session_id}")

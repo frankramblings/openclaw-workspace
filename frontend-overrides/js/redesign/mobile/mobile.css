@@ -719,6 +719,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   gap: 4px;
   padding-inline: 10px;
   width: auto;
+  border-radius: 999px;
 }
 .m-send-lbl {
   font-size: 12px;

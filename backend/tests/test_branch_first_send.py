@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend import app as app_module
-from backend import bridge, config, sessions_store
+from backend import bridge, config, sessions_store, websearch
 from backend.app import app
 
 
@@ -109,5 +109,62 @@ def test_chat_stream_prepends_preamble_on_first_send(_isolated_branch_context_di
         assert "For context" not in sent[1]
         assert "Frank: again" not in sent[1]
         assert sent[1].endswith("again")
+    finally:
+        sessions_store.delete(sess["id"])
+
+
+def test_chat_stream_websearch_on_first_send_keeps_branch_preamble(
+        _isolated_branch_context_dir, monkeypatch):
+    """Regression for the Task 4 review Critical: when the composer's web-search
+    toggle is on and the first send after a branch returns results,
+    websearch.context_block must build on the already-composed brain_message
+    (branch preamble + user text), not the raw `message` param — otherwise the
+    one-shot preamble (already consumed/deleted by branch_context) is silently
+    dropped forever."""
+    from backend import branch_context
+
+    sess = sessions_store.create(name="branched", model=None)
+    branch_context.write(
+        sess["id"], "src-1",
+        [{"id": "m1", "role": "user", "text": "hello"}],
+        "For context, this conversation was branched from an earlier thread.",
+    )
+
+    sent = []
+
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None, **kwargs):
+        sent.append(message)
+        if run_info is not None:
+            run_info["sessionKey"] = session_key
+        return
+        yield  # pragma: no cover - make this an async generator
+
+    async def fake_search(query, count=5):
+        return [{"title": "Result", "url": "https://example.com", "snippet": "snippet"}]
+
+    monkeypatch.setattr(bridge, "stream_turn", fake_stream_turn)
+    monkeypatch.setattr(websearch, "search", fake_search)
+    monkeypatch.setattr(websearch, "load_settings",
+                         lambda: {"search_provider": "serpapi", "search_result_count": 5})
+
+    client = TestClient(app)
+    try:
+        r1 = client.post("/api/chat_stream", data={
+            "message": "next", "session": sess["id"], "use_web": "1",
+        })
+        assert r1.status_code == 200
+        _events(r1.text)
+        assert sent, "bridge.stream_turn was never called"
+        outgoing = sent[0]
+        # Both the branch preamble and the web-search context block must
+        # survive onto the same outgoing brain_message.
+        assert "For context" in outgoing
+        assert "Web search results" in outgoing
+        assert "https://example.com" in outgoing
+        # context_block wraps the already-composed brain_message: the search
+        # block leads, and the branch preamble + user text follow intact
+        # after the "User message:" marker — nothing was dropped.
+        assert outgoing.index("Web search results") < outgoing.index("For context")
+        assert outgoing.endswith("Frank: next")
     finally:
         sessions_store.delete(sess["id"])

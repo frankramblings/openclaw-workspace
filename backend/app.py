@@ -905,7 +905,14 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                                                 for i, r in enumerate(results))
                                       or "no results"})
                         if results:
-                            brain_message = websearch.context_block(message, results)
+                            # Build on brain_message (which may already carry the
+                            # branch preamble spliced in above), not the raw
+                            # `message` param — the search itself still queries
+                            # off `message` (see the `websearch.search` call
+                            # above); only this "user text" wrapper needs the
+                            # composed value so a branch-first-send doesn't
+                            # silently drop its one-shot preamble.
+                            brain_message = websearch.context_block(brain_message, results)
                     except Exception as exc:  # noqa: BLE001
                         yield bridge._sse({"type": "tool_output", "tool": "web_search",
                                            "tool_id": "websearch",

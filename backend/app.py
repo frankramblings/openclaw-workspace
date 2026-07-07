@@ -45,6 +45,8 @@ from .skills import router as skills_router
 from .uploads import ATTACH_DIR
 from .uploads import router as uploads_router
 from .workspace_files import router as workspace_files_router
+from .workspace_watch import router as workspace_watch_router
+from . import workspace_watch
 from .terminals import router as terminals_router
 from .resume_route import router as resume_router
 from .export_pdf import router as export_pdf_router
@@ -77,6 +79,9 @@ async def _lifespan(_app: FastAPI):
     search_task = asyncio.create_task(_startup_reindex())
     # Followup promises: deadline + crash-recovery backstop.
     followup_task = asyncio.create_task(followup.sweeper())
+    # Filesystem watcher for the doc editor's live-refresh (broadcasts to
+    # /api/workspace/watch subscribers). Cheap Rust-backed inotify; one task.
+    workspace_watch.start_watcher()
     yield
     # Reap every PTY shell so its `bash -i` child (and descendants) get
     # SIGHUP→SIGKILL right now. Otherwise they ignore the SIGTERM systemd sends
@@ -127,6 +132,7 @@ app.include_router(uploads_router)
 app.include_router(research_router)
 app.include_router(emoji_router)
 app.include_router(workspace_files_router)
+app.include_router(workspace_watch_router)
 app.include_router(terminals_router)
 app.include_router(resume_router)
 app.include_router(export_pdf_router)

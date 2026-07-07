@@ -38,6 +38,26 @@
 html,body{margin:0;height:100%}
 body{background:var(--bg);font-family:var(--sans);color:var(--fg);-webkit-font-smoothing:antialiased;font-feature-settings:'liga','calt','ss15','ss16','ss13','ss14','onum'}
 
+/* Document editor dock: when open, reserve horizontal space so #oc-root reflows
+   beside the dock instead of sliding under it. --doc-dock-w is set by
+   document-editor.js and forced to 0 on <=640px viewports (dock goes full-screen). */
+body.oc-doc-docked{padding-right:var(--doc-dock-w,0px);transition:padding-right .16s ease}
+@media (max-width:640px){body.oc-doc-docked{padding-right:0}}
+.oc-doc-grabber:hover{background:var(--teal,#4fe3d1);opacity:.35}
+
+/* Files pane root picker — small popover of allowlisted roots the tree can walk.
+   Anchored to the .ws-root-btn in the companion Files header. */
+.ws-root-btn{padding:0 6px;border-radius:6px}
+.ws-root-btn:hover{background:rgba(255,255,255,.04)}
+.ws-root-menu{position:absolute;top:100%;right:0;margin-top:4px;min-width:220px;
+  background:var(--panel,#1b1d22);border:1px solid var(--border,#2a2d33);border-radius:8px;
+  box-shadow:0 12px 32px rgba(0,0,0,.35);z-index:60;padding:4px;display:flex;flex-direction:column}
+.ws-root-item{display:flex;flex-direction:column;padding:6px 10px;border-radius:6px;cursor:pointer;gap:1px}
+.ws-root-item:hover{background:rgba(255,255,255,.05)}
+.ws-root-item.active{background:rgba(79,227,209,.08)}
+.ws-root-item .k{font-size:12px;color:var(--fg,#e8eaed);font-weight:600}
+.ws-root-item .p{font-size:10.5px;color:var(--faint,#8a8f98);font-family:var(--mono,monospace)}
+
 @keyframes blink{0%,48%{opacity:1}49%,100%{opacity:0}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 @keyframes spin{to{transform:rotate(360deg)}}

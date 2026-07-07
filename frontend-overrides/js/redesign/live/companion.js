@@ -62,12 +62,27 @@ function transform(tree) {
 export async function load(state) {
   initTerminal(); // boot the persistent xterm overlay (idempotent)
   initDocEditor(); // boot the persistent doc editor overlay (idempotent)
-  const data = await apiGet('/api/workspace/tree?hidden=0');
+  const rootKey = state.wsRootKey || 'workspace';
+  const data = await apiGet(`/api/workspace/tree?hidden=0&root_key=${encodeURIComponent(rootKey)}`);
   if (!data || !Array.isArray(data.tree)) {
     throw new Error('workspace tree: missing tree array');
   }
+  // Fetch the roots list once — it's tiny and the header renders it every tick.
+  let roots = state.live?.companion?.roots;
+  if (!roots) {
+    try {
+      const rr = await apiGet('/api/workspace/roots');
+      roots = Array.isArray(rr && rr.roots) ? rr.roots : [];
+    } catch (_) { roots = []; }
+  }
   state.live = state.live || {};
-  state.live.companion = { tree: transform(data.tree) };
+  state.live.companion = {
+    tree: transform(data.tree),
+    root: data.root || '',
+    rootKey: data.root_key || rootKey,
+    mutable: data.mutable !== false,
+    roots,
+  };
 }
 
 // Workspace file-management toolbar actions. All paths are relative to the
@@ -116,7 +131,20 @@ export const actions = {
     runtime.render();
   },
   wsOpenFile: async (path) => {
-    await docActions.openWorkspaceFile(path);
+    const state = runtime.state;
+    const rootKey = (state && state.wsRootKey) || 'workspace';
+    await docActions.openWorkspaceFile(path, rootKey);
+  },
+  wsSetRoot: async (key) => {
+    const state = runtime.state;
+    if (!state || !key) return;
+    if (state.wsRootKey === key) { state.wsRootMenuOpen = false; runtime.render(); return; }
+    state.wsRootKey = key;
+    state.wsRootMenuOpen = false;
+    state.fsOpen = {};
+    try { localStorage.setItem('oc-ws-root', key); } catch (_) {}
+    try { await load(state); } catch (_) {}
+    runtime.render();
   },
   saveDoc: async () => docActions.saveDoc(),
   closeDoc: async () => docActions.closeDoc(),

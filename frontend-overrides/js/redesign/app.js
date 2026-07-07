@@ -11,6 +11,7 @@ import { renderCenter, renderChatList, chatMsg } from './surfaces.js';
 import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
+import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
@@ -27,6 +28,10 @@ const state = {
   // companion (collapsed to the reveal strip by default)
   compTab: null, compSplit: false, compHidden: true,
   fsOpen: { data: true, 'data/skills': false, documents: true, notes: false, research: false },
+  // Files pane root key (workspace | home | meetings | openclaw-workspace | tmp).
+  // Persisted so "up a level" survives reloads. Anything outside 'workspace' is
+  // read-only in the file editor (backend refuses mutations there).
+  wsRootKey: (() => { try { return localStorage.getItem('oc-ws-root') || 'workspace'; } catch (_) { return 'workspace'; } })(),
   // research
   researchQuery: '', research: 'idle', resOpenCtl: null,
   resCfg: { rounds: 'Auto', engine: 'Default', endpoint: 'Claude-Cli', model: 'opus-4' },
@@ -283,6 +288,15 @@ const actions = {
   toggleSplit: () => { state.compSplit = !state.compSplit; },
   toggleComp: () => { state.compHidden = !state.compHidden; },
   toggleFs: (path) => { state.fsOpen = { ...state.fsOpen, [path]: !state.fsOpen[path] }; },
+  // Switch the Files pane's root. Persisted; triggers a companion reload
+  // (handled downstream by the wsSetRoot override in live/companion.js).
+  wsSetRoot: (key) => {
+    if (!key) return;
+    state.wsRootKey = key;
+    try { localStorage.setItem('oc-ws-root', key); } catch (_) {}
+    state.fsOpen = {}; // dir-open state doesn't carry across roots
+  },
+  wsRootMenu: () => { state.wsRootMenuOpen = !state.wsRootMenuOpen; },
 
   // research
   toggleResCtl: (key) => { state.resOpenCtl = state.resOpenCtl === key ? null : key; },
@@ -360,9 +374,10 @@ root.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');
   if (!t) {
     // A click outside any actionable element dismisses open menus.
-    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen || state.live?.chat?.msgMenuOpen) {
+    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen || state.live?.chat?.msgMenuOpen || state.wsRootMenuOpen) {
       state.chatMenuOpen = false;
       state.modelMenuOpen = false;
+      state.wsRootMenuOpen = false;
       if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; }
       render();
     }
@@ -472,6 +487,17 @@ root.addEventListener('input', (e) => {
     // State is already synced above so send() sees the text; skip the
     // destructive re-render while composing. compositionend renders once after.
     if (e.isComposing) return;
+    // The full render() below exists ONLY to drive the slash-command palette as
+    // you type. But render() rebuilds root.innerHTML wholesale, which re-runs
+    // chatMsg→renderMarkdown for EVERY message in the thread — on a long
+    // conversation (or with a long reply present) that's the real cause of
+    // composer typing lag: each keystroke re-parses the entire thread. The DOM
+    // already holds the typed character and state is synced above, so skip the
+    // rebuild unless the slash palette actually needs it — i.e. the draft is a
+    // "/command", or a slash menu is currently open and must now close. (Mirrors
+    // the mobile composer, which already skips render on every keystroke.)
+    const slashRelevant = t.value.startsWith('/') || !!root.querySelector('.slash-menu');
+    if (!slashRelevant) return;
     const before = root.querySelector('.chat-thread');
     const savedTop = before ? before.scrollTop : null;
     render();
@@ -738,6 +764,9 @@ window.addEventListener('hashchange', () => {
 
 render();
 loadActive(); // kick off live data for the initial surface
+// First-run only: on a mobile browser (not already installed), show a small,
+// easy-to-dismiss "Add to Home Screen" hint. Shares the shell's isMobile().
+maybeShowInstallHint(isMobile);
 // Safety net: if live loading fails entirely (network down, all throws), reveal
 // after 3 s so the page doesn't stay permanently invisible.
 setTimeout(() => { if (!rootRevealed) { rootRevealed = true; root.style.visibility = ''; hideBootLoader(); } }, 3000);

@@ -46,16 +46,38 @@ const TERM_SUBHEAD = `<div class="comp-subhead"><span class="cwd">~/.openclaw/wo
 const TERM_BODY = `<div class="term-body" data-term-mount></div>`;
 
 function filesPane(s) {
+  const rootKey = s.wsRootKey || 'workspace';
+  const mutable = s.live?.companion?.mutable !== false;
+  const roots = s.live?.companion?.roots || [];
+  // Fallback list so the picker still opens before the roots endpoint responds.
+  const fallback = [
+    { key: 'workspace', path: '~/.openclaw/workspace', available: true },
+    { key: 'home', path: '~', available: true },
+    { key: 'meetings', path: '~/meetings', available: true },
+    { key: 'openclaw-workspace', path: '~/openclaw-workspace', available: true },
+    { key: 'tmp', path: '/tmp', available: true },
+  ];
+  const shown = roots.length ? roots : fallback;
+  const rootLabel = (shown.find((r) => r.key === rootKey) || {}).key || rootKey;
+  const menuOpen = !!s.wsRootMenuOpen;
+  const menuHtml = menuOpen ? `<div class="ws-root-menu" data-noclose>${
+    shown.filter((r) => r.available !== false).map((r) => (
+      `<div class="ws-root-item${r.key === rootKey ? ' active' : ''}" data-act="wsSetRoot" data-arg="${esc(r.key)}"><span class="k">${esc(r.key)}</span><span class="p">${esc(r.path)}</span></div>`
+    )).join('')
+  }</div>` : '';
+  const mutBtns = mutable ? (
+    `<span class="ws-tool" data-act="wsNewFile" title="New file" style="cursor:pointer;padding:0 5px;color:var(--faint)">${I.file ? I.file(13, 'currentColor') : '📄'}<span style="font-size:14px">＋</span></span>
+    <span class="ws-tool" data-act="wsNewFolder" title="New folder" style="cursor:pointer;padding:0 5px;color:var(--faint)">${I.folder(13, 'currentColor')}<span style="font-size:14px">＋</span></span>
+    <label class="ws-tool" title="Upload files" style="cursor:pointer;padding:0 5px;color:var(--faint)"><input type="file" data-ws-upload multiple style="display:none">⤒</label>`
+  ) : `<span class="ws-tool" title="Read-only outside workspace" style="padding:0 5px;color:var(--faint);opacity:.55">read-only</span>`;
   return `
   <div class="files-subtabs">
     <span class="ft">Files</span>
     <span class="at">Artifacts <span class="n">0</span></span>
     <div class="oc-spacer"></div>
-    <span class="ws-tool" data-act="wsNewFile" title="New file" style="cursor:pointer;padding:0 5px;color:var(--faint)">${I.file ? I.file(13, 'currentColor') : '📄'}<span style="font-size:14px">＋</span></span>
-    <span class="ws-tool" data-act="wsNewFolder" title="New folder" style="cursor:pointer;padding:0 5px;color:var(--faint)">${I.folder(13, 'currentColor')}<span style="font-size:14px">＋</span></span>
-    <label class="ws-tool" title="Upload files" style="cursor:pointer;padding:0 5px;color:var(--faint)"><input type="file" data-ws-upload multiple style="display:none">⤒</label>
+    ${mutBtns}
     <span class="ws-tool" data-act="wsRefresh" title="Refresh" style="cursor:pointer;padding:0 5px;color:var(--faint)">⟳</span>
-    <span class="ws">workspace</span>
+    <span class="ws ws-root-btn" data-act="wsRootMenu" title="Change root" style="cursor:pointer;position:relative">${esc(rootLabel)} ▾${menuHtml}</span>
   </div>
   <div class="files-body">${fileTreeHtml(s)}</div>`;
 }

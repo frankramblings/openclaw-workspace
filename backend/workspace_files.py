@@ -47,11 +47,35 @@ _BINARY_EXTS = {
     ".m4a", ".webm", ".woff", ".woff2", ".ttf", ".otf", ".eot",
 }
 
-_cache: dict = {}  # hidden_flag(bool) -> (timestamp, data); cleared on any mutation
+_cache: dict = {}  # (root_key, hidden_flag) -> (timestamp, data); cleared on any mutation
 
 
 def workspace_root() -> Path:
     return vs.WORKSPACE
+
+
+# Read-only roots the explorer can walk with `root_key`. Mutations remain
+# workspace-only — this is intentionally a small allowlist of Frank's normal
+# working directories, NOT arbitrary filesystem browsing.
+def _allowed_roots() -> dict[str, Path]:
+    home = Path.home()
+    return {
+        "workspace": workspace_root(),
+        "home": home,
+        "meetings": home / "meetings",
+        "openclaw-workspace": home / "openclaw-workspace",
+        "tmp": Path("/tmp"),
+    }
+
+
+def _root_for_key(key: str | None) -> tuple[str, Path]:
+    """Return (key, path). Falls back to workspace on unknown/missing key."""
+    roots = _allowed_roots()
+    if key and key in roots:
+        p = roots[key]
+        if p.is_dir():
+            return key, p
+    return "workspace", workspace_root()
 
 
 def git_branch(root: Path) -> str | None:
@@ -321,29 +345,52 @@ def workspace_archive(path: str):
                  f'attachment; filename="{target.name}.zip"'})
 
 
+@router.get("/api/workspace/roots")
+def workspace_roots():
+    """List of root keys the explorer can browse (read-only outside workspace)."""
+    out = []
+    for k, p in _allowed_roots().items():
+        out.append({
+            "key": k,
+            "path": str(p),
+            "available": p.is_dir(),
+            "mutable": k == "workspace",
+        })
+    return {"roots": out, "default": "workspace"}
+
+
 @router.get("/api/workspace/tree")
-def workspace_tree(fresh: int = 0, hidden: int = 0):
-    key = bool(hidden)
+def workspace_tree(fresh: int = 0, hidden: int = 0, root_key: str = "workspace"):
+    key_hidden = bool(hidden)
+    root_key, root = _root_for_key(root_key)
+    cache_key = (root_key, key_hidden)
     now = time.time()
-    ent = _cache.get(key)
+    ent = _cache.get(cache_key)
     if not fresh and ent is not None and now - ent[0] < CACHE_TTL:
         return ent[1]
-    root = workspace_root()
     if not root.is_dir():
-        data = {"root": str(root), "branch": None, "dirty": False, "tree": [],
-                "truncated": False, "missing": True}
+        data = {"root": str(root), "root_key": root_key, "branch": None,
+                "dirty": False, "tree": [], "truncated": False, "missing": True,
+                "mutable": root_key == "workspace"}
     else:
-        tree, truncated = build_tree(root, include_hidden=key)
-        data = {"root": str(root), "branch": git_branch(root),
+        tree, truncated = build_tree(root, include_hidden=key_hidden)
+        data = {"root": str(root), "root_key": root_key,
+                "branch": git_branch(root),
                 "dirty": git_dirty(root), "tree": tree,
-                "truncated": truncated, "missing": False}
-    _cache[key] = (now, data)
+                "truncated": truncated, "missing": False,
+                "mutable": root_key == "workspace"}
+    _cache[cache_key] = (now, data)
     return data
 
 
 class FileWriteBody(BaseModel):
     path: str
     content: str
+    # Optional optimistic-concurrency guard. When the editor loaded the file it
+    # captured mtime_ns; passing it back here lets the server reject a stale
+    # save with 409 instead of silently clobbering a change made by Gary (or by
+    # another tab) between load and save.
+    if_mtime_ns: int | None = None
 
 @router.put("/api/workspace/file")
 def workspace_file_write(body: FileWriteBody):
@@ -354,24 +401,112 @@ def workspace_file_write(body: FileWriteBody):
         # Refuse to overwrite a binary file with editor text — that would
         # corrupt it. Images/PDFs/etc. are viewed, not text-edited.
         raise HTTPException(status_code=415, detail="not a text-editable file")
+    # Mtime guard: if the caller told us what mtime they saw, and disk is now
+    # newer, refuse. Tolerate 1s of clock skew (some filesystems only stamp to
+    # seconds). Missing/None = caller didn't opt in → legacy behavior.
+    if body.if_mtime_ns is not None:
+        try:
+            current_ns = target.stat().st_mtime_ns
+        except OSError:
+            current_ns = None
+        if current_ns is not None and current_ns > body.if_mtime_ns + 1_000_000_000:
+            raise HTTPException(
+                status_code=409,
+                detail={"error": "conflict", "current_mtime_ns": current_ns},
+            )
     target.write_text(body.content, encoding="utf-8")
-    return {"ok": True}
+    try:
+        new_ns = target.stat().st_mtime_ns
+    except OSError:
+        new_ns = 0
+    # Best-effort notify any watchers — the inotify tail will also fire, but
+    # broadcasting here gives us sub-100ms latency to the editor that just saved.
+    try:
+        from . import workspace_watch as ww
+        ww.publish_change(str(target), new_ns)
+    except Exception:
+        pass
+    return {"ok": True, "mtime_ns": new_ns}
 
 @router.get("/api/workspace/file")
-def workspace_file(path: str):
-    root = workspace_root()
+def workspace_file(path: str, root_key: str = "workspace"):
+    _, root = _root_for_key(root_key)
     try:
         target = resolve_safe(root, path)
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid path")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="not a file")
+    try:
+        mtime_ns = target.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
     mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
     if mime.startswith("image/"):
-        return FileResponse(target, media_type=mime)
+        return FileResponse(target, media_type=mime,
+                            headers={"X-Mtime-Ns": str(mtime_ns)})
     if target.suffix.lower() in TEXT_EXTS or mime.startswith("text/"):
         data = target.read_bytes()
-        headers = {"X-Truncated": "1"} if len(data) > PREVIEW_CAP else {}
+        headers = {"X-Mtime-Ns": str(mtime_ns)}
+        if len(data) > PREVIEW_CAP:
+            headers["X-Truncated"] = "1"
         return PlainTextResponse(
             data[:PREVIEW_CAP].decode("utf-8", "replace"), headers=headers)
-    return FileResponse(target, media_type=mime, filename=target.name)
+    return FileResponse(target, media_type=mime, filename=target.name,
+                        headers={"X-Mtime-Ns": str(mtime_ns)})
+
+
+# ---------------------------------------------------------------------------
+# Task progress feed
+# ---------------------------------------------------------------------------
+# Any background job Gary promises to report on writes
+# share/tasks/<id>/progress.json in the schema documented at
+# docs/task-progress-schema.md. The PWA polls this endpoint to inject live
+# status rows into the activity trail of the message that started each task.
+
+# Terminal-state grace period: how long a done/failed task stays visible after
+# its last update before we stop returning it. Client can still fetch by id.
+_TASK_TERMINAL_GRACE_SEC = 60
+# Ignore task files older than this if still running — stale writers.
+_TASK_MAX_AGE_SEC = 24 * 3600
+
+
+@router.get("/api/tasks/active")
+def tasks_active(session_key: str | None = None):
+    """Return every share/tasks/*/progress.json that is running, or done/failed
+    within the last _TASK_TERMINAL_GRACE_SEC seconds. Optionally filter by
+    sessionKey so a chat session only sees its own tasks."""
+    import json as _json
+    root = workspace_root()
+    tdir = root / "share" / "tasks"
+    if not tdir.is_dir():
+        return {"tasks": []}
+    now = time.time()
+    out = []
+    for entry in tdir.iterdir():
+        if not entry.is_dir():
+            continue
+        pj = entry / "progress.json"
+        if not pj.is_file():
+            continue
+        try:
+            st = pj.stat()
+            data = _json.loads(pj.read_bytes())
+        except Exception:
+            continue
+        status = str(data.get("status") or "").lower()
+        age = now - st.st_mtime
+        if status in ("done", "failed"):
+            if age > _TASK_TERMINAL_GRACE_SEC:
+                continue
+        elif status == "running":
+            if age > _TASK_MAX_AGE_SEC:
+                continue
+        else:
+            continue
+        if session_key and data.get("sessionKey") and data.get("sessionKey") != session_key:
+            continue
+        out.append(data)
+    # Sort newest-first by startedAt / updatedAt fallback
+    out.sort(key=lambda d: d.get("updatedAt") or d.get("startedAt") or "", reverse=True)
+    return {"tasks": out}

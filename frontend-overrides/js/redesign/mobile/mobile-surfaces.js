@@ -11,6 +11,7 @@ import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
 import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
+import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 
 const ic = {
   mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
@@ -58,7 +59,10 @@ export function mChatMsg(m, s) {
     return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div></div>`;
   }
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
-  return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}><div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}</div></div>`;
+  return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
+    + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${assistantToolbar(m, s)}</div>`
+  + `</div>`;
 }
 
 // Pull-to-refresh indicator. Any .m-scroll marked data-ptr="1" with this as its
@@ -92,6 +96,9 @@ export function mChat(s) {
   </div>`;
   const threadHtml = thread.length ? map(thread, (msg) => mChatMsg(msg, s)) : mWelcome;
   // composing layout: keyboard up, tab bar hidden (handled by shell), composer lifts
+  const sheetId = s.live?.chat?.mobileSheetMsgId;
+  const sheetMsg = sheetId ? (thread.find((m) => m.id === sheetId) || null) : null;
+  const sheetHtml = sheetMsg ? userSheet(sheetMsg, s) : '';
   return `
   <div class="m-head">
     <div class="m-gary">
@@ -117,7 +124,8 @@ ${esc(s.draft || '')}</textarea>
       <button class="m-round-btn m-hide-kb">${ic.mic()}</button>
       <button class="m-send" data-act="send">${I.send(16)}</button>
     </div>
-  </div>`;
+  </div>
+  ${sheetHtml}`;
 }
 
 // ---- inbox ----------------------------------------------------------------

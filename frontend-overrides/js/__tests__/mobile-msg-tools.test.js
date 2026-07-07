@@ -64,3 +64,47 @@ test('mdMenu renders Markdown + PDF rows when open', () => {
   assert.match(html, /data-act="downloadMessage"[^>]*data-arg="a1"/);
   assert.match(html, /data-act="downloadMessagePDF"[^>]*data-arg="a1"/);
 });
+
+import { mChatMsg, mChat } from '../redesign/mobile/mobile-surfaces.js';
+
+test('mChatMsg for assistant includes the toolbar', () => {
+  const s = { live: { chat: { mobileSheetMsgId: null, msgMenuOpen: null } } };
+  const html = mChatMsg({ id: 'a2', role: 'assistant', text: 'hi', time: '10:00' }, s);
+  assert.match(html, /m-msg-toolbar/);
+  assert.match(html, /data-act="copyMessage"[^>]*data-arg="a2"/);
+});
+
+test('mChatMsg for user does NOT include a persistent toolbar', () => {
+  const s = { live: { chat: { mobileSheetMsgId: null, msgMenuOpen: null } } };
+  const html = mChatMsg({ id: 'u5', role: 'user', text: 'hi', time: '10:00' }, s);
+  assert.doesNotMatch(html, /m-msg-toolbar/);
+});
+
+test('mChat appends sheet when mobileSheetMsgId matches a thread message', () => {
+  const s = {
+    draft: '', pendingAttach: [], keyboard: false, refreshing: false, dismissed: [],
+    live: { chat: {
+      thread: [{ id: 'u9', role: 'user', text: 'target', time: '10:00' }],
+      mobileSheetMsgId: 'u9',
+      msgMenuOpen: null,
+      title: 'test', endpointId: 'x', model: 'y',
+    }, modelList: [] },
+  };
+  const html = mChat(s);
+  assert.match(html, /m-msg-sheet-backdrop/);
+  assert.match(html, /m-msg-sheet-preview[^>]*>[^<]*target/);
+});
+
+test('mChat does NOT append sheet when mobileSheetMsgId is null', () => {
+  const s = {
+    draft: '', pendingAttach: [], keyboard: false, refreshing: false, dismissed: [],
+    live: { chat: {
+      thread: [{ id: 'u9', role: 'user', text: 'target', time: '10:00' }],
+      mobileSheetMsgId: null,
+      msgMenuOpen: null,
+      title: 'test', endpointId: 'x', model: 'y',
+    }, modelList: [] },
+  };
+  const html = mChat(s);
+  assert.doesNotMatch(html, /m-msg-sheet-backdrop/);
+});

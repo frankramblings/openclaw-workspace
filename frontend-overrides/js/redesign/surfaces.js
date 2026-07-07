@@ -183,14 +183,15 @@ function renderRounds(m, s) {
 export function chatMsg(m, s) {
   const hasText = String(m.text || '').trim().length > 0;
   const paras = hasText ? renderMarkdown(m.text) : '';
+  const carriedCls = m._carried ? ` msg-carried${m._carriedFirst ? ' msg-carried-first' : ''}` : '';
   if (m.role === 'user' && m.sys) {
-    return `<div class="msg-sys" data-msg-id="${esc(m.id)}"><span class="msg-sys-txt">${esc(m.text)}</span></div>`;
+    return `<div class="msg-sys${carriedCls}" data-msg-id="${esc(m.id)}"><span class="msg-sys-txt">${esc(m.text)}</span></div>`;
   }
   if (m.role === 'user') {
     const attachHtml = renderAttachments(m.attach);
     const canEdit = !!(s.live?.chat?.pendingSend && s.live.chat.pendingSend.messageId === m.id);
     const ctx = { canEdit };
-    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
+    return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an
@@ -202,7 +203,7 @@ export function chatMsg(m, s) {
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
   const asstCtx = { canEdit: false };
-  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
 }
 
 
@@ -280,7 +281,7 @@ function chatWelcome() {
   </div>`;
 }
 
-function chatSurface(s) {
+export function chatSurface(s) {
   const d = s.draft || '';
   const typedSlash = d.startsWith('/');
   const open = typedSlash || s.forceSlash;
@@ -294,7 +295,14 @@ function chatSurface(s) {
   const model = chat.model ?? 'opus-4';
   const modelLogo = providerLogo(chat.endpointId, model);
   const pct = chat.usagePct != null ? chat.usagePct : 4.4;
-  const msgs = chat.thread || [];
+  const liveMsgs = chat.thread || [];
+  const prefix = s.branchPrefix || [];
+  const msgs = prefix.length
+    ? [
+        ...prefix.map((m, i) => ({ ...m, _carried: true, _carriedFirst: i === 0 })),
+        ...liveMsgs,
+      ]
+    : liveMsgs;
   const thread = map(msgs, (msg) => chatMsg(msg, s));
   const isEmpty = msgs.length === 0;
 

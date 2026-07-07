@@ -13,6 +13,7 @@ import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
+import { editPendingOnMobile, cancelMobileEdit } from './mobile/edit-flow.js';
 import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
@@ -294,6 +295,8 @@ const actions = {
     if (!state.live?.chat) return;
     state.live.chat.mobileSheetMsgId = null;
   },
+  editPendingOnMobile: (msgId) => editPendingOnMobile(state, msgId, { clearTimeout: (id) => clearTimeout(id) }),
+  cancelMobileEdit: () => cancelMobileEdit(state),
 
   // companion
   compTab: (tab) => { state.compTab = tab; state.compSplit = false; state.compHidden = false; },

@@ -15,7 +15,9 @@ import contextlib
 import json
 import logging
 import mimetypes
+import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -52,6 +54,31 @@ from .terminals import router as terminals_router
 from .resume_route import router as resume_router
 from .export_pdf import router as export_pdf_router
 from . import workspace_files
+
+# Configure root logging ONCE, here, at import time — before the FastAPI app
+# object (and anything that might log) is built. Only 3 of ~40 backend
+# modules called getLogger before this task; every module's `logging.warning`/
+# `.error` calls were previously going nowhere (root logger had no handler ->
+# Python's "handler of last resort" prints WARNING+ to stderr with no
+# formatting, INFO/DEBUG silently vanish). basicConfig installs a StreamHandler
+# with a real formatter at the level WORKSPACE_LOG_LEVEL asks for (INFO by
+# default).
+#
+# The `if not logging.getLogger().handlers` guard matters because under
+# uvicorn the root logger MAY already have a handler by the time this module
+# is imported (uvicorn installs its own default logging config before
+# importing the ASGI app target) — calling basicConfig again in that case is a
+# silent no-op per the stdlib docs, but the guard makes that explicit and
+# means a bare `python -c "import backend.app"` (no uvicorn) still gets
+# sensible output instead of the handler-of-last-resort fallback.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.environ.get("WORKSPACE_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+_log = logging.getLogger(__name__)
+
 
 async def _startup_reindex() -> None:
     """Keep the semantic-search index fresh in the background. Runs the first
@@ -206,7 +233,8 @@ async def _record_turn(session_key: str, source) -> None:
             try:
                 event_store.append(session_key, chunk)
             except Exception:  # noqa: BLE001 - event log issue can't break the turn
-                pass
+                _log.warning("event_store.append failed mid-turn for session %s",
+                             session_key, exc_info=True)
             if _is_done_frame(chunk):
                 done_emitted = True
     finally:
@@ -214,7 +242,8 @@ async def _record_turn(session_key: str, source) -> None:
             try:
                 event_store.append(session_key, _DONE_SSE)
             except Exception:  # noqa: BLE001
-                pass
+                _log.warning("event_store.append failed writing [DONE] for session %s",
+                             session_key, exc_info=True)
         event_store.end_turn(session_key)
         _TURN_TASKS.pop(session_key, None)
 
@@ -232,13 +261,47 @@ def _start_turn_recorder(session_key: str, source_factory):
     return task
 
 
+def _disk_free_gb(path) -> float | None:
+    """Free space (GB, 1 decimal) on the filesystem holding `path`, or None if
+    it can't be read. Best-effort decoration only: /api/health's whole point
+    is to answer 200 whenever the process is alive, so a disk-usage read must
+    never itself turn into the 500 it's supposed to help diagnose. Creates
+    `path` on the fly (mkdir -p semantics) so a fresh install's not-yet-created
+    `.data` dir doesn't read as "unreadable"."""
+    try:
+        p = Path(path)
+        p.mkdir(parents=True, exist_ok=True)
+        usage = shutil.disk_usage(p)
+        return round(usage.free / (1024 ** 3), 1)
+    except OSError:
+        _log.warning("disk usage check failed for %s", path, exc_info=True)
+        return None
+
+
 @app.get("/api/health")
 async def health():
+    """Liveness probe for the doctor-alert timer (polled every 5 min — see
+    deploy/systemd/bin/openclaw-doctor-alert): it only checks for HTTP 200, so
+    this must never do gateway I/O or raise — every field below is either
+    static config or a cached/no-IO read. Gateway *connectivity* is a separate
+    concern, answered by /api/gateway/status (which this endpoint deliberately
+    does not duplicate the async health-RPC of).
+
+    `gateway` used to be the static gateway_ws_url() — always the same string,
+    so it told you nothing about health. It's now monitor.current_state()
+    (ok|restarting|down), the same source /api/gateway/status reads, via the
+    synchronous no-IO accessor (not `monitor.status()`, which does a live RPC
+    when state is "ok" — exactly the gateway I/O this endpoint must avoid).
+    Key/type are unchanged (still a `str`); only the value's meaning changed,
+    and nothing in this repo or the doctor-alert script reads it as a URL."""
     return {
         "ok": True,
-        "gateway": config.gateway_ws_url(),
+        "gateway": monitor.current_state(),
         "session": config.session_key(),
         "has_password": bool(config.gateway_password()),
+        "disk_free_gb": _disk_free_gb(config.DATA_DIR),
+        "tmp_free_gb": _disk_free_gb(os.environ.get("TMPDIR") or "/tmp"),
+        "schema": 1,
     }
 
 
@@ -481,8 +544,6 @@ async def _late_reply(session_key: str, brain_message: str,
             return text
     return None
 
-
-_log = logging.getLogger(__name__)
 
 # Gateway rejects chat.send payloads over ~10 MB base64. Cap individual images
 # at 4 MB raw (~5.3 MB base64) to stay safely under that limit with multiple
@@ -1023,13 +1084,16 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                         # session reopen, so no state is lost.
                         yield bridge._sse(update)
                 except Exception:  # noqa: BLE001 - never break the turn close
-                    pass
+                    _log.warning("draft_mode.post_turn_payload failed for doc %s",
+                                 draft_doc.get("id"), exc_info=True)
             if title_task is not None:
                 try:
                     ai = await asyncio.wait_for(title_task, timeout=12)
                     if ai:
                         sessions_store.update(rec["id"], name=ai)
                 except Exception:  # noqa: BLE001 - keep the first-chars fallback
+                    _log.warning("AI title generation/sessions_store.update failed "
+                                 "for session %s", rec["id"], exc_info=True)
                     title_task.cancel()
             # Touch the session's `updated` stamp so the semantic-search reindex
             # re-embeds this turn. It's otherwise bumped only on metadata edits
@@ -1040,7 +1104,8 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                 try:
                     sessions_store.update(rec["id"])
                 except Exception:  # noqa: BLE001 - never break the turn close
-                    pass
+                    _log.warning("sessions_store.update (touch) failed for session %s",
+                                 rec["id"], exc_info=True)
             # Auto-extract memories (gated inside: toggle pref + cooldown).
             _spawn(maybe_auto_extract(session_key))
             yield _DONE_SSE

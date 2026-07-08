@@ -23,6 +23,7 @@ PDF import/export/render are stubbed (501) — not supported by the vault store.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import posixpath
 import shutil
@@ -35,6 +36,8 @@ from starlette.background import BackgroundTask
 
 from . import vault_store as vs
 from .fsutil import atomic_write_text, file_lock
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -92,6 +95,37 @@ def _snapshot(doc: dict):
                   doc.get("current_content", ""))
 
 
+# --- Route-boundary write guards ---------------------------------------------
+# vs.save_entry (-> fsutil.atomic_write_text) now RAISES on a write failure
+# (Task 10) instead of silently no-oping while the route still answered 200 as
+# if the save landed. These wrap the two write paths (version snapshot, main
+# entry write) at the HTTP boundary: log the failure with a traceback and
+# return the same {"error": ...} shape the "not found" responses in this
+# router already use, instead of letting an unhandled exception escape as a
+# bare 500 with no logging and no clean contract for the frontend.
+
+def _safe_snapshot(doc: dict) -> JSONResponse | None:
+    """Snapshot the pre-edit version, or a 500 JSONResponse if that write
+    fails. None means "proceed" — callers must check and early-return."""
+    try:
+        _snapshot(doc)
+        return None
+    except Exception:  # noqa: BLE001 - see module note above
+        log.error("vault write failed snapshotting document %s", doc.get("id"),
+                  exc_info=True)
+        return JSONResponse({"error": "write failed"}, status_code=500)
+
+
+def _safe_write(doc: dict) -> JSONResponse:
+    """`_write(doc)` wrapped for the HTTP boundary: 200 with the saved doc, or
+    a logged 500 instead of an unhandled crash."""
+    try:
+        return JSONResponse(_write(doc))
+    except Exception:  # noqa: BLE001 - see module note above
+        log.error("vault write failed for document %s", doc.get("id"), exc_info=True)
+        return JSONResponse({"error": "write failed"}, status_code=500)
+
+
 def _preview(text: str, n: int = 200) -> str:
     return (text or "").strip()[:n]
 
@@ -142,7 +176,7 @@ async def create_document(request: Request):
         "created": vs.now_iso(),
         "updated_at": vs.now_iso(),
     }
-    return JSONResponse(_write(doc))
+    return _safe_write(doc)
 
 
 def _scan_docs() -> list[dict]:
@@ -225,7 +259,9 @@ async def save_document(doc_id: str, request: Request):
     doc = _load(doc_id)
     if doc is None:
         return JSONResponse({"error": "not found"}, status_code=404)
-    _snapshot(doc)  # keep the prior body before overwriting
+    err = _safe_snapshot(doc)  # keep the prior body before overwriting
+    if err is not None:
+        return err
     if "content" in body:
         doc["current_content"] = body["content"]
     if "title" in body:
@@ -234,7 +270,7 @@ async def save_document(doc_id: str, request: Request):
         doc["language"] = body["language"]
     doc["version_count"] = doc.get("version_count", 1) + 1
     doc["updated_at"] = vs.now_iso()
-    return JSONResponse(_write(doc))
+    return _safe_write(doc)
 
 
 @router.delete("/api/document/{doc_id}")
@@ -252,7 +288,7 @@ async def archive_document(doc_id: str, archived: str = "true"):
         return JSONResponse({"error": "not found"}, status_code=404)
     doc["archived"] = str(archived).lower() == "true"
     doc["is_active"] = not doc["archived"]
-    return JSONResponse(_write(doc))
+    return _safe_write(doc)
 
 
 @router.get("/api/document/{doc_id}/versions")
@@ -286,12 +322,14 @@ async def restore_version(doc_id: str, num: int):
     doc = _load(doc_id)
     if doc is None or not p.exists():
         return JSONResponse({"error": "not found"}, status_code=404)
-    _snapshot(doc)
+    err = _safe_snapshot(doc)
+    if err is not None:
+        return err
     _, body = vs.parse_frontmatter(p.read_text(encoding="utf-8"))
     doc["current_content"] = body
     doc["version_count"] = doc.get("version_count", 1) + 1
     doc["updated_at"] = vs.now_iso()
-    return JSONResponse(_write(doc))
+    return _safe_write(doc)
 
 
 @router.get("/api/document/{doc_id}/export")
@@ -412,11 +450,13 @@ async def open_vault_file(path: str):
                 continue
             if d.get("vault_path") == rel:
                 if (d.get("current_content") or "") != body:
-                    _snapshot(d)
+                    err = _safe_snapshot(d)
+                    if err is not None:
+                        return err
                     d["current_content"] = body
                     d["version_count"] = d.get("version_count", 1) + 1
                     d["updated_at"] = vs.now_iso()
-                    d = _write(d)
+                    return _safe_write(d)
                 return JSONResponse(d)
     doc = {
         "id": vs.new_id(),
@@ -431,7 +471,7 @@ async def open_vault_file(path: str):
         "version_count": 1, "is_active": True, "archived": False,
         "created": vs.now_iso(), "updated_at": vs.now_iso(),
     }
-    return JSONResponse(_write(doc))
+    return _safe_write(doc)
 
 
 # --- PDF import/export not supported by the vault store ---------------------

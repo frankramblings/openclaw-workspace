@@ -14,7 +14,11 @@ independently reimplementing the same idea."""
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
+
+import pytest
 
 from backend import config, fsutil, sessions_store, terminals
 from backend.inbox import state as inbox_state
@@ -219,6 +223,29 @@ def test_terminals_read_meta_missing_file_returns_default_no_quarantine():
     assert not meta_path.parent.exists()
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="chmod 000 does not block root")
+def test_terminals_read_meta_degrades_to_default_on_unreadable_file(caplog):
+    """A meta.json that exists but can't be read (PermissionError et al.) must
+    degrade to the default shape, not raise: read_meta's callers (the terminal
+    WS stream, the MCP run/write routes, the persist routes) call it bare, so
+    an exception here 500s routes and tears down the WS. Unreadable is NOT
+    corruption — the file must stay put, no quarantine."""
+    key = "unreadable-key"
+    meta_path = terminals.persist_meta_path(key)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text('{"persist": true}')
+    os.chmod(meta_path, 0o000)
+    try:
+        with caplog.at_level(logging.WARNING, logger="backend.terminals"):
+            assert terminals.read_meta(key) == {}  # degrade, don't raise
+        assert meta_path.exists()  # not quarantined — it isn't corrupt
+        quarantined = [f for f in meta_path.parent.iterdir() if CORRUPT_RE.search(f.name)]
+        assert quarantined == []
+        assert any("terminal meta unreadable" in r.getMessage() for r in caplog.records)
+    finally:
+        os.chmod(meta_path, 0o600)  # so pytest's tmp cleanup can proceed
+
+
 # --- config.py: the two .data/*.json readers (branding, connection) ---------
 
 def test_load_branding_quarantines_corrupt_file(tmp_path, monkeypatch):
@@ -241,6 +268,21 @@ def test_load_branding_missing_file_returns_default_no_quarantine(tmp_path, monk
     assert list(tmp_path.iterdir()) == []
 
 
+def test_save_branding_after_quarantine_does_not_touch_quarantined(tmp_path, monkeypatch):
+    path = tmp_path / "branding.json"
+    monkeypatch.setattr(config, "BRANDING_PATH", path)
+    garbage = b"{not valid branding"
+    path.write_bytes(garbage)
+
+    assert config.load_branding() == {}
+    quarantined = [f for f in tmp_path.iterdir() if CORRUPT_RE.search(f.name)]
+    assert len(quarantined) == 1
+
+    config.save_branding(agent_name="Gary")  # save lands on the freed name...
+    assert quarantined[0].read_bytes() == garbage  # ...never on the quarantine
+    assert config.load_branding() == {"agent_name": "Gary"}
+
+
 def test_load_connection_quarantines_corrupt_file(tmp_path, monkeypatch):
     path = tmp_path / "connection.json"
     monkeypatch.setattr(config, "CONNECTION_PATH", path)
@@ -259,3 +301,18 @@ def test_load_connection_missing_file_returns_default_no_quarantine(tmp_path, mo
     monkeypatch.setattr(config, "CONNECTION_PATH", path)
     assert config.load_connection() == {}
     assert list(tmp_path.iterdir()) == []
+
+
+def test_save_connection_after_quarantine_does_not_touch_quarantined(tmp_path, monkeypatch):
+    path = tmp_path / "connection.json"
+    monkeypatch.setattr(config, "CONNECTION_PATH", path)
+    garbage = b"{not valid connection"
+    path.write_bytes(garbage)
+
+    assert config.load_connection() == {}
+    quarantined = [f for f in tmp_path.iterdir() if CORRUPT_RE.search(f.name)]
+    assert len(quarantined) == 1
+
+    config.save_connection(gateway_ws="ws://box:9999")
+    assert quarantined[0].read_bytes() == garbage  # untouched by the save
+    assert config.load_connection() == {"gateway_ws": "ws://box:9999"}

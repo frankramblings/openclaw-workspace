@@ -516,7 +516,19 @@ def load_tail(session_key: str, limit: int = MAX_BUFFER) -> str:
 
 
 def read_meta(session_key: str) -> dict:
-    return fsutil.load_json_guarded(persist_meta_path(session_key), {}, logger=log)
+    path = persist_meta_path(session_key)
+    try:
+        return fsutil.load_json_guarded(path, {}, logger=log)
+    except OSError:
+        # Missing file already returns {} inside load_json_guarded; this
+        # catches the OTHER OSErrors (PermissionError, IsADirectoryError,
+        # EIO, ...). Callers — the terminal WS stream, the MCP run/write
+        # routes, the persist routes — call read_meta bare, so raising here
+        # would 500 routes and tear down the WS where the old broad except
+        # degraded to default meta. Unreadable is not corruption: the file
+        # stays put (no quarantine), we just run with defaults and log.
+        log.warning("terminal meta unreadable %s", path, exc_info=True)
+        return {}
 
 
 def write_meta(session_key: str, **fields) -> dict:

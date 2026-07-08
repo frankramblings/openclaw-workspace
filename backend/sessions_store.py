@@ -24,16 +24,32 @@ log = logging.getLogger(__name__)
 _LOCK = threading.Lock()
 _STORE_FILE = config.DATA_DIR / "sessions.json"
 
+# Bumped whenever the on-disk shape of sessions.json changes in a way older
+# code can't read. A file with no "schema_version" is legacy (pre-Task-15)
+# and loads normally -- absence just means "version 1 or earlier." A file
+# whose version is HIGHER than this is a downgrade (a newer app version wrote
+# it, this process is older): still loaded as best-effort, but logged so a
+# rollback that silently drops fields doesn't go unnoticed.
+SCHEMA_VERSION = 1
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
 def _load() -> dict:
-    return fsutil.load_json_guarded(_STORE_FILE, {"sessions": []}, logger=log)
+    data = fsutil.load_json_guarded(_STORE_FILE, {"sessions": []}, logger=log)
+    version = data.get("schema_version")
+    if isinstance(version, int) and version > SCHEMA_VERSION:
+        log.warning(
+            "sessions.json schema_version %s is newer than this app knows how to "
+            "read (%s) -- an older app version, or a downgrade; some fields may "
+            "be ignored", version, SCHEMA_VERSION)
+    return data
 
 
 def _save(data: dict) -> None:
+    data["schema_version"] = SCHEMA_VERSION
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     tmp = _STORE_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))

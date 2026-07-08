@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
+from . import bridge, capabilities, chat_search, config, config_check, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -101,6 +101,16 @@ async def _startup_reindex() -> None:
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # Startup config validation (Task 15): numeric env vars that fail to
+    # parse, a corrupt ~/.openclaw/openclaw.json, a missing vault root, and
+    # likely WORKSPACE_*/OPENCLAW_*/INBOX_* env-var typos are all logged here
+    # and never stop the app from booting. An unwritable .data/ is the one
+    # exception -- config_check.run() raises for that, and we let it
+    # propagate: the app truly cannot function without somewhere to persist
+    # sessions/state, so failing loudly at startup beats booting into a
+    # silent-write-failure mode.
+    for problem in config_check.run():
+        _log.warning("config check: %s", problem)
     # The persistent gateway monitor (status dot / restart awareness).
     task = asyncio.create_task(monitor.run())
     # Non-blocking semantic-search index build (delayed; swallows failures).

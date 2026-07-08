@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -42,7 +41,7 @@ RESEARCH_DIR = WORKSPACE / "Research"
 
 # A research turn can legitimately run for many minutes (multiple searches +
 # page reads in one codex turn). Generous per-turn cap, env-overridable.
-TURN_TIMEOUT_S = float(os.environ.get("WORKSPACE_RESEARCH_TURN_TIMEOUT_S", "900"))
+TURN_TIMEOUT_S = config._env_float("WORKSPACE_RESEARCH_TURN_TIMEOUT_S", 900.0)
 MAX_ROUNDS = 3  # hard cap on search rounds regardless of the requested setting
 
 

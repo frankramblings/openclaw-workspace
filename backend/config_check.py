@@ -15,30 +15,22 @@ Only ONE condition here is fatal (raises instead of returning a string):
 env var should degrade to that setting's built-in default, not take the
 whole app down, so this module never raises for those.
 
-LIMITATION — numeric env vars parsed at MODULE IMPORT TIME: several of the
-vars in NUMERIC_ENV_VARS (WORKSPACE_TURN_TIMEOUT_S, WORKSPACE_STALL_NOTICE,
-WORKSPACE_STALL_CAP, WORKSPACE_RESEARCH_TURN_TIMEOUT_S, INBOX_GMAIL_LIST,
-SLACK_STALE_MIN, SLACK_THREAD_RECENT_HOURS, DOCS_STALE_DAYS,
-OBSIDIAN_WINDOW_DAYS) are cast with int()/float() as a plain module-level
-assignment in config.py / research.py / backend/inbox/sources/*.py. If one of
-those is genuinely invalid, the process fails with an uncaught ValueError
-*during import* — before app.py even defines the FastAPI app, let alone
-reaches the lifespan that calls run(). This function cannot prevent that
-crash for those specific vars (nothing running this late in the boot
-sequence can). What it DOES catch:
-  - the same vars re-set to a bad value *after* the process is already up
-    (e.g. by a test, or a supervisor that re-execs env without restarting
-    the interpreter) — the module-level constant is already fixed at that
-    point, so re-parsing here is safe and won't re-trigger the import crash;
-  - the genuinely lazy ones (OPENCLAW_GATEWAY_PORT, SHARE_SESSION_DAYS),
-    which are parsed inside a function and only blow up the first time
-    that function is called — often well after boot, e.g. establishing a
-    gateway connection or checking a share link expiry ("misconfig surfaces
-    late"). This is exactly the failure mode this check exists to front-run.
-The eager ones are still included below (as defense in depth / a single
-source of truth for "which numeric env vars exist"), they just can't
-*prevent* their own crash class — only shorten the list of places a NEW
-lazy numeric env var could hide unvalidated.
+Numeric env vars are handled in TWO cooperating layers, sharing ONE parse
+implementation (config.parse_env_number):
+  1. Degrade at read time: every int()/float() env cast in the backend
+     (config.py, research.py, backend/inbox/sources/*) goes through
+     config._env_int/_env_float, which log a warning and fall back to the
+     call site's default instead of raising. This matters because 9 of the
+     11 numeric vars are cast as plain module-level assignments — i.e. at
+     IMPORT time, before app.py even defines the FastAPI app — so a bare
+     float(os.environ...) there used to kill the process with a raw
+     ValueError during `import backend.app`, long before any startup check
+     could run.
+  2. Report at startup: _check_numeric_env below re-parses the same vars via
+     the same config.parse_env_number and returns a problem string for each
+     bad one, so the misconfiguration is also visible as an explicit
+     "config check:" warning in the boot log (not just a one-line fallback
+     notice buried at import time).
 """
 from __future__ import annotations
 
@@ -51,23 +43,25 @@ from . import config
 
 log = logging.getLogger(__name__)
 
-# Every backend/*.py call site that casts an env var straight to int()/float(),
-# found by reading config.py (~:130-141, :43, :270), research.py, and
-# backend/inbox/sources/*.py. (name, caster, the call site's own default —
-# the default is documentation only; run() skips unset vars entirely since an
-# absent var just means "the call site's default applies," not a problem.)
+# Every backend/*.py call site that casts an env var to int()/float(), found
+# by reading config.py (~:130-141, :43, :270), research.py, and
+# backend/inbox/sources/*.py — all of them now routed through
+# config._env_int/_env_float so a bad value degrades instead of crashing.
+# (name, caster, the call site's own default — the default is what the app
+# actually falls back to; run() skips unset vars entirely since an absent var
+# just means "the call site's default applies," not a problem.)
 NUMERIC_ENV_VARS: tuple[tuple[str, type, str], ...] = (
-    ("OPENCLAW_GATEWAY_PORT", int, "18789"),          # config.py:43  (lazy)
-    ("WORKSPACE_TURN_TIMEOUT_S", float, "180"),        # config.py:135 (eager)
-    ("WORKSPACE_STALL_NOTICE", float, "45"),           # config.py:139 (eager)
-    ("WORKSPACE_STALL_CAP", float, "240"),             # config.py:140 (eager)
-    ("SHARE_SESSION_DAYS", int, "30"),                 # config.py:270 (lazy)
-    ("WORKSPACE_RESEARCH_TURN_TIMEOUT_S", float, "900"),   # research.py:45 (eager)
-    ("INBOX_GMAIL_LIST", int, "50"),                   # inbox/sources/gmail.py:19 (eager)
-    ("SLACK_STALE_MIN", int, str(24 * 60)),            # inbox/sources/slack.py:43 (eager)
-    ("SLACK_THREAD_RECENT_HOURS", int, "4"),           # inbox/sources/slack.py:277 (eager)
-    ("DOCS_STALE_DAYS", float, "4"),                   # inbox/sources/documents_stale.py:15 (eager)
-    ("OBSIDIAN_WINDOW_DAYS", int, "120"),               # inbox/sources/obsidian.py:23 (eager)
+    ("OPENCLAW_GATEWAY_PORT", int, "18789"),          # config.gateway_port (lazy)
+    ("WORKSPACE_TURN_TIMEOUT_S", float, "180"),        # config.py module-level
+    ("WORKSPACE_STALL_NOTICE", float, "45"),           # config.py module-level
+    ("WORKSPACE_STALL_CAP", float, "240"),             # config.py module-level
+    ("SHARE_SESSION_DAYS", int, "30"),                 # config.auth_session_max_age (lazy)
+    ("WORKSPACE_RESEARCH_TURN_TIMEOUT_S", float, "900"),   # research.py module-level
+    ("INBOX_GMAIL_LIST", int, "50"),                   # inbox/sources/gmail.py module-level
+    ("SLACK_STALE_MIN", int, str(24 * 60)),            # inbox/sources/slack.py module-level
+    ("SLACK_THREAD_RECENT_HOURS", int, "4"),           # inbox/sources/slack.py module-level
+    ("DOCS_STALE_DAYS", float, "4"),                   # inbox/sources/documents_stale.py module-level
+    ("OBSIDIAN_WINDOW_DAYS", int, "120"),               # inbox/sources/obsidian.py module-level
 )
 
 # Every WORKSPACE_*/OPENCLAW_*/INBOX_* env var the backend actually reads,
@@ -147,19 +141,14 @@ _TYPO_PREFIXES = ("WORKSPACE_", "OPENCLAW_", "INBOX_")
 
 
 def _check_numeric_env(problems: list[str]) -> None:
-    for name, caster, _default in NUMERIC_ENV_VARS:
-        raw = os.environ.get(name)
-        if raw is None:
-            continue  # unset -> the call site's own default applies
-        try:
-            caster(raw)
-        except (TypeError, ValueError):
-            kind = "integer" if caster is int else "number"
+    # Same parse as config._env_int/_env_float (config.parse_env_number is
+    # the single source of truth), so this report can never disagree with
+    # what the app actually did with the value.
+    for name, caster, default in NUMERIC_ENV_VARS:
+        _value, problem = config.parse_env_number(name, caster)
+        if problem is not None:
             problems.append(
-                f"env {name}={raw!r} is not a valid {kind}; "
-                f"that setting will fall back to its default ({_default}) "
-                f"wherever the app catches the error, or crash where it doesn't"
-            )
+                f"{problem}; the app is using the default ({default}) instead")
 
 
 def _check_openclaw_json(problems: list[str]) -> None:
@@ -168,7 +157,10 @@ def _check_openclaw_json(problems: list[str]) -> None:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return  # no gateway config yet -- normal on a fresh install
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
+        # UnicodeDecodeError is a ValueError, NOT an OSError: a non-UTF-8
+        # openclaw.json must land here as a problem string, not escape and
+        # turn this advisory check into a boot abort.
         problems.append(f"{path} could not be read ({exc.__class__.__name__}: {exc})")
         return
     try:
@@ -228,5 +220,13 @@ def run() -> list[str]:
     _check_openclaw_json(problems)
     _check_vault_root(problems)
     _check_typos(problems)
-    _check_data_writable()  # last: fatal, so run every advisory check first
+    try:
+        _check_data_writable()  # last: fatal, so run every advisory check first
+    except Exception:
+        # The caller never sees the returned list when we raise -- log the
+        # advisory findings ourselves so they aren't silently dropped from
+        # the crash report they might help explain.
+        for problem in problems:
+            log.warning("config check: %s", problem)
+        raise
     return problems

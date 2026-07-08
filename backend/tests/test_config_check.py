@@ -12,6 +12,13 @@ but run() itself never raises for these — a bad WORKSPACE_STALL_CAP must not
 stop the app from booting. .data/ being unwritable is the one condition the
 app genuinely cannot recover from (every store write fails from that point
 on), so that check raises instead of returning a string.
+
+Numeric env vars are two layers sharing one parse (config.parse_env_number):
+config._env_int/_env_float degrade a bad value to the call site's default
+with a logged warning (crucially: also at module-IMPORT time, where 9 of the
+11 casts live — a bad value used to kill `import backend.app` with a raw
+ValueError before any check could run), and config_check re-reports the same
+bad var as a startup problem string.
 """
 from __future__ import annotations
 
@@ -20,6 +27,8 @@ import logging
 import os
 import re
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,9 +37,58 @@ from fastapi.testclient import TestClient
 from backend import config, config_check
 
 
-# --- Numeric env vars ---------------------------------------------------------
+# --- Numeric env vars: the config._env_int/_env_float degrade layer -----------
 
-def test_bad_numeric_env_var_is_reported_not_raised(monkeypatch):
+def test_env_float_helper_degrades_to_default_and_warns(monkeypatch, caplog):
+    monkeypatch.setenv("WORKSPACE_STALL_CAP", "24o")  # the classic finger slip
+    with caplog.at_level(logging.WARNING, logger="backend.config"):
+        assert config._env_float("WORKSPACE_STALL_CAP", 240.0) == 240.0
+    assert any("WORKSPACE_STALL_CAP" in r.getMessage() for r in caplog.records)
+
+
+def test_env_int_helper_degrades_to_default_and_warns(monkeypatch, caplog):
+    monkeypatch.setenv("SHARE_SESSION_DAYS", "thirty")
+    with caplog.at_level(logging.WARNING, logger="backend.config"):
+        assert config._env_int("SHARE_SESSION_DAYS", 30) == 30
+    assert any("SHARE_SESSION_DAYS" in r.getMessage() for r in caplog.records)
+
+
+def test_env_helpers_parse_valid_values_and_pass_through_unset(monkeypatch):
+    monkeypatch.setenv("WORKSPACE_STALL_CAP", "300")
+    assert config._env_float("WORKSPACE_STALL_CAP", 240.0) == 300.0
+    monkeypatch.delenv("WORKSPACE_STALL_CAP")
+    assert config._env_float("WORKSPACE_STALL_CAP", 240.0) == 240.0
+    monkeypatch.setenv("SHARE_SESSION_DAYS", "7")
+    assert config._env_int("SHARE_SESSION_DAYS", 30) == 7
+
+
+def test_bad_numeric_env_var_before_import_degrades_and_is_reported():
+    """The real crash scenario the review flagged: WORKSPACE_STALL_CAP is cast
+    at module-import time, so a bad value present BEFORE `import
+    backend.config` used to raise ValueError during the import itself —
+    unreachable by any in-process test that monkeypatches env afterwards.
+    Prove the whole contract in a fresh interpreter: the import survives, the
+    constant degrades to its default (240.0), the degrade warning reaches
+    stderr, and config_check.run() still reports the var as a problem."""
+    repo_root = Path(config_check.__file__).resolve().parent.parent
+    env = dict(os.environ, WORKSPACE_STALL_CAP="not-a-number")
+    code = (
+        "import backend.config as c, backend.config_check as cc\n"
+        "print(c.STALL_CAP_S)\n"
+        "print(any('WORKSPACE_STALL_CAP' in p for p in cc.run()))\n"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], cwd=repo_root, env=env,
+                          capture_output=True, text=True, timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    assert lines[0] == "240.0"   # degraded to the default, not crashed
+    assert lines[1] == "True"    # ...and still reported by config_check
+    assert "WORKSPACE_STALL_CAP" in proc.stderr  # the import-time warning
+
+
+# --- Numeric env vars: the config_check report layer ---------------------------
+
+def test_bad_numeric_env_var_is_reported_by_run(monkeypatch):
     monkeypatch.setenv("WORKSPACE_STALL_CAP", "not-a-number")
     problems = config_check.run()
     assert any("WORKSPACE_STALL_CAP" in p for p in problems)
@@ -104,6 +162,17 @@ def test_corrupt_openclaw_json_is_reported(tmp_path, monkeypatch):
     assert any("openclaw.json" in p for p in problems)
 
 
+def test_non_utf8_openclaw_json_is_reported_not_raised(tmp_path, monkeypatch):
+    """UnicodeDecodeError is a ValueError, not an OSError — a non-UTF-8
+    openclaw.json must degrade to a problem string like any other corrupt
+    config, not escape the advisory check and abort boot."""
+    path = tmp_path / "openclaw.json"
+    path.write_bytes(b"\xff\xfe\x00bad")
+    monkeypatch.setattr(config, "OPENCLAW_CONFIG", path)
+    problems = config_check.run()  # must not raise
+    assert any("openclaw.json" in p for p in problems)
+
+
 # --- Vault root ----------------------------------------------------------------
 
 def test_missing_vault_root_is_reported(tmp_path, monkeypatch):
@@ -141,6 +210,26 @@ def test_data_dir_unwritable_raises(tmp_path, monkeypatch):
             config_check.run()
     finally:
         os.chmod(locked, stat.S_IRWXU)  # let tmp_path cleanup succeed
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="chmod does not block root")
+def test_fatal_data_check_logs_accumulated_advisory_problems_before_raising(
+        tmp_path, monkeypatch, caplog):
+    """When the fatal .data check fires, run() raises and the caller never
+    sees the returned list — the advisory findings gathered up to that point
+    must be logged by run() itself, not silently dropped."""
+    monkeypatch.setenv("WORKSPACE_STALL_CAP", "not-a-number")  # advisory problem
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    os.chmod(locked, stat.S_IREAD | stat.S_IEXEC)
+    monkeypatch.setattr(config, "DATA_DIR", locked / "data")
+    try:
+        with caplog.at_level(logging.WARNING, logger="backend.config_check"):
+            with pytest.raises(Exception):  # noqa: B017
+                config_check.run()
+    finally:
+        os.chmod(locked, stat.S_IRWXU)
+    assert any("WORKSPACE_STALL_CAP" in r.getMessage() for r in caplog.records)
 
 
 # --- Typo detector (warn-only) --------------------------------------------------

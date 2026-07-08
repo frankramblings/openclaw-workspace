@@ -52,8 +52,6 @@ frontend-overrides/.redesign.css.*
 # untracked once: `git rm -r --cached docs/superpowers/`.
 /docs/superpowers/
 
-# Runtime branch-context handoff payloads (per-branch pending-context store).
-# .gitkeep keeps the directory itself tracked; the generated JSON files are
-# process-local runtime state, not source.
-/data/branch_context/*
-!/data/branch_context/.gitkeep
+# Runtime branch-context handoff payloads (per-branch pending-context store,
+# written by the live checkout at runtime; not source).
+/data/branch_context/

@@ -11,12 +11,12 @@ import os
 import time
 from datetime import datetime, timezone
 
-from ... import himalaya_cli
+from ... import config, himalaya_cli
 from .. import settings as _inbox_settings
 
 # INTERNAL_DOMAIN is now resolved via inbox.settings at call time (env still wins).
 INTERNAL_DOMAIN = os.environ.get("INBOX_INTERNAL_DOMAIN", "example.com")
-LIST_SIZE = int(os.environ.get("INBOX_GMAIL_LIST", "50"))
+LIST_SIZE = config._env_int("INBOX_GMAIL_LIST", 50)
 
 
 def _iso_from_ms(ms: int) -> str:

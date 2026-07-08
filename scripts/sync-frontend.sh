@@ -33,7 +33,9 @@ else sedi() { sed -i '' "$@"; }; fi
 
 if [[ -d "$SRC" ]]; then
   mkdir -p "$DEST"
-  rsync -a --delete "$SRC"/ "$DEST"/
+  # --exclude '__tests__': defensive — the vendored base doesn't currently ship
+  # test files, but nothing shipped to $DEST should ever include them.
+  rsync -a --delete --exclude '__tests__' "$SRC"/ "$DEST"/
   echo "synced $SRC -> $DEST"
 elif [[ -d "$DEST" ]]; then
   # Vendored base missing but a prior frontend/ exists: layer overrides +
@@ -47,8 +49,11 @@ fi
 # --- Re-apply durable overrides (mirror frontend-overrides/ into frontend/) ---
 if [[ -d "$OVERRIDES" ]]; then
   # Copy every override file into frontend/, preserving sub-paths. Exclude the
-  # docs file. -R . copies the tree contents (not the dir itself).
-  ( cd "$OVERRIDES" && find . -type f ! -name 'README.md' -print0 \
+  # docs file and any __tests__/ dir (jest specs live alongside their modules
+  # under frontend-overrides/js/__tests__/ — dev-only, must never ship to
+  # $DEST, let alone into the SW precache). -R . copies the tree contents (not
+  # the dir itself).
+  ( cd "$OVERRIDES" && find . -type f ! -name 'README.md' ! -path '*/__tests__/*' -print0 \
       | while IFS= read -r -d '' f; do
           mkdir -p "$DEST/$(dirname "$f")"
           cp "$f" "$DEST/$f"
@@ -364,16 +369,63 @@ fi
 SW="$DEST/sw.js"
 if [[ -f "$SW" ]]; then
   # Generate the precache manifest from what's actually deployed (sw.js holds
-  # a /*__PRECACHE__*/ token). Keep it to the shell the app needs offline:
-  # all JS/CSS, fonts, icons, manifests. Exclude sw.js itself and source maps.
-  # index.html (the redesign, start_url '/') must be precached for offline PWA
-  # launches. index-classic.html is also included for completeness.
-  PRECACHE_LIST=$(cd "$DEST" && find . -type f \
-      \( -name '*.js' -o -name '*.css' -o -name '*.woff2' -o -name '*.png' \
-         -o -name '*.svg' -o -name 'manifest.json' \
-         -o -name 'index.html' -o -name 'index-classic.html' \) \
-      ! -name 'sw.js' ! -name '*.map' \
-    | sort | sed "s|^\./|'/static/|; s|\$|',|" | tr '\n' ' ')
+  # a /*__PRECACHE__*/ token). The LIVE app served at '/' is the redesign
+  # (index.html -> js/redesign/app.js); the classic UI (index-classic.html,
+  # top-level js/*.js like document.js/app.js, style.css) is dead-but-still-
+  # served at /classic — kept on disk so that route still works, but it is
+  # NOT part of the offline app shell, so it is deliberately excluded here
+  # (network-only). Precaching it too used to cost ~230 entries / ~16MB for
+  # code nothing links to. This list is the redesign's actual asset closure,
+  # traced from frontend/index.html's <script>/<link> tags plus what the
+  # redesign lazy-loads at runtime:
+  #   - js/redesign/**  — the whole module tree, including live/*.js (loaded
+  #     by name from live/index.js's dynamic `import(`./${file}.js`)`) and
+  #     mobile/*.js.
+  #   - A handful of top-level js/*.js modules that live outside js/redesign/
+  #     but are real redesign dependencies, not classic leftovers. Chain:
+  #     dualDragInit.js (index.html's 2nd <script> tag) -> chatWindow.js ->
+  #     {windowDrag.js, modalSnap.js, markdown.js} -> modalSnap.js ->
+  #     modalManager.js -> {ui.js, tileManager.js} -> ui.js ->
+  #     {theme.js, spinner.js} -> theme.js -> {storage.js, colorPicker.js}.
+  #     (markdown.js is also imported directly by three js/redesign/** files,
+  #     independent of the chatWindow.js chain.) This is a one-way import
+  #     graph, not a bundler-tracked one, so it can silently drift; sanity
+  #     check it after touching any file in the chain with, e.g.:
+  #       grep -n "^import" js/dualDragInit.js js/chatWindow.js js/windowDrag.js \
+  #         js/modalSnap.js js/modalManager.js js/ui.js js/tileManager.js \
+  #         js/theme.js js/spinner.js js/storage.js js/colorPicker.js js/markdown.js
+  #     run from $DEST after a sync — every target should already be in the
+  #     printf list below (or under js/redesign/, already globbed in).
+  #   - The two lazy-loaded vendor libs: Toast UI editor (document-editor.js)
+  #     and xterm + its addon-fit + MonoLisa webfont (terminal.js) — only the
+  #     files those two modules actually request, not the whole vendor dirs
+  #     (classic's workspace-terminal.js pulls in extra xterm addons/fonts
+  #     that the redesign never touches).
+  #   - Fonts redesign.css @font-faces (HankenGrotesk, MonoLisa), the PWA
+  #     manifest + its icon set, and the couple of images theme.js/data.js
+  #     fetch by literal /static/ path (brand mark, avatar, favicon fallback).
+  # Excludes sw.js itself and source maps.
+  PRECACHE_LIST=$(cd "$DEST" && {
+      printf '%s\n' index.html manifest.json \
+        redesign.css chat-window-redesign.css js/redesign/mobile/mobile.css
+      find js/redesign -type f -name '*.js'
+      printf '%s\n' \
+        js/chatWindow.js js/colorPicker.js js/dualDragInit.js js/markdown.js \
+        js/modalManager.js js/modalSnap.js js/spinner.js js/storage.js \
+        js/theme.js js/tileManager.js js/ui.js js/windowDrag.js
+      printf '%s\n' \
+        js/vendor/toastui/toastui-editor-all.min.js \
+        js/vendor/toastui/toastui-editor.min.css \
+        js/vendor/toastui/toastui-editor-dark.min.css \
+        js/vendor/xterm/xterm.js js/vendor/xterm/xterm.css \
+        js/vendor/xterm/wt-fonts.css js/vendor/xterm/addon-fit.js \
+        js/vendor/xterm/MonoLisa-normal.woff2 js/vendor/xterm/MonoLisa-italic.woff2
+      find fonts -maxdepth 1 -type f \( -name 'HankenGrotesk*.woff2' -o -name 'MonoLisa*.woff2' \)
+      printf '%s\n' \
+        favicon-16x16.png favicon-32x32.png favicon.svg apple-touch-icon.png \
+        icon-192.png icon-512.png maskable-icon.png logo.svg \
+        redesign-assets/gary-outline.png
+    } | sort -u | sed "s|^|'/static/|; s|\$|',|" | tr '\n' ' ')
   python3 - "$SW" "$PRECACHE_LIST" <<'PYEOF'
 import sys
 sw_path, entries = sys.argv[1], sys.argv[2]

@@ -15,6 +15,7 @@ import { renderActivity } from './chat-activity.js';
 import './task-rows.js'; // side-effect: starts polling /api/tasks/active and injecting live rows
 import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
+import { renderChatStrip } from './chat-strip.js';
 
 // ===========================================================================
 // CHAT
@@ -354,6 +355,7 @@ export function chatSurface(s) {
   </div>
   <div class="chat-thread">${isEmpty ? chatWelcome() : thread}</div>
   <div class="composer-wrap">
+    ${renderChatStrip(chat.chatStrip, { renderMarkdown })}
     <button class="scroll-btm ocbtn" data-act="scrollChatBottom" title="Jump to latest" style="position:absolute;right:16px;top:-44px;z-index:25;width:34px;height:34px;border-radius:50%;background:var(--panel,#1e2025);border:1px solid var(--border);color:var(--fg);cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)">↓</button>
     ${when(slashOpen, `
     <div class="slash-menu">

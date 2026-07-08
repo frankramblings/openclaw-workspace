@@ -14,6 +14,39 @@ import { runtime } from './runtime.js';
 import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
+import {
+  initStripState, stripReducer, onTurnDone as stripOnTurnDone,
+  onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
+  toggleCollapsed as stripToggleCollapsed, readCollapsed as stripReadCollapsed,
+  sweepAgents as stripSweepAgents, renderChatStrip,
+} from '../chat-strip.js';
+
+// The throttled per-token render only patches the active message bubble in
+// place — it does NOT re-render `.composer-wrap`, which is where the strip
+// lives. So each reducer mutation needs its own targeted DOM patch or nothing
+// visible changes until the next full render (which may never come during a
+// long tool-heavy turn). This finds the existing `.chat-strip` and swaps its
+// outerHTML for the freshly-rendered version; if none exists yet (idle → first
+// tool event), it inserts the new one at the top of `.composer-wrap`. Empty
+// strip → remove the node entirely so nothing lingers when idle.
+function patchChatStrip(chat) {
+  if (!chat) return;
+  try {
+    // Desktop: .composer-wrap (strip is first child, above .composer).
+    // Mobile: .m-composer (strip is first child, above .bar).
+    const wrap = document.querySelector('.composer-wrap') || document.querySelector('.m-composer');
+    if (!wrap) return;
+    const html = renderChatStrip(chat.chatStrip, { renderMarkdown });
+    const existing = wrap.querySelector(':scope > .chat-strip');
+    if (!html) { if (existing) existing.remove(); return; }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const fresh = tmp.firstElementChild;
+    if (!fresh) { if (existing) existing.remove(); return; }
+    if (existing) existing.replaceWith(fresh);
+    else wrap.insertBefore(fresh, wrap.firstChild);
+  } catch (_) { /* fall back to next full render */ }
+}
 
 // ---- helpers --------------------------------------------------------------
 
@@ -128,9 +161,34 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+// One pending timer per chat is enough — the next-earliest clearAt wins.
+function scheduleStripSweep(chat) {
+  if (!chat || !chat.chatStrip) return;
+  const now = Date.now();
+  let earliest = Infinity;
+  for (const id in chat.chatStrip.agents) {
+    const a = chat.chatStrip.agents[id];
+    if (a.clearAt != null && a.clearAt < earliest) earliest = a.clearAt;
+  }
+  if (!Number.isFinite(earliest)) return;
+  const delay = Math.max(0, earliest - now) + 50;
+  if (chat._stripSweepTimer) clearTimeout(chat._stripSweepTimer);
+  chat._stripSweepTimer = setTimeout(() => {
+    chat._stripSweepTimer = null;
+    const before = chat.chatStrip;
+    chat.chatStrip = stripSweepAgents(chat.chatStrip, Date.now());
+    if (chat.chatStrip !== before) runtime.render();
+    scheduleStripSweep(chat);
+  }, delay);
+}
+
 function ensureChat(state) {
   if (!state.live) state.live = {};
   if (!state.live.chat) state.live.chat = {};
+  if (!state.live.chat.chatStrip) {
+    state.live.chat.chatStrip = initStripState();
+    try { state.live.chat.chatStrip.collapsed = stripReadCollapsed(window.localStorage); } catch (_) {}
+  }
   return state.live.chat;
 }
 
@@ -561,6 +619,8 @@ function beginTurn(chat, modelLabel, sessionId) {
       flushStreamBuffer();
       if (turn.asstMsg) turn.asstMsg.streaming = false;
       if (turn.thinkStep) finalizeStep(turn.thinkStep);
+      chat.chatStrip = stripOnTurnDone(chat.chatStrip);
+      patchChatStrip(chat);
       const a = turn.activity;
       if (a) {
         finalizeAll(a);
@@ -636,6 +696,8 @@ function beginTurn(chat, modelLabel, sessionId) {
       const kind = toolKind(ev.tool);
       const st = newStep(kind, ev.command || ev.file || ev.path || ev.tool || '', ev.tool_id);
       st.cursor = true;
+      chat.chatStrip = stripReducer(chat.chatStrip, ev);
+      patchChatStrip(chat);
       throttledRender();
       return;
     }
@@ -652,6 +714,10 @@ function beginTurn(chat, modelLabel, sessionId) {
           finalizeStep(st);
           if (ev.exit_code !== 0) st.state = 'error';
         }
+        chat.chatStrip = stripReducer(chat.chatStrip, ev);
+        patchChatStrip(chat);
+        // Schedule an agent-linger sweep so the row disappears ~5s after done.
+        scheduleStripSweep(chat);
         throttledRender();
       }
       return;
@@ -737,6 +803,7 @@ async function dispatchSend(text, attachSnap) {
 
   if (!Array.isArray(chat.thread)) chat.thread = [];
   chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
+  chat.chatStrip = stripOnUserSend(chat.chatStrip);
   clearBranchPrefixIfStarted(state, chat);
   runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
   runtime.render();
@@ -777,6 +844,7 @@ async function submitFromComposer(text, attachSnap) {
     _optimistic: true, _deadline: deadline,
   });
   chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0 };
+  chat.chatStrip = stripOnUserSend(chat.chatStrip);
   clearBranchPrefixIfStarted(state, chat);
   runtime.wantChatBottom = true;
   // The countdown ring's drain is a pure CSS animation keyed off its own
@@ -889,6 +957,48 @@ async function resumeIfActive(chat, state, sessionId) {
   es.onerror = () => { /* EventSource auto-reconnects with Last-Event-ID */ };
   return true;
 }
+
+// ---- visibility / focus re-sync -------------------------------------------
+// A backgrounded tab throttles rAF/timers and can silently drop the SSE tail
+// (readyState stays OPEN but no bytes arrive). And even for the currently-
+// visible thread, a turn that *ends* while we're away leaves local `liveES` /
+// `turn` still set — so the UI shows a working state that never finalizes
+// until a manual refresh. On visibility restore, snapshot-replay the active
+// chat's server state: if there's still a turn, `resumeIfActive` closes the
+// stale ES and re-tails from the last cursor. If not, clean up local state
+// and clear the chat-strip so the UI unfreezes.
+let _visSyncWired = false;
+let _visSyncInFlight = false;
+async function _syncActiveOnVisible() {
+  if (_visSyncInFlight) return;
+  const state = runtime.state;
+  const chat = state && state.live && state.live.chat;
+  if (!chat || !chat.activeId) return;
+  _visSyncInFlight = true;
+  try {
+    const ok = await resumeIfActive(chat, state, chat.activeId);
+    if (!ok && (turn || liveES)) {
+      // Server says the turn is over but we still hold stale local state.
+      if (liveES) { try { liveES.close(); } catch (_) {} liveES = null; }
+      if (turn) { turn = null; }
+      stopElapsed();
+      if (chat.chatStrip) { stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }
+      flushRender();
+    }
+  } catch (_) { /* non-fatal — next visibility flip retries */ }
+  finally { _visSyncInFlight = false; }
+}
+function wireVisibilityResume() {
+  if (_visSyncWired) return;
+  _visSyncWired = true;
+  try {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) _syncActiveOnVisible();
+    });
+    window.addEventListener('focus', _syncActiveOnVisible);
+  } catch (_) { /* environments without document/window: harmless */ }
+}
+wireVisibilityResume();
 
 // ---- cross-session turn notifier ------------------------------------------
 // Poll which sessions have a turn in flight. When one FINISHES while you're not
@@ -1165,6 +1275,7 @@ export const actions = {
     turn = null;
     chat.rowMenuOpen = null;
     chat.activeId = id;
+    chat.chatStrip = stripOnSessionSwitch();
     chat.editingId = null;
     if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
     storeActiveId(id);
@@ -1223,6 +1334,7 @@ export const actions = {
     stopElapsed();
     turn = null;
     chat.activeId = null;
+    chat.chatStrip = stripOnSessionSwitch();
     chat.editingId = null;
     storeActiveId(null);
     chat.thread = [];
@@ -1445,6 +1557,27 @@ export const actions = {
     const state = runtime.state;
     if (!state) return;
     state.chatMenuOpen = !state.chatMenuOpen;
+    runtime.render();
+  },
+
+  // Chat-strip: collapse/expand toggle (persists to localStorage).
+  toggleChatStrip: () => {
+    const state = runtime.state;
+    if (!state) return;
+    const chat = ensureChat(state);
+    let storage = null;
+    try { storage = window.localStorage; } catch (_) {}
+    chat.chatStrip = stripToggleCollapsed(chat.chatStrip, storage);
+    runtime.render();
+  },
+
+  // Chat-strip: dismiss the plan preview without waiting for the next send.
+  dismissStripPlan: () => {
+    const state = runtime.state;
+    if (!state) return;
+    const chat = ensureChat(state);
+    if (!chat.chatStrip || !chat.chatStrip.plan) return;
+    chat.chatStrip = { ...chat.chatStrip, plan: null };
     runtime.render();
   },
   // Rename the active conversation → PATCH /api/session/{id} (FormData name).

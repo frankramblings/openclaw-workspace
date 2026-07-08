@@ -727,3 +727,16 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   color: var(--fg);
   line-height: 1;
 }
+
+/* Live-activity chat strip sits inside .m-composer, above .bar. Tighter
+ * padding + smaller max-height so it never eats the message list on phones. */
+.m-composer .chat-strip {
+  margin: 0 0 8px 0;
+  padding: 6px 10px;
+  border-radius: 14px;
+  font-size: 12.5px;
+  max-height: 32vh;
+}
+.m-composer .chat-strip.collapsed { padding: 5px 10px; }
+.m-composer .chat-strip .cs-body { max-height: calc(32vh - 32px); }
+.m-composer .chat-strip .cs-pill { max-width: 22ch; }

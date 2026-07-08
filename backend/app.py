@@ -83,25 +83,44 @@ async def _lifespan(_app: FastAPI):
     # Filesystem watcher for the doc editor's live-refresh (broadcasts to
     # /api/workspace/watch subscribers). Cheap Rust-backed inotify; one task.
     workspace_watch.start_watcher()
-    yield
-    # Reap every PTY shell so its `bash -i` child (and descendants) get
-    # SIGHUP→SIGKILL right now. Otherwise they ignore the SIGTERM systemd sends
-    # the whole cgroup, holding the unit open until TimeoutStopSec forces a
-    # SIGKILL of everything — the intermittent restart hang / 502 window. We call
-    # PtySession.close() directly (not close_session) so we DON'T also unlink the
-    # persistent per-session image-attachment registry; scrollback/cwd are
-    # already flushed by close() and restored on the next attach.
-    for _sess in list(getattr(terminals, "_sessions", {}).values()):
-        try:
-            _sess.close()
-        except Exception:  # noqa: BLE001 - best-effort teardown, never block exit
-            pass
-    task.cancel()
-    search_task.cancel()
-    followup_task.cancel()
-    for t in (task, search_task, followup_task):
-        with contextlib.suppress(asyncio.CancelledError):
-            await t
+    try:
+        yield
+    finally:
+        # Reap every PTY shell so its `bash -i` child (and descendants) get
+        # SIGHUP→SIGKILL right now. Otherwise they ignore the SIGTERM systemd sends
+        # the whole cgroup, holding the unit open until TimeoutStopSec forces a
+        # SIGKILL of everything — the intermittent restart hang / 502 window. We call
+        # PtySession.close() directly (not close_session) so we DON'T also unlink the
+        # persistent per-session image-attachment registry; scrollback/cwd are
+        # already flushed by close() and restored on the next attach.
+        for _sess in list(getattr(terminals, "_sessions", {}).values()):
+            try:
+                _sess.close()
+            except Exception:  # noqa: BLE001 - best-effort teardown, never block exit
+                pass
+        task.cancel()
+        search_task.cancel()
+        followup_task.cancel()
+        for t in (task, search_task, followup_task):
+            with contextlib.suppress(asyncio.CancelledError):
+                await t
+        # Own every other task we've spun up over the app's life so nothing is
+        # orphaned to uvicorn's 2s force-close window: the workspace-watch
+        # filesystem watcher, per-turn SSE recorders (_TURN_TASKS — one per
+        # in-flight chat turn, detached from any reader), and fire-and-forget
+        # background work (_BG_TASKS — memory auto-extract, gateway-side
+        # session delete, on-demand reindex). Snapshot to lists first: these
+        # collections mutate themselves via done-callbacks/pop as tasks finish,
+        # which would raise "set changed size during iteration" if we iterated
+        # them live while cancelling.
+        await workspace_watch.stop()
+        remaining = list(_TURN_TASKS.values()) + list(_BG_TASKS)
+        for t in remaining:
+            t.cancel()
+        if remaining:
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    asyncio.gather(*remaining, return_exceptions=True), 2.0)
 
 
 app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)
@@ -845,12 +864,17 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
         return StreamingResponse(_busy(), media_type="text/event-stream")
 
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
-    chat_attachments = _resolve_attachments(attachments)  # image uploads → vision
+    # Off the event loop: image conversion (ffmpeg, up to a 30s timeout) and
+    # office/PDF text extraction (openpyxl/pypdf/python-docx/python-pptx) are
+    # blocking calls that would otherwise stall every concurrent SSE stream
+    # for the duration of one file-heavy message. Same pattern as
+    # notes.py/_load_all and documents.py/_scan_docs.
+    chat_attachments = await asyncio.to_thread(_resolve_attachments, attachments)  # image uploads → vision
     # Non-image uploads (CSV, XLSX, DOCX, PPTX, PDF, text): extract and inline
     # into the message so they reach the model (the gateway drops non-image
     # bytes). Skipped files are surfaced as a system note so the assistant can
     # tell the user which files were dropped.
-    text_files, skipped_files = _extract_text_attachments(attachments)
+    text_files, skipped_files = await asyncio.to_thread(_extract_text_attachments, attachments)
     if text_files or skipped_files:
         message = _prepend_text_attachments(message, text_files, skipped_files)
     # Persist the image refs (keyed by the SPA session id) so they survive a

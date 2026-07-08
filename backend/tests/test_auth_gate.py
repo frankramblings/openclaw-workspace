@@ -13,7 +13,6 @@ Part B — WORKSPACE_AUTH_TOKEN gate:
 The middleware reads the token via config.auth_token() at request-time, so we
 monkeypatch config.auth_token (and os.environ["WORKSPACE_USER"]) between cases.
 """
-import os
 
 import pytest
 from fastapi.testclient import TestClient

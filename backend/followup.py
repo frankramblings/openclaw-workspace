@@ -197,10 +197,10 @@ def history_card(content) -> str | None:
 
 
 # --- internal turn driver ------------------------------------------------------
-import asyncio
-import logging
+import asyncio  # noqa: E402 - intentionally scoped to this section (house style)
+import logging  # noqa: E402 - intentionally scoped to this section (house style)
 
-from . import bridge, sessions_store
+from . import bridge, sessions_store  # noqa: E402 - intentionally scoped to this section (house style)
 
 _log = logging.getLogger(__name__)
 
@@ -313,10 +313,10 @@ async def fire_followup(pid: str, *, overdue: bool = False,
 
 
 # --- HTTP surface ------------------------------------------------------------
-import hmac
+import hmac  # noqa: E402 - intentionally scoped to this section (house style)
 
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Form, Request  # noqa: E402 - intentionally scoped to this section (house style)
+from fastapi.responses import JSONResponse  # noqa: E402 - intentionally scoped to this section (house style)
 
 router = APIRouter()
 

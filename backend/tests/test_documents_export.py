@@ -1,5 +1,4 @@
 """Export endpoint: pandoc-rendered .docx with honest 404/400/501 paths."""
-import shutil
 
 import pytest
 from fastapi.testclient import TestClient

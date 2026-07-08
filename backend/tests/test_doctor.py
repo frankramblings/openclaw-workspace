@@ -1,7 +1,6 @@
 """Doctor maps gateway states (reachable/auth/unknown-method) to {ok, hint}."""
 import asyncio
 
-import pytest
 
 from backend import doctor
 

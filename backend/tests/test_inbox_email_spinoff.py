@@ -1,6 +1,5 @@
 """Tests for the spinoff endpoint: bulk path (new) and single-item path (regression)."""
 import asyncio
-import pytest
 
 from backend import inbox, sessions_store
 
@@ -65,8 +64,6 @@ def test_bulk_spinoff_rejects_empty_list(monkeypatch, tmp_path):
     # An empty list means no items → treated like no `items` key at all,
     # so the single-item path triggers and fails with "item.title is required".
     result = asyncio.run(inbox.spinoff({"items": []}))
-    # JSONResponse body has ok=False or error key
-    body = result.body if hasattr(result, "body") else None
     assert result.status_code == 400
 
 

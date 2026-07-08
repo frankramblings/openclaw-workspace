@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, public]
+    branches: ["**"]
   pull_request:
 
 jobs:
@@ -20,6 +20,25 @@ jobs:
         run: pip install -r backend/requirements.txt
       - name: Run tests
         run: python -m pytest backend/tests -q
+
+  js-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run JS tests
+        run: node --test frontend-overrides/js/__tests__/*.test.js
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ruff
+        run: pip install ruff
+      - name: Run ruff
+        run: ruff check backend/ scripts/
 
   smoke:
     runs-on: ubuntu-latest

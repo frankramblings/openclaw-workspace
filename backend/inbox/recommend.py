@@ -106,7 +106,7 @@ def pick(item: dict, stats: dict, ai_recs: dict) -> dict | None:
 
 # --- ✨ triage pass (LLM layer) ------------------------------------------------
 
-import json as _json
+import json as _json  # noqa: E402 - intentionally scoped to this section (house style)
 
 TRIAGE_CAP = 120
 

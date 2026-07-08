@@ -55,9 +55,9 @@ def test_joins_multiple_assistant_messages():
 
 # --- _late_reply backoff schedule -------------------------------------------------
 
-import asyncio
+import asyncio  # noqa: E402 - intentionally scoped to this section (house style)
 
-from backend import app as app_module
+from backend import app as app_module  # noqa: E402 - intentionally scoped to this section (house style)
 
 
 def test_late_reply_first_check_is_fast(monkeypatch):

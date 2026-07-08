@@ -153,7 +153,7 @@ def add_memory(text: str, category: str | None = None) -> dict:
     lines = _load_md().splitlines()
     bullet = f"- {text}"
     hdr = f"## {section}"
-    idx = next((i for i, l in enumerate(lines) if l.strip() == hdr), None)
+    idx = next((i for i, line in enumerate(lines) if line.strip() == hdr), None)
     if idx is None:
         if lines and lines[-1].strip():
             lines.append("")

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
 from .bridge import gateway_call

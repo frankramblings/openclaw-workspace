@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter
-from fastapi.responses import (HTMLResponse, JSONResponse, PlainTextResponse,
+from fastapi.responses import (HTMLResponse, PlainTextResponse,
                                StreamingResponse)
 
 from .vault_store import WORKSPACE

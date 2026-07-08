@@ -35,6 +35,7 @@ from .cron import router as cron_router
 from .documents import router as documents_router
 from .email_himalaya import router as email_router
 from .emoji_proxy import router as emoji_router
+from .fsutil import file_lock
 from .inbox import router as inbox_router
 from .jobs import router as jobs_router
 from .memory import router as memory_router
@@ -736,14 +737,15 @@ def _persist_msg_attachments(session_id: str, message: str, attachments_raw: str
         return
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        log = []
-        if p.exists():
-            try:
-                log = json.loads(p.read_text() or "[]")
-            except Exception:  # noqa: BLE001
-                log = []
-        log.append({"text": (message or "").strip(), "att": att})
-        p.write_text(json.dumps(log))
+        with file_lock(p):
+            log = []
+            if p.exists():
+                try:
+                    log = json.loads(p.read_text() or "[]")
+                except Exception:  # noqa: BLE001
+                    log = []
+            log.append({"text": (message or "").strip(), "att": att})
+            p.write_text(json.dumps(log))
     except Exception:  # noqa: BLE001 - persistence is best-effort
         pass
 

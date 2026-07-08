@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config
+from .fsutil import atomic_write_text, file_lock
 
 WORKSPACE = config.OPENCLAW_HOME / "workspace"
 
@@ -78,4 +79,5 @@ def load_entry(path: Path, content_key: str = "content") -> dict:
 
 
 def save_entry(path: Path, meta: dict, body: str) -> None:
-    path.write_text(dump_frontmatter(meta, body), encoding="utf-8")
+    with file_lock(path):
+        atomic_write_text(path, dump_frontmatter(meta, body))

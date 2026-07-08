@@ -34,6 +34,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
 from . import vault_store as vs
+from .fsutil import atomic_write_text, file_lock
 
 router = APIRouter()
 
@@ -77,7 +78,8 @@ def _write(doc: dict):
         try:
             target = vs.WORKSPACE / doc["vault_path"]
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(body, encoding="utf-8")
+            with file_lock(target):
+                atomic_write_text(target, body)
         except OSError:
             pass
     return doc

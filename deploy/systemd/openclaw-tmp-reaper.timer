@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly reap of orphaned OpenClaw render temp dirs
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

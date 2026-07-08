@@ -9,12 +9,14 @@ Thanks for hacking on OpenClaw Workspace. It's a small project with a clear shap
 scripts/setup.sh --name Dev --yes        # branding + build the frontend
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r backend/requirements.txt
-python -m pytest backend/tests -q        # 160+ tests, ~2s
+python -m pytest backend/tests -q        # 670+ tests, ~70s
 uvicorn backend.app:app --reload --port 8800
 ```
 
 You need a running OpenClaw gateway for chat to work; the pure-mapper tests run
 without one.
+
+Frontend JS tests: `node --test frontend-overrides/js/__tests__/*.test.js`.
 
 ## Dependencies
 

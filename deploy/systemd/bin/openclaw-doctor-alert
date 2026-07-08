@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Every 5 min: probe the workspace app and gateway; alert on state transitions
+# (and re-remind every 6h while broken). State file prevents alert spam.
+#
+# Workspace liveness: GET /api/health must return HTTP 200 (the endpoint
+# itself does no gateway I/O — it always answers 200 if the app process is
+# alive and serving, so a non-200/no-response means the app is down/wedged).
+#
+# Gateway liveness: GET /api/gateway/status returns the app's cached
+# connection-monitor state as JSON, e.g. {"state":"ok","since":...,
+# "shutdownReason":null,"updateAvailable":null,"agents":[...],"sessionCount":N}.
+# state is one of ok|restarting|down (backend/monitor.py). "restarting" means
+# the gateway announced a shutdown and is expected back within minutes, so it
+# is treated as healthy here; only "down" or an unparseable/missing response
+# counts as a failure.
+set -u
+source "$HOME/.config/openclaw-secrets/alerts.env" 2>/dev/null || true
+STATE="$HOME/.cache/openclaw-doctor-alert.state"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8800/api/health}"
+GATEWAY_STATUS_URL="${GATEWAY_STATUS_URL:-http://127.0.0.1:8800/api/gateway/status}"
+fail=""
+
+# NOTE: curl's -w already prints %{http_code} as "000" on a hard failure
+# (refused/timeout/etc, exit != 0) *before* returning that nonzero exit, so
+# `|| echo 000` here would double up ("000000"). Fall back only if curl
+# produced no output at all (e.g. curl itself failed to run).
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "$HEALTH_URL" 2>/dev/null)
+code="${code:-000}"
+[ "$code" = "200" ] || fail="workspace /api/health HTTP $code"
+
+if [ -z "$fail" ]; then
+  gw=$(curl -s -m 10 "$GATEWAY_STATUS_URL" || echo '')
+  gw_state=$(printf '%s' "$gw" | python3 -c '
+import json, sys
+try:
+    doc = json.load(sys.stdin)
+    state = doc.get("state")
+    print(state if isinstance(state, str) else "")
+except Exception:
+    print("")
+' 2>/dev/null)
+  case "$gw_state" in
+    ok|restarting) : ;;
+    *) fail="gateway status: ${gw_state:-no response}" ;;
+  esac
+fi
+
+prev=$(cat "$STATE" 2>/dev/null || echo "ok 0")
+prev_st=${prev%% *}; prev_ts=${prev##* }; now=$(date +%s)
+# Defensive parse: a corrupt/partial state file (e.g. a bare "down" with no
+# timestamp from an interrupted write) must never crash the arithmetic below
+# under set -u — that would wedge every future run and silently kill alerting.
+# Unrecognized state token -> fresh-install "ok 0" semantics (next real
+# failure alerts immediately); non-numeric timestamp -> 0 (same effect).
+case "$prev_st" in ok|down) : ;; *) prev_st=ok; prev_ts=0 ;; esac
+case "$prev_ts" in ''|*[!0-9]*) prev_ts=0 ;; esac
+notify() { [ -n "${NTFY_URL:-}" ] && curl -s -m 10 -H "Title: Gary workspace" -d "$1" "$NTFY_URL" >/dev/null; logger -t openclaw-doctor "$1"; }
+# Atomic state write (tmp + rename) so a mid-write kill can't leave the
+# truncated/corrupt shape the defensive parse above guards against.
+write_state() { echo "$1 $2" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"; }
+
+if [ -n "$fail" ]; then
+  if [ "$prev_st" = "ok" ] || [ $((now - prev_ts)) -gt 21600 ]; then
+    notify "DOWN: $fail"; write_state down "$now"
+  fi
+else
+  [ "$prev_st" = "down" ] && notify "RECOVERED: workspace + gateway healthy"
+  write_state ok "$now"
+fi
+exit 0

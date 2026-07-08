@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import fcntl
 import json
+import logging
 import os
 import pty
 import re
@@ -24,7 +25,10 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
 from . import config
+from . import fsutil
 from . import workspace_files
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -512,10 +516,7 @@ def load_tail(session_key: str, limit: int = MAX_BUFFER) -> str:
 
 
 def read_meta(session_key: str) -> dict:
-    try:
-        return json.loads(persist_meta_path(session_key).read_text())
-    except (FileNotFoundError, ValueError, OSError):
-        return {}
+    return fsutil.load_json_guarded(persist_meta_path(session_key), {}, logger=log)
 
 
 def write_meta(session_key: str, **fields) -> dict:

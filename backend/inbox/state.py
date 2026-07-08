@@ -6,11 +6,14 @@ dismissed.js had the same single-flight idea)."""
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
 
-from .. import config
+from .. import config, fsutil
+
+log = logging.getLogger(__name__)
 
 STATE_FILE = config.DATA_DIR / "inbox-state.json"
 _LOCK = threading.Lock()
@@ -20,10 +23,7 @@ _mem: dict | None = None
 def _load() -> dict:
     global _mem
     if _mem is None:
-        try:
-            _mem = json.loads(STATE_FILE.read_text())
-        except (FileNotFoundError, json.JSONDecodeError):
-            _mem = {}
+        _mem = fsutil.load_json_guarded(STATE_FILE, {}, logger=log)
         if not isinstance(_mem, dict):
             _mem = {}
     _mem.setdefault("dismissed", {})

@@ -6,9 +6,14 @@ so they never live in this repo. Everything is overridable via environment vars.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
+
+from . import fsutil
+
+log = logging.getLogger(__name__)
 
 OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw"))
 OPENCLAW_CONFIG = OPENCLAW_HOME / "openclaw.json"
@@ -155,11 +160,10 @@ BRANDING_PATH = DATA_DIR / "branding.json"
 
 
 def load_branding() -> dict:
-    """Read .data/branding.json (best-effort). Never raises."""
-    try:
-        return json.loads(BRANDING_PATH.read_text())
-    except (FileNotFoundError, ValueError):
-        return {}
+    """Read .data/branding.json (best-effort). Never raises. A corrupt file
+    is quarantined aside rather than silently treated as absent — see
+    fsutil.load_json_guarded."""
+    return fsutil.load_json_guarded(BRANDING_PATH, {}, logger=log)
 
 
 def save_branding(**fields) -> dict:
@@ -216,11 +220,10 @@ CONNECTION_FIELDS = frozenset({"gateway_ws", "agent_id", "integrations"})
 
 
 def load_connection() -> dict:
-    """Read .data/connection.json (non-secret connection info). Never raises."""
-    try:
-        return json.loads(CONNECTION_PATH.read_text())
-    except (FileNotFoundError, ValueError):
-        return {}
+    """Read .data/connection.json (non-secret connection info). Never raises.
+    A corrupt file is quarantined aside rather than silently treated as
+    absent — see fsutil.load_json_guarded."""
+    return fsutil.load_json_guarded(CONNECTION_PATH, {}, logger=log)
 
 
 def save_connection(**fields) -> dict:

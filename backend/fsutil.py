@@ -54,6 +54,61 @@ def atomic_write_json(path: Path, obj) -> None:
     atomic_write_text(path, json.dumps(obj, ensure_ascii=False, indent=2))
 
 
+def _quarantine(path: Path, logger) -> None:
+    """Rename a corrupt store aside instead of letting the caller silently
+    discard it. Collision-safe: if two quarantines land in the same wall-clock
+    second, a numeric suffix is appended so neither clobbers the other.
+
+    If `path` is gone by the time we try to rename it (raced by another
+    process between our read and this call), there's nothing left to
+    quarantine — that's not an error, just a lost race, so we return quietly
+    without logging."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    dest = path.with_name(f"{path.name}.corrupt-{stamp}")
+    n = 1
+    while dest.exists():
+        dest = path.with_name(f"{path.name}.corrupt-{stamp}-{n}")
+        n += 1
+    try:
+        os.replace(path, dest)
+    except FileNotFoundError:
+        return
+    logger.error("quarantined corrupt store %s -> %s", path, dest)
+
+
+def load_json_guarded(path: Path, default, *, logger):
+    """Read + parse JSON at `path`, quarantining a corrupt file instead of
+    silently discarding it.
+
+    This exists to kill a bug class: a reader that catches JSONDecodeError
+    and returns an empty default looks harmless, but the caller's *next*
+    save then overwrites the original file with that rebuilt-empty store —
+    silent total loss of whatever was on disk. Quarantining means the
+    original bytes always survive for manual recovery.
+
+    - Missing file: returns `default` as-is. This is the normal first-run
+      path, not corruption, so no rename and no log.
+    - Valid JSON: returns the parsed value.
+    - Malformed JSON or undecodable bytes (JSONDecodeError /
+      UnicodeDecodeError): renames `path` to `<name>.corrupt-<timestamp>`
+      (see `_quarantine`), logs an error naming both paths, and returns
+      `default`.
+    """
+    path = Path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return default
+    except UnicodeDecodeError:
+        _quarantine(path, logger)
+        return default
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        _quarantine(path, logger)
+        return default
+
+
 @contextlib.contextmanager
 def file_lock(path: Path, timeout: float = 5.0):
     """Advisory exclusive lock guarding writes to `path`, held on a

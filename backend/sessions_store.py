@@ -11,12 +11,15 @@ atomic (temp file + os.replace) so a crash mid-write can't corrupt the store.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
 import uuid
 
-from . import config
+from . import config, fsutil
+
+log = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 _STORE_FILE = config.DATA_DIR / "sessions.json"
@@ -27,10 +30,7 @@ def _now_ms() -> int:
 
 
 def _load() -> dict:
-    try:
-        return json.loads(_STORE_FILE.read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"sessions": []}
+    return fsutil.load_json_guarded(_STORE_FILE, {"sessions": []}, logger=log)
 
 
 def _save(data: dict) -> None:

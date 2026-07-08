@@ -165,6 +165,33 @@ def test_sessions_store_missing_file_returns_default_no_quarantine():
     assert leftover == []
 
 
+def test_sessions_store_quarantine_emits_error_log_record(caplog):
+    """Task 13 (Step 4): the quarantine must emit a real ERROR record through
+    the stdlib logging pipeline. The _RecordingLogger tests above prove the
+    .error() call happens; this proves it lands at ERROR level on the actual
+    production logger (`backend.sessions_store`, the module logger
+    sessions_store passes to load_json_guarded) with both paths — the corrupt
+    original and its quarantine destination — in the record args."""
+    store_file = sessions_store._STORE_FILE
+    store_file.parent.mkdir(parents=True, exist_ok=True)
+    store_file.write_bytes(b'{"sessions": [ broken')
+
+    with caplog.at_level(logging.ERROR, logger="backend.sessions_store"):
+        assert sessions_store.list_sessions() == []  # triggers the quarantine
+
+    recs = [r for r in caplog.records
+            if r.name == "backend.sessions_store" and r.levelno == logging.ERROR
+            and "quarantined corrupt store" in r.getMessage()]
+    assert len(recs) == 1
+    src, dest = recs[0].args
+    assert src == store_file
+    assert str(dest).startswith(str(store_file) + ".corrupt-")
+    assert CORRUPT_RE.search(str(dest))
+    # And the formatted message names both paths (what actually hits the log).
+    assert str(store_file) in recs[0].getMessage()
+    assert str(dest) in recs[0].getMessage()
+
+
 # --- inbox.state: same store-file pattern, different shape ------------------
 
 def _fresh_inbox_state(tmp_path, monkeypatch):

@@ -5702,6 +5702,14 @@ import * as Modals from './modalManager.js';
           language: 'markdown',
         }),
       });
+      // A vault write failure is a clean JSON {"error": "write failed"} 500 —
+      // it parses, so without this gate we'd add a phantom tab for a doc that
+      // was never persisted (doc.id undefined, broken tab state).
+      if (!res.ok) {
+        let msg = 'create failed';
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
       const doc = await res.json();
       addDocToTabs(doc, sessionId);
       if (!isOpen) openPanel();
@@ -7815,6 +7823,15 @@ import * as Modals from './modalManager.js';
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: textarea.value }),
       });
+      // The backend now answers a clean JSON {"error": "write failed"} 500 on
+      // a vault write failure — which parses fine, so without this gate the
+      // autosave would mark unsaved content as known-good and toast
+      // "Document saved" for a save that never landed on disk.
+      if (!res.ok) {
+        let msg = 'save failed';
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
       const doc = await res.json();
       const badge = document.getElementById('doc-version-badge');
       if (badge) { const _v = doc.version_count || 1; badge.textContent = `v${_v}`; badge.style.display = _v > 1 ? '' : 'none'; }
@@ -9268,6 +9285,15 @@ import * as Modals from './modalManager.js';
       const res = await fetch(`${API_BASE}/api/document/${activeDocId}/restore/${num}`, {
         method: 'POST',
       });
+      // Worst case of the unchecked-json bug class: a {"error": "write
+      // failed"} 500 parses cleanly, populateEditor(errorObj) blanks the
+      // editor (current_content undefined -> ''), and the user sees
+      // "Restored to vN" over their now-empty document. Gate before parsing.
+      if (!res.ok) {
+        let msg = 'restore failed';
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
       const doc = await res.json();
       populateEditor(doc);
       // Clear stash — restored content IS the new latest

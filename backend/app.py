@@ -263,15 +263,16 @@ def _start_turn_recorder(session_key: str, source_factory):
 
 def _disk_free_gb(path) -> float | None:
     """Free space (GB, 1 decimal) on the filesystem holding `path`, or None if
-    it can't be read. Best-effort decoration only: /api/health's whole point
-    is to answer 200 whenever the process is alive, so a disk-usage read must
-    never itself turn into the 500 it's supposed to help diagnose. Creates
-    `path` on the fly (mkdir -p semantics) so a fresh install's not-yet-created
-    `.data` dir doesn't read as "unreadable"."""
+    it can't be read (including a not-yet-created path — a fresh install's
+    `.data` dir reads as None until first write, which is honest). Best-effort
+    decoration only: /api/health's whole point is to answer 200 whenever the
+    process is alive, so a disk-usage read must never itself turn into the 500
+    it's supposed to help diagnose. Deliberately read-only — a liveness probe
+    polled every 5 min must NOT mkdir its way past a missing dir (that would
+    silently recreate intentionally-cleaned dirs, e.g. under the quota-tight
+    /tmp on this host)."""
     try:
-        p = Path(path)
-        p.mkdir(parents=True, exist_ok=True)
-        usage = shutil.disk_usage(p)
+        usage = shutil.disk_usage(Path(path))
         return round(usage.free / (1024 ** 3), 1)
     except OSError:
         _log.warning("disk usage check failed for %s", path, exc_info=True)

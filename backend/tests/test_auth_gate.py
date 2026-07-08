@@ -93,7 +93,11 @@ class TestAuthGateUnset:
 # ---------------------------------------------------------------------------
 
 class TestHealthFields:
-    def test_health_has_all_fields_with_sane_types(self, client):
+    def test_health_has_all_fields_with_sane_types(self, client, tmp_path, monkeypatch):
+        # Point DATA_DIR at a dir that EXISTS: _disk_free_gb is deliberately
+        # read-only (no mkdir — a liveness probe must not mutate the fs), so
+        # the conftest's never-created tmp_path/"data" would read as None.
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path)
         r = client.get("/api/health")
         assert r.status_code == 200
         data = r.json()
@@ -109,6 +113,18 @@ class TestHealthFields:
         assert isinstance(data["tmp_free_gb"], (int, float))
         assert data["tmp_free_gb"] >= 0
         assert data["schema"] == 1
+
+    def test_health_missing_data_dir_reads_none_not_created(self, client, tmp_path, monkeypatch):
+        """_disk_free_gb must never mkdir: a 5-minutely liveness probe that
+        recreates deleted dirs is a mutating side effect (and would silently
+        undo intentional /tmp cleanup on this quota-sensitive host). Missing
+        path -> OSError -> None, and the dir stays missing."""
+        missing = tmp_path / "never-created"
+        monkeypatch.setattr(config, "DATA_DIR", missing)
+        r = client.get("/api/health")
+        assert r.status_code == 200  # degradation, never a 500
+        assert r.json()["disk_free_gb"] is None
+        assert not missing.exists()  # the probe must not have created it
 
     def test_health_gateway_field_reflects_monitor_state(self, client, monkeypatch):
         """gateway now surfaces monitor.current_state() — the same source

@@ -70,6 +70,8 @@ failing — check `journalctl --user -u openclaw-workspace.service -n 100` for
 a crash loop (bad venv, syntax error, port already bound) rather than
 assuming it will self-heal.
 
+A loopback caller with no `Tailscale-User-Login` header (e.g. local `curl` to `/api/terminal/...`, bypassing Serve) is denied terminal access by default since Task 14 — set `OPENCLAW_TERMINAL_ALLOW_PLAIN_LOOPBACK=1` only if you've verified nothing but this host can reach uvicorn's loopback bind.
+
 ## Backup / restore
 
 Nightly `openclaw-backup.service` (03:30 local, `openclaw-backup.timer`) runs

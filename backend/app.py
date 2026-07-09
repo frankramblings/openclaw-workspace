@@ -799,15 +799,50 @@ async def search_reindex(force: bool = False):
     return {"status": "started"}
 
 
-# --- Catch-all for Odysseus feature tabs v1 doesn't implement yet ------------
-# cookbook, prefs, tts… each
-# polls its own backend. Returning [] is universally safe: Odysseus's consumers
-# all do either `data.forEach(...)` (works on []) or `data.key || []` (→ []), so
-# this quiets the 404 flood without breaking any module. Registered AFTER every
-# real route, so health/items/models/chat/auth/sessions still win.
+# --- Legacy GET stubs: the last callers of the old []-catch-all ---------------
+# Task 19 replaced the blanket `GET /api/{path} -> []` (which silently satisfied
+# every unimplemented poll) with a real 404. A frontend GET-path inventory
+# (redesign live layer + the retired classic UI at /classic) found a handful of
+# GETs with no backend route that were leaning on that []-return. They are kept
+# here as explicit no-op stubs — byte-identical [] response, plus a one-line
+# deprecation WARNING so the dead calls are finally visible in the log — rather
+# than silently 404'd, so a still-served UI can't regress (the classic archived-
+# sessions fetch throws on a non-2xx; the redesign Settings→Export downloads the
+# body). See the Task 19 report (.superpowers/sdd) for the full path table.
+# Registered BEFORE the 404 catch-all so these specific paths still win. Remove a
+# stub once its caller is gone.
+#   redesign (live): /api/export (Settings → Data Backup → Export)
+#   classic (/classic only): fonts/custom, signatures, contacts/search,
+#     sessions/archived, chat/stream_status/{id}, model-endpoints/probe-local,
+#     document/{id}/export-pdf, document/{id}/render-pages,
+#     email/attachment/{uid}/{index}
+@app.get("/api/export")
+@app.get("/api/fonts/custom")
+@app.get("/api/signatures")
+@app.get("/api/contacts/search")
+@app.get("/api/sessions/archived")
+@app.get("/api/model-endpoints/probe-local")
+@app.get("/api/chat/stream_status/{session_id}")
+@app.get("/api/document/{doc_id}/export-pdf")
+@app.get("/api/document/{doc_id}/render-pages")
+@app.get("/api/email/attachment/{uid}/{index}")
+async def _legacy_get_stub(request: Request):
+    _log.warning("legacy GET %s served as [] stub (deprecated; no backend route "
+                 "— caller should be removed)", request.url.path)
+    return []
+
+
+# --- 404 for every other unimplemented /api GET ------------------------------
+# Was a blanket `-> []` (quieted a 404 flood for tabs the vendor SPA polled but
+# v1 never implemented). That masked real routing bugs and every retired caller.
+# The live redesign now has an explicit route for every GET it makes (verified in
+# Task 19); anything still hitting this is a stale caller or a typo, so answer an
+# honest 404 and log it once so it's findable.
 @app.get("/api/{path:path}")
 async def _unimplemented_api(path: str):
-    return []
+    _log.warning("unimplemented GET /api/%s -> 404 (no route)", path)
+    return JSONResponse(status_code=404,
+                        content={"error": "not found", "path": f"/api/{path}"})
 
 
 @app.get("/sw.js")

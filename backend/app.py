@@ -28,6 +28,7 @@ from . import (branch_context, bridge, capabilities, chat_search, chat_turn, con
                config_check, doctor, draft_mode, event_store, followup, monitor,
                sessions_store, terminals, websearch)
 from .auth_gate import AuthGateMiddleware
+from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
 from .cron import router as cron_router
@@ -212,6 +213,14 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 # when it's None, so zero overhead or behavior change for the default no-token
 # case). Added AFTER GZip so auth runs in the outer layer (before compression).
 app.add_middleware(AuthGateMiddleware)
+
+# Security response headers (CSP report-only by default; see
+# security_headers.py). Starlette's add_middleware() inserts at position 0 of
+# the user-middleware list, and the stack is built by wrapping in REVERSE of
+# that list — so the LAST middleware added ends up OUTERMOST, closest to the
+# client. Added AFTER AuthGateMiddleware so it wraps AuthGate's rejections
+# (401/403/302) too, not just responses that reach the router/GZip layer.
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(inbox_router)
 app.include_router(jobs_router)

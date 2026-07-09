@@ -117,3 +117,20 @@ webhook, etc.) — the script just does `curl -d "$body" "$NTFY_URL"`. A
 structured target (e.g. a Slack incoming webhook expecting
 `{"text": "..."}`) needs the script's `notify()` body reshaped, not just a
 URL swap.
+
+**Auto-restart escalation (workspace only, never the gateway).** A wedged-but-
+listening workspace app can fail `/api/health` forever without recovering on
+its own, so 3 CONSECUTIVE workspace-probe failures (≈10-15 min wedged)
+trigger `systemctl --user restart openclaw-workspace` and an
+`AUTO-RESTART: ...` notify, gated by a 1-hour cooldown so a crash-looping
+service can't be restarted more than once/hour even across brief recoveries.
+A gateway-only failure (workspace answers 200 while the gateway is
+`down`/unreachable) never counts toward this — the gateway's own restart is
+a normal 4-5 min cold boot and is exempt from auto-restart entirely. The
+consecutive-fail count and last-restart timestamp live in
+`~/.cache/openclaw-doctor-alert.fails` (`"<count> <last_restart_unix-ts>"`,
+written atomically like the state file above); a workspace-ok probe resets
+the count to 0 but preserves the cooldown timestamp. Delete the file to
+clear both. `DOCTOR_DRYRUN=1` prints `would restart openclaw-workspace`
+instead of restarting and skips the notify — useful for testing against an
+overridden `HOME`/`HEALTH_URL`, never against the live install.

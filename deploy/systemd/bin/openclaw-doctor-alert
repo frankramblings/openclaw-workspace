@@ -13,12 +13,31 @@
 # the gateway announced a shutdown and is expected back within minutes, so it
 # is treated as healthy here; only "down" or an unparseable/missing response
 # counts as a failure.
+#
+# Auto-restart escalation (workspace only, NEVER the gateway): the gateway is
+# exempt because a gateway restart is a normal 4-5 min cold boot and
+# "restarting" is already treated as healthy above. The workspace app is
+# different -- a wedged-but-listening uvicorn can alert forever without
+# recovering on its own, so 3 CONSECUTIVE workspace-probe failures (a
+# gateway-only failure, workspace 200 + gateway down/restarting, never counts
+# toward this) trigger `systemctl --user restart openclaw-workspace`, gated
+# by a 1h cooldown so a crash-looping service can't be restarted more than
+# once/hour even across brief recoveries. The consecutive-fail count and the
+# last-restart timestamp persist in $FAILS ("count last_restart_epoch"),
+# atomically written the same way as $STATE. On a workspace-ok probe the
+# count resets to 0 but the cooldown timestamp is preserved. DOCTOR_DRYRUN=1
+# prints "would restart openclaw-workspace" and skips the real restart and
+# its notify -- point HEALTH_URL/GATEWAY_STATUS_URL and $HOME at scratch
+# locations to exercise this without touching the live install.
 set -u
 source "$HOME/.config/openclaw-secrets/alerts.env" 2>/dev/null || true
 STATE="$HOME/.cache/openclaw-doctor-alert.state"
+FAILS="$HOME/.cache/openclaw-doctor-alert.fails"
+RESTART_COOLDOWN=3600
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8800/api/health}"
 GATEWAY_STATUS_URL="${GATEWAY_STATUS_URL:-http://127.0.0.1:8800/api/gateway/status}"
 fail=""
+workspace_fail=0
 
 # NOTE: curl's -w already prints %{http_code} as "000" on a hard failure
 # (refused/timeout/etc, exit != 0) *before* returning that nonzero exit, so
@@ -26,7 +45,10 @@ fail=""
 # produced no output at all (e.g. curl itself failed to run).
 code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 "$HEALTH_URL" 2>/dev/null)
 code="${code:-000}"
-[ "$code" = "200" ] || fail="workspace /api/health HTTP $code"
+if [ "$code" != "200" ]; then
+  fail="workspace /api/health HTTP $code"
+  workspace_fail=1
+fi
 
 if [ -z "$fail" ]; then
   gw=$(curl -s -m 10 "$GATEWAY_STATUS_URL" || echo '')
@@ -54,10 +76,40 @@ prev_st=${prev%% *}; prev_ts=${prev##* }; now=$(date +%s)
 # failure alerts immediately); non-numeric timestamp -> 0 (same effect).
 case "$prev_st" in ok|down) : ;; *) prev_st=ok; prev_ts=0 ;; esac
 case "$prev_ts" in ''|*[!0-9]*) prev_ts=0 ;; esac
+
+# Same defensive parse for the fails file ("<consecutive_workspace_fails>
+# <last_restart_epoch>"): garbage/missing/short reads collapse to 0 0, so a
+# corrupt or partial file never wedges the counter under set -u and
+# self-heals on the write_fails() below instead of crash-looping the timer.
+{ read -r fail_n fail_last < "$FAILS"; } 2>/dev/null || { fail_n=0; fail_last=0; }
+case "$fail_n" in ''|*[!0-9]*) fail_n=0 ;; esac
+case "$fail_last" in ''|*[!0-9]*) fail_last=0 ;; esac
+
 notify() { [ -n "${NTFY_URL:-}" ] && curl -s -m 10 -H "Title: Gary workspace" -d "$1" "$NTFY_URL" >/dev/null; logger -t openclaw-doctor "$1"; }
 # Atomic state write (tmp + rename) so a mid-write kill can't leave the
 # truncated/corrupt shape the defensive parse above guards against.
 write_state() { echo "$1 $2" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"; }
+write_fails() { printf '%s %s\n' "$1" "$2" > "$FAILS.tmp" && mv "$FAILS.tmp" "$FAILS"; }
+
+if [ "$workspace_fail" = 1 ]; then
+  fail_n=$((fail_n + 1))
+  if [ "$fail_n" -ge 3 ] && [ $((now - fail_last)) -ge "$RESTART_COOLDOWN" ]; then
+    if [ "${DOCTOR_DRYRUN:-0}" = "1" ]; then
+      echo "would restart openclaw-workspace"
+    else
+      systemctl --user restart openclaw-workspace
+      notify "AUTO-RESTART: workspace unhealthy for $fail_n probes; restarted"
+    fi
+    fail_n=0; fail_last=$now
+  fi
+  write_fails "$fail_n" "$fail_last"
+else
+  # Workspace answered (whether or not the gateway did) -- reset the
+  # consecutive-fail counter but keep the cooldown timestamp, so a flapping
+  # service still can't be auto-restarted more than once/hour even across
+  # brief recoveries in between.
+  write_fails 0 "$fail_last"
+fi
 
 if [ -n "$fail" ]; then
   if [ "$prev_st" = "ok" ] || [ $((now - prev_ts)) -gt 21600 ]; then

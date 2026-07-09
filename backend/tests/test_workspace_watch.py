@@ -28,6 +28,7 @@ exit); it does not assert a log record, since none is emitted today.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 import types
 
@@ -202,15 +203,29 @@ async def test_publish_change_schedules_fan_out_on_the_broadcast_loop(tmp_path, 
 # --- _watcher: watchfiles absent (required) ----------------------------------
 
 @pytest.mark.anyio
-async def test_watcher_exits_cleanly_when_watchfiles_import_fails(monkeypatch):
+async def test_watcher_exits_cleanly_when_watchfiles_import_fails(
+        tmp_path, monkeypatch, caplog):
     """sys.modules[name] = None is the standard way to force `from X import Y`
     to raise ImportError regardless of whether X is actually installed —
-    simulates the floor-install case where watchfiles is absent."""
+    simulates the floor-install case where watchfiles is absent.
+
+    WORKSPACE must point at an EXISTING dir (tmp_path): if a regression made
+    the ImportError fall through instead of returning, the very next guard
+    (`if not os.path.isdir(root): return`) would mask it on any machine
+    without the real ~/.openclaw/workspace — the test must fail via the
+    unreachable awatch call, not accidentally pass via the isdir bail-out."""
+    monkeypatch.setattr(vs, "WORKSPACE", tmp_path)
     monkeypatch.setitem(sys.modules, "watchfiles", None)
 
-    await workspace_watch._watcher()  # must return (not raise, not hang)
+    with caplog.at_level(logging.WARNING):
+        await workspace_watch._watcher()  # must return (not raise, not hang)
 
     assert workspace_watch._subscribers == []  # never even reached the fan-out
+    # KNOWN GAP, pinned deliberately: the absent-watchfiles path is a SILENT
+    # no-op today (`except Exception: return`, no log statement). If someone
+    # later adds the missing warning log, flip this to assert the record
+    # EXISTS instead.
+    assert caplog.records == []
 
 
 # --- _watcher: watchfiles present (faked awatch boundary) -------------------

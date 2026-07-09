@@ -1035,6 +1035,11 @@ if config.FRONTEND_DIR.exists():
 
     @app.get("/classic")
     async def index_classic():
+        # Task 18 step 1 (parity gate, instrumentation only — retirement is
+        # deferred pending a week-long soak): one INFO line per hit so usage
+        # can be tracked with `journalctl --user -u openclaw-workspace |
+        # grep -c "classic UI served"`. No behavior change otherwise.
+        _log.info("classic UI served")
         return _spa_html("index-classic.html")
 else:
     @app.get("/")

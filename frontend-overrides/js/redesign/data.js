@@ -15,6 +15,17 @@ export const SLASH_COMMANDS = [
   { glyph: '✎', name: '/note', desc: 'capture a note to the vault', color: 'var(--green)' },
 ];
 
+// Shared by the composer's render (surfaces.js) and its keyboard handling
+// (app.js — arrow-key nav / Enter-to-pick in the slash-menu autocomplete) so
+// both always agree on which commands are showing for a given draft. A draft
+// that doesn't start with "/" (the toolbar "+" toggle opened the menu with
+// plain or empty text) matches everything — q stays ''.
+export function filterSlashCommands(draft) {
+  const d = draft || '';
+  const q = d.startsWith('/') ? d.slice(1).toLowerCase().split(' ')[0] : '';
+  return SLASH_COMMANDS.filter((c) => q === '' || c.name.slice(1).startsWith(q));
+}
+
 // ---- adaptive agent dock content (per non-chat surface) -------------------
 export const DOCK = {
   email:    { sub: 'on this thread', msg: "Three Cannes agreements are live — Tameka and Jayde signed, Brendan's still in revision.", c1: 'Draft a status reply', c2: 'Open all 3' },

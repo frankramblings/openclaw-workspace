@@ -7,7 +7,7 @@ import { esc, map, when, stripMd } from './dom.js';
 import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import {
-  AVATAR, SLASH_COMMANDS, RESEARCH_CONTROLS, RESEARCH_SCOPES,
+  AVATAR, filterSlashCommands, RESEARCH_CONTROLS, RESEARCH_SCOPES,
   KIND_STYLE, LIB_FILTERS, CAL_BAR_TONE,
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
@@ -274,9 +274,13 @@ function chatSurface(s) {
   const d = s.draft || '';
   const typedSlash = d.startsWith('/');
   const open = typedSlash || s.forceSlash;
-  const q = typedSlash ? d.slice(1).toLowerCase().split(' ')[0] : '';
-  const filtered = SLASH_COMMANDS.filter((c) => q === '' || c.name.slice(1).startsWith(q));
-  const slashOpen = open && filtered.length > 0;
+  const filtered = filterSlashCommands(d);
+  // slashDismissed: set by Escape (app.js) so the dropdown can be dismissed
+  // without erasing what's typed — cleared the moment the draft changes again.
+  const slashOpen = open && filtered.length > 0 && !s.slashDismissed;
+  // Keyboard highlight (ArrowUp/Down in app.js) — falls back to the first row
+  // whenever the current selection scrolled out of the filtered list.
+  const slashSel = filtered.find((c) => c.name === s.slashSel) || filtered[0];
   const agent = s.chatMode === 'agent';
   const chat = s.live?.chat || {};
   const title = chat.title ?? 'Workspace Streaming Chat Updates';
@@ -309,9 +313,9 @@ function chatSurface(s) {
   <div class="composer-wrap">
     <button class="scroll-btm ocbtn" data-act="scrollChatBottom" title="Jump to latest" style="position:absolute;right:16px;top:-44px;z-index:25;width:34px;height:34px;border-radius:50%;background:var(--panel,#1e2025);border:1px solid var(--border);color:var(--fg);cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)">↓</button>
     ${when(slashOpen, `
-    <div class="slash-menu">
+    <div class="slash-menu" role="listbox" aria-label="Slash commands">
       <div class="hd">COMMANDS</div>
-      ${map(filtered, (c) => `<div class="slash-cmd" data-act="pickSlash" data-arg="${esc(c.name)}"><span class="glyph" style="color:${c.color}">${c.glyph}</span><span class="name">${esc(c.name)}</span><span class="desc">${esc(c.desc)}</span></div>`)}
+      ${map(filtered, (c) => `<div class="slash-cmd${slashSel && c.name === slashSel.name ? ' sel' : ''}" role="option" aria-selected="${slashSel && c.name === slashSel.name}" data-act="pickSlash" data-arg="${esc(c.name)}"><span class="glyph" style="color:${c.color}">${c.glyph}</span><span class="name">${esc(c.name)}</span><span class="desc">${esc(c.desc)}</span></div>`)}
     </div>`)}
     ${when(s.modelMenuOpen, modelPopover(s))}
     <div class="composer${slashOpen ? ' slash' : ''}">
@@ -411,12 +415,12 @@ function emailSurface(s) {
 function composeOverlay(s) {
   const busy = !!s.emailBusy;
   return `
-  <div class="oc-compose-scrim" data-act="closeCompose" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60"></div>
-  <div class="oc-compose" style="position:fixed;z-index:61;left:50%;top:50%;transform:translate(-50%,-50%);width:min(640px,92vw);max-height:86vh;display:flex;flex-direction:column;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden">
+  <div class="oc-compose-scrim" data-act="closeCompose" aria-hidden="true" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60"></div>
+  <div class="oc-compose" role="dialog" aria-modal="true" aria-label="${s.composeInReplyTo ? 'Reply' : 'New message'}" style="position:fixed;z-index:61;left:50%;top:50%;transform:translate(-50%,-50%);width:min(640px,92vw);max-height:86vh;display:flex;flex-direction:column;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden">
     <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)">
       <b style="flex:1">New message</b>
       <button class="btn btn-ghost" data-act="composeAiDraft"${busy ? ' disabled' : ''}>✦ AI draft</button>
-      <span data-act="closeCompose" style="cursor:pointer;color:var(--faint);padding:0 4px">✕</span>
+      <button type="button" class="icon-btn ocbtn" data-act="closeCompose" aria-label="Close" style="background:none;border:none;cursor:pointer;color:var(--faint);padding:0 4px;font-size:15px;line-height:1">✕</button>
     </div>
     <div style="padding:10px 14px;display:flex;flex-direction:column;gap:8px;overflow:auto">
       <input class="set-input" data-model="composeTo" data-focus="composeTo" placeholder="To (email)" value="${esc(s.composeTo || '')}" autocomplete="off" style="background:transparent;border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--fg);font-family:var(--sans)">
@@ -493,11 +497,11 @@ function inboxReaderOverlay(s) {
   const item = items.find((m) => m.id === r.id) || {};
   const title = item.who || r.id || 'Detail';
   return `
-    <div class="inbox-reader-scrim" data-act="closeReader" style="position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:40"></div>
-    <div class="inbox-reader-panel" style="position:absolute;right:0;top:0;bottom:0;width:min(480px,100%);background:var(--panel,#1e2025);border-left:1px solid var(--border);display:flex;flex-direction:column;z-index:41;overflow:hidden">
+    <div class="inbox-reader-scrim" data-act="closeReader" aria-hidden="true" style="position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:40"></div>
+    <div class="inbox-reader-panel" role="dialog" aria-modal="true" aria-label="${esc(title)}" style="position:absolute;right:0;top:0;bottom:0;width:min(480px,100%);background:var(--panel,#1e2025);border-left:1px solid var(--border);display:flex;flex-direction:column;z-index:41;overflow:hidden">
       <div class="ird-header" style="display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
         <span style="font-weight:600;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title)}</span>
-        <span data-act="closeReader" style="cursor:pointer;color:var(--faint);font-size:18px;line-height:1;padding:2px 4px" title="Close">✕</span>
+        <button type="button" class="icon-btn ocbtn" data-act="closeReader" aria-label="Close" title="Close" style="background:none;border:none;cursor:pointer;color:var(--faint);font-size:15px;line-height:1;padding:2px 4px">✕</button>
       </div>
       <div class="ird-body" style="flex:1;overflow-y:auto;padding:16px;font-size:13px;line-height:1.6">
         ${inboxReaderBody(r)}

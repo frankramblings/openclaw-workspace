@@ -200,11 +200,11 @@ export function mInbox(s) {
     const item = items.find((m) => m.id === r.id) || {};
     const title = item.who || r.id || 'Detail';
     return `
-    <div class="m-sheet-scrim" data-act="closeReader" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50"></div>
-    <div class="m-sheet" style="position:fixed;left:0;right:0;bottom:0;max-height:80vh;background:var(--panel,#1e2025);border-radius:16px 16px 0 0;display:flex;flex-direction:column;z-index:51;overflow:hidden">
+    <div class="m-sheet-scrim" data-act="closeReader" aria-hidden="true" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50"></div>
+    <div class="m-sheet" data-modal="reader" role="dialog" aria-modal="true" aria-label="${esc(title)}" style="position:fixed;left:0;right:0;bottom:0;max-height:80vh;background:var(--panel,#1e2025);border-radius:16px 16px 0 0;display:flex;flex-direction:column;z-index:51;overflow:hidden">
       <div style="display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
         <span style="font-weight:600;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title)}</span>
-        <span data-act="closeReader" style="cursor:pointer;color:var(--faint);font-size:20px;line-height:1;padding:2px 6px">✕</span>
+        <button type="button" class="icon-btn ocbtn" data-act="closeReader" aria-label="Close" style="background:none;border:none;cursor:pointer;color:var(--faint);font-size:17px;line-height:1;padding:2px 6px">✕</button>
       </div>
       <div style="overflow-y:auto;flex:1">${mReaderBody(r)}</div>
     </div>`;

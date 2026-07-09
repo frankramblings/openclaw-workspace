@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -35,7 +36,9 @@ from pathlib import Path
 from fastapi import APIRouter, Body, Form, Request
 from fastapi.responses import JSONResponse
 
-from . import config
+from . import config, fsutil
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -51,10 +54,7 @@ _BULLET = re.compile(r"^[-*]\s+(.*)$")
 # --- small JSON-on-disk helpers ----------------------------------------------
 
 def _read_json(path: Path, default):
-    try:
-        return json.loads(path.read_text())
-    except Exception:  # noqa: BLE001
-        return default
+    return fsutil.load_json_guarded(path, default, logger=_log)
 
 
 def _write_json(path: Path, data) -> None:

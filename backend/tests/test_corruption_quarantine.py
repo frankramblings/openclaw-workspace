@@ -371,3 +371,24 @@ def test_save_connection_after_quarantine_does_not_touch_quarantined(tmp_path, m
     config.save_connection(gateway_ws="ws://box:9999")
     assert quarantined[0].read_bytes() == garbage  # untouched by the save
     assert config.load_connection() == {"gateway_ws": "ws://box:9999"}
+
+
+# --- followup.py: the last two unguarded stores -----
+
+def test_followups_corrupt_file_quarantined(tmp_path, monkeypatch):
+    from backend import followup
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    store = tmp_path / "followups.json"
+    store.write_text("{not json", encoding="utf-8")
+    assert followup._load() == {"promises": []}
+    assert not store.exists()                      # original moved, not clobbered
+    assert list(tmp_path.glob("followups.json.corrupt-*"))
+
+
+def test_memory_overlay_corrupt_file_quarantined(tmp_path, monkeypatch):
+    from backend import memory
+    monkeypatch.setattr(memory, "_OVERLAY", tmp_path / "memory_overlay.json")
+    memory._OVERLAY.write_text("{not json", encoding="utf-8")
+    assert memory._read_json(memory._OVERLAY, {}) == {}
+    assert not memory._OVERLAY.exists()
+    assert list(tmp_path.glob("memory_overlay.json.corrupt-*"))

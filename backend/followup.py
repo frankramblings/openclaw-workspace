@@ -17,12 +17,15 @@ Promise states: pending → completed | overdue | failed.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
 import uuid
 
-from . import config
+from . import config, fsutil
+
+_log = logging.getLogger(__name__)
 
 _MARKER = "[[followup]]"
 _TAIL_CAP = 4096
@@ -38,10 +41,7 @@ def _now_ms() -> int:
 
 
 def _load() -> dict:
-    try:
-        return json.loads(_store_file().read_text())
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"promises": []}
+    return fsutil.load_json_guarded(_store_file(), {"promises": []}, logger=_log)
 
 
 def _save(data: dict) -> None:
@@ -198,11 +198,8 @@ def history_card(content) -> str | None:
 
 # --- internal turn driver ------------------------------------------------------
 import asyncio  # noqa: E402 - intentionally scoped to this section (house style)
-import logging  # noqa: E402 - intentionally scoped to this section (house style)
 
 from . import bridge, sessions_store  # noqa: E402 - intentionally scoped to this section (house style)
-
-_log = logging.getLogger(__name__)
 
 # Wait-for-free-session poll interval / cap, and no-ack retry backoff.
 _BUSY_POLL_S = 2.0

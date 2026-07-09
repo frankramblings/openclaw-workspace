@@ -523,6 +523,70 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 #pwa-install-hint .pwa-hint-btn.primary { background: var(--teal); border-color: var(--teal); color: #04211f; }
 #pwa-install-hint .pwa-hint-btn.primary:active { filter: brightness(.94); }
 
+/* ---- First-run "threads live behind the hamburger" hint (mobile only) ---- */
+#threads-hint { position: fixed; inset: 0; z-index: 201; pointer-events: none; }
+#threads-hint .th-hint-scrim {
+  position: absolute; inset: 0; background: rgba(8,9,11,.36);
+  opacity: 0; transition: opacity .24s ease; pointer-events: auto;
+}
+#threads-hint.show .th-hint-scrim { opacity: 1; }
+/* Small caret pointing up at the hamburger button's rough location. */
+#threads-hint .th-hint-arrow {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 54px);
+  left: 22px;
+  width: 22px; height: 22px;
+  background: var(--panel);
+  border-left: 1px solid var(--bd); border-top: 1px solid var(--bd);
+  transform: translateY(6px) rotate(45deg); opacity: 0;
+  transition: opacity .26s ease, transform .26s cubic-bezier(.22,1,.36,1);
+  pointer-events: none;
+}
+#threads-hint.show .th-hint-arrow { opacity: 1; transform: translateY(0) rotate(45deg); }
+#threads-hint .th-hint-card {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 68px);
+  left: 12px; right: 12px;
+  background: var(--panel); border: 1px solid var(--bd); border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5); padding: 16px 16px 14px;
+  transform: translateY(-16px); opacity: 0;
+  transition: transform .26s cubic-bezier(.22,1,.36,1), opacity .26s ease;
+  pointer-events: auto;
+}
+#threads-hint.show .th-hint-card { transform: translateY(0); opacity: 1; }
+#threads-hint .th-hint-close {
+  position: absolute; top: 10px; right: 10px; width: 32px; height: 32px;
+  border: none; background: none; color: var(--mut); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+#threads-hint .th-hint-close:active { background: var(--row-hover); }
+#threads-hint .th-hint-body { padding-right: 30px; }
+#threads-hint .th-hint-title { font-size: 15.5px; font-weight: 650; color: var(--fg); margin-bottom: 4px; }
+#threads-hint .th-hint-text { font-size: 13px; line-height: 1.5; color: var(--mut); }
+#threads-hint .th-hint-text b { color: var(--fg); font-weight: 600; }
+#threads-hint .th-hint-glyph {
+  display: inline-flex; vertical-align: -4px; color: var(--teal); margin: 0 1px;
+}
+#threads-hint .th-hint-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+#threads-hint .th-hint-btn {
+  font: inherit; font-size: 13.5px; font-weight: 600; padding: 9px 16px;
+  border-radius: 11px; cursor: pointer; border: 1px solid var(--bd);
+}
+#threads-hint .th-hint-btn.primary { background: var(--teal); border-color: var(--teal); color: #04211f; }
+#threads-hint .th-hint-btn.primary:active { filter: brightness(.94); }
+
+/* Attention pulse on the hamburger while the hint is up. */
+.m-nav-btn.threads-hint-pulse {
+  position: relative; z-index: 202;
+  border-radius: 10px;
+  animation: threads-hint-pulse 1.6s ease-out infinite;
+}
+@keyframes threads-hint-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--teal) 65%, transparent); }
+  70%  { box-shadow: 0 0 0 12px color-mix(in srgb, var(--teal) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--teal) 0%, transparent); }
+}
+
 /* ---- Per-message action affordances (mobile parity with desktop msg-tools) ---- */
 
 .m-msg-toolbar {

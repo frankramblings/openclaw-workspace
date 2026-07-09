@@ -12,6 +12,7 @@ import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
+import { maybeShowThreadsHint } from './mobile/threads-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
 import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
 import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
@@ -884,6 +885,9 @@ loadActive(); // kick off live data for the initial surface
 // First-run only: on a mobile browser (not already installed), show a small,
 // easy-to-dismiss "Add to Home Screen" hint. Shares the shell's isMobile().
 maybeShowInstallHint(isMobile);
+// First-run only: point mobile users at the hamburger button + edge-swipe as
+// the two ways to see all their threads. Waits for install-hint to clear.
+maybeShowThreadsHint(isMobile);
 // Safety net: if live loading fails entirely (network down, all throws), reveal
 // after 3 s so the page doesn't stay permanently invisible.
 setTimeout(() => { if (!rootRevealed) { rootRevealed = true; root.style.visibility = ''; hideBootLoader(); } }, 3000);

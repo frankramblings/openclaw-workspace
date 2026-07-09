@@ -88,7 +88,12 @@ transient network hiccup to the offsite host), systemd reports the whole
 oneshot as failed even though the night's snapshot is already safely in the
 repository. **Always check `restic snapshots` first** before assuming the
 backup itself was lost — a failed unit with a snapshot from that night
-present is a prune failure, not a backup failure.
+present is a prune failure, not a backup failure. Two distinct
+non-data-loss signals to know: a `forget --prune` failure *after* a
+successful backup fails the unit but the snapshot exists (no data loss),
+while a `warn: stale key-bak prune failed` line in the journal is the
+pre-backup key-bak cleanup — non-fatal by design, logged only, backup
+unaffected.
 
 ```bash
 source ~/.config/openclaw-secrets/restic.env

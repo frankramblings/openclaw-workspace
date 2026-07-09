@@ -89,6 +89,14 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
+  // Any other navigation (deep link, /classic) offline → serve the app shell
+  // rather than the browser error page. Hash routing means the shell can
+  // render any route once loaded.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(fetch(e.request).catch(() => caches.match('/')));
+    return;
+  }
+
   // Other static assets (images, fonts, libs): cache-first with background
   // refresh — content-stable and heavy, so instant-from-cache is right here.
   if (url.pathname.startsWith('/static/')) {

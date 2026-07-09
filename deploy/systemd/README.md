@@ -16,7 +16,7 @@ byte-for-byte snapshot of what actually runs `~/.config/systemd/user/`, with two
 | `openclaw-gateway.service.d/tmpdir.conf` | Redirects gateway render temp off `/tmp` tmpfs onto real disk (see comment in the file — a filled tmpfs quota once crash-looped the gateway). |
 | `openclaw-tmp-reaper.{service,timer}` | Hourly cleanup of orphaned gateway render temp dirs. |
 | `openclaw-backup.{service,timer}` | Nightly restic backup of workspace + agent state. |
-| `openclaw-doctor-alert.{service,timer}` | Every-5-minutes health probe of the app + gateway, alerts on state change via ntfy. |
+| `openclaw-doctor-alert.{service,timer}` | Every-5-minutes health probe of the app + gateway, alerts on state change via ntfy; auto-restarts the workspace app after 3 consecutive failures (see `deploy/RUNBOOK.md`). |
 | `bin/openclaw-reap-tmp` | Script run by `openclaw-tmp-reaper.service`. |
 | `bin/openclaw-backup` | Script run by `openclaw-backup.service`. Reads secrets from `~/.config/openclaw-secrets/restic.env` (not included here). |
 | `bin/openclaw-doctor-alert` | Script run by `openclaw-doctor-alert.service`. Reads secrets from `~/.config/openclaw-secrets/alerts.env` (not included here). |

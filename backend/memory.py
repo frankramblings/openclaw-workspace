@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -35,7 +36,9 @@ from pathlib import Path
 from fastapi import APIRouter, Body, Form, Request
 from fastapi.responses import JSONResponse
 
-from . import config
+from . import config, fsutil
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -51,10 +54,22 @@ _BULLET = re.compile(r"^[-*]\s+(.*)$")
 # --- small JSON-on-disk helpers ----------------------------------------------
 
 def _read_json(path: Path, default):
-    try:
-        return json.loads(path.read_text())
-    except Exception:  # noqa: BLE001
-        return default
+    """Read JSON from disk, with asymmetric error handling.
+
+    Corrupt JSON (JSONDecodeError, invalid UTF-8) is quarantined (elsewhere)
+    and degrades to the default — no data is lost because corruption is
+    detected and the user can recover from a quarantined .corrupt-* file.
+
+    Missing file returns default; other OSErrors (PermissionError, EIO,
+    IsADirectoryError) deliberately PROPAGATE. Several callers are
+    read-modify-write: update_memory, delete_memory, pin_memory, put_pref.
+    If a failed read degraded to default, the next write would overwrite the
+    store with empty state — the exact data-loss class this task closes. A
+    loud 500 is the safe failure here, unlike terminals.read_meta, which
+    deliberately degrades because raising would 500 its routes and tear down
+    the terminal WS (accepting a narrower meta-wipe risk).
+    """
+    return fsutil.load_json_guarded(path, default, logger=_log)
 
 
 def _write_json(path: Path, data) -> None:

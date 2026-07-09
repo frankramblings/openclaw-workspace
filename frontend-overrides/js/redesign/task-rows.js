@@ -63,13 +63,22 @@ const KIND_COLOR = {
 // Once set, we NEVER change it — the row lives in that specific bubble.
 const _tasks = new Map();
 
-function buildRow(task) {
-  const row = document.createElement('div');
-  row.className = 'task-row';
-  row.setAttribute('data-task-id', task.id);
-  row.innerHTML = `
+// Pure template for the row's static skeleton. The only dynamic value is
+// task.kind (agent-derived — written into share/tasks/<id>/progress.json by
+// whatever wrote the task, see workspace_files.py `/api/tasks/active`), used
+// here only as a lookup key into the hardcoded KIND_COLOR map — never
+// interpolated as a raw string. An unrecognized/hostile task.kind can only
+// ever select the map's own fixed values or the hardcoded fallback, so no
+// attacker-controlled text ever reaches this innerHTML sink. All other task
+// fields (label, detail, error, …) are rendered later via textContent in
+// paint(), not through this template. Exported so the whitelist behavior can
+// be pinned by a test without needing a DOM.
+export function taskRowHtml(task) {
+  const dotColor = Object.prototype.hasOwnProperty.call(KIND_COLOR, task.kind)
+    ? KIND_COLOR[task.kind] : 'var(--faint)';
+  return `
     <div class="task-head">
-      <span class="task-dot" style="background:${KIND_COLOR[task.kind] || 'var(--faint)'}"></span>
+      <span class="task-dot" style="background:${dotColor}"></span>
       <span class="task-label shimmer"></span>
       <span class="task-badge"></span>
       <span class="task-oc-spacer"></span>
@@ -88,6 +97,13 @@ function buildRow(task) {
       <span class="task-err"></span>
     </div>
   `;
+}
+
+function buildRow(task) {
+  const row = document.createElement('div');
+  row.className = 'task-row';
+  row.setAttribute('data-task-id', task.id);
+  row.innerHTML = taskRowHtml(task);
   return {
     row,
     refs: {

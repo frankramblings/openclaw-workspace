@@ -7,8 +7,14 @@ this doc is about running and recovering the already-installed system.
 ## Deploy
 
 ```bash
-git pull && scripts/sync-frontend.sh && \
-  systemctl --user restart openclaw-workspace.service && \
+git pull && scripts/sync-frontend.sh
+
+# Guard: confirm current state before serving
+git -C ~/openclaw-workspace status --porcelain | grep -q . \
+  && echo "⚠ dirty tree — you are about to serve uncommitted code" || true
+git -C ~/openclaw-workspace branch --show-current   # confirm it's the branch you mean
+
+systemctl --user restart openclaw-workspace.service && \
   scripts/smoke.sh http://127.0.0.1:8800
 ```
 
@@ -17,6 +23,16 @@ git pull && scripts/sync-frontend.sh && \
 old frontend even after a restart. The restart is the app-only unit; the
 gateway (`openclaw-gateway.service`) doesn't need restarting for a workspace
 code change.
+
+### Deploy checkout policy
+
+Production runs against the live working tree (`~/openclaw-workspace`), not a
+separate deploy clone. A restart executes whatever is currently checked out
+— this is intentional and safe while the project is single-person, single-machine
+(matches the test-on-live workflow). The pre-restart guard above warns if the
+tree has uncommitted changes and echoes the current branch so the operator sees
+what they're about to serve. **Revisit using a pinned `~/openclaw-deploy` clone
+on main if a second contributor or machine appears.**
 
 ## Service management
 
@@ -88,7 +104,12 @@ transient network hiccup to the offsite host), systemd reports the whole
 oneshot as failed even though the night's snapshot is already safely in the
 repository. **Always check `restic snapshots` first** before assuming the
 backup itself was lost — a failed unit with a snapshot from that night
-present is a prune failure, not a backup failure.
+present is a prune failure, not a backup failure. Two distinct
+non-data-loss signals to know: a `forget --prune` failure *after* a
+successful backup fails the unit but the snapshot exists (no data loss),
+while a `warn: stale key-bak prune failed` line in the journal is the
+pre-backup key-bak cleanup — non-fatal by design, logged only, backup
+unaffected.
 
 ```bash
 source ~/.config/openclaw-secrets/restic.env
@@ -100,6 +121,38 @@ restic restore latest --target /tmp/restore-check    # restore-and-verify withou
 
 Restore into `/tmp/restore-check` (or any scratch path), diff/inspect, then
 copy back only what you need — never restore directly over live state.
+
+### Restore drill
+
+The nightly backup is only as good as its last proven restore. Run this
+drill periodically to confirm the repository actually yields usable data,
+not just successful `backup` runs:
+
+```bash
+source ~/.config/openclaw-secrets/restic.env
+export RESTIC_PASSWORD RESTIC_REPOSITORY
+
+restic restore latest --target ~/.cache/restic-drill --include '**/sessions.json'
+python3 -c "import json,glob; [json.load(open(f)) for f in glob.glob('$HOME/.cache/restic-drill/**/sessions.json', recursive=True)]"
+# spot-check the restored session count against the live count is plausible
+# (same order of magnitude — don't expect an exact match, live state drifts
+# between the last snapshot and now)
+rm -rf ~/.cache/restic-drill
+```
+
+Pass criteria: the restored `sessions.json` parses as valid JSON and its
+session count is in the same ballpark as the live count. Always clean up
+the drill target afterward — it's scratch space, not a second copy to keep
+around.
+
+**Drill log:**
+
+- 2026-07-09: PASSED — 369 sessions restored vs 375 live (plausible drift,
+  same order of magnitude). Drill dir cleaned up after.
+
+**Repeat quarterly** — a backup pipeline that silently stops producing
+restorable snapshots is worse than no backup at all, since it hides the
+failure until the moment you actually need it.
 
 ## Alerting
 
@@ -117,3 +170,29 @@ webhook, etc.) — the script just does `curl -d "$body" "$NTFY_URL"`. A
 structured target (e.g. a Slack incoming webhook expecting
 `{"text": "..."}`) needs the script's `notify()` body reshaped, not just a
 URL swap.
+
+**Auto-restart escalation (workspace only, never the gateway).** A wedged-but-
+listening workspace app can fail `/api/health` forever without recovering on
+its own, so 3 CONSECUTIVE workspace-probe failures (≈10-15 min wedged)
+trigger `systemctl --user restart openclaw-workspace` and an
+`AUTO-RESTART: ...` notify, gated by a 1-hour cooldown so a crash-looping
+service can't be restarted more than once/hour even across brief recoveries.
+A gateway-only failure (workspace answers 200 while the gateway is
+`down`/unreachable) never counts toward this — the gateway's own restart is
+a normal 4-5 min cold boot and is exempt from auto-restart entirely. The
+consecutive-fail count, last-restart timestamp and boot id live in
+`~/.cache/openclaw-doctor-alert.fails`
+(`"<count> <last_restart_unix-ts> <boot-id>"`, written atomically like the
+state file above); a workspace-ok probe resets the count to 0 but preserves
+the cooldown timestamp, and a boot id that doesn't match the current
+`/proc/sys/kernel/random/boot_id` resets the count too, so strikes from
+before a reboot can't restart a still-booting service. The cooldown stamp
+is written *before* the restart fires: if the script dies in between, the
+worst case is one suppressed restart for one cooldown window while DOWN
+alerts keep paging — safer than the reverse, which could double-restart.
+Delete the file to clear everything. `DOCTOR_DRYRUN=1` prints
+`would restart openclaw-workspace` instead of restarting, skips the notify,
+and leaves the counter/cooldown exactly as a non-triggering run would (it
+never stamps the cooldown or resets the count), so a dry run against live
+state cannot suppress a later real restart — still, use it only against an
+overridden `HOME`/`HEALTH_URL`, never against the live install.

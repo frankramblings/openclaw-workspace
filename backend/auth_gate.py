@@ -173,8 +173,14 @@ class AuthGateMiddleware:
 
         # Authenticated via ?token= → set the cookie by rewriting ONLY the
         # response start headers; the body stream passes through untouched.
+        # Secure is appended when the request arrived over HTTPS, directly or
+        # via Tailscale Serve's X-Forwarded-Proto — the app itself is served
+        # plain-HTTP on loopback; Serve terminates TLS in front of it.
+        hdrs = dict(scope.get("headers", []))
+        https = (scope.get("scheme") == "https"
+                 or hdrs.get(b"x-forwarded-proto", b"").decode() == "https")
         cookie = (f"{_COOKIE_NAME}={provided}; HttpOnly; SameSite=Lax; "
-                  f"Path=/; Max-Age={_COOKIE_MAX_AGE}")
+                  f"Path=/; Max-Age={_COOKIE_MAX_AGE}" + ("; Secure" if https else ""))
 
         async def send_with_cookie(message):
             if message["type"] == "http.response.start":

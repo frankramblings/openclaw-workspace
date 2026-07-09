@@ -562,10 +562,23 @@ def load_tail(session_key: str, limit: int = MAX_BUFFER) -> str:
     return data[-limit:].decode("utf-8", "replace")
 
 
+# See sessions_store.SCHEMA_VERSION for the contract: absent = legacy (ok, no
+# warning), higher-than-known = a downgrade (an older app version, or a
+# rollback), logged so fields silently dropped on the next save don't go
+# unnoticed. Scoped to THIS per-session meta.json only -- it's a real
+# document of named fields (persist/last_active/last_cwd) that can grow or
+# rename fields over time. The sibling attachment registry
+# (_load_attachments/_save_attachments) is a flat {token: record} map with no
+# envelope; a top-level "schema_version" key there would be indistinguishable
+# from an attachment token and corrupt callers that iterate reg.items()
+# expecting every value to be a record dict, so it's deliberately excluded.
+SCHEMA_VERSION = 1
+
+
 def read_meta(session_key: str) -> dict:
     path = persist_meta_path(session_key)
     try:
-        return fsutil.load_json_guarded(path, {}, logger=log)
+        meta = fsutil.load_json_guarded(path, {}, logger=log)
     except OSError:
         # Missing file already returns {} inside load_json_guarded; this
         # catches the OTHER OSErrors (PermissionError, IsADirectoryError,
@@ -576,11 +589,19 @@ def read_meta(session_key: str) -> dict:
         # stays put (no quarantine), we just run with defaults and log.
         log.warning("terminal meta unreadable %s", path, exc_info=True)
         return {}
+    version = meta.get("schema_version")
+    if isinstance(version, int) and version > SCHEMA_VERSION:
+        log.warning(
+            "%s schema_version %s is newer than this app knows how to read "
+            "(%s) -- an older app version, or a downgrade; some fields may "
+            "be ignored", path.name, version, SCHEMA_VERSION)
+    return meta
 
 
 def write_meta(session_key: str, **fields) -> dict:
     meta = read_meta(session_key)
     meta.update(fields)
+    meta["schema_version"] = SCHEMA_VERSION
     d = persist_dir(session_key)
     try:
         d.mkdir(parents=True, exist_ok=True)

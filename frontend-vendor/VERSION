@@ -9,11 +9,10 @@ checkout — see "upstream revision" below.
 
   https://github.com/pewdiepie-archdaemon/odysseus (AGPL-3.0-or-later)
 
-upstream Odysseus revision unrecorded — record it on the next vendor refresh.
-(No commit/tag/checkout date for the exact upstream snapshot that
-frontend-vendor/ was originally vendored from was captured at vendoring time;
-this VERSION file did not exist yet. From this point forward, whoever runs the
-refresh command below should paste the upstream commit hash/tag here.)
+Vendored from Odysseus on 2026-06-08. Upstream repository was deleted at
+vendoring time (commit 00d633d); upstream commit hash not recoverable.
+The next vendor refresh MUST record the exact upstream commit hash to ensure
+reproducibility (see Refresh command section below for workflow).
 
 ## This repo's vendor-touching history
 

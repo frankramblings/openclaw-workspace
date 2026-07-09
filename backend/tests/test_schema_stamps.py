@@ -1,17 +1,26 @@
-"""Task 15: schema-version stamps on sessions_store and inbox.state.
+"""Task 15/7: schema-version stamps on the mutable JSON stores: sessions_store,
+inbox.state, followup, and terminals' per-session meta.json.
 
-Both stores now write "schema_version": SCHEMA_VERSION on every save. Loaders
-must accept a file with no schema_version at all (legacy, pre-Task-15 data --
-treated as fine, no warning) and log.warning when a loaded file's version is
-HIGHER than the version this code knows about (a downgrade: an older app
-build reading data a newer build wrote). Neither case may break the existing
-round-trip behavior."""
+Every store here writes "schema_version": SCHEMA_VERSION on every save.
+Loaders must accept a file with no schema_version at all (legacy, pre-stamp
+data -- treated as fine, no warning) and log.warning when a loaded file's
+version is HIGHER than the version this code knows about (a downgrade: an
+older app build reading data a newer build wrote). Neither case may break the
+existing round-trip behavior.
+
+terminals' OTHER JSON store -- the per-session attachment registry written by
+_load_attachments/_save_attachments -- is deliberately NOT stamped here: it's
+a flat {token: record} map with no envelope, so a top-level "schema_version"
+key would be indistinguishable from an attachment token and would corrupt
+list_attachments()'s `for token, e in reg.items(): e.get("pending")` (e would
+be the int 1, not a dict). Stamping it would require restructuring to an
+enveloped shape, which is out of scope for a same-pattern replication."""
 from __future__ import annotations
 
 import json
 import logging
 
-from backend import sessions_store
+from backend import followup, sessions_store, terminals
 from backend.inbox import state as inbox_state
 
 # --- sessions_store ------------------------------------------------------------
@@ -125,5 +134,126 @@ def test_inbox_state_higher_schema_version_logs_warning(tmp_path, monkeypatch, c
     assert result is True  # still loads, best-effort
     assert any(
         "schema_version" in r.getMessage() and str(s.SCHEMA_VERSION + 1) in r.getMessage()
+        for r in caplog.records
+    )
+
+
+# --- followup ---------------------------------------------------------------
+# (conftest.py's autouse _isolated_data_dir fixture points config.DATA_DIR at
+# a tmp path per test; followup._store_file() resolves it at call time.)
+
+
+def _legacy_promise(pid: str) -> dict:
+    return {"id": pid, "session_id": "s", "session_key": "k", "label": "t",
+            "state": "pending", "created": 1, "deadline_ms": 0, "pinged": 0,
+            "exit_code": None, "duration_s": None, "tail": "", "fired": 0,
+            "error": ""}
+
+
+def test_followup_save_stamps_schema_version():
+    followup.create_promise("s1", "k1", "task", 60)
+    on_disk = json.loads(followup._store_file().read_text())
+    assert on_disk["schema_version"] == followup.SCHEMA_VERSION
+
+
+def test_followup_round_trips_normally_after_stamping():
+    p = followup.create_promise("s1", "k1", "task", 60)
+    followup.record_completion(p["id"], exit_code=0, duration_s=1, tail="ok")
+    got = followup.get_promise(p["id"])
+    assert got["exit_code"] == 0
+    assert got["state"] == "pending"
+
+
+def test_followup_loads_legacy_file_with_no_schema_version():
+    followup._store_file().parent.mkdir(parents=True, exist_ok=True)
+    legacy = {"promises": [_legacy_promise("abc")]}
+    followup._store_file().write_text(json.dumps(legacy))  # no schema_version key
+
+    promises = followup.list_promises()
+
+    assert [p["id"] for p in promises] == ["abc"]
+    # the next save re-stamps the file going forward
+    followup.mark("abc", "completed")
+    on_disk = json.loads(followup._store_file().read_text())
+    assert on_disk["schema_version"] == followup.SCHEMA_VERSION
+
+
+def test_followup_legacy_file_load_does_not_warn(caplog):
+    followup._store_file().parent.mkdir(parents=True, exist_ok=True)
+    followup._store_file().write_text(json.dumps({"promises": []}))
+    with caplog.at_level(logging.WARNING, logger="backend.followup"):
+        followup.list_promises()
+    assert not any("schema_version" in r.getMessage() for r in caplog.records)
+
+
+def test_followup_higher_schema_version_logs_warning(caplog):
+    followup._store_file().parent.mkdir(parents=True, exist_ok=True)
+    future = {"promises": [_legacy_promise("x")],
+              "schema_version": followup.SCHEMA_VERSION + 1}
+    followup._store_file().write_text(json.dumps(future))
+
+    with caplog.at_level(logging.WARNING, logger="backend.followup"):
+        promises = followup.list_promises()
+
+    assert [p["id"] for p in promises] == ["x"]  # still loads, best-effort
+    assert any(
+        "schema_version" in r.getMessage() and str(followup.SCHEMA_VERSION + 1) in r.getMessage()
+        for r in caplog.records
+    )
+
+
+# --- terminals: per-session meta.json ----------------------------------------
+# (read_meta/write_meta are the real evolvable per-session document -- named
+# fields like persist/last_active/last_cwd. The attachment registry is
+# deliberately excluded; see the module docstring above.)
+
+
+def test_terminal_meta_save_stamps_schema_version():
+    terminals.write_meta("meta-key", persist=True)
+    on_disk = json.loads(terminals.persist_meta_path("meta-key").read_text())
+    assert on_disk["schema_version"] == terminals.SCHEMA_VERSION
+
+
+def test_terminal_meta_round_trips_normally_after_stamping():
+    terminals.write_meta("meta-key", last_cwd="/tmp")
+    assert terminals.read_meta("meta-key")["last_cwd"] == "/tmp"
+
+
+def test_terminal_meta_loads_legacy_file_with_no_schema_version():
+    key = "legacy-meta"
+    terminals.persist_dir(key).mkdir(parents=True, exist_ok=True)
+    legacy = {"persist": True, "last_cwd": "/tmp"}
+    terminals.persist_meta_path(key).write_text(json.dumps(legacy))  # no schema_version key
+
+    meta = terminals.read_meta(key)
+
+    assert meta["last_cwd"] == "/tmp"
+    # the next save re-stamps the file going forward
+    terminals.write_meta(key, last_active=1.0)
+    on_disk = json.loads(terminals.persist_meta_path(key).read_text())
+    assert on_disk["schema_version"] == terminals.SCHEMA_VERSION
+
+
+def test_terminal_meta_legacy_file_load_does_not_warn(caplog):
+    key = "legacy-meta-2"
+    terminals.persist_dir(key).mkdir(parents=True, exist_ok=True)
+    terminals.persist_meta_path(key).write_text(json.dumps({}))
+    with caplog.at_level(logging.WARNING, logger="backend.terminals"):
+        terminals.read_meta(key)
+    assert not any("schema_version" in r.getMessage() for r in caplog.records)
+
+
+def test_terminal_meta_higher_schema_version_logs_warning(caplog):
+    key = "future-meta"
+    terminals.persist_dir(key).mkdir(parents=True, exist_ok=True)
+    future = {"persist": True, "schema_version": terminals.SCHEMA_VERSION + 1}
+    terminals.persist_meta_path(key).write_text(json.dumps(future))
+
+    with caplog.at_level(logging.WARNING, logger="backend.terminals"):
+        meta = terminals.read_meta(key)
+
+    assert meta["persist"] is True  # still loads, best-effort
+    assert any(
+        "schema_version" in r.getMessage() and str(terminals.SCHEMA_VERSION + 1) in r.getMessage()
         for r in caplog.records
     )

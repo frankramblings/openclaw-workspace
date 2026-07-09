@@ -465,7 +465,28 @@ The single biggest remaining mass: ~86K lines, 1.08 MB `style.css`, 24 test file
 
 #### Task 18: Parity gate → stop shipping → remove route → delete vendor tree
 
-- [ ] **Step 1 (Frank, parity gate):** List classic-only capabilities still in use, if any: `grep -n "classic" backend/app.py`, review `index-classic.html` feature surface vs redesign (note: `origin/inbox-classic-port` suggests inbox parity was already ported). One week of redesign-only use with zero `/classic` visits (grep access pattern via journald or add a counter log line to the `/classic` route) = gate passed.
+- [x] **Step 1 (Frank, parity gate):** List classic-only capabilities still in use, if any: `grep -n "classic" backend/app.py`, review `index-classic.html` feature surface vs redesign (note: `origin/inbox-classic-port` suggests inbox parity was already ported). One week of redesign-only use with zero `/classic` visits (grep access pattern via journald or add a counter log line to the `/classic` route) = gate passed.
+
+  Scoped to instrumentation + the capability list only (2026-07-09) — see below. Retirement (Steps 2-5) stays deferred pending the soak week; nothing was removed.
+
+#### Parity gate inputs (2026-07-09)
+
+Instrumentation landed: `backend/app.py`'s `/classic` route now emits `_log.info("classic UI served")` on every hit (byte-identical response otherwise), covered by `backend/tests/test_classic_route.py` (200 HTML + exactly one INFO log record containing "classic", via `caplog`). Findings below feed the parity gate; retirement itself stays gated on the soak criteria at the bottom.
+
+**Classic-only capabilities found** — method: `grep -n "classic" backend/app.py`, plus a script/module-include diff of `frontend-overrides/index-classic.html` (2513 lines, full flat `<script>`/`<link modulepreload>` list) vs `frontend-overrides/index.html` (94 lines, loads only `js/redesign/app.js` + `dualDragInit.js` and lazy-loads the rest through its own ESM graph under `js/redesign/{live,mobile}/*.js`):
+
+1. **9 GET endpoints called only by classic's JS** (documented at `app.py:904-907`, the Task 19 legacy-stub block): `/api/fonts/custom`, `/api/signatures`, `/api/contacts/search`, `/api/sessions/archived`, `/api/chat/stream_status/{id}`, `/api/model-endpoints/probe-local`, `/api/document/{id}/export-pdf`, `/api/document/{id}/render-pages`, `/api/email/attachment/{uid}/{index}`. **Verified: all 9 are already dead on the backend.** Each is wired only to `_legacy_get_stub` (`app.py:918`), which returns `[]` plus a deprecation WARNING — none has a real implementation. Classic's own callers (`js/theme.js`, `js/document.js`, `js/emailLibrary.js`, `js/sessions.js`, `js/chat.js`) already silently degrade to empty results / no-ops in production today. This is not a live capability gap — it's inert legacy code on both ends of the wire.
+2. **~50 extra flat script/link tags in index-classic.html** with no direct counterpart in index.html's markup (`app.js`/`init.js`, `activity-tree.js`, `admin.js`, `censor.js`, `cookbook.js`, `compare/index.js`, `keyboard-shortcuts.js`, `tourHints.js`/`tourAutoplay.js`, `vaultLinks.js`, `workspace-terminal*.js`, etc.). Expected, not a gap: the redesign lazy-loads the equivalent surface through `js/redesign/app.js`'s own module graph (`live/*.js` has 18 files including `chat.js`, `email.js`, `document-editor.js`, `inbox*.js`, `notes.js`, `calendar.js`, `research.js`, `terminal.js`, `settings.js`; `mobile/*.js` has 11 more) rather than top-level `<script>` tags, so a raw tag diff overstates the difference.
+3. **Inbox** — `origin/inbox-classic-port` claim verified rather than trusted: `docs/specs/2026-06-25-inbox-classic-port-design.md` (commit `c029a55`) plus the subsequent `feat(inbox)` commit series (Inbox v2 phases 1-4, entities collector/classifier, triage-with-Gary, swipe-undo) landed in `frontend-overrides/js/redesign/live/inbox.js`, `inbox-detail.js`, `inbox-logic.js`. No inbox-only gap remains.
+4. **Document editor** — the 2026-07-08 "classic still has gaps" note was a real redesign bug, now fixed: commit `ada77cf` (2026-07-09, this branch) hardened `document-editor.js`'s `saveDoc` so a 502/503 save response no longer silently marks the doc "Saved" and clears `dirty` (autosave retry was being killed). That was a redesign correctness bug, not a missing capability relative to classic — closed.
+5. No remaining classic-only *working* capability was found beyond items 1-2, neither of which is functional.
+
+**Redesign-equivalent status per item:** (1) N/A — already non-functional in classic, nothing to port. (2) covered — redesign's own lazy-loaded module graph is the equivalent. (3) ported — verified via spec + commit history. (4) fixed — was a bug, not a gap. Everything else `/classic` serves is HTML/CSS/JS delivery superseded by the redesign's own bundle.
+
+**Hard blockers for retirement:** none found at the capability level. Steps 2-5 remain deferred solely on the soak-week schedule, not on unresolved parity.
+
+**Soak criteria (gates Steps 2-5):** one full week of `journalctl --user -u openclaw-workspace | grep -c "classic UI served"` returning `0`, starting from when this instrumentation commit deploys. Non-zero at the end of the week means someone/something is still hitting `/classic` — re-investigate before proceeding to Step 2.
+
 - [ ] **Step 2 (safety):** `git tag classic-ui-final` on the last commit shipping it.
 - [ ] **Step 3:** In `scripts/sync-frontend.sh`, remove classic modules, `index-classic.html`, legacy `app.js`/`style.css`, and ALL `__tests__/*.test.js` from the sync set (the audit located these globs near `sync-frontend.sh:371-376`; re-locate after the fail-loud refactor). Re-sync; `du -sh frontend/` before/after — expect roughly 3–4× smaller.
 - [ ] **Step 4:** Replace the `/classic` route (`app.py` `_spa_html("index-classic.html")` site) with `HTTPException(410)` and a body pointing at `/`. Update its test if one exists; full suite green.

@@ -14,6 +14,7 @@ import json
 import os
 import re
 import tomllib
+from datetime import datetime, timezone
 from email.policy import default as _email_policy
 from email.utils import parseaddr
 from pathlib import Path
@@ -23,6 +24,7 @@ from fastapi.responses import JSONResponse
 
 from . import bridge, config, himalaya_cli
 from .calendar_invite import parse_ics_calendar
+from .inbox import calendar_invite
 
 router = APIRouter()
 
@@ -87,6 +89,21 @@ def _flag(flags, name) -> bool:
     return any(str(f).lower() == name.lower() for f in (flags or []))
 
 
+_INVITE_SUBJECT_RE = re.compile(
+    r"^\s*(updated invitation|invitation|canceled event|updated event)\s*:",
+    re.I)
+
+
+def is_invite_candidate(subject: str, has_attachment: bool,
+                        from_addr: str = "") -> bool:
+    """Cheap envelope-only guess that an email is a calendar invite, so the
+    expensive .ics body read is bounded to likely candidates. Confirmed only by
+    calendar_invite.extract_invite after a read."""
+    if not has_attachment:
+        return False
+    return bool(_INVITE_SUBJECT_RE.match(subject or ""))
+
+
 def envelope_to_email(env: dict) -> dict:
     """One himalaya envelope -> the list-row shape emailInbox.js renders."""
     frm = env.get("from") or {}
@@ -105,6 +122,9 @@ def envelope_to_email(env: dict) -> dict:
         "is_answered": _flag(flags, "Answered"),
         "is_spam_verdict": False,
         "has_attachments": bool(env.get("has_attachment")),
+        "is_invite_candidate": is_invite_candidate(
+            env.get("subject") or "", bool(env.get("has_attachment")),
+            (frm.get("addr") or frm.get("address") or "")),
         "tags": [],
     }
 
@@ -382,6 +402,75 @@ async def email_send(payload: dict = Body(...)):
     except himalaya_cli.HimalayaError as exc:
         return JSONResponse(status_code=502, content={"error": str(exc)})
     return {"ok": True, "sent": True}
+
+
+# --- calendar RSVP -----------------------------------------------------------
+
+def build_calendar_reply_mime(*, to: str, subject: str, attendee: str,
+                              ics: str, status: str) -> bytes:
+    """A multipart/alternative reply: a human one-liner + the REPLY .ics part."""
+    verb = {"accepted": "has accepted", "tentative": "has tentatively accepted",
+            "declined": "has declined"}.get(status, "has responded to")
+    m = email.message.EmailMessage()
+    m["From"] = _from_header()
+    m["To"] = to
+    m["Subject"] = subject
+    m.set_content(f"{attendee} {verb} this invitation.")
+    m.add_alternative(ics, subtype="calendar",
+                      params={"method": "REPLY", "charset": "UTF-8",
+                              "component": "VEVENT"})
+    return m.as_bytes()
+
+
+async def perform_rsvp(uid: str, folder: str, status: str) -> dict:
+    """Send a REPLY to the organizer, mark the email Seen, and move it out of
+    INBOX. Yes/Maybe -> Archive, No -> Trash. Shared by the inbox action branch
+    and POST /api/email/rsvp. Raises CalendarError when the message isn't an
+    actionable invite."""
+    if status not in calendar_invite._PARTSTAT:
+        raise calendar_invite.CalendarError(f"invalid RSVP status '{status}'")
+    raw = await himalaya_cli.run_raw(
+        ["message", "export", uid, "-F", "-f", folder])
+    invite = calendar_invite.extract_invite(raw)
+    if invite is None:
+        raise calendar_invite.CalendarError("not a calendar invitation")
+    if not invite.get("organizer_email"):
+        raise calendar_invite.CalendarError("invite has no organizer to reply to")
+    dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ics = calendar_invite.build_reply(invite, ACCOUNT_ADDRESS, status, dtstamp)
+    mime = build_calendar_reply_mime(
+        to=invite["organizer_email"],
+        subject=calendar_invite.reply_subject(status, invite["summary"]),
+        attendee=ACCOUNT_ADDRESS, ics=ics, status=status)
+    await _himalaya_with_retry(["message", "send"], stdin=mime)
+    try:  # export doesn't set \Seen; honor mark-read explicitly
+        await himalaya_cli.run_raw(["flag", "add", uid, "Seen", "-f", folder])
+    except himalaya_cli.HimalayaError:
+        pass
+    dest = ARCHIVE_FOLDER if status != "declined" else TRASH_FOLDER
+    await move_message(uid, folder, dest)
+    return {"status": status, "moved_to": dest}
+
+
+@router.post("/api/email/rsvp/{uid}")
+async def email_rsvp(uid: str, payload: dict = Body(default=None),
+                     folder: str = "INBOX"):
+    payload = payload or {}
+    status = (payload.get("rsvp") or "").lower()
+    fld = payload.get("folder") or folder
+    if status not in calendar_invite._PARTSTAT:
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": "rsvp must be "
+                                     "accepted|tentative|declined"})
+    try:
+        result = await perform_rsvp(uid, fld, status)
+    except calendar_invite.CalendarError as exc:
+        return JSONResponse(status_code=400,
+                            content={"ok": False, "error": str(exc)})
+    except himalaya_cli.HimalayaError as exc:
+        return JSONResponse(status_code=502,
+                            content={"ok": False, "error": str(exc)})
+    return {"ok": True, **result}
 
 
 # --- draft: save a composed message into Gmail Drafts (no send) ---------------

@@ -38,8 +38,8 @@ Point it at a fresh upstream `static/` checkout to build+smoke-test against
 the new version before committing it. To actually refresh the vendored copy
 (not just build against it once), replace this directory's contents with the
 new upstream tree (see docs/SHIPPING.md "Tier 1.5" for the original vendoring
-process: revert workspace-specific renames back to "Odysseus"/`__AGENT_NAME__`
-tokens, strip override-derived files that `frontend-overrides/` re-adds at
+process: revert workspace-specific renames back to "Odysseus" / the agent-name
+placeholder tokens, strip override-derived files that `frontend-overrides/` re-adds at
 sync time), then re-run `scripts/sync-frontend.sh` (no ODYSSEUS_STATIC) and
 verify it still builds clean — the DRIFT gate at the bottom of the script will
 fail loudly (`FATAL: vendor drift`) if any anchor-guarded patch (Gary

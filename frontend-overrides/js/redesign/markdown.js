@@ -31,15 +31,20 @@ function workspacePath(url) {
   const s = String(url || '').trim();
   const tilde = '~/.openclaw/workspace/';
   const marker = '/.openclaw/workspace/';
-  if (s.startsWith(tilde)) return s.slice(tilde.length);
+  if (s.startsWith(tilde)) return { path: s.slice(tilde.length), root: 'workspace' };
   const i = s.indexOf(marker);
-  if (i >= 0) return s.slice(i + marker.length);
-  return s;
+  if (i >= 0) return { path: s.slice(i + marker.length), root: 'workspace' };
+  // ~/… paths outside the vault (e.g. ~/.openclaw/skill-workshop/…, ~/meetings/…,
+  // ~/.claude/…) go through the `home` root allowlist in workspace_files.py.
+  if (s.startsWith('~/')) return { path: s.slice(2), root: 'home' };
+  return { path: s, root: 'workspace' };
 }
 
 function link(text, url) {
   if (isVaultPath(url)) {
-    return `<span class="file-link" data-act="wsOpenFile" data-arg="${esc(workspacePath(url))}">${text}</span>`;
+    const { path, root } = workspacePath(url);
+    const rootAttr = root === 'workspace' ? '' : ` data-root="${esc(root)}"`;
+    return `<span class="file-link" data-act="wsOpenFile" data-arg="${esc(path)}"${rootAttr}>${text}</span>`;
   }
   return `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 }

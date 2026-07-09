@@ -47,6 +47,112 @@ _BINARY_EXTS = {
     ".m4a", ".webm", ".woff", ".woff2", ".ttf", ".otf", ".eot",
 }
 
+# Text-file suffix policy for reads under the `home` root. The `workspace` root
+# stays permissive (you own it); `home` exposes `$HOME` and needs guardrails so
+# a browser session on the tailnet can't read credential material. Two checks:
+# (1) suffix (or extensionless basename) must be on the allowlist below;
+# (2) even then, a small denylist of "text-formatted secrets" refuses hard.
+# After both pass, the read path still applies the UTF-8 + size guard.
+_HOME_TEXT_SUFFIXES = {
+    # Prose / markdown / notebooks
+    ".md", ".markdown", ".mdx", ".txt", ".text", ".rst", ".adoc", ".org",
+    ".tex", ".ltx", ".bib", ".sty", ".cls", ".rmd", ".qmd", ".ipynb",
+    # Structured data / config
+    ".json", ".jsonl", ".ndjson", ".yaml", ".yml", ".toml", ".ini", ".cfg",
+    ".conf", ".properties", ".csv", ".tsv", ".xml", ".xsd", ".xsl", ".xslt",
+    ".plist", ".opml", ".rss", ".atom",
+    # IDL / schema
+    ".proto", ".thrift", ".capnp", ".fbs", ".graphql", ".gql", ".prisma",
+    ".smithy", ".openapi", ".asyncapi",
+    # Web / markup
+    ".html", ".htm", ".xhtml", ".css", ".scss", ".sass", ".less", ".styl",
+    ".svg", ".vue", ".svelte", ".astro",
+    # Shell / scripting
+    ".sh", ".bash", ".zsh", ".fish", ".ksh", ".csh", ".ps1", ".psm1",
+    ".psd1", ".bat", ".cmd", ".awk", ".sed",
+    # Mainstream code
+    ".py", ".pyi", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".coffee",
+    ".rb", ".erb", ".rbs",
+    ".go", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp", ".cxx", ".hxx",
+    ".m", ".mm", ".swift",
+    ".java", ".kt", ".kts", ".scala", ".groovy", ".clj", ".cljs", ".cljc", ".edn",
+    ".ex", ".exs", ".erl", ".hrl", ".elm", ".ml", ".mli", ".hs", ".lhs", ".purs",
+    ".nim", ".cr", ".zig", ".d", ".dart", ".lua", ".tcl", ".pl", ".pm",
+    ".r", ".jl",
+    ".fs", ".fsi", ".fsx", ".cs", ".csx", ".vb", ".vbs",
+    # DB / query
+    ".sql", ".psql", ".cql",
+    # Diffs / patches / logs
+    ".diff", ".patch", ".log", ".out", ".err",
+    # Subtitles / captions
+    ".srt", ".vtt", ".ass", ".ssa", ".sub",
+    # Build files (extension form)
+    ".gradle", ".sbt", ".gemspec", ".rockspec", ".nimble", ".opam", ".cabal",
+    # Backups
+    ".bak", ".old", ".orig", ".new", ".tmp", ".swp",
+    # Misc
+    ".skill", ".editorconfig", ".gitignore", ".gitattributes", ".gitmodules",
+}
+
+# Extensionless files with these basenames are always readable under `home`.
+_HOME_TEXT_BASENAMES = {
+    "readme", "changelog", "license", "notice", "authors", "contributors",
+    "version", "todo", "copying",
+    "makefile", "gnumakefile", "dockerfile", "containerfile",
+    "brewfile", "gemfile", "rakefile", "podfile", "fastfile", "vagrantfile",
+    "procfile", "justfile", "pipfile", "cargofile",
+}
+
+# Text-formatted credential material. Always refused under `home`, even if a
+# broader suffix would have allowed it.
+_HOME_DENY_SUFFIXES = {
+    ".env", ".pem", ".key", ".p12", ".pfx", ".crt", ".cer", ".der",
+    ".jwk", ".asc", ".gpg", ".pgp", ".kbx",
+}
+_HOME_DENY_BASENAMES = {
+    ".netrc", ".pgpass", ".htpasswd", ".env", "authorized_keys",
+    "known_hosts", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519",
+}
+
+# Whole directories where every file is a secret regardless of extension —
+# suffix-allowlists can't catch e.g. `share-passkeys.json` or `gcloud.json`.
+_HOME_DENY_PATH_PREFIXES = (
+    ".ssh/",
+    ".gnupg/",
+    ".aws/",
+    ".docker/",
+    ".kube/",
+    ".mcp-auth/",
+    ".config/openclaw-secrets/",
+    ".config/gh/",
+    ".config/gcloud/",
+    ".config/1Password/",
+    ".config/rclone/",
+    ".config/restic/",
+    ".openclaw/gateway/secrets/",
+    ".openclaw/secrets/",
+    ".claude/oauth_tokens/",
+)
+
+
+def _home_text_ok(target: Path, rel_from_home: str = "") -> bool:
+    """Suffix/basename + path-prefix policy for reads under the `home` root."""
+    rel = rel_from_home.lstrip("/")
+    for pref in _HOME_DENY_PATH_PREFIXES:
+        if rel == pref.rstrip("/") or rel.startswith(pref):
+            return False
+    name = target.name
+    lname = name.lower()
+    if lname in _HOME_DENY_BASENAMES:
+        return False
+    suf = target.suffix.lower()
+    if suf in _HOME_DENY_SUFFIXES:
+        return False
+    if suf:
+        return suf in _HOME_TEXT_SUFFIXES
+    return lname in _HOME_TEXT_BASENAMES
+
+
 _cache: dict = {}  # (root_key, hidden_flag) -> (timestamp, data); cleared on any mutation
 
 
@@ -430,13 +536,24 @@ def workspace_file_write(body: FileWriteBody):
 
 @router.get("/api/workspace/file")
 def workspace_file(path: str, root_key: str = "workspace"):
-    _, root = _root_for_key(root_key)
+    resolved_key, root = _root_for_key(root_key)
     try:
         target = resolve_safe(root, path)
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid path")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="not a file")
+    # Guardrail: `home` root exposes all of $HOME, so gate reads to known-safe
+    # text file types (see _home_text_ok) — refuses credential files even when
+    # they're text-formatted (~/.ssh/id_ed25519, ~/.aws/credentials, .env, …).
+    # `workspace` and named sub-roots stay permissive.
+    if resolved_key == "home":
+        try:
+            rel_from_home = target.resolve().relative_to(root.resolve()).as_posix()
+        except (OSError, ValueError):
+            rel_from_home = ""
+        if not _home_text_ok(target, rel_from_home):
+            raise HTTPException(status_code=403, detail="not permitted under home root")
     try:
         mtime_ns = target.stat().st_mtime_ns
     except OSError:

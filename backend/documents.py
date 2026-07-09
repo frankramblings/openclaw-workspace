@@ -29,6 +29,7 @@ import posixpath
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -75,16 +76,22 @@ def _write(doc: dict):
     vs.save_entry(_path(doc["id"]), meta, body)
     doc["current_content"] = body
     # Vault-linked doc (opened via /api/vault/open): mirror the body back to
-    # the original vault file so UI/agent edits land where the file lives.
-    # Best-effort — the library copy stays canonical for the editor.
-    if doc.get("vault_path") and posixpath.splitext(doc["vault_path"])[1].lower() not in _BINARY_SUFFIXES:
-        try:
-            target = vs.WORKSPACE / doc["vault_path"]
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with file_lock(target):
-                atomic_write_text(target, body)
-        except OSError:
-            pass
+    # the original file. vault_path is workspace-relative for files inside the
+    # vault; absolute for files under one of the ALLOWED_EXTRA_ROOTS. The
+    # absolute form is re-checked against the allowlist so a stale wrapper
+    # can't be used to write anywhere on disk.
+    vp = doc.get("vault_path")
+    if vp and posixpath.splitext(vp)[1].lower() not in _BINARY_SUFFIXES:
+        target = Path(vp) if vp.startswith("/") else vs.WORKSPACE / vp
+        if vp.startswith("/") and not _path_in_extra_root(target):
+            log.warning("refusing mirror-back for out-of-root vault_path %s", vp)
+        else:
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with file_lock(target):
+                    atomic_write_text(target, body)
+            except OSError:
+                pass
     return doc
 
 
@@ -138,6 +145,61 @@ def _find_pandoc() -> str | None:
         return found
     fallback = "/usr/local/bin/pandoc"
     return fallback if os.path.exists(fallback) else None
+
+
+# Directories outside the workspace vault that the editor may open (and mirror
+# edits back to). Intentional allowlist — anything not listed here is
+# unreachable via /api/vault/open, so `~/.ssh`, `~/.config/openclaw-secrets`,
+# `~/.aws`, etc. can't leak through this route. Add roots here as we hit them.
+ALLOWED_EXTRA_ROOTS: list[Path] = [
+    Path.home() / ".openclaw" / "skill-workshop",
+    Path.home() / "meetings",
+    Path.home() / ".claude",
+]
+
+
+def _path_in_extra_root(p: Path) -> bool:
+    """True iff p (resolved) is inside one of ALLOWED_EXTRA_ROOTS (resolved).
+    Uses realpath on both sides so a symlink escape doesn't count."""
+    try:
+        real = p.resolve()
+    except OSError:
+        return False
+    for root in ALLOWED_EXTRA_ROOTS:
+        try:
+            root_real = root.resolve()
+        except OSError:
+            continue
+        try:
+            real.relative_to(root_real)
+            return True
+        except ValueError:
+            continue
+    return False
+
+
+def _resolve_open_path(raw: str) -> tuple[Path, str] | None:
+    """Resolve a user-supplied file reference to (abs_path, stored_vault_path).
+    Returns None when the path escapes both the workspace vault and every
+    ALLOWED_EXTRA_ROOTS entry. stored_vault_path is workspace-relative for
+    files inside the vault (backward compatible with existing wrappers) and
+    the absolute path string for files inside an extra root."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    rel = _vault_rel(s)
+    if rel is not None:
+        return (vs.WORKSPACE / rel, rel)
+    expanded = os.path.expanduser(s)
+    if not expanded.startswith("/"):
+        return None
+    p = Path(expanded)
+    if not _path_in_extra_root(p):
+        return None
+    try:
+        return (p.resolve(), str(p.resolve()))
+    except OSError:
+        return None
 
 
 def _vault_rel(raw: str) -> str | None:
@@ -417,10 +479,10 @@ def _editor_language(rel: str) -> str:
 
 @router.get("/api/vault/open")
 async def open_vault_file(path: str):
-    rel = _vault_rel(path)
-    if rel is None:
+    resolved = _resolve_open_path(path)
+    if resolved is None:
         return JSONResponse({"error": "not a vault file"}, status_code=400)
-    f = vs.WORKSPACE / rel
+    f, rel = resolved
     if not f.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
     # The text editor is for text. Reject known-binary extensions up front:

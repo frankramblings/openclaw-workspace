@@ -1,6 +1,7 @@
 """Vault-file links: GET /api/vault/open wraps any vault .md as a library doc
 (two-way: edits to the doc mirror back to the file; reopen refreshes from disk)."""
 import os
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -94,6 +95,52 @@ def test_doc_save_mirrors_back_to_vault_file(vault):
     res = client.put(f"/api/document/{doc['id']}", json={"content": "edited in UI\n"})
     assert res.status_code == 200
     assert f.read_text(encoding="utf-8") == "edited in UI\n"
+
+
+def test_extra_root_open_edit_and_reject(tmp_path, monkeypatch, vault_docs):
+    """Files under ALLOWED_EXTRA_ROOTS open and mirror edits back to disk;
+    files outside every root return 400."""
+    monkeypatch.setattr(vs, "WORKSPACE", tmp_path / "workspace")
+    (tmp_path / "workspace").mkdir()
+    extra = tmp_path / "extra-root"
+    extra.mkdir()
+    outside = tmp_path / "off-limits"
+    outside.mkdir()
+    monkeypatch.setattr(documents, "ALLOWED_EXTRA_ROOTS", [extra])
+
+    f = extra / "sub" / "note.md"
+    f.parent.mkdir(parents=True)
+    f.write_text("hello from extra\n", encoding="utf-8")
+
+    res = client.get(f"/api/vault/open?path={f}")
+    assert res.status_code == 200
+    doc = res.json()
+    assert doc["vault_path"] == str(f.resolve())
+    assert doc["title"] == "note"
+    assert doc["language"] == "markdown"
+    assert "hello from extra" in doc["current_content"]
+
+    # Edits mirror back to disk.
+    res = client.put(f"/api/document/{doc['id']}", json={"content": "edited\n"})
+    assert res.status_code == 200
+    assert f.read_text(encoding="utf-8") == "edited\n"
+
+    # Reopen reuses the wrapper and picks up on-disk changes.
+    f.write_text("changed on disk\n", encoding="utf-8")
+    second = client.get(f"/api/vault/open?path={f}").json()
+    assert second["id"] == doc["id"]
+    assert "changed on disk" in second["current_content"]
+
+    # Files outside every allowed root are rejected.
+    bad = outside / "secret.md"
+    bad.write_text("nope", encoding="utf-8")
+    assert client.get(f"/api/vault/open?path={bad}").status_code == 400
+
+    # Symlink escape doesn't count — a link inside the root pointing outside
+    # resolves out and is rejected.
+    link = extra / "escape.md"
+    link.symlink_to(bad)
+    assert client.get(f"/api/vault/open?path={link}").status_code == 400
 
 
 def test_open_documents_path_returns_real_doc(vault, vault_docs):

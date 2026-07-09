@@ -130,9 +130,17 @@ export const actions = {
     try { await load(state); } catch (_) {}
     runtime.render();
   },
-  wsOpenFile: async (path) => {
+  wsOpenFile: async (path, event) => {
     const state = runtime.state;
-    const rootKey = (state && state.wsRootKey) || 'workspace';
+    // A file-link rendered by markdown.js may carry a `data-root` override
+    // (e.g. `home` for a `~/…` path outside the vault); prefer it over the
+    // panel's currently-selected root.
+    let rootKey = null;
+    try {
+      const el = event && event.target && event.target.closest && event.target.closest('[data-act="wsOpenFile"]');
+      if (el) rootKey = el.getAttribute('data-root');
+    } catch (_) {}
+    rootKey = rootKey || (state && state.wsRootKey) || 'workspace';
     await docActions.openWorkspaceFile(path, rootKey);
   },
   wsSetRoot: async (key) => {

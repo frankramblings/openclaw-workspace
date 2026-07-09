@@ -367,3 +367,65 @@ def test_archive_cap_413(api_ws, monkeypatch):
 def test_archive_rejects_files_and_escapes(api_ws):
     assert client.get("/api/workspace/archive?path=docs/note.md").status_code == 404
     assert client.get("/api/workspace/archive?path=../x").status_code == 400
+
+
+# --- home-root suffix policy: broad text-file reads OK, credentials refused ---
+
+def test_home_text_ok_allowlist(tmp_path):
+    from pathlib import Path
+    assert wf._home_text_ok(Path("/x/note.md")) is True
+    assert wf._home_text_ok(Path("/x/thing.py")) is True
+    assert wf._home_text_ok(Path("/x/thing.rs")) is True
+    assert wf._home_text_ok(Path("/x/Makefile")) is True
+    assert wf._home_text_ok(Path("/x/README")) is True
+    assert wf._home_text_ok(Path("/x/Dockerfile")) is True
+    # Denylist wins even though .env "looks textual".
+    assert wf._home_text_ok(Path("/x/.env")) is False
+    assert wf._home_text_ok(Path("/x/prod.env")) is False
+    assert wf._home_text_ok(Path("/x/tls.pem")) is False
+    assert wf._home_text_ok(Path("/x/id_ed25519")) is False
+    assert wf._home_text_ok(Path("/x/authorized_keys")) is False
+    # Unknown extension → refused (fails safe).
+    assert wf._home_text_ok(Path("/x/mystery.xyz")) is False
+    # Extensionless with unknown basename → refused.
+    assert wf._home_text_ok(Path("/x/random")) is False
+
+
+def test_home_root_file_route_enforces_policy(tmp_path, monkeypatch):
+    """/api/workspace/file?root_key=home refuses credential files even when
+    they'd otherwise decode as text; happy path for a plain .md still opens."""
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    (fake_home / "note.md").write_text("hello")
+    assert client.get("/api/workspace/file?path=note.md&root_key=home").status_code == 200
+
+    ssh = fake_home / ".ssh"
+    ssh.mkdir()
+    (ssh / "id_ed25519").write_text("SUPER-SECRET-KEY")
+    assert client.get("/api/workspace/file?path=.ssh/id_ed25519&root_key=home").status_code == 403
+
+    (fake_home / ".aws").mkdir()
+    (fake_home / ".aws" / "credentials").write_text("[default]\naws_access_key_id=AKIA...\n")
+    # `credentials` has no extension and isn't on the safe-basename list.
+    assert client.get("/api/workspace/file?path=.aws/credentials&root_key=home").status_code == 403
+
+    (fake_home / ".env").write_text("SECRET=hunter2")
+    assert client.get("/api/workspace/file?path=.env&root_key=home").status_code == 403
+
+    # A secret with a benign extension inside a known-secret directory is
+    # still refused via the path-prefix denylist.
+    secrets_dir = fake_home / ".config" / "openclaw-secrets"
+    secrets_dir.mkdir(parents=True)
+    (secrets_dir / "share-passkeys.json").write_text('{"cred":"secret"}')
+    assert client.get(
+        "/api/workspace/file?path=.config/openclaw-secrets/share-passkeys.json&root_key=home"
+    ).status_code == 403
+
+    # Workspace root stays permissive (unchanged behavior).
+    (wf.workspace_root() / "secret.env").write_text("still readable via workspace root")
+    assert client.get("/api/workspace/file?path=secret.env&root_key=workspace").status_code == 200

@@ -16,6 +16,7 @@ import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
 import { openImageOverlay } from './live/image-viewer.js';
+import { installErrorBoundary } from './error-boundary.js';
 import './live/jobs.js'; // Live Jobs overlay — self-boots on import
 
 // ---- state ---------------------------------------------------------------
@@ -54,6 +55,28 @@ const state = {
   live: {},
   isOnline: navigator.onLine,
 };
+
+// ---- global error boundary -------------------------------------------------
+// Installed FIRST — before the very first render() and before any other DOM
+// wiring below — so an uncaught throw anywhere (most likely inside render()
+// itself; see the module banner) surfaces a toast instead of leaving a silent
+// half-dead UI. toast() reuses the same state.inboxToast + render() convention
+// the inbox retry toasts already use (surfaces.js / mobile-surfaces.js render
+// it; the auto-dismiss timer below clears it). If render() is itself what's
+// broken, that call re-throws — installErrorBoundary's own try/catch around
+// `toast` catches it and falls back to console.error rather than crashing the
+// boundary (see error-boundary.js's safeToast).
+installErrorBoundary({
+  toast: (msg) => { state.inboxToast = { msg, undoTs: null }; render(); },
+  post: (payload) => {
+    fetch('/api/client-log', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {}); // best-effort — never let a logging failure cascade
+  },
+});
 
 let researchTimer = null;
 let refreshTimer = null;

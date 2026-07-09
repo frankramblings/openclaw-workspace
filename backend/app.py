@@ -24,7 +24,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Body, FastAPI, Form
+from fastapi import Body, FastAPI, Form, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -348,6 +348,76 @@ async def gateway_status():
     """Last-known gateway state from the persistent monitor, for the UI's
     status dot (polled ~30s). state: ok | restarting | down."""
     return await monitor.status()
+
+
+# --- Frontend global error boundary sink ------------------------------------
+# error-boundary.js's window.onerror/unhandledrejection handler POSTs here,
+# fire-and-forget (the client ignores the response entirely — see app.js's
+# `.catch(() => {})`). This is telemetry, not a control-plane endpoint, so it
+# is deliberately as forgiving as possible: garbage input never raises past
+# this handler, and it's never a source of write amplification against the
+# real log stream.
+_client_log = logging.getLogger("client")
+
+_CLIENT_LOG_MSG_MAX = 500
+_CLIENT_LOG_SRC_MAX = 500
+_CLIENT_LOG_STACK_MAX = 4000
+
+# Process-wide (not per-client — this is a single-operator deployment), plain
+# in-memory list of the unix timestamps of accepted posts in the trailing
+# hour. Pruned lazily on every call so it can never grow past the cap.
+_CLIENT_LOG_RATE_LIMIT = 60
+_CLIENT_LOG_RATE_WINDOW_S = 3600.0
+_CLIENT_LOG_TIMESTAMPS: list[float] = []
+
+
+def _client_log_rate_ok() -> bool:
+    """True (and records the hit) iff under 60 posts in the trailing hour."""
+    now = time.time()
+    cutoff = now - _CLIENT_LOG_RATE_WINDOW_S
+    while _CLIENT_LOG_TIMESTAMPS and _CLIENT_LOG_TIMESTAMPS[0] < cutoff:
+        _CLIENT_LOG_TIMESTAMPS.pop(0)
+    if len(_CLIENT_LOG_TIMESTAMPS) >= _CLIENT_LOG_RATE_LIMIT:
+        return False
+    _CLIENT_LOG_TIMESTAMPS.append(now)
+    return True
+
+
+@app.post("/api/client-log", status_code=204)
+async def client_log(request: Request):
+    """Sink for the redesign's global error boundary: {msg, src, stack} for
+    one uncaught client error/rejection, logged at WARNING under logger
+    "client" and truncated (msg/src 500 chars, stack 4000) so one giant stack
+    trace can't blow up the log file. Always 204, even when the entry is
+    dropped (rate-capped or unparseable) — the frontend never reads the body
+    and mustn't be given a reason to retry a telemetry POST.
+
+    Malformed input never 500s: request.json() failures, a non-dict payload,
+    and non-string fields all degrade to empty values rather than raising.
+    Explicit design choice (brief left it open): malformed JSON is a SILENT
+    204 DROP, not a 400 — this is fire-and-forget telemetry from a boundary
+    that must never cause user-visible friction, so there is no reason to
+    hand the client an error to react to.
+    """
+    if not _client_log_rate_ok():
+        return Response(status_code=204)  # over the cap — silently drop
+
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001 - garbage body -> treat as empty, never 500
+        payload = None
+    if not isinstance(payload, dict):
+        payload = {}
+
+    def _field(key: str, limit: int) -> str:
+        val = payload.get(key)
+        return str(val)[:limit] if val is not None else ""
+
+    msg = _field("msg", _CLIENT_LOG_MSG_MAX)
+    src = _field("src", _CLIENT_LOG_SRC_MAX)
+    stack = _field("stack", _CLIENT_LOG_STACK_MAX)
+    _client_log.warning("client error: %s (%s)%s", msg, src or "unknown", f"\n{stack}" if stack else "")
+    return Response(status_code=204)
 
 
 # --- The one real, load-bearing endpoint: chat ------------------------------

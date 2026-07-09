@@ -373,7 +373,7 @@ def test_save_connection_after_quarantine_does_not_touch_quarantined(tmp_path, m
     assert config.load_connection() == {"gateway_ws": "ws://box:9999"}
 
 
-# --- followup.py: the last two unguarded stores -----
+# --- followup.py and memory.py: unguarded stores with RMW contracts ----------
 
 def test_followups_corrupt_file_quarantined(tmp_path, monkeypatch):
     from backend import followup
@@ -392,3 +392,22 @@ def test_memory_overlay_corrupt_file_quarantined(tmp_path, monkeypatch):
     assert memory._read_json(memory._OVERLAY, {}) == {}
     assert not memory._OVERLAY.exists()
     assert list(tmp_path.glob("memory_overlay.json.corrupt-*"))
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="chmod 000 does not block root")
+def test_memory_read_json_raises_on_unreadable_file(tmp_path, monkeypatch):
+    """memory._read_json deliberately raises OSError (PermissionError, etc.) on
+    unreadable files. Unlike terminals.read_meta (read-only caller), memory's
+    callers are read-modify-write: update_memory, delete_memory, pin_memory,
+    put_pref. If a failed read degraded to default, the next write would
+    overwrite the store with empty state — the exact data-loss this task
+    closes. A loud 500 is the correct failure mode here."""
+    from backend import memory
+    monkeypatch.setattr(memory, "_OVERLAY", tmp_path / "memory_overlay.json")
+    memory._OVERLAY.write_text('{"pinned": []}')
+    os.chmod(memory._OVERLAY, 0o000)
+    try:
+        with pytest.raises(PermissionError):
+            memory._read_json(memory._OVERLAY, {})
+    finally:
+        os.chmod(memory._OVERLAY, 0o600)  # so pytest's tmp cleanup can proceed

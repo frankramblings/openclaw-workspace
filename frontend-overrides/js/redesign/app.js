@@ -66,6 +66,10 @@ const state = {
 // broken, that call re-throws — installErrorBoundary's own try/catch around
 // `toast` catches it and falls back to console.error rather than crashing the
 // boundary (see error-boundary.js's safeToast).
+// Known gap, accepted: the ES module imports above (including ./live/jobs.js,
+// which self-boots at import) evaluate BEFORE this line runs, so an
+// import-time throw anywhere in the module graph is NOT caught here — the
+// boundary covers post-boot runtime errors only.
 installErrorBoundary({
   toast: (msg) => { state.inboxToast = { msg, undoTs: null }; render(); },
   post: (payload) => {

@@ -57,6 +57,18 @@ test('formatClientError: no filename on an error event -> empty src, not a throw
   assert.deepStrictEqual(info, { msg: 'weird error', src: '', stack: '' });
 });
 
+test('formatClientError: an event with throwing getters -> null, never throws', () => {
+  // The exported contract ("pure, callable from anywhere") must hold even
+  // outside handle()'s own try/catch — e.g. a hostile/exotic event object.
+  const evilError = {};
+  Object.defineProperty(evilError, 'message', { get() { throw new Error('gotcha'); } });
+  assert.strictEqual(formatClientError(evilError), null);
+
+  const evilRejection = { type: 'unhandledrejection' };
+  Object.defineProperty(evilRejection, 'reason', { get() { throw new Error('gotcha'); } });
+  assert.strictEqual(formatClientError(evilRejection), null);
+});
+
 // ---- installErrorBoundary (wiring: dedupe / rate cap / never-throw) -------
 
 function fakeTarget() {
@@ -204,4 +216,49 @@ test('installErrorBoundary: degrades to a no-op without a usable target (no cras
   assert.doesNotThrow(() => {
     installErrorBoundary({ toast: () => {}, post: () => {}, target: {} });
   });
+});
+
+// ---- synchronous reentrancy (regression pins for the bookkeeping order) ---
+// The dedupe map entry and the eventCount increment happen BEFORE safeToast/
+// safePost fire, so a toast callback that itself dispatches back into the
+// boundary synchronously cannot double-fire or recurse unboundedly. These
+// tests pin that ordering — a refactor that moves the bookkeeping after the
+// callbacks would regress here, not silently in production.
+
+test('installErrorBoundary: a toast that synchronously re-dispatches the SAME error fires exactly once', () => {
+  const target = fakeTarget();
+  const posts = [];
+  let toasts = 0;
+  const evt = { message: 'boom', filename: 'a.js', lineno: 1, colno: 1 };
+  installErrorBoundary({
+    // No recursion guard here on purpose: the dedupe entry is written before
+    // this callback runs, so the nested dispatch must coalesce, not loop.
+    toast: () => { toasts += 1; target.listeners.error(evt); },
+    post: (p) => posts.push(p),
+    target,
+  });
+  target.listeners.error(evt);
+  assert.strictEqual(toasts, 1);
+  assert.strictEqual(posts.length, 1);
+});
+
+test('installErrorBoundary: a toast that synchronously dispatches a NEW error each time is bounded by the session cap', () => {
+  const target = fakeTarget();
+  const posts = [];
+  let toasts = 0;
+  let n = 0;
+  installErrorBoundary({
+    toast: () => {
+      toasts += 1;
+      n += 1;
+      // Distinct msg every time — dedupe can't stop this cascade, only the
+      // session cap can (eventCount is incremented before we run).
+      target.listeners.error({ message: `cascade ${n}`, filename: 'a.js', lineno: n, colno: 1 });
+    },
+    post: (p) => posts.push(p),
+    target,
+  });
+  target.listeners.error({ message: 'cascade 0', filename: 'a.js', lineno: 0, colno: 1 });
+  assert.strictEqual(toasts, MAX_EVENTS_PER_SESSION);
+  assert.strictEqual(posts.length, MAX_EVENTS_PER_SESSION);
 });

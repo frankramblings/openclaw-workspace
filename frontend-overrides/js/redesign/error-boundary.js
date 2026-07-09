@@ -53,27 +53,34 @@ function safeStr(v) {
  * everything about errors thrown by scripts loaded without CORS from another
  * origin down to that literal string with no filename/line/col — there is
  * nothing useful to log, so we drop it rather than posting empty noise.
+ *
+ * Never throws: the property reads are wrapped so an exotic event object
+ * with throwing getters degrades to null — the "pure, callable from
+ * anywhere" contract holds even outside handle()'s own try/catch.
  */
 export function formatClientError(evt) {
   if (!evt || typeof evt !== 'object') return null;
+  try {
+    const isRejection = evt.type === 'unhandledrejection' || 'reason' in evt;
+    if (isRejection) {
+      const reason = evt.reason;
+      const isErr = reason instanceof Error;
+      const msg = isErr ? (reason.message || String(reason)) : safeStr(reason);
+      if (!msg) return null;
+      const stack = isErr ? (reason.stack || '') : '';
+      return { msg, src: 'unhandledrejection', stack };
+    }
 
-  const isRejection = evt.type === 'unhandledrejection' || 'reason' in evt;
-  if (isRejection) {
-    const reason = evt.reason;
-    const isErr = reason instanceof Error;
-    const msg = isErr ? (reason.message || String(reason)) : safeStr(reason);
-    if (!msg) return null;
-    const stack = isErr ? (reason.stack || '') : '';
-    return { msg, src: 'unhandledrejection', stack };
+    const rawMsg = evt.message != null ? String(evt.message) : '';
+    if (rawMsg === CROSS_ORIGIN_NOISE) return null; // cross-origin noise — nothing actionable
+
+    const msg = rawMsg || (evt.error && evt.error.message) || 'Unknown error';
+    const src = evt.filename ? `${evt.filename}:${evt.lineno || 0}:${evt.colno || 0}` : '';
+    const stack = (evt.error && evt.error.stack) || '';
+    return { msg, src, stack };
+  } catch (_) {
+    return null; // throwing getter / hostile object — nothing safely readable
   }
-
-  const rawMsg = evt.message != null ? String(evt.message) : '';
-  if (rawMsg === CROSS_ORIGIN_NOISE) return null; // cross-origin noise — nothing actionable
-
-  const msg = rawMsg || (evt.error && evt.error.message) || 'Unknown error';
-  const src = evt.filename ? `${evt.filename}:${evt.lineno || 0}:${evt.colno || 0}` : '';
-  const stack = (evt.error && evt.error.stack) || '';
-  return { msg, src, stack };
 }
 
 /**

@@ -22,7 +22,10 @@ refresh command below should paste the upstream commit hash/tag here.)
   last  commit touching frontend-vendor/: 161f72e 2026-06-28
     license: relicense to AGPL-3.0 + add §13 source link; Gary easter eggs
 
-(Full list: `git log --format='%h %ad %s' --date=short -- frontend-vendor`.)
+(Full list: `git log --format='%h %ad %s' --date=short -- frontend-vendor
+':!frontend-vendor/VERSION' | cat`. The `:!frontend-vendor/VERSION` pathspec
+excludes commits that only touch this marker file — by design, so edits to
+VERSION itself don't count as "vendor-touching" and make these facts stale.)
 
 ## Refresh command
 

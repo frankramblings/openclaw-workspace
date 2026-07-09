@@ -256,6 +256,9 @@ fi
 # loop below, so the leftover `_cmdOdyssey` symbol gets renamed consistently by
 # that capitalized-"Odysseus" swap. Each patch is anchor-guarded: if upstream
 # moves a line, it prints SKIP instead of silently corrupting the file.
+# Note: `|| DRIFT=1` conflates the intentional drift-exit (sys.exit(1) below)
+# with an unexpected python error (traceback → nonzero); acceptable — both mean
+# "this build is not trustworthy" — but revisit if these heredocs grow.
 python3 - "$DEST" <<'PYEOF' || DRIFT=1
 import sys, pathlib
 dest = pathlib.Path(sys.argv[1])
@@ -265,12 +268,12 @@ def swap(rel, old, new):
     global _drift
     p = dest / rel
     if not p.exists():
-        print(f"gary-egg: SKIP {rel} (missing)"); _drift = True; return
+        print(f"gary-egg: SKIP {rel} (missing)", file=sys.stderr); _drift = True; return
     t = p.read_text()
     if old in t:
         p.write_text(t.replace(old, new)); print(f"gary-egg: patched {rel}")
     else:
-        print(f"gary-egg: SKIP {rel} (anchor not found — upstream changed)"); _drift = True
+        print(f"gary-egg: SKIP {rel} (anchor not found — upstream changed)", file=sys.stderr); _drift = True
 
 # 1. Character persona preset: Odysseus the strategist -> Gary the Superman Robot
 swap("js/presets.js", "id: 'odysseus',", "id: 'gary',")

@@ -107,13 +107,12 @@ export function mChat(s) {
   return `
   <div class="m-head">
     <div class="m-gary">
-      <div class="m-gav"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+      <button class="m-icon-btn m-hide-kb m-nav-btn" data-act="openConvSheet" title="Chats" aria-label="Chats">${icon('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>', { size: 18, sw: 1.9 })}</button>
       <button class="m-gary-id" data-act="openConvSheet" title="Switch conversation">
-        <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span><span class="m-conv-caret">▾</span></div>
+        <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span></div>
         <div class="m-conv-sub"><span class="dot"></span>__AGENT_NAME__ · online</div>
       </button>
       <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="m-model-name">${esc(modelLabel)}</span></button>
-      <button class="m-icon-btn m-hide-kb" data-act="newChat" title="New chat">${I.plus(17)}</button>
     </div>
   </div>
   <div class="m-comp-handle m-hide-kb"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>

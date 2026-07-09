@@ -127,10 +127,19 @@ service can't be restarted more than once/hour even across brief recoveries.
 A gateway-only failure (workspace answers 200 while the gateway is
 `down`/unreachable) never counts toward this — the gateway's own restart is
 a normal 4-5 min cold boot and is exempt from auto-restart entirely. The
-consecutive-fail count and last-restart timestamp live in
-`~/.cache/openclaw-doctor-alert.fails` (`"<count> <last_restart_unix-ts>"`,
-written atomically like the state file above); a workspace-ok probe resets
-the count to 0 but preserves the cooldown timestamp. Delete the file to
-clear both. `DOCTOR_DRYRUN=1` prints `would restart openclaw-workspace`
-instead of restarting and skips the notify — useful for testing against an
+consecutive-fail count, last-restart timestamp and boot id live in
+`~/.cache/openclaw-doctor-alert.fails`
+(`"<count> <last_restart_unix-ts> <boot-id>"`, written atomically like the
+state file above); a workspace-ok probe resets the count to 0 but preserves
+the cooldown timestamp, and a boot id that doesn't match the current
+`/proc/sys/kernel/random/boot_id` resets the count too, so strikes from
+before a reboot can't restart a still-booting service. The cooldown stamp
+is written *before* the restart fires: if the script dies in between, the
+worst case is one suppressed restart for one cooldown window while DOWN
+alerts keep paging — safer than the reverse, which could double-restart.
+Delete the file to clear everything. `DOCTOR_DRYRUN=1` prints
+`would restart openclaw-workspace` instead of restarting, skips the notify,
+and leaves the counter/cooldown exactly as a non-triggering run would (it
+never stamps the cooldown or resets the count), so a dry run against live
+state cannot suppress a later real restart — still, use it only against an
 overridden `HOME`/`HEALTH_URL`, never against the live install.

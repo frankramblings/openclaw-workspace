@@ -101,6 +101,38 @@ restic restore latest --target /tmp/restore-check    # restore-and-verify withou
 Restore into `/tmp/restore-check` (or any scratch path), diff/inspect, then
 copy back only what you need — never restore directly over live state.
 
+### Restore drill
+
+The nightly backup is only as good as its last proven restore. Run this
+drill periodically to confirm the repository actually yields usable data,
+not just successful `backup` runs:
+
+```bash
+source ~/.config/openclaw-secrets/restic.env
+export RESTIC_PASSWORD RESTIC_REPOSITORY
+
+restic restore latest --target ~/.cache/restic-drill --include '**/sessions.json'
+python3 -c "import json,glob; [json.load(open(f)) for f in glob.glob('$HOME/.cache/restic-drill/**/sessions.json', recursive=True)]"
+# spot-check the restored session count against the live count is plausible
+# (same order of magnitude — don't expect an exact match, live state drifts
+# between the last snapshot and now)
+rm -rf ~/.cache/restic-drill
+```
+
+Pass criteria: the restored `sessions.json` parses as valid JSON and its
+session count is in the same ballpark as the live count. Always clean up
+the drill target afterward — it's scratch space, not a second copy to keep
+around.
+
+**Drill log:**
+
+- 2026-07-09: PASSED — 369 sessions restored vs 375 live (plausible drift,
+  same order of magnitude). Drill dir cleaned up after.
+
+**Repeat quarterly** — a backup pipeline that silently stops producing
+restorable snapshots is worse than no backup at all, since it hides the
+failure until the moment you actually need it.
+
 ## Alerting
 
 `openclaw-doctor-alert.timer` runs every 5 minutes, probing `/api/health` and

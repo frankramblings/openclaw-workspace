@@ -4,6 +4,16 @@
 set -euo pipefail
 source "$HOME/.config/openclaw-secrets/restic.env"
 export RESTIC_PASSWORD RESTIC_REPOSITORY
+
+# Each openclaw.json.bak* is a full plaintext copy of API-key material.
+# Prune anything older than 7 days so stale keys stop piling up on disk and
+# stop getting swept into (and multiplied across) every backup snapshot.
+find "$HOME/.openclaw" -maxdepth 1 -name 'openclaw.json.bak*' -mtime +7 -delete
+
+# Include list = irreplaceable state only (config, credentials, memory,
+# vault, systemd units) — nothing here can be regenerated from GitHub or
+# from a running process. logs/ and caches are deliberately excluded below:
+# they're regenerable and would just bloat snapshots.
 "$HOME/.local/bin/restic" backup \
   "$HOME/openclaw-workspace/.data" \
   "$HOME/.openclaw/openclaw.json" \
@@ -15,6 +25,7 @@ export RESTIC_PASSWORD RESTIC_REPOSITORY
   "$HOME/.openclaw/workspace/memory" \
   "$HOME/.openclaw/workspace/artifacts" \
   "$HOME/.openclaw/workspace/granola" \
+  "$HOME/.openclaw/WHICH-OPENCLAW.md" \
   "$HOME/.config/openclaw-secrets" \
   "$HOME/.config/systemd/user" \
   --exclude "$HOME/.openclaw/agents/**/cache" \

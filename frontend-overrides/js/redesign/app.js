@@ -17,7 +17,7 @@ import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
 import { openImageOverlay } from './live/image-viewer.js';
 import { installErrorBoundary } from './error-boundary.js';
-import { trapOrder, nextFocus } from './focus-trap.js';
+import { trapOrder, nextFocus, pickModal } from './focus-trap.js';
 import './live/jobs.js'; // Live Jobs overlay — self-boots on import
 
 // ---- state ---------------------------------------------------------------
@@ -436,11 +436,11 @@ const MODAL_SURFACES = [
   { open: (s) => !isMobile() && !!s.composeOpen, selector: '.oc-compose', close: 'closeCompose' },
   { open: (s) => !isMobile() && !!s.inboxReader, selector: '.inbox-reader-panel', close: 'closeReader' },
 ];
+// The exists() predicate skips entries whose state flag outlived their
+// container (e.g. state.inboxReader surviving a surface switch that no longer
+// renders the reader) — otherwise Escape/Tab would target a dead surface.
 function topmostModal() {
-  for (const m of MODAL_SURFACES) {
-    if (m.open(state)) return m;
-  }
-  return null;
+  return pickModal(MODAL_SURFACES, state, (sel) => !!document.querySelector(sel));
 }
 
 // Trigger actions that open one of the surfaces above, and the close actions
@@ -881,6 +881,10 @@ document.addEventListener('keydown', (e) => {
     }
   }
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    // While a modal is open it owns focus — the filter inputs this shortcut
+    // targets are background elements (still in the DOM behind the compose
+    // overlay etc.); focusing one would silently escape the trap.
+    if (topmostModal()) return;
     const el = root.querySelector('[data-model="convFilter"],[data-model="notesFilter"],[data-model="libQuery"],[data-model="emailQuery"]');
     if (el) { e.preventDefault(); el.focus(); }
     return;
@@ -892,6 +896,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (topmostModal()) return; // same trap-escape hatch as ⌘K — composer is behind the backdrop
     const tag = (e.target && e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
     const ta = root.querySelector('[data-focus="draft"]');

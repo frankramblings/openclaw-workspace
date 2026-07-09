@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { trapOrder, nextFocus, defaultIsFocusable } from '../redesign/focus-trap.js';
+import { trapOrder, nextFocus, defaultIsFocusable, pickModal } from '../redesign/focus-trap.js';
 
 // ---- trapOrder --------------------------------------------------------
 
@@ -91,4 +91,40 @@ test('nextFocus: object identity is what matters, not equality — mirrors real 
   // (exactly how document.activeElement works against a live NodeList).
   assert.equal(nextFocus(list, { id: 'a' }, false), a); // not found -> lands on first
   assert.equal(nextFocus(list, a, false), b);
+});
+
+// ---- pickModal ----------------------------------------------------------
+
+const SURFACES = [
+  { open: (s) => !!s.drawerOpen, selector: '.drawer', close: 'closeDrawer' },
+  { open: (s) => !!s.sheetOpen, selector: '.sheet', close: 'closeSheet' },
+  { open: (s) => !!s.readerOpen, selector: '.reader', close: 'closeReader' },
+];
+
+test('pickModal: first open surface wins, in registry (paint) order', () => {
+  const all = () => true;
+  assert.equal(pickModal(SURFACES, { sheetOpen: true, readerOpen: true }, all).close, 'closeSheet');
+  assert.equal(pickModal(SURFACES, { drawerOpen: true, readerOpen: true }, all).close, 'closeDrawer');
+});
+
+test('pickModal: nothing open returns null', () => {
+  assert.equal(pickModal(SURFACES, {}, () => true), null);
+  assert.equal(pickModal([], { sheetOpen: true }, () => true), null);
+  assert.equal(pickModal(undefined, {}, () => true), null);
+});
+
+test('pickModal: an open surface whose container is gone is skipped (stale state flag)', () => {
+  // readerOpen outlived its container (e.g. state.inboxReader after a surface
+  // switch) — the reader must NOT be returned, and must not shadow a lower
+  // surface that IS really present.
+  const exists = (sel) => sel !== '.reader';
+  assert.equal(pickModal(SURFACES, { readerOpen: true }, exists), null);
+  assert.equal(pickModal(SURFACES, { sheetOpen: true, readerOpen: true }, exists).close, 'closeSheet');
+  // Higher-priority stale entry falls through to a live lower one.
+  const onlyReaderLive = (sel) => sel === '.reader';
+  assert.equal(pickModal(SURFACES, { sheetOpen: true, readerOpen: true }, onlyReaderLive).close, 'closeReader');
+});
+
+test('pickModal: omitting the exists predicate keeps pure state-flag behavior', () => {
+  assert.equal(pickModal(SURFACES, { readerOpen: true }).close, 'closeReader');
 });

@@ -350,11 +350,28 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     }
     if (sc) { sc.style.opacity = String(Math.max(0, Math.min(1, shown / w))); sc.style.pointerEvents = shown > 4 ? 'auto' : 'none'; }
   };
+  // Mirror renderConvDrawer's open/closed a11y attributes onto the LIVE node.
+  // The swipe path commits open/close right here without a render() — calling
+  // render() would rebuild root.innerHTML mid-settle and snap the drawer to
+  // its endpoint instead of letting the .24s transform transition finish
+  // (the whole reason this drawer is finger-tracked on a persistent node).
+  // Without this sync, a swipe-OPENED drawer kept the stale `inert` +
+  // aria-hidden="true" + tabindex="-1" from its last closed render (dead to
+  // keyboard/SR/touch until reloadSessions' async render landed), and a
+  // swipe-CLOSED drawer stayed Tab-reachable. Must match renderConvDrawer's
+  // output exactly so the next real render is a no-op visually.
+  const syncDrawerA11y = (el, open) => {
+    if (!el) return;
+    if (open) el.removeAttribute('inert'); else el.setAttribute('inert', '');
+    el.setAttribute('aria-hidden', String(!open));
+    el.setAttribute('aria-modal', String(open));
+    el.querySelectorAll('[data-act="mSelectSession"]').forEach((r) => r.setAttribute('tabindex', open ? '0' : '-1'));
+  };
   const finishDrawer = (side, open) => {
     const el = drawerEl(); const sc = scrimEl();
     state.mDrawerSide = side;
     state.mDrawerOpen = open;
-    if (el) { el.classList.remove('dragging'); el.style.transform = ''; el.classList.toggle('open', open); }
+    if (el) { el.classList.remove('dragging'); el.style.transform = ''; el.classList.toggle('open', open); syncDrawerA11y(el, open); }
     if (sc) { sc.classList.remove('dragging'); sc.style.opacity = ''; sc.style.pointerEvents = ''; sc.classList.toggle('open', open); }
     // Swipe-open commits here too (bypasses openConvDrawer) — refresh on open so
     // a just-started thread is always in the list.

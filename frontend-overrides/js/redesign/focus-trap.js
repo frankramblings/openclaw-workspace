@@ -46,6 +46,27 @@ export function trapOrder(container, isFocusable = defaultIsFocusable) {
   return candidates.filter(isFocusable);
 }
 
+// pickModal(surfaces, state, exists) -> surface | null
+//
+// Walks an ordered modal registry (first match wins — callers order it by
+// paint/z-order) and returns the first surface whose `open(state)` predicate
+// is true AND whose container actually exists right now, per the injected
+// `exists(selector)` predicate (DOM-independent here; app.js passes a
+// document.querySelector check). The existence check is the point: a modal's
+// state flag can outlive its container — e.g. state.inboxReader staying set
+// while the user navigates to a surface that doesn't render the reader — and
+// without it Escape/Tab handling would silently target a dead surface while
+// shadowing lower open modals. Omitting `exists` skips the check (pure
+// state-flag behavior).
+export function pickModal(surfaces, state, exists) {
+  for (const m of surfaces || []) {
+    if (!m.open(state)) continue;
+    if (exists && !exists(m.selector)) continue;
+    return m;
+  }
+  return null;
+}
+
 // nextFocus(list, current, shift) -> element | null
 //
 // Steps to the next (or, if `shift` is true, previous) entry in `list`,

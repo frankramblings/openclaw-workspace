@@ -4,6 +4,11 @@
   "description": "Self-hosted AI chat with memory, documents, and tools",
   "start_url": "/",
   "scope": "/",
+  "id": "/",
+  "shortcuts": [
+    { "name": "New chat", "url": "/#chat", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Inbox", "url": "/#inbox", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] }
+  ],
   "display": "standalone",
   "orientation": "any",
   "background_color": "#15161a",

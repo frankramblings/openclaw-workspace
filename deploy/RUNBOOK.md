@@ -7,8 +7,14 @@ this doc is about running and recovering the already-installed system.
 ## Deploy
 
 ```bash
-git pull && scripts/sync-frontend.sh && \
-  systemctl --user restart openclaw-workspace.service && \
+git pull && scripts/sync-frontend.sh
+
+# Guard: confirm current state before serving
+git -C ~/openclaw-workspace status --porcelain | grep -q . \
+  && echo "⚠ dirty tree — you are about to serve uncommitted code" || true
+git -C ~/openclaw-workspace branch --show-current   # confirm it's the branch you mean
+
+systemctl --user restart openclaw-workspace.service && \
   scripts/smoke.sh http://127.0.0.1:8800
 ```
 
@@ -17,6 +23,16 @@ git pull && scripts/sync-frontend.sh && \
 old frontend even after a restart. The restart is the app-only unit; the
 gateway (`openclaw-gateway.service`) doesn't need restarting for a workspace
 code change.
+
+### Deploy checkout policy
+
+Production runs against the live working tree (`~/openclaw-workspace`), not a
+separate deploy clone. A restart executes whatever is currently checked out
+— this is intentional and safe while the project is single-person, single-machine
+(matches the test-on-live workflow). The pre-restart guard above warns if the
+tree has uncommitted changes and echoes the current branch so the operator sees
+what they're about to serve. **Revisit using a pinned `~/openclaw-deploy` clone
+on main if a second contributor or machine appears.**
 
 ## Service management
 

@@ -171,3 +171,39 @@
 .cs-agent-ic { width: 14px; flex: none; }
 .cs-agent-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cs-agent-elapsed { color: var(--faint, #9aa0a6); font-variant-numeric: tabular-nums; font-size: 11.5px; }
+
+/* ── Pending-work pill (turn-level deferred task state) ───────────────── */
+.turn-pending-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+  cursor: help;
+  vertical-align: middle;
+}
+
+/* ── In-place update block (resolved deferred task appended to the turn) ─ */
+.turn-update-block {
+  margin-top: 12px;
+  border-top: 1px dashed rgba(120, 120, 120, 0.4);
+  padding-top: 8px;
+}
+.turn-update-header {
+  font-size: 12px;
+  color: rgba(120, 120, 120, 0.9);
+  margin-bottom: 6px;
+}
+.turn-update-image {
+  max-width: 100%;
+  border-radius: 6px;
+  cursor: zoom-in;
+  display: block;
+}
+.turn-update-error {
+  color: #b91c1c;
+  font-style: italic;
+  font-size: 13px;
+}

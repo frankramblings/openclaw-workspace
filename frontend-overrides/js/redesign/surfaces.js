@@ -233,7 +233,32 @@ export function chatMsg(m, s) {
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
   const asstCtx = { canEdit: false };
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
+  // Pending-work update blocks (resolved deferred tasks, e.g. image_generate).
+  const updateBlocksHtml = (() => {
+    const blocks = m.updateBlocks;
+    if (!Array.isArray(blocks) || !blocks.length) return '';
+    return blocks.map((b) => {
+      const mins = Math.max(0, Math.round((b.elapsed_ms || 0) / 60000));
+      const lbl = mins < 1 ? 'just now' : `${mins}m later`;
+      const hdr = `<div class="turn-update-header">↳ update, ${esc(lbl)}</div>`;
+      let content = '';
+      if (b.payload && b.payload.image_url) {
+        content = `<img class="turn-update-image" src="${esc(b.payload.image_url)}" alt="${esc(b.payload.alt_text || '')}" onclick="window.open(this.src,'_blank')">`;
+      } else if (b.payload && b.payload.error) {
+        content = `<div class="turn-update-error">${esc(b.payload.error)}</div>`;
+      }
+      return `<div class="turn-update-block">${hdr}${content}</div>`;
+    }).join('');
+  })();
+  // Pending-work pill: ⏳ pending while any deferred work is outstanding.
+  const pendingPillHtml = (() => {
+    const tokens = m.pendingTokens;
+    if (!Array.isArray(tokens) || !tokens.length) return '';
+    const n = tokens.length;
+    const title = tokens.map((t) => `${t.kind} · ${t.label}`).join('\n');
+    return `<span class="turn-pending-pill" title="${esc(title)}">${n === 1 ? '⏳ pending' : `⏳ ${n}`}</span>`;
+  })();
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
 }
 
 

@@ -189,7 +189,26 @@ function ensureChat(state) {
     state.live.chat.chatStrip = initStripState();
     try { state.live.chat.chatStrip.collapsed = stripReadCollapsed(window.localStorage); } catch (_) {}
   }
+  if (!state.live.chat.chatStripByKey) state.live.chat.chatStripByKey = {};
   return state.live.chat;
+}
+
+// Task 0b: preserve the strip across thread switches so background TaskCreate
+// items (subagents, followups, cron) stay visible when the user peeks at another
+// thread and returns. Keyed by session id; new-chat strips (no id yet) don't
+// persist. B-tier fix (server-side per-turn persistence) tracked separately.
+function saveStripForCurrent(chat) {
+  if (!chat || !chat.chatStripByKey) return;
+  const key = chat.activeId;
+  if (!key) return;
+  if (chat.chatStrip) chat.chatStripByKey[key] = chat.chatStrip;
+}
+function loadStripForKey(chat, id) {
+  const cached = id && chat.chatStripByKey ? chat.chatStripByKey[id] : null;
+  if (cached) return cached;
+  const fresh = initStripState();
+  try { fresh.collapsed = stripReadCollapsed(window.localStorage); } catch (_) {}
+  return fresh;
 }
 
 // Fetch + map history into a thread; returns { thread, title?, subtitle, model }.
@@ -356,6 +375,36 @@ let renderTimer = null;      // throttle handle for stream deltas
 let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
 let _notifyResuming = null;  // session id with a notifier-driven resume in flight
+
+// Pending-work token state: maps backend turn_id (int) → message object.
+// Persists across turn teardown so token.resolved frames that arrive after
+// `turn = null` can still find and patch their originating message.
+const _pendingByTurnId = new Map();
+
+function _handlePendingFrame(ev, chat) {
+  const turnId = ev.turn_id;
+  if (turnId == null) return;
+  if (ev.type === 'token.added') {
+    let msg = _pendingByTurnId.get(turnId);
+    if (!msg && turn && turn.asstMsg) {
+      // First token.added for this turn: associate with the live message.
+      msg = turn.asstMsg;
+      _pendingByTurnId.set(turnId, msg);
+    }
+    if (!msg) return;
+    msg.pendingTokens = msg.pendingTokens || [];
+    msg.pendingTokens.push(ev.token);
+    if (!(runtime.patchMessage && runtime.patchMessage(msg.id))) runtime.render();
+  } else if (ev.type === 'token.resolved') {
+    const msg = _pendingByTurnId.get(turnId);
+    if (!msg) return;
+    msg.pendingTokens = (msg.pendingTokens || []).filter((t) => t.id !== ev.token_id);
+    msg.updateBlocks = msg.updateBlocks || [];
+    msg.updateBlocks.push({ payload: ev.payload || {}, elapsed_ms: ev.elapsed_ms || 0 });
+    if (!msg.pendingTokens.length) _pendingByTurnId.delete(turnId);
+    if (!(runtime.patchMessage && runtime.patchMessage(msg.id))) runtime.render();
+  }
+}
 
 // Adaptive render cadence: each patch re-parses the WHOLE active message
 // (markdown + re-highlight every code block via chatMsg), so per-render cost
@@ -609,6 +658,12 @@ function beginTurn(chat, modelLabel, sessionId) {
 
   const onEvent = (ev) => {
     if (!ev) return;
+    // Pending-work frames can arrive before, during, or AFTER the live turn
+    // (image_generate resolves asynchronously). Handle them before the guard.
+    if (ev.type === 'token.added' || ev.type === 'token.resolved') {
+      _handlePendingFrame(ev, chat);
+      return;
+    }
     // Guard against stray frames arriving after the turn was torn down
     // (turn = null on 'done'/'error'/404). A late delta or a trailing event
     // from a resumed EventSource tail would otherwise deref null → the
@@ -1273,9 +1328,11 @@ export const actions = {
     stopLive();
     stopElapsed();
     turn = null;
+    _pendingByTurnId.clear();
     chat.rowMenuOpen = null;
+    saveStripForCurrent(chat);
     chat.activeId = id;
-    chat.chatStrip = stripOnSessionSwitch();
+    chat.chatStrip = loadStripForKey(chat, id);
     chat.editingId = null;
     if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
     storeActiveId(id);
@@ -1333,6 +1390,8 @@ export const actions = {
     stopLive();
     stopElapsed();
     turn = null;
+    _pendingByTurnId.clear();
+    saveStripForCurrent(chat);
     chat.activeId = null;
     chat.chatStrip = stripOnSessionSwitch();
     chat.editingId = null;

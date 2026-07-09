@@ -154,7 +154,8 @@ async def action(payload: dict):
             undo = {"folder": email_himalaya.TRASH_FOLDER,
                     "from": meta.get("from") or ""}
         elif act == "mark_read" and source == "slack":
-            await slack.mark_read(item_id, meta.get("channel") or "")
+            await slack.mark_read(
+                item_id, meta.get("channelId") or meta.get("channel") or "")
             state.dismiss(source, item_id, "mark_read")
             undo = {"local": True, "note": "restores card only"}
         elif act == "complete" and source == "asana":

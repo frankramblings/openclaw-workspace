@@ -109,7 +109,7 @@ async function runAction(id, action) {
   markDismissed(state, id);
   runtime.render();
   try {
-    const r = await apiJson('/api/items/action', { source, id: String(id), action });
+    const r = await apiJson('/api/items/action', { source, id: String(id), action, meta: item.meta || {} });
     if (r && r.ok === false) throw new Error(r.error || 'action failed');
     if (r && r.undoTs) state._lastUndoTs = r.undoTs;   // consumed in slice C
   } catch (e) {

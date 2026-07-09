@@ -31,6 +31,12 @@ _MARKER = "[[followup]]"
 _TAIL_CAP = 4096
 _LOCK = threading.Lock()
 
+# See sessions_store.SCHEMA_VERSION for the contract: absent = legacy (ok, no
+# warning), higher-than-known = a downgrade (an older app version, or a
+# rollback), logged so fields silently dropped on the next save don't go
+# unnoticed.
+SCHEMA_VERSION = 1
+
 
 def _store_file():
     return config.DATA_DIR / "followups.json"
@@ -41,10 +47,18 @@ def _now_ms() -> int:
 
 
 def _load() -> dict:
-    return fsutil.load_json_guarded(_store_file(), {"promises": []}, logger=_log)
+    data = fsutil.load_json_guarded(_store_file(), {"promises": []}, logger=_log)
+    version = data.get("schema_version")
+    if isinstance(version, int) and version > SCHEMA_VERSION:
+        _log.warning(
+            "followups.json schema_version %s is newer than this app knows "
+            "how to read (%s) -- an older app version, or a downgrade; some "
+            "fields may be ignored", version, SCHEMA_VERSION)
+    return data
 
 
 def _save(data: dict) -> None:
+    data["schema_version"] = SCHEMA_VERSION
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     tmp = _store_file().with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2))

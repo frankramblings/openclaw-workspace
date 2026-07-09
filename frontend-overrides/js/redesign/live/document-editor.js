@@ -574,9 +574,29 @@ export const actions = {
         if (res.ok) {
           const j = await res.json().catch(() => ({}));
           if (j && j.mtime_ns) d.wsMtimeNs = j.mtime_ns;
+        } else {
+          // Non-ok, non-409 (e.g. a 500/502/503 restart blip — this branch
+          // uses raw fetch, which never throws on an HTTP error status).
+          // Leave `dirty` set so the next autosave tick / close-doc retries
+          // instead of silently losing the edit under a "Saved" label.
+          if (statusEl) statusEl.textContent = 'Save failed';
+          return;
         }
       } else if (d.id) {
-        await apiJson(`/api/document/${d.id}`, { content, title }, 'PUT');
+        // Raw fetch, not apiJson: apiJson (api.js) deliberately resolves
+        // rather than throws on 502/503 (routine restart blips get treated
+        // as success by most callers), which would otherwise fall through to
+        // the 'Saved' line below on a save that never actually landed.
+        // Checking res.ok directly here catches that case too.
+        const res = await fetch(`/api/document/${d.id}`, {
+          method: 'PUT', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, title }),
+        });
+        if (!res.ok) {
+          if (statusEl) statusEl.textContent = 'Save failed';
+          return;
+        }
       } else {
         return;
       }

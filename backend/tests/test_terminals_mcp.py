@@ -103,6 +103,104 @@ def test_mcp_read_bad_token_404():
     assert r.status_code == 404
 
 
+def test_mcp_read_gary_off_403(monkeypatch):
+    # A capability token minted while Gary-control was ON must NOT still allow
+    # buffer reads once the user flips Gary-mode OFF for the session — the
+    # token's 30-min TTL otherwise leaves a read-only side channel open. Must
+    # mirror mcp/run and mcp/write's exact rejection shape (403, same body).
+    token = terminals.mint_terminal_token("sess-read-off")
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: False)
+    r = TestClient(app).post("/api/terminal/mcp/read", json={"token": token})
+    assert r.status_code == 403
+    assert r.json() == {"detail": "Gary terminal control is off for this chat"}
+
+
+# --- MCP endpoints route through the SAME transport gate as the human WS
+# (Task 14, cell e). Gary's real production calls arrive as GENUINE loopback
+# (127.0.0.1) with no Serve identity header and — by default — no
+# WORKSPACE_AUTH_TOKEN. The task's default-deny-plain-loopback change must
+# NOT lock those out; a resolved per-turn capability token is itself the auth
+# factor. These tests undo the file's blanket `_allow_mcp_access` escape
+# hatch to exercise the REAL default posture (REQUIRE_TSHEADER=1, no
+# ALLOW_PLAIN_LOOPBACK) with a TestClient that reports a true loopback host.
+
+@pytest.fixture
+def loopback_client(monkeypatch):
+    monkeypatch.setenv("OPENCLAW_TERMINAL_REQUIRE_TSHEADER", "1")
+    monkeypatch.delenv("OPENCLAW_TERMINAL_ALLOW_PLAIN_LOOPBACK", raising=False)
+    return TestClient(app, client=("127.0.0.1", 51234))
+
+
+def test_mcp_run_capability_token_allows_genuine_loopback_by_default(monkeypatch, loopback_client):
+    key = "mcp-cap-run"
+    token = terminals.mint_terminal_token(key)
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: True)
+    try:
+        r = loopback_client.post(
+            "/api/terminal/mcp/run",
+            json={"token": token, "command": "printf CAP_OK", "timeout": 20},
+        )
+        assert r.status_code == 200, r.text
+        assert "CAP_OK" in r.json()["output"]
+    finally:
+        terminals.close_session(key)
+
+
+def test_mcp_read_capability_token_allows_genuine_loopback_by_default(loopback_client):
+    token = terminals.mint_terminal_token("mcp-cap-read")
+    r = loopback_client.post("/api/terminal/mcp/read", json={"token": token})
+    assert r.status_code == 200, r.text
+
+
+def test_mcp_write_capability_token_allows_genuine_loopback_by_default(monkeypatch, loopback_client):
+    key = "mcp-cap-write"
+    token = terminals.mint_terminal_token(key)
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: True)
+    try:
+        r = loopback_client.post("/api/terminal/mcp/write", json={"token": token, "data": "x"})
+        assert r.status_code == 200, r.text
+    finally:
+        terminals.close_session(key)
+
+
+def test_mcp_run_bad_token_from_genuine_loopback_is_403_not_404(loopback_client):
+    # Neither transport trust (no header, no opt-in) nor a resolvable
+    # capability token -> the transport gate now denies BEFORE the
+    # token-detail 404 branch (previously plain loopback was trusted
+    # unconditionally, so this case always reached the token check).
+    r = loopback_client.post("/api/terminal/mcp/run", json={"token": "bad", "command": "echo hi"})
+    assert r.status_code == 403
+
+
+def test_mcp_run_capability_token_alone_does_not_bypass_loopback_requirement(monkeypatch):
+    # A resolvable token from a NON-loopback client_host is still denied —
+    # matches the PR2 audit's "token + gary_mode + loopback", all three.
+    monkeypatch.setenv("OPENCLAW_TERMINAL_REQUIRE_TSHEADER", "1")
+    monkeypatch.delenv("OPENCLAW_TERMINAL_ALLOW_PLAIN_LOOPBACK", raising=False)
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: True)
+    key = "mcp-cap-remote"
+    token = terminals.mint_terminal_token(key)
+    client = TestClient(app, client=("100.64.1.9", 51234))
+    r = client.post("/api/terminal/mcp/run", json={"token": token, "command": "echo hi"})
+    assert r.status_code == 403
+
+
+def test_mcp_run_malformed_body_from_untrusted_transport_still_403(monkeypatch):
+    # A malformed JSON body from an untrusted transport must not leak a parse
+    # error before the auth decision — it degrades to "no token" and the
+    # transport gate still denies cleanly. (Override the file's blanket
+    # escape-hatch fixture so the transport is actually untrusted here.)
+    monkeypatch.setenv("OPENCLAW_TERMINAL_REQUIRE_TSHEADER", "1")
+    monkeypatch.delenv("OPENCLAW_TERMINAL_ALLOW_PLAIN_LOOPBACK", raising=False)
+    client = TestClient(app, client=("100.64.1.9", 51234))
+    r = client.post(
+        "/api/terminal/mcp/run",
+        content=b"{not json",
+        headers={"content-type": "application/json"},
+    )
+    assert r.status_code == 403
+
+
 # --- gary-mode routes -------------------------------------------------------
 
 def test_gary_mode_get_returns_three_keys(monkeypatch):

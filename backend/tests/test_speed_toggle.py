@@ -89,10 +89,10 @@ def test_patch_speed_invalid_ignored():
 
 # --- thinking pass-through (bridge) ------------------------------------------------
 
-import asyncio
-import json
+import asyncio  # noqa: E402 - intentionally scoped to this section (house style)
+import json  # noqa: E402 - intentionally scoped to this section (house style)
 
-from backend import bridge
+from backend import bridge  # noqa: E402 - intentionally scoped to this section (house style)
 
 
 def _run_open_turn(monkeypatch, **kwargs):

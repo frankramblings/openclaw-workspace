@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config
+from .fsutil import atomic_write_text, file_lock
 
 WORKSPACE = config.OPENCLAW_HOME / "workspace"
 
@@ -78,4 +79,13 @@ def load_entry(path: Path, content_key: str = "content") -> dict:
 
 
 def save_entry(path: Path, meta: dict, body: str) -> None:
-    path.write_text(dump_frontmatter(meta, body), encoding="utf-8")
+    """Write one vault `.md` entry (frontmatter + body) atomically.
+
+    Raises whatever `fsutil.atomic_write_text`/`file_lock` raise (disk full,
+    permission denied, a wedged lock past its timeout, ...) — this module does
+    NOT catch those. Callers (the Notes/Documents routes) are the ones who
+    know whether a failed save should surface as a 500 to the SPA, so they
+    catch at their own route boundary, log it, and return an honest error
+    instead of a 200 that silently didn't persist."""
+    with file_lock(path):
+        atomic_write_text(path, dump_frontmatter(meta, body))

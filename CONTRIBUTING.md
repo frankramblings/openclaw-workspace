@@ -9,12 +9,27 @@ Thanks for hacking on OpenClaw Workspace. It's a small project with a clear shap
 scripts/setup.sh --name Dev --yes        # branding + build the frontend
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r backend/requirements.txt
-python -m pytest backend/tests -q        # 160+ tests, ~2s
+python -m pytest backend/tests -q        # 670+ tests, ~70s
 uvicorn backend.app:app --reload --port 8800
 ```
 
 You need a running OpenClaw gateway for chat to work; the pure-mapper tests run
 without one.
+
+Frontend JS tests: `node --test frontend-overrides/js/__tests__/*.test.js`.
+
+## Dependencies
+
+`backend/requirements.txt` floors are the contract: the minimum version each
+feature needs, with an `# Optional features` section for packages that are
+lazily imported inside a function so their absence just degrades a feature
+(e.g. no `openpyxl` → `.xlsx` attachments aren't text-extracted) rather than
+breaking the app. `backend/requirements.lock` is a full `pip freeze` snapshot
+of the known-good production venv — install from it (`pip install -r
+backend/requirements.lock`) when you want exact reproducibility instead of
+floors. Refresh the lock (`pip freeze --exclude-editable > backend/requirements.lock`,
+keeping the header comment) whenever the production venv's dependency set
+changes, not on every commit.
 
 ## Ground rules
 

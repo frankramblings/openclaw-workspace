@@ -28,10 +28,10 @@ fi
 # deps (cheap no-op once installed)
 ./.venv/bin/python -m pip install -q -r backend/requirements.txt
 
-# frontend build if missing
-if [[ ! -f frontend/index.html ]]; then
-  echo "frontend/ not built — running sync…"; scripts/sync-frontend.sh
-fi
+# Always sync the frontend (a couple of seconds) — a stale/missing frontend/
+# from a prior override edit or vendor bump is a much more expensive trap
+# ("why isn't my edit showing up") than the sync cost.
+echo "syncing frontend…"; scripts/sync-frontend.sh
 
 echo "→ http://$HOST:$PORT"
 exec ./.venv/bin/python -m uvicorn backend.app:app --reload --host "$HOST" --port "$PORT"

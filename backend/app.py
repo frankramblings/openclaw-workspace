@@ -10,24 +10,23 @@ Run:  uvicorn backend.app:app --reload --port 8800   (from the repo root)
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import json
 import logging
-import mimetypes
-import re
-import subprocess
-import tempfile
+import os
+import shutil
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Body, FastAPI, Form
+from fastapi import Body, FastAPI, Form, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import branch_context, bridge, capabilities, chat_search, config, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
+from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
+               config_check, doctor, draft_mode, event_store, followup, monitor,
+               sessions_store, terminals, websearch)
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -42,7 +41,6 @@ from .notes import router as notes_router
 from .research import router as research_router
 from .settings_status import router as settings_router
 from .skills import router as skills_router
-from .uploads import ATTACH_DIR
 from .uploads import router as uploads_router
 from .workspace_files import router as workspace_files_router
 from .workspace_watch import router as workspace_watch_router
@@ -51,6 +49,75 @@ from .terminals import router as terminals_router
 from .resume_route import router as resume_router
 from .export_pdf import router as export_pdf_router
 from . import workspace_files
+# Attachment subsystem (Task 19): image/text extraction, HEIC→JPEG, persistence.
+# app.py keeps the to_thread call sites (they dispatch the blocking work here off
+# the event loop) and re-exposes these names so existing call sites / monkeypatch
+# seams keep working (e.g. tests call app._terminal_attachments).
+from .attachments import (
+    _apply_msg_attachments,
+    _extract_text_attachments,
+    _persist_msg_attachments,
+    _prepend_text_attachments,
+    _resolve_attachments,
+)
+# Re-export the turn-engine helpers (extracted to chat_turn.py in Task 19) on the
+# app module so every existing import site and monkeypatch seam keeps resolving
+# them at backend.app.X: followup.py reads app._model_ref / app._sse_frame /
+# app._late_reply / app._start_turn_recorder; tests do `from backend.app import
+# _is_done_frame / _wants_web / reply_after / ...` and patch app._log_turn_timing.
+# Plain module-level aliases (not `from ... import`) so ruff sees them as used.
+_model_ref = chat_turn._model_ref
+_thinking_for_speed = chat_turn._thinking_for_speed
+_is_done_frame = chat_turn._is_done_frame
+_DONE_SSE = chat_turn._DONE_SSE
+_needs_title = chat_turn._needs_title
+_first_chars_title = chat_turn._first_chars_title
+_sanitize_title = chat_turn._sanitize_title
+_generate_ai_title = chat_turn._generate_ai_title
+_wants_web = chat_turn._wants_web
+_sse_frame = chat_turn._sse_frame
+reply_after = chat_turn.reply_after
+_turn_timing_record = chat_turn._turn_timing_record
+_log_turn_timing = chat_turn._log_turn_timing
+_LATE_REPLY_SCHEDULE = chat_turn._LATE_REPLY_SCHEDULE
+_late_reply = chat_turn._late_reply
+# Also re-exposed for tests that call app._terminal_attachments directly
+# (test_bridge_terminal_images); the route itself no longer references it — the
+# engine resolves terminal-drop images via attachments._terminal_attachments.
+_terminal_attachments = chat_turn._terminal_attachments
+
+# Two seam shapes, don't conflate them: the attachments import and every
+# chat_turn.X alias above are one-time DIRECT-CALL re-exports — the engine
+# calls its OWN module-global, so patching app.X is a no-op (patch chat_turn.X
+# / attachments.X to affect it). _spawn / maybe_auto_extract / _log_turn_timing
+# (the drive_turn call below, ~:492) are PASS-THROUGH seams instead, looked up
+# on `app` at call time and passed in as kwargs, so patching app.X for those
+# three DOES reach the engine.
+
+# Configure root logging ONCE, here, at import time — before the FastAPI app
+# object (and anything that might log) is built. Only 3 of ~40 backend
+# modules called getLogger before this task; every module's `logging.warning`/
+# `.error` calls were previously going nowhere (root logger had no handler ->
+# Python's "handler of last resort" prints WARNING+ to stderr with no
+# formatting, INFO/DEBUG silently vanish). basicConfig installs a StreamHandler
+# with a real formatter at the level WORKSPACE_LOG_LEVEL asks for (INFO by
+# default).
+#
+# The `if not logging.getLogger().handlers` guard matters because under
+# uvicorn the root logger MAY already have a handler by the time this module
+# is imported (uvicorn installs its own default logging config before
+# importing the ASGI app target) — calling basicConfig again in that case is a
+# silent no-op per the stdlib docs, but the guard makes that explicit and
+# means a bare `python -c "import backend.app"` (no uvicorn) still gets
+# sensible output instead of the handler-of-last-resort fallback.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.environ.get("WORKSPACE_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+_log = logging.getLogger(__name__)
+
 
 async def _startup_reindex() -> None:
     """Keep the semantic-search index fresh in the background. Runs the first
@@ -73,6 +140,16 @@ async def _startup_reindex() -> None:
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    # Startup config validation (Task 15): numeric env vars that fail to
+    # parse, a corrupt ~/.openclaw/openclaw.json, a missing vault root, and
+    # likely WORKSPACE_*/OPENCLAW_*/INBOX_* env-var typos are all logged here
+    # and never stop the app from booting. An unwritable .data/ is the one
+    # exception -- config_check.run() raises for that, and we let it
+    # propagate: the app truly cannot function without somewhere to persist
+    # sessions/state, so failing loudly at startup beats booting into a
+    # silent-write-failure mode.
+    for problem in config_check.run():
+        _log.warning("config check: %s", problem)
     # The persistent gateway monitor (status dot / restart awareness).
     task = asyncio.create_task(monitor.run())
     # Non-blocking semantic-search index build (delayed; swallows failures).
@@ -82,25 +159,44 @@ async def _lifespan(_app: FastAPI):
     # Filesystem watcher for the doc editor's live-refresh (broadcasts to
     # /api/workspace/watch subscribers). Cheap Rust-backed inotify; one task.
     workspace_watch.start_watcher()
-    yield
-    # Reap every PTY shell so its `bash -i` child (and descendants) get
-    # SIGHUP→SIGKILL right now. Otherwise they ignore the SIGTERM systemd sends
-    # the whole cgroup, holding the unit open until TimeoutStopSec forces a
-    # SIGKILL of everything — the intermittent restart hang / 502 window. We call
-    # PtySession.close() directly (not close_session) so we DON'T also unlink the
-    # persistent per-session image-attachment registry; scrollback/cwd are
-    # already flushed by close() and restored on the next attach.
-    for _sess in list(getattr(terminals, "_sessions", {}).values()):
-        try:
-            _sess.close()
-        except Exception:  # noqa: BLE001 - best-effort teardown, never block exit
-            pass
-    task.cancel()
-    search_task.cancel()
-    followup_task.cancel()
-    for t in (task, search_task, followup_task):
-        with contextlib.suppress(asyncio.CancelledError):
-            await t
+    try:
+        yield
+    finally:
+        # Reap every PTY shell so its `bash -i` child (and descendants) get
+        # SIGHUP→SIGKILL right now. Otherwise they ignore the SIGTERM systemd sends
+        # the whole cgroup, holding the unit open until TimeoutStopSec forces a
+        # SIGKILL of everything — the intermittent restart hang / 502 window. We call
+        # PtySession.close() directly (not close_session) so we DON'T also unlink the
+        # persistent per-session image-attachment registry; scrollback/cwd are
+        # already flushed by close() and restored on the next attach.
+        for _sess in list(getattr(terminals, "_sessions", {}).values()):
+            try:
+                _sess.close()
+            except Exception:  # noqa: BLE001 - best-effort teardown, never block exit
+                pass
+        task.cancel()
+        search_task.cancel()
+        followup_task.cancel()
+        for t in (task, search_task, followup_task):
+            with contextlib.suppress(asyncio.CancelledError):
+                await t
+        # Own every other task we've spun up over the app's life so nothing is
+        # orphaned to uvicorn's 2s force-close window: the workspace-watch
+        # filesystem watcher, per-turn SSE recorders (_TURN_TASKS — one per
+        # in-flight chat turn, detached from any reader), and fire-and-forget
+        # background work (_BG_TASKS — memory auto-extract, gateway-side
+        # session delete, on-demand reindex). Snapshot to lists first: these
+        # collections mutate themselves via done-callbacks/pop as tasks finish,
+        # which would raise "set changed size during iteration" if we iterated
+        # them live while cancelling.
+        await workspace_watch.stop()
+        remaining = list(_TURN_TASKS.values()) + list(_BG_TASKS)
+        for t in remaining:
+            t.cancel()
+        if remaining:
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    asyncio.gather(*remaining, return_exceptions=True), 2.0)
 
 
 app = FastAPI(title="OpenClaw Workspace", lifespan=_lifespan)
@@ -167,58 +263,59 @@ def _spawn(coro) -> asyncio.Task:
 # turn or lose the work done while away.
 _TURN_TASKS: dict[str, asyncio.Task] = {}
 
-# Idle keepalive for the POST tail (seconds): a `: keepalive` comment keeps
-# proxies from killing the connection while the agent is thinking. Matches
-# resume_route's tail loop.
-_TURN_KEEPALIVE_S = 15.0
-
-
-async def _record_turn(session_key: str, source) -> None:
-    """The single writer. Drain `source` (the async generator of SSE frames for
-    one turn) into `event_store`, independent of any reader. Marks the turn
-    active on entry and inactive on exit, and ALWAYS lands a terminal `[DONE]`
-    frame so every tail closes cleanly — even on error or an explicit Stop
-    (CancelledError). Appending must never raise into the turn."""
-    event_store.begin_turn(session_key)
-    done_emitted = False
-    try:
-        async for chunk in source:
-            try:
-                event_store.append(session_key, chunk)
-            except Exception:  # noqa: BLE001 - event log issue can't break the turn
-                pass
-            if _is_done_frame(chunk):
-                done_emitted = True
-    finally:
-        if not done_emitted:
-            try:
-                event_store.append(session_key, _DONE_SSE)
-            except Exception:  # noqa: BLE001
-                pass
-        event_store.end_turn(session_key)
-        _TURN_TASKS.pop(session_key, None)
-
 
 def _start_turn_recorder(session_key: str, source_factory):
-    """Launch the detached recorder for a turn if one isn't already running for
-    this session. `source_factory` is a zero-arg callable returning the turn's
-    SSE async generator; it is invoked ONLY when we actually start, so a guarded
-    no-op never spins up a second gateway run. Returns the recorder Task."""
-    prev = _TURN_TASKS.get(session_key)
-    if prev is not None and not prev.done():
-        return prev  # a turn is already recording for this session
-    task = asyncio.create_task(_record_turn(session_key, source_factory()))
-    _TURN_TASKS[session_key] = task
-    return task
+    """Thin binding to chat_turn.start_turn_recorder against THIS app's shared
+    _TURN_TASKS registry — the one the lifespan reaper, the busy guard, and the
+    resume/stop routes (and followup.py) all read. Kept on the app module so
+    those callers and their tests keep resolving app._start_turn_recorder /
+    app._TURN_TASKS unchanged after the engine moved to chat_turn.py."""
+    return chat_turn.start_turn_recorder(session_key, source_factory,
+                                         turn_tasks=_TURN_TASKS)
+
+
+def _disk_free_gb(path) -> float | None:
+    """Free space (GB, 1 decimal) on the filesystem holding `path`, or None if
+    it can't be read (including a not-yet-created path — a fresh install's
+    `.data` dir reads as None until first write, which is honest). Best-effort
+    decoration only: /api/health's whole point is to answer 200 whenever the
+    process is alive, so a disk-usage read must never itself turn into the 500
+    it's supposed to help diagnose. Deliberately read-only — a liveness probe
+    polled every 5 min must NOT mkdir its way past a missing dir (that would
+    silently recreate intentionally-cleaned dirs, e.g. under the quota-tight
+    /tmp on this host)."""
+    try:
+        usage = shutil.disk_usage(Path(path))
+        return round(usage.free / (1024 ** 3), 1)
+    except OSError:
+        _log.warning("disk usage check failed for %s", path, exc_info=True)
+        return None
 
 
 @app.get("/api/health")
 async def health():
+    """Liveness probe for the doctor-alert timer (polled every 5 min — see
+    deploy/systemd/bin/openclaw-doctor-alert): it only checks for HTTP 200, so
+    this must never do gateway I/O or raise — every field below is either
+    static config or a cached/no-IO read. Gateway *connectivity* is a separate
+    concern, answered by /api/gateway/status (which this endpoint deliberately
+    does not duplicate the async health-RPC of).
+
+    `gateway` used to be the static gateway_ws_url() — always the same string,
+    so it told you nothing about health. It's now monitor.current_state()
+    (ok|restarting|down), the same source /api/gateway/status reads, via the
+    synchronous no-IO accessor (not `monitor.status()`, which does a live RPC
+    when state is "ok" — exactly the gateway I/O this endpoint must avoid).
+    Key/type are unchanged (still a `str`); only the value's meaning changed,
+    and nothing in this repo or the doctor-alert script reads it as a URL."""
     return {
         "ok": True,
-        "gateway": config.gateway_ws_url(),
+        "gateway": monitor.current_state(),
         "session": config.session_key(),
         "has_password": bool(config.gateway_password()),
+        "disk_free_gb": _disk_free_gb(config.DATA_DIR),
+        "tmp_free_gb": _disk_free_gb(os.environ.get("TMPDIR") or "/tmp"),
+        "schema": 1,
     }
 
 
@@ -256,552 +353,77 @@ async def gateway_status():
     return await monitor.status()
 
 
+# --- Frontend global error boundary sink ------------------------------------
+# error-boundary.js's window.onerror/unhandledrejection handler POSTs here,
+# fire-and-forget (the client ignores the response entirely — see app.js's
+# `.catch(() => {})`). This is telemetry, not a control-plane endpoint, so it
+# is deliberately as forgiving as possible: garbage input never raises past
+# this handler, and it's never a source of write amplification against the
+# real log stream.
+_client_log = logging.getLogger("client")
+
+_CLIENT_LOG_MSG_MAX = 500
+_CLIENT_LOG_SRC_MAX = 500
+_CLIENT_LOG_STACK_MAX = 4000
+
+# Process-wide (not per-client — this is a single-operator deployment), plain
+# in-memory list of the unix timestamps of accepted posts in the trailing
+# hour. Pruned lazily on every call so it can never grow past the cap.
+_CLIENT_LOG_RATE_LIMIT = 60
+_CLIENT_LOG_RATE_WINDOW_S = 3600.0
+_CLIENT_LOG_TIMESTAMPS: list[float] = []
+
+
+def _client_log_rate_ok() -> bool:
+    """True (and records the hit) iff under 60 posts in the trailing hour."""
+    now = time.time()
+    cutoff = now - _CLIENT_LOG_RATE_WINDOW_S
+    while _CLIENT_LOG_TIMESTAMPS and _CLIENT_LOG_TIMESTAMPS[0] < cutoff:
+        _CLIENT_LOG_TIMESTAMPS.pop(0)
+    if len(_CLIENT_LOG_TIMESTAMPS) >= _CLIENT_LOG_RATE_LIMIT:
+        return False
+    _CLIENT_LOG_TIMESTAMPS.append(now)
+    return True
+
+
+@app.post("/api/client-log", status_code=204)
+async def client_log(request: Request):
+    """Sink for the redesign's global error boundary: {msg, src, stack} for
+    one uncaught client error/rejection, logged at WARNING under logger
+    "client" and truncated (msg/src 500 chars, stack 4000) so one giant stack
+    trace can't blow up the log file. Always 204, even when the entry is
+    dropped (rate-capped or unparseable) — the frontend never reads the body
+    and mustn't be given a reason to retry a telemetry POST.
+
+    Malformed input never 500s: request.json() failures, a non-dict payload,
+    and non-string fields all degrade to empty values rather than raising.
+    Explicit design choice (brief left it open): malformed JSON is a SILENT
+    204 DROP, not a 400 — this is fire-and-forget telemetry from a boundary
+    that must never cause user-visible friction, so there is no reason to
+    hand the client an error to react to.
+    """
+    if not _client_log_rate_ok():
+        return Response(status_code=204)  # over the cap — silently drop
+
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001 - garbage body -> treat as empty, never 500
+        payload = None
+    if not isinstance(payload, dict):
+        payload = {}
+
+    def _field(key: str, limit: int) -> str:
+        val = payload.get(key)
+        return str(val)[:limit] if val is not None else ""
+
+    msg = _field("msg", _CLIENT_LOG_MSG_MAX)
+    src = _field("src", _CLIENT_LOG_SRC_MAX)
+    stack = _field("stack", _CLIENT_LOG_STACK_MAX)
+    _client_log.warning("client error: %s (%s)%s", msg, src or "unknown", f"\n{stack}" if stack else "")
+    return Response(status_code=204)
+
+
 # --- The one real, load-bearing endpoint: chat ------------------------------
-
-def _model_ref(rec: dict | None) -> str | None:
-    """Build a gateway model ref ("provider/model") from a session record, or
-    None to leave the model at the agent default. Returns None for the
-    "openclaw" placeholder (legacy/bootstrap) AND when the pick already equals
-    the configured default — so we only set an override when it actually
-    differs (no per-turn sessions.create churn for default chats)."""
-    if not rec:
-        return None
-    model = (rec.get("model") or "").strip()
-    if not model or model == "openclaw":
-        return None
-    provider = (rec.get("endpoint_id") or "").strip()
-    def_provider, def_model = config.default_model()
-    if model == def_model and (not provider or provider in (def_provider, "openclaw")):
-        return None
-    return f"{provider}/{model}" if provider and provider != "openclaw" else model
-
-
-# --- Auto-title: name a fresh thread from its first message (AI + fallback) ---
-# The SPA names new chats "{model} {time}" (a placeholder). On the first message
-# we retitle the session — instantly to a first-line snippet, then upgraded to an
-# AI title generated by the brain (ChatGPT-style). Backend-only: the Library list
-# already reloads after a turn, so the new title just appears.
-
-_SPEED_THINKING = {"fast": "low", "deep": "high"}
-
-
-def _thinking_for_speed(speed: str | None) -> str | None:
-    """Map the chat's speed setting to chat.send's per-turn thinking override.
-    normal (and anything unknown) sends NO override — the default path stays
-    byte-identical to pre-toggle behavior."""
-    return _SPEED_THINKING.get(speed or "")
-
-
-_DONE_SSE = "data: [DONE]\n\n"
-
-
-def _is_done_frame(chunk: str) -> bool:
-    """True only for the exact terminal marker `data: [DONE]` — NOT for a delta
-    whose text merely CONTAINS the literal "[DONE]". Frames are single
-    `data: <body>` SSE messages; comparing the stripped body exactly stops a
-    real reply (or a message about this very code) that mentions [DONE] from
-    being dropped mid-stream or cutting the tail short."""
-    for line in chunk.splitlines():
-        if line.startswith("data:") and line[5:].strip() == "[DONE]":
-            return True
-    return False
-
-
-_TITLE_SESSION_KEY = f"{config.web_session_prefix()}-titler"
-# "{base} 1:56:53 PM" / "{base} 14:05:09" — the SPA's placeholder name.
-_PLACEHOLDER_RE = re.compile(r".+\s\d{1,2}:\d{2}:\d{2}(\s?[AP]M)?$", re.I)
-
-
-def _needs_title(rec: dict) -> bool:
-    name = (rec.get("name") or "").strip()
-    if not name or name in ("New chat", "Nobody"):
-        return True
-    return bool(_PLACEHOLDER_RE.match(name))
-
-
-def _first_chars_title(message: str, n: int = 42) -> str:
-    text = (message or "").strip()
-    if not text:
-        return ""
-    line = text.splitlines()[0].strip()
-    return line if len(line) <= n else line[:n].rstrip() + "…"
-
-
-def _sanitize_title(raw: str) -> str:
-    if not raw:
-        return ""
-    line = raw.strip().splitlines()[0].strip().strip('"\'').strip()
-    line = re.sub(r"^(chat title|title)\s*[:\-]\s*", "", line, flags=re.I)
-    return line.rstrip(" .!,;:")[:60].strip()
-
-
-async def _collect_brain_text(prompt: str, session_key: str,
-                              model_ref: str | None = None) -> str:
-    chunks: list[str] = []
-    async for sse in bridge.stream_turn(prompt, session_key=session_key,
-                                        model_ref=model_ref):
-        if not sse.startswith("data:"):
-            continue
-        body = sse[5:].strip()
-        if not body or body == "[DONE]":
-            continue
-        try:
-            obj = json.loads(body)
-        except Exception:  # noqa: BLE001
-            continue
-        if isinstance(obj, dict) and obj.get("delta"):
-            chunks.append(obj["delta"])
-    return "".join(chunks).strip()
-
-
-async def _generate_ai_title(message: str) -> str:
-    prompt = ("Generate a short, specific chat title (3-6 words, no quotes, no "
-              "trailing punctuation) for the topic of a conversation that opens "
-              f"with this message:\n\n{message[:600]}\n\nOutput ONLY the title.")
-    return _sanitize_title(await _collect_brain_text(
-        prompt, _TITLE_SESSION_KEY, model_ref=config.TITLE_MODEL))
-
-
-def _wants_web(use_web: str, allow_web_search: str) -> bool:
-    """The globe toggle's FIELD NAME depends on the SPA's vestigial chat/agent
-    mode: `use_web` in chat mode, `allow_web_search` in agent mode (chat.js
-    ~747-753). Accept both — agent mode silently lost web search before."""
-    return any(v.lower() in ("true", "1", "on", "yes")
-               for v in (use_web, allow_web_search))
-
-
-def _sse_frame(chunk: str):
-    """Parse one of the bridge's `data: {...}` SSE strings back to its dict
-    (None for [DONE]/non-JSON). Used to observe what the turn relayed."""
-    body = chunk[5:].strip() if chunk.startswith("data:") else ""
-    if not body or body == "[DONE]":
-        return None
-    try:
-        obj = json.loads(body)
-    except ValueError:
-        return None
-    return obj if isinstance(obj, dict) else None
-
-
-def reply_after(history: list, brain_message: str) -> str | None:
-    """Assistant text following the LAST occurrence of this turn's user message
-    in the transcript — i.e. THIS turn's reply, never an earlier one."""
-    idx = next((i for i in range(len(history) - 1, -1, -1)
-                if history[i].get("role") == "user"
-                and history[i].get("content") == brain_message), None)
-    if idx is None:
-        return None
-    text = "\n".join(str(m.get("content") or "") for m in history[idx + 1:]
-                     if m.get("role") == "assistant").strip()
-    return text or None
-
-
-def _turn_timing_record(run_info: dict, session_key: str, model_ref: str | None,
-                        *, text_seen: bool, failed: bool,
-                        thinking: str | None = None) -> dict:
-    """One flat JSONL record describing where this turn's wall-clock went.
-    All *_ms fields are measured from chat.send write; None = never happened."""
-    timing = run_info.get("timing") or {}
-
-    def ms(a: str, b: str) -> int | None:
-        return (int((timing[b] - timing[a]) * 1000)
-                if a in timing and b in timing else None)
-
-    return {
-        "ts": int(time.time()),
-        "session": session_key,
-        "model": model_ref or "default",
-        "thinking": thinking,   # the chat.send override sent (None = normal)
-        "ack_ms": ms("t_send", "t_ack"),
-        "first_frame_ms": ms("t_send", "t_first_frame"),
-        "first_text_ms": ms("t_send", "t_first_text"),
-        "late_ms": ms("t_send", "t_late"),
-        "total_ms": ms("t_send", "t_end"),
-        "stalled": bool(run_info.get("stalled")),
-        "retried": bool(run_info.get("retried")),
-        "text_seen": text_seen,
-        "failed": failed,
-    }
-
-
-def _log_turn_timing(record: dict) -> None:
-    """Append one JSONL line to .data/turn_timings.jsonl. Telemetry must never
-    break a turn: every failure is swallowed. Single-generation rotation at
-    2MB keeps the file bounded on this disk-starved box."""
-    with contextlib.suppress(Exception):
-        path = config.DATA_DIR / "turn_timings.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() and path.stat().st_size > 2_000_000:
-            path.replace(path.with_name(path.name + ".old"))
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record) + "\n")
-
-
-# First checks fire fast — the reply usually already sits in the transcript
-# when this poll starts (it lands seconds *before* we get here on slow turns,
-# milliseconds after on fast ones). Tail stays ~10s total like the old
-# 5 × 2s schedule.
-_LATE_REPLY_SCHEDULE = (0.3, 0.5, 1.0, 2.0, 2.0, 2.0, 2.2)
-
-
-async def _late_reply(session_key: str, brain_message: str,
-                      _sleep=asyncio.sleep) -> str | None:
-    """Fetch the reply that the gateway commits to the transcript only AFTER
-    the run's lifecycle end (message-tool delivery — see _relay_events docs).
-    Polls with fast-start backoff; returns None if nothing lands (genuinely
-    textless turn)."""
-    for delay_s in _LATE_REPLY_SCHEDULE:
-        await _sleep(delay_s)
-        try:
-            data = await bridge.fetch_history(session_key)
-        except Exception:  # noqa: BLE001 - transient WS trouble: keep polling
-            continue
-        text = reply_after(data.get("history") or [], brain_message)
-        if text:
-            return text
-    return None
-
-
-_log = logging.getLogger(__name__)
-
-# Gateway rejects chat.send payloads over ~10 MB base64. Cap individual images
-# at 4 MB raw (~5.3 MB base64) to stay safely under that limit with multiple
-# attachments. HEIC/HEIF files are converted to JPEG first (models don't support
-# them natively and iPhone photos are often 7+ MB).
-_ATTACH_MAX_BYTES = 4 * 1024 * 1024  # 4 MB
-
-
-def _heic_to_jpeg(src: Path) -> bytes | None:
-    """Convert a HEIC/HEIF file to JPEG via ffmpeg. Returns JPEG bytes or None."""
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp_path = tmp.name
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", str(src), "-update", "1",
-             "-vf", "scale='min(1920,iw)':-2", "-q:v", "5", tmp_path],
-            capture_output=True, timeout=30,
-        )
-        if result.returncode == 0:
-            return Path(tmp_path).read_bytes()
-    except Exception:  # noqa: BLE001
-        pass
-    finally:
-        if tmp_path:
-            with contextlib.suppress(OSError):
-                Path(tmp_path).unlink()
-    return None
-
-
-def _resolve_attachments(raw: str) -> list[dict]:
-    """Turn the composer's posted `attachments` (a JSON array of upload ids, each
-    a filename under ATTACH_DIR) into the chat.send attachment shape the gateway
-    accepts: {type, mimeType, fileName, content(base64)}. Only image/* files are
-    forwarded — the gateway sniffs the bytes and drops non-images, and gpt-5.5
-    takes them as inline vision blocks (large ones it offloads to media refs the
-    agent resolves). Silently skips anything missing/unreadable so a bad id never
-    breaks the turn."""
-    if not raw:
-        return []
-    try:
-        ids = json.loads(raw)
-    except Exception:  # noqa: BLE001 - malformed field → no attachments
-        return []
-    out: list[dict] = []
-    for fid in ids if isinstance(ids, list) else []:
-        if not isinstance(fid, str):
-            continue
-        safe = "".join(c for c in fid if c.isalnum() or c in "-_.")  # path-traversal guard
-        path = ATTACH_DIR / safe
-        if not path.exists() or not path.is_file():
-            continue
-        mime = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
-        if not mime.startswith("image/"):
-            continue  # gateway accepts only image/* attachments
-        try:
-            data = path.read_bytes()
-        except Exception:  # noqa: BLE001 - unreadable file → skip it
-            continue
-        # Convert HEIC/HEIF → JPEG (models don't support these formats).
-        if mime in ("image/heic", "image/heif"):
-            converted = _heic_to_jpeg(path)
-            if converted:
-                data, mime = converted, "image/jpeg"
-            else:
-                _log.warning("HEIC conversion failed for %s; skipping attachment", path.name)
-                continue
-        # Skip images that are still too large for the gateway after conversion.
-        if len(data) > _ATTACH_MAX_BYTES:
-            _log.warning("Attachment %s is %d bytes (>4 MB); skipping", path.name, len(data))
-            continue
-        out.append({
-            "type": "image",
-            "mimeType": mime,
-            "fileName": path.stem + (".jpg" if mime == "image/jpeg" else path.suffix),
-            "content": base64.b64encode(data).decode("ascii"),
-        })
-    return out
-
-
-# Non-image files: extract text and inline into the message body. Total across
-# all files per turn is capped so a huge upload can't blow the context.
-_TEXT_ATTACH_TOTAL_MAX = 200 * 1024
-_TEXT_ATTACH_PER_FILE_MAX = 100 * 1024
-_TEXT_RAW_EXTS = {".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".log",
-                  ".xml", ".yaml", ".yml", ".ini", ".conf", ".toml", ".env",
-                  ".py", ".js", ".ts", ".tsx", ".jsx", ".html", ".htm", ".css",
-                  ".scss", ".sh", ".bash", ".zsh", ".fish", ".rb", ".go", ".rs",
-                  ".java", ".kt", ".swift", ".c", ".h", ".cpp", ".hpp", ".cc",
-                  ".cs", ".php", ".sql", ".rst", ".org", ".vue", ".svelte",
-                  ".lua", ".pl", ".r", ".dockerfile", ".makefile", ".gradle",
-                  ".diff", ".patch"}
-
-
-def _extract_file_text(path: Path, mime: str) -> str | None:
-    """Best-effort text extraction. Returns None for formats we can't read (e.g.
-    .numbers without libreoffice); the caller silently skips those."""
-    ext = path.suffix.lower()
-    try:
-        if ext in _TEXT_RAW_EXTS or mime.startswith("text/") or mime == "application/json":
-            return path.read_text(errors="replace")
-        if ext == ".xlsx" or mime in (
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ):
-            from openpyxl import load_workbook
-            wb = load_workbook(path, read_only=True, data_only=True)
-            parts: list[str] = []
-            for sheet in wb.worksheets:
-                parts.append(f"## Sheet: {sheet.title}")
-                for row in sheet.iter_rows(values_only=True):
-                    cells = ["" if v is None else str(v) for v in row]
-                    if any(c.strip() for c in cells):
-                        parts.append("\t".join(cells))
-            wb.close()
-            return "\n".join(parts)
-        if ext == ".pdf" or mime == "application/pdf":
-            from pypdf import PdfReader
-            reader = PdfReader(str(path))
-            out: list[str] = []
-            for i, page in enumerate(reader.pages, start=1):
-                text = (page.extract_text() or "").strip()
-                if text:
-                    out.append(f"## Page {i}\n{text}")
-            return "\n\n".join(out)
-        if ext == ".docx" or mime == (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ):
-            from docx import Document
-            doc = Document(str(path))
-            parts: list[str] = [p.text for p in doc.paragraphs if p.text.strip()]
-            for tbl in doc.tables:
-                for row in tbl.rows:
-                    cells = [c.text.strip() for c in row.cells]
-                    if any(cells):
-                        parts.append("\t".join(cells))
-            return "\n".join(parts)
-        if ext == ".pptx" or mime == (
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        ):
-            from pptx import Presentation
-            pres = Presentation(str(path))
-            parts: list[str] = []
-            for i, slide in enumerate(pres.slides, start=1):
-                parts.append(f"## Slide {i}")
-                for shape in slide.shapes:
-                    if shape.has_text_frame:
-                        for para in shape.text_frame.paragraphs:
-                            line = "".join(r.text for r in para.runs).strip()
-                            if line:
-                                parts.append(line)
-                    if getattr(shape, "has_table", False):
-                        for row in shape.table.rows:
-                            cells = [c.text.strip() for c in row.cells]
-                            if any(cells):
-                                parts.append("\t".join(cells))
-                if slide.has_notes_slide:
-                    notes = slide.notes_slide.notes_text_frame.text.strip()
-                    if notes:
-                        parts.append(f"[Speaker notes] {notes}")
-            return "\n".join(parts)
-    except Exception as e:  # noqa: BLE001
-        _log.warning("Text extraction failed for %s (%s): %s", path.name, ext, e)
-        return None
-    return None
-
-
-def _extract_text_attachments(raw: str) -> tuple[list[dict], list[str]]:
-    """Return (files, skipped). `files` is [{name, text}] for uploads we could
-    read; `skipped` is names of non-image uploads whose content we couldn't
-    extract (unsupported format, empty output, or budget exceeded). Images are
-    handled by `_resolve_attachments` and are neither returned nor skipped
-    here."""
-    if not raw:
-        return [], []
-    try:
-        ids = json.loads(raw)
-    except Exception:  # noqa: BLE001
-        return [], []
-    out: list[dict] = []
-    skipped: list[str] = []
-    total = 0
-    for fid in ids if isinstance(ids, list) else []:
-        if not isinstance(fid, str):
-            continue
-        safe = "".join(c for c in fid if c.isalnum() or c in "-_.")
-        path = ATTACH_DIR / safe
-        if not path.exists() or not path.is_file():
-            continue
-        mime = mimetypes.guess_type(str(path))[0] or ""
-        if mime.startswith("image/"):
-            continue  # image path handles these
-        text = _extract_file_text(path, mime)
-        if not text or not text.strip():
-            skipped.append(path.name)
-            continue
-        text = text.strip()
-        if len(text) > _TEXT_ATTACH_PER_FILE_MAX:
-            text = text[:_TEXT_ATTACH_PER_FILE_MAX] + "\n... [truncated]"
-        if total + len(text) > _TEXT_ATTACH_TOTAL_MAX:
-            _log.warning("Text-attach total exceeded %d bytes; dropping %s",
-                         _TEXT_ATTACH_TOTAL_MAX, path.name)
-            skipped.append(path.name)
-            continue
-        total += len(text)
-        out.append({"name": path.name, "text": text})
-    return out, skipped
-
-
-def _prepend_text_attachments(message: str, files: list[dict],
-                              skipped: list[str] | None = None) -> str:
-    """Inline extracted file text into the user message so it reaches the model
-    regardless of vision/file-type support. The gateway only forwards image
-    attachments; everything else has to arrive as text."""
-    skipped = skipped or []
-    if not files and not skipped:
-        return message
-    parts: list[str] = []
-    if files:
-        parts.append("The user attached the following file(s):\n")
-        for f in files:
-            parts.append(f"── {f['name']} ──")
-            parts.append(f["text"])
-            parts.append("")
-        parts.append("──\n")
-    if skipped:
-        parts.append(
-            "[System note: couldn't extract text from these attachments — "
-            "unsupported format or empty content: "
-            + ", ".join(skipped) + ". Tell the user which files were dropped "
-            "so they can convert or resend.]\n"
-        )
-    parts.append(message or "")
-    return "\n".join(parts)
-
-
-_CHAT_ATTACH_DIR = ATTACH_DIR.parent / ".chat-attachments"
-
-
-def _attach_log_path(session_id: str) -> Path | None:
-    safe = "".join(c for c in (session_id or "") if c.isalnum() or c in "-_.")
-    return (_CHAT_ATTACH_DIR / f"{safe}.json") if safe else None
-
-
-def _persist_msg_attachments(session_id: str, message: str, attachments_raw: str) -> None:
-    """Record image attachments for a sent message so /api/history can rehydrate
-    them on reload — the gateway transcript keeps only text, so a sent image
-    otherwise vanishes on refresh. Appends one record per send-with-images:
-    {text, att:[{id,url}]}. Best-effort; never raises into the turn."""
-    if not session_id or not attachments_raw:
-        return
-    try:
-        ids = json.loads(attachments_raw)
-    except Exception:  # noqa: BLE001 - malformed field → nothing to persist
-        return
-    att: list[dict] = []
-    for fid in ids if isinstance(ids, list) else []:
-        if not isinstance(fid, str):
-            continue
-        safe = "".join(c for c in fid if c.isalnum() or c in "-_.")
-        path = ATTACH_DIR / safe
-        if not path.exists() or not path.is_file():
-            continue
-        mime = mimetypes.guess_type(str(path))[0] or ""
-        if not mime.startswith("image/"):
-            continue
-        att.append({"id": safe, "url": f"/api/upload/{safe}"})
-    if not att:
-        return
-    p = _attach_log_path(session_id)
-    if not p:
-        return
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        log = []
-        if p.exists():
-            try:
-                log = json.loads(p.read_text() or "[]")
-            except Exception:  # noqa: BLE001
-                log = []
-        log.append({"text": (message or "").strip(), "att": att})
-        p.write_text(json.dumps(log))
-    except Exception:  # noqa: BLE001 - persistence is best-effort
-        pass
-
-
-def _apply_msg_attachments(session_id: str, history: list[dict]) -> None:
-    """Assign persisted image attachments to user messages in `history`, matching
-    on (trimmed) text in send order. Mutates `history` in place; best-effort."""
-    p = _attach_log_path(session_id)
-    if not p or not p.exists():
-        return
-    try:
-        log = json.loads(p.read_text() or "[]")
-    except Exception:  # noqa: BLE001
-        return
-    if not isinstance(log, list) or not log:
-        return
-    used = [False] * len(log)
-    for m in history:
-        if m.get("role") != "user":
-            continue
-        text = (m.get("content") or "").strip()
-        for i, rec in enumerate(log):
-            if used[i]:
-                continue
-            if (rec.get("text") or "").strip() == text:
-                m["attachments"] = rec.get("att") or []
-                used[i] = True
-                break
-
-
-def _terminal_attachments(terminal_key: str) -> list[dict]:
-    """Pending images the user dropped into this chat's terminal → chat.send
-    image blocks, then mark them consumed so each rides exactly one turn. The
-    token→path mapping itself persists (terminals registry) for later resolves.
-    Mirrors _resolve_attachments' block shape; image/* only; bad files skipped."""
-    out: list[dict] = []
-    consumed: list[str] = []
-    for it in terminals.list_attachments(terminal_key, pending_only=True):
-        path = Path(it.get("path", ""))
-        if not path.is_file():
-            continue
-        mime = it.get("mime") or mimetypes.guess_type(str(path))[0] or "application/octet-stream"
-        if not mime.startswith("image/"):
-            continue
-        try:
-            data = path.read_bytes()
-        except Exception:  # noqa: BLE001 - unreadable → skip, never break the turn
-            continue
-        out.append({
-            "type": "image",
-            "mimeType": mime,
-            "fileName": path.name,
-            "content": base64.b64encode(data).decode("ascii"),
-        })
-        consumed.append(it["token"])
-    if consumed:
-        terminals.mark_consumed(terminal_key, consumed)
-    return out
 
 
 @app.post("/api/chat_stream")
@@ -825,30 +447,28 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
 
     # One turn per session at a time. The detached recorder already guards
     # against a second concurrent turn for this sessionKey, so if we proceeded
-    # here the new message's _drive_turn would never run — the gateway would
+    # here the new message's drive_turn would never run — the gateway would
     # never see it and this POST would silently tail the PREVIOUS turn as if it
     # were the answer. Tell the client instead (a fresh chat and a second unsaved
     # chat both share config.web_session_key(), so this also covers double-send).
     prev_turn = _TURN_TASKS.get(session_key)
     if prev_turn is not None and not prev_turn.done():
-        async def _busy():
-            yield bridge._sse({"type": "tool_start", "tool": "bridge",
-                               "tool_id": "busy", "command": "turn in progress",
-                               "round": 1})
-            yield bridge._sse({"type": "tool_output", "tool": "bridge",
-                               "tool_id": "busy", "exit_code": 1,
-                               "output": "A turn is already running for this chat — "
-                                         "wait for it to finish, then resend."})
-            yield _DONE_SSE
-        return StreamingResponse(_busy(), media_type="text/event-stream")
+        return StreamingResponse(chat_turn.busy_stream(),
+                                 media_type="text/event-stream")
 
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
-    chat_attachments = _resolve_attachments(attachments)  # image uploads → vision
+    # Off the event loop: image conversion (ffmpeg, up to a 30s timeout) and
+    # office/PDF text extraction (openpyxl/pypdf/python-docx/python-pptx) are
+    # blocking calls that would otherwise stall every concurrent SSE stream
+    # for the duration of one file-heavy message. Same pattern as
+    # notes.py/_load_all and documents.py/_scan_docs. These to_thread call
+    # sites stay in the route (Task 12); the engine consumes the resolved lists.
+    chat_attachments = await asyncio.to_thread(_resolve_attachments, attachments)  # image uploads → vision
     # Non-image uploads (CSV, XLSX, DOCX, PPTX, PDF, text): extract and inline
     # into the message so they reach the model (the gateway drops non-image
     # bytes). Skipped files are surfaced as a system note so the assistant can
     # tell the user which files were dropped.
-    text_files, skipped_files = _extract_text_attachments(attachments)
+    text_files, skipped_files = await asyncio.to_thread(_extract_text_attachments, attachments)
     if text_files or skipped_files:
         message = _prepend_text_attachments(message, text_files, skipped_files)
     # Persist the image refs (keyed by the SPA session id) so they survive a
@@ -868,169 +488,23 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             sessions_store.update(rec["id"], name=snippet)
         title_task = asyncio.create_task(_generate_ai_title(message))
 
-    async def _drive_turn():
-        """Produce every SSE frame for this turn (web search, the gateway relay,
-        late reply, metrics, draft doc_update, DONE). This is the turn's source
-        of truth; the detached recorder (`_record_turn`) drains it into
-        event_store and owns the turn boundary + the event ids. Readers never
-        consume this directly — they tail event_store — so the turn survives any
-        reader leaving."""
-        brain_message = message
-        if session:
-            # First send into a freshly-branched session: splice in the
-            # pending prefix's preamble (see branch_context.py + Task 3's
-            # POST /api/session/branch). consume() deletes the pending record,
-            # so every send after the first for this session id is untouched.
-            brain_message = await _compose_outgoing_for_session(session, brain_message)
-        text_seen = False    # any non-thinking {"delta"} relayed this turn?
-        tools_seen = False   # any tool card relayed (fresh bubble needed)?
-        failed = False       # bridge/agent error or user abort — no reply coming
-        try:
-            # Web search (the composer's globe toggle — field name varies by
-            # the SPA's vestigial mode, see _wants_web). Search failures
-            # degrade to a visible failed tool card — never break the turn.
-            if _wants_web(use_web, allow_web_search):
-                s = websearch.load_settings()
-                if s.get("search_provider") != "disabled":
-                    yield bridge._sse({"type": "tool_start", "tool": "web_search",
-                                       "tool_id": "websearch",
-                                       "command": message[:120], "round": 1})
-                    try:
-                        results = await websearch.search(
-                            message, int(s.get("search_result_count") or 5))
-                        yield bridge._sse({
-                            "type": "tool_output", "tool": "web_search",
-                            "tool_id": "websearch", "exit_code": 0,
-                            "output": "\n".join(f"[{i+1}] {r['title']} — {r['url']}"
-                                                for i, r in enumerate(results))
-                                      or "no results"})
-                        if results:
-                            # Build on brain_message (which may already carry the
-                            # branch preamble spliced in above), not the raw
-                            # `message` param — the search itself still queries
-                            # off `message` (see the `websearch.search` call
-                            # above); only this "user text" wrapper needs the
-                            # composed value so a branch-first-send doesn't
-                            # silently drop its one-shot preamble.
-                            brain_message = websearch.context_block(brain_message, results)
-                    except Exception as exc:  # noqa: BLE001
-                        yield bridge._sse({"type": "tool_output", "tool": "web_search",
-                                           "tool_id": "websearch",
-                                           "output": f"web search failed: {exc}",
-                                           "exit_code": 1})
-            if draft_doc is not None:
-                brain_message = draft_mode.wrap_message(brain_message, draft_doc)
-            # Gary-drive: when terminal control is on for this chat, prepend a
-            # per-turn capability hint + a freshly-minted token (stripped from
-            # the history view in the /api/history handler below).
-            # CRITICAL: bind Gary to the SAME PTY key the human panel uses — the
-            # SPA chat id (rec["id"], == frontend getCurrentSessionId()), NOT the
-            # gateway sessionKey. Otherwise Gary drives a different terminal than
-            # the one the user sees. New/unsaved chats fall back to "global",
-            # which is what the panel sends (curSession() || "global").
-            terminal_key = rec["id"] if rec else "global"
-            # Terminal image drops: prepend the (history-stripped) token→path map
-            # and merge any pending dropped images into THIS turn's vision blocks.
-            att_note = terminals.terminal_attachment_note(terminal_key)
-            if att_note:
-                brain_message = att_note + brain_message
-            turn_attachments = chat_attachments + _terminal_attachments(terminal_key)
-            if terminals.gary_mode_for_session(terminal_key):
-                brain_message = terminals.gary_capability_note(terminal_key) + brain_message
-            _ACTIVE_RUNS[session_key] = run_info
-
-            async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
-                                                  model_ref=_model_ref(rec),
-                                                  attachments=turn_attachments,
-                                                  run_info=run_info,
-                                                  thinking=_thinking_for_speed((rec or {}).get("speed"))):
-                if _is_done_frame(chunk):
-                    continue  # hold DONE until the title settles, then send our own
-                frame = _sse_frame(chunk)
-                if isinstance(frame, dict):
-                    if frame.get("delta") and not frame.get("thinking"):
-                        text_seen = True
-                    if frame.get("type") in ("tool_start", "tool_output"):
-                        tools_seen = True
-                    if (frame.get("exit_code") == 1
-                            and frame.get("tool") in ("bridge", "agent")
-                            # stall terminal card still allows the late-reply
-                            # poll to salvage a transcript-landed reply.
-                            and frame.get("tool_id") != "stall") \
-                            or frame.get("tool_id") == "abort":
-                        failed = True
-                # Pure source: just yield the frame. The detached recorder
-                # (`_record_turn`) is the single writer to event_store; the POST
-                # response and every other reader are tails of that log, so a
-                # dropped reader can't stop the turn or lose mid-flight frames.
-                yield chunk
-            # Late delivery: the agent often replies via its `message` tool,
-            # whose text lands in the transcript seconds AFTER the run's
-            # lifecycle end — the live stream then carries no text at all and
-            # the reply only appeared on the next refresh. Same workaround the
-            # research engine needed: poll chat.history briefly and emit it.
-            if not text_seen and not failed:
-                late = await _late_reply(session_key, brain_message)
-                if late:
-                    run_info.setdefault("timing", {})["t_late"] = time.monotonic()
-                    if tools_seen:
-                        yield bridge._sse({"type": "agent_step"})  # fresh bubble
-                    yield bridge._sse({"delta": late})
-            # Final turn metrics: the vendor SPA renders a footer time from a
-            # {type:"metrics"} frame (chatRenderer.displayMetrics) that its
-            # original backends sent and we never did. response_time prefers
-            # t_late over t_end — that's when the user actually saw the reply.
-            # No token/cost fields: the gateway doesn't expose usage, and
-            # displayMetrics degrades to a plain "12.3s" without them.
-            timing = run_info.get("timing") or {}
-            if "t_send" in timing and not failed:
-                t_done = timing.get("t_late") or timing.get("t_end") or time.monotonic()
-                data = {"response_time": round(t_done - timing["t_send"], 1)}
-                if "t_first_text" in timing:  # pre-text wait = thinking + prep
-                    data["agent_model_wait_time"] = round(
-                        timing["t_first_text"] - timing["t_send"], 1)
-                if _model_ref(rec):
-                    data["model"] = _model_ref(rec)
-                yield bridge._sse({"type": "metrics", "data": data})
-        finally:
-            _ACTIVE_RUNS.pop(session_key, None)
-            # begin_turn/end_turn + event_store.append are owned by the detached
-            # recorder (_record_turn), NOT this source generator.
-            _log_turn_timing(_turn_timing_record(
-                run_info, session_key, _model_ref(rec),
-                text_seen=text_seen, failed=failed,
-                thinking=_thinking_for_speed((rec or {}).get("speed"))))
-            if draft_doc is not None:
-                try:
-                    update = draft_mode.post_turn_payload(draft_doc)
-                    if update:
-                        # NOTE: a yield in finally is deliberate (matches _DONE_SSE
-                        # below). On client disconnect (GeneratorExit) the frame is
-                        # silently discarded — the browser refetches the doc on
-                        # session reopen, so no state is lost.
-                        yield bridge._sse(update)
-                except Exception:  # noqa: BLE001 - never break the turn close
-                    pass
-            if title_task is not None:
-                try:
-                    ai = await asyncio.wait_for(title_task, timeout=12)
-                    if ai:
-                        sessions_store.update(rec["id"], name=ai)
-                except Exception:  # noqa: BLE001 - keep the first-chars fallback
-                    title_task.cancel()
-            # Touch the session's `updated` stamp so the semantic-search reindex
-            # re-embeds this turn. It's otherwise bumped only on metadata edits
-            # (title/rename/archive), so every message after a chat is first
-            # titled would be invisible to search — the incremental reindex keys
-            # its skip check on exactly this stamp.
-            if rec:
-                try:
-                    sessions_store.update(rec["id"])
-                except Exception:  # noqa: BLE001 - never break the turn close
-                    pass
-            # Auto-extract memories (gated inside: toggle pref + cooldown).
-            _spawn(maybe_auto_extract(session_key))
-            yield _DONE_SSE
+    # The turn's source of truth (web search → gateway relay → late reply →
+    # metrics → draft doc_update → DONE) lives in chat_turn.drive_turn. Pass the
+    # shared _ACTIVE_RUNS registry and the app-module hooks (_spawn,
+    # maybe_auto_extract, _log_turn_timing) explicitly so nothing imports app
+    # back and every monkeypatch seam on those names keeps taking effect. Look
+    # them up here (route runs after any test patch) so the patched values flow.
+    # session/compose carry the msg-branch-edit feature: drive_turn splices the
+    # pending branch preamble in (before web-search context-building, Task 4) via
+    # _compose_outgoing_for_session, kept as a passed hook like the others.
+    def _source():
+        return chat_turn.drive_turn(
+            message=message, use_web=use_web, allow_web_search=allow_web_search,
+            draft_doc=draft_doc, rec=rec, session_key=session_key,
+            run_info=run_info, chat_attachments=chat_attachments,
+            title_task=title_task, active_runs=_ACTIVE_RUNS, spawn=_spawn,
+            auto_extract=maybe_auto_extract, log_turn_timing=_log_turn_timing,
+            session=session, compose=_compose_outgoing_for_session)
 
     # Detach the turn from any single reader: a background recorder drains the
     # gateway relay into event_store and owns the turn boundary (begin/end_turn),
@@ -1040,45 +514,11 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     # return, and a post-reload resume are all the same replay-then-subscribe.
     cursor = event_store.latest_id(session_key)  # replay only THIS turn, not prior
     queue = event_store.subscribe(session_key)   # subscribe before start: no gap
-    _start_turn_recorder(session_key, _drive_turn)
+    _start_turn_recorder(session_key, _source)
 
-    async def _post_tail():
-        """Replay this turn's events (everything after `cursor`), then live-tail
-        new events until [DONE]. Dedupes the replay/live overlap by seq, emits a
-        keepalive on idle, and always unsubscribes. Mirrors resume_route's tail
-        but terminates at [DONE] (the POST closes when the turn finishes)."""
-        replayed_max = -1
-        try:
-            for eid, payload in event_store.since(session_key, cursor):
-                yield f"id: {eid}\n{payload}"
-                try:
-                    replayed_max = max(replayed_max, int(eid))
-                except (TypeError, ValueError):
-                    pass
-                if _is_done_frame(payload):
-                    return
-            while True:
-                try:
-                    eid, payload = await asyncio.wait_for(
-                        queue.get(), timeout=_TURN_KEEPALIVE_S)
-                except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"  # keep proxies from killing the idle conn
-                    continue
-                try:
-                    seq = int(eid)
-                except (TypeError, ValueError):
-                    seq = None
-                if seq is not None and seq <= replayed_max:
-                    continue  # already sent during backlog replay
-                if seq is not None:
-                    replayed_max = seq
-                yield f"id: {eid}\n{payload}"
-                if _is_done_frame(payload):
-                    return
-        finally:
-            event_store.unsubscribe(session_key, queue)
-
-    return StreamingResponse(_post_tail(), media_type="text/event-stream")
+    return StreamingResponse(
+        chat_turn.post_tail(session_key=session_key, cursor=cursor, queue=queue),
+        media_type="text/event-stream")
 
 
 # --- Session persistence: metadata here, message content from the brain ------
@@ -1439,15 +879,50 @@ async def search_reindex(force: bool = False):
     return {"status": "started"}
 
 
-# --- Catch-all for Odysseus feature tabs v1 doesn't implement yet ------------
-# cookbook, prefs, tts… each
-# polls its own backend. Returning [] is universally safe: Odysseus's consumers
-# all do either `data.forEach(...)` (works on []) or `data.key || []` (→ []), so
-# this quiets the 404 flood without breaking any module. Registered AFTER every
-# real route, so health/items/models/chat/auth/sessions still win.
+# --- Legacy GET stubs: the last callers of the old []-catch-all ---------------
+# Task 19 replaced the blanket `GET /api/{path} -> []` (which silently satisfied
+# every unimplemented poll) with a real 404. A frontend GET-path inventory
+# (redesign live layer + the retired classic UI at /classic) found a handful of
+# GETs with no backend route that were leaning on that []-return. They are kept
+# here as explicit no-op stubs — byte-identical [] response, plus a one-line
+# deprecation WARNING so the dead calls are finally visible in the log — rather
+# than silently 404'd, so a still-served UI can't regress (the classic archived-
+# sessions fetch throws on a non-2xx; the redesign Settings→Export downloads the
+# body). See the Task 19 report (.superpowers/sdd) for the full path table.
+# Registered BEFORE the 404 catch-all so these specific paths still win. Remove a
+# stub once its caller is gone.
+#   redesign (live): /api/export (Settings → Data Backup → Export)
+#   classic (/classic only): fonts/custom, signatures, contacts/search,
+#     sessions/archived, chat/stream_status/{id}, model-endpoints/probe-local,
+#     document/{id}/export-pdf, document/{id}/render-pages,
+#     email/attachment/{uid}/{index}
+@app.get("/api/export")
+@app.get("/api/fonts/custom")
+@app.get("/api/signatures")
+@app.get("/api/contacts/search")
+@app.get("/api/sessions/archived")
+@app.get("/api/model-endpoints/probe-local")
+@app.get("/api/chat/stream_status/{session_id}")
+@app.get("/api/document/{doc_id}/export-pdf")
+@app.get("/api/document/{doc_id}/render-pages")
+@app.get("/api/email/attachment/{uid}/{index}")
+async def _legacy_get_stub(request: Request):
+    _log.warning("legacy GET %s served as [] stub (deprecated; no backend route "
+                 "— caller should be removed)", request.url.path)
+    return []
+
+
+# --- 404 for every other unimplemented /api GET ------------------------------
+# Was a blanket `-> []` (quieted a 404 flood for tabs the vendor SPA polled but
+# v1 never implemented). That masked real routing bugs and every retired caller.
+# The live redesign now has an explicit route for every GET it makes (verified in
+# Task 19); anything still hitting this is a stale caller or a typo, so answer an
+# honest 404 and log it once so it's findable.
 @app.get("/api/{path:path}")
 async def _unimplemented_api(path: str):
-    return []
+    _log.warning("unimplemented GET /api/%s -> 404 (no route)", path)
+    return JSONResponse(status_code=404,
+                        content={"error": "not found", "path": f"/api/{path}"})
 
 
 @app.get("/sw.js")

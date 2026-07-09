@@ -34,6 +34,7 @@ from fastapi.responses import (HTMLResponse, JSONResponse, Response,
                                StreamingResponse)
 
 from . import bridge, config, sessions_store
+from .fsutil import atomic_write_text, file_lock
 from .research_render import render_html
 from .vault_store import (WORKSPACE, dump_frontmatter, ensure_dir, new_id,
                           now_iso, parse_frontmatter)
@@ -44,7 +45,7 @@ RESEARCH_DIR = WORKSPACE / "Research"
 
 # A research turn can legitimately run for many minutes (multiple searches +
 # page reads in one codex turn). Generous per-turn cap, env-overridable.
-TURN_TIMEOUT_S = float(os.environ.get("WORKSPACE_RESEARCH_TURN_TIMEOUT_S", "900"))
+TURN_TIMEOUT_S = config._env_float("WORKSPACE_RESEARCH_TURN_TIMEOUT_S", 900.0)
 MAX_ROUNDS = 3  # hard cap on search rounds regardless of the requested setting
 
 
@@ -474,8 +475,9 @@ def _save_record(job: Job, rounds: int) -> None:
     }
     if job.comparison:
         meta["comparison"] = job.comparison
-    _record_path(job.id).write_text(dump_frontmatter(meta, job.result or ""),
-                                    encoding="utf-8")
+    path = _record_path(job.id)
+    with file_lock(path):
+        atomic_write_text(path, dump_frontmatter(meta, job.result or ""))
 
 
 def _load_record(rid: str) -> dict | None:
@@ -623,7 +625,9 @@ async def archive(rid: str):
         return JSONResponse(status_code=404, content={"detail": "no such research"})
     body = rec.pop("result", "")
     rec["archived"] = True
-    _record_path(rid).write_text(dump_frontmatter(rec, body), encoding="utf-8")
+    path = _record_path(rid)
+    with file_lock(path):
+        atomic_write_text(path, dump_frontmatter(rec, body))
     return {"ok": True}
 
 

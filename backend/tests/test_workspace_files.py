@@ -127,10 +127,10 @@ def test_per_dir_cap_preserves_siblings(ws):
 
 
 # --- hidden walking + dirty flag + per-variant cache (Hermes controls) ---
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402 - intentionally scoped to this section (house style)
 
-from backend import vault_store as vs
-from backend.app import app
+from backend import vault_store as vs  # noqa: E402 - intentionally scoped to this section (house style)
+from backend.app import app  # noqa: E402 - intentionally scoped to this section (house style)
 
 client = TestClient(app)
 
@@ -345,8 +345,8 @@ def test_upload_cap_and_protected_dir(api_ws, monkeypatch):
 
 
 # --- archive ---
-import io as _io
-import zipfile as _zipfile
+import io as _io  # noqa: E402 - intentionally scoped to this section (house style)
+import zipfile as _zipfile  # noqa: E402 - intentionally scoped to this section (house style)
 
 
 def test_archive_zips_dir_skipping_protected(api_ws):

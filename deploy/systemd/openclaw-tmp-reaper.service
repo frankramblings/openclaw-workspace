@@ -1,0 +1,6 @@
+[Unit]
+Description=Reap orphaned OpenClaw render temp dirs
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/openclaw-reap-tmp

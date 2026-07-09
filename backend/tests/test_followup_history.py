@@ -1,6 +1,5 @@
 """/api/history rewrites a stored followup seed (user role) into the compact
 ⚙️ card line, alongside the existing websearch/terminal strips."""
-import pytest
 from fastapi.testclient import TestClient
 
 from backend import app as app_module

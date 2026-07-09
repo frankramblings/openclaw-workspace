@@ -5,7 +5,7 @@
 
 import { I } from './icons.js';
 import { esc, when } from './dom.js';
-import { AVATAR } from './data.js';
+import { AVATAR, filterSlashCommands } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
 import { renderCenter, renderChatList, chatMsg } from './surfaces.js';
 import { mChatMsg } from './mobile/mobile-surfaces.js';
@@ -20,6 +20,8 @@ import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
 import { openImageOverlay } from './live/image-viewer.js';
+import { installErrorBoundary } from './error-boundary.js';
+import { trapOrder, nextFocus, pickModal } from './focus-trap.js';
 import './live/jobs.js'; // Live Jobs overlay — self-boots on import
 
 // ---- state ---------------------------------------------------------------
@@ -28,6 +30,10 @@ const state = {
   railExpanded: false,
   // chat
   draft: '', forceSlash: false, chatMode: 'agent',
+  // slash-command autocomplete keyboard state (Arrow/Enter/Escape — see app.js
+  // keydown wiring): slashSel is the highlighted command's name; slashDismissed
+  // lets Escape close the dropdown without erasing the typed "/text".
+  slashSel: null, slashDismissed: false,
   chatUI: { trail: {}, step: {}, group: {} }, // activity-trail collapse (msg/step/group)
   // companion (collapsed to the reveal strip by default)
   compTab: null, compSplit: false, compHidden: true,
@@ -58,6 +64,32 @@ const state = {
   live: {},
   isOnline: navigator.onLine,
 };
+
+// ---- global error boundary -------------------------------------------------
+// Installed FIRST — before the very first render() and before any other DOM
+// wiring below — so an uncaught throw anywhere (most likely inside render()
+// itself; see the module banner) surfaces a toast instead of leaving a silent
+// half-dead UI. toast() reuses the same state.inboxToast + render() convention
+// the inbox retry toasts already use (surfaces.js / mobile-surfaces.js render
+// it; the auto-dismiss timer below clears it). If render() is itself what's
+// broken, that call re-throws — installErrorBoundary's own try/catch around
+// `toast` catches it and falls back to console.error rather than crashing the
+// boundary (see error-boundary.js's safeToast).
+// Known gap, accepted: the ES module imports above (including ./live/jobs.js,
+// which self-boots at import) evaluate BEFORE this line runs, so an
+// import-time throw anywhere in the module graph is NOT caught here — the
+// boundary covers post-boot runtime errors only.
+installErrorBoundary({
+  toast: (msg) => { state.inboxToast = { msg, undoTs: null }; render(); },
+  post: (payload) => {
+    fetch('/api/client-log', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {}); // best-effort — never let a logging failure cascade
+  },
+});
 
 let researchTimer = null;
 let refreshTimer = null;
@@ -256,6 +288,15 @@ function render() {
   // post-render hook (the live terminal overlay repositions itself here)
   if (runtime.afterRender) runtime.afterRender();
 
+  // Mechanic 1: re-assert focus into a just-opened modal on every render while
+  // it's pending (see focusModalOnOpen, below — handles both this render call
+  // and any async follow-up one, e.g. reloadSessions()/loadModelOptions()'s
+  // own render() after their fetch resolves). render() is defined above
+  // _pendingModalFocus/focusModalOnOpen in the file but is only ever CALLED
+  // after the whole module — including those later bindings — has finished
+  // loading, so referencing them here is safe.
+  if (_pendingModalFocus) focusModalOnOpen();
+
   // Wire drag-to-resize handles on desktop (no-op on mobile — the selectors won't match)
   if (!isMobile()) wireResizableSidebars(root);
 }
@@ -269,8 +310,8 @@ const actions = {
   newChat: () => { state.surface = 'chat'; state.draft = ''; },
 
   // chat composer
-  toggleSlash: () => { state.forceSlash = !state.forceSlash; },
-  pickSlash: (name) => { state.draft = name + ' '; state.forceSlash = false; },
+  toggleSlash: () => { state.forceSlash = !state.forceSlash; state.slashDismissed = false; },
+  pickSlash: (name) => { state.draft = name + ' '; state.forceSlash = false; state.slashDismissed = false; state.slashSel = null; },
   fillComposer: (prompt) => { state.draft = prompt || ''; state.forceSlash = false; },
   setMode: (mode) => { state.chatMode = mode; },
   // Incognito / "Nobody" mode (ported from Odysseus): when on, send() appends
@@ -412,6 +453,107 @@ root.addEventListener('click', (e) => {
   }
 }, true);
 
+// ---- modal/sheet focus management ------------------------------------------
+// Bounded a11y pass (mechanic 1): focus trap + Escape-to-close + focus-return
+// for the redesign's true modal/sheet surfaces — ones with a backdrop that
+// blocks the rest of the page and a dedicated close action. Registered here,
+// not in each surface module, because this is the one place that already owns
+// the central keydown listener and the merged desktop+mobile actions map.
+//
+// Deliberately NOT here (no backdrop, don't block the page, already dismiss
+// on outside click — see the click handler below): the docked terminal/doc-
+// editor panels, the desktop companion panel, the Jobs HUD, and small anchored
+// dropdowns (chat kebab menu, model popover, message download menu, inbox
+// snooze/overflow menus) — those are flyouts, not modals.
+const MODAL_SURFACES = [
+  // Checked in priority order — first match wins. Mirrors paint/z-order: the
+  // conv drawer paints over any sheet (mobile-app.js renders it last), the
+  // sheets are mutually exclusive in practice (closeSheets()), and the two
+  // desktop overlays live on separate screens from the mobile sheets.
+  { open: (s) => isMobile() && !!s.mDrawerOpen, selector: '[data-conv-drawer]', close: 'closeDrawer' },
+  { open: (s) => isMobile() && !!s.mModelSheetOpen, selector: '.m-sheet.model-sheet', close: 'closeModelSheet' },
+  { open: (s) => isMobile() && !!s.quickCaptureOpen, selector: '.m-sheet.capture', close: 'closeCapture' },
+  { open: (s) => isMobile() && !!s.companionSheetOpen, selector: '.m-sheet.companion', close: 'closeCompanion' },
+  { open: (s) => isMobile() && !!s.composeOpen, selector: '.m-sheet.compose', close: 'closeCompose' },
+  { open: (s) => isMobile() && !!s.inboxReader, selector: '.m-sheet[data-modal="reader"]', close: 'closeReader' },
+  { open: (s) => !isMobile() && !!s.composeOpen, selector: '.oc-compose', close: 'closeCompose' },
+  { open: (s) => !isMobile() && !!s.inboxReader, selector: '.inbox-reader-panel', close: 'closeReader' },
+];
+// The exists() predicate skips entries whose state flag outlived their
+// container (e.g. state.inboxReader surviving a surface switch that no longer
+// renders the reader) — otherwise Escape/Tab would target a dead surface.
+function topmostModal() {
+  return pickModal(MODAL_SURFACES, state, (sel) => !!document.querySelector(sel));
+}
+
+// Trigger actions that open one of the surfaces above, and the close actions
+// that back out of them — used to capture/restore focus around a modal's
+// lifetime (see MODAL_OPEN_ACTIONS/MODAL_CLOSE_ACTIONS use below). Only the
+// deliberate "back out" paths restore focus; actions whose success moves you
+// elsewhere on purpose (send, pick a model, pick a conversation) are left
+// alone — forcing focus back to a now-irrelevant trigger would fight the
+// user's next move.
+const MODAL_OPEN_ACTIONS = new Set([
+  'composeNew', 'composeReply', 'composeAiDraft', 'openReader',
+  'openCompanion', 'openCapture', 'openModelSheet', 'openConvDrawer', 'openConvSheet',
+]);
+const MODAL_CLOSE_ACTIONS = new Set([
+  'closeCompose', 'closeReader', 'closeCompanion', 'closeCapture', 'closeModelSheet', 'closeDrawer',
+]);
+
+// render() rebuilds root.innerHTML wholesale (see render(), above), so a raw
+// reference to a modal's trigger button goes stale the instant ANYTHING
+// re-renders — the browser hands back a brand-new, disconnected node. Store a
+// re-locatable selector instead (the same data-act[+data-arg] the trigger was
+// dispatched on, or its id) and re-query it once the closing render has run.
+let _modalFocusReturn = null;
+function focusLocator(el) {
+  if (!el || !el.getAttribute) return null;
+  const act = el.getAttribute('data-act');
+  if (act) {
+    const arg = el.getAttribute('data-arg');
+    const argSel = arg != null && window.CSS && CSS.escape ? `[data-arg="${CSS.escape(arg)}"]` : '';
+    return `[data-act="${act}"]${argSel}`;
+  }
+  if (el.id) return `#${el.id}`;
+  return null;
+}
+function restoreModalFocus() {
+  _pendingModalFocus = false;
+  if (!_modalFocusReturn) return;
+  const sel = _modalFocusReturn;
+  _modalFocusReturn = null;
+  let el = null;
+  try { el = root.querySelector(sel); } catch (_) { el = null; }
+  if (el && el.focus) el.focus({ preventScroll: true });
+}
+// Move focus INTO a just-opened modal (its first focusable element) instead
+// of leaving it wherever the render() rebuild happened to drop it — otherwise
+// the trap has nothing meaningful to land on until the user's first Tab press.
+//
+// Several modal-open actions (openModelSheet, openConvSheet/openConvDrawer)
+// kick off an async data reload that calls render() AGAIN once it resolves
+// (loadModelOptions, reloadSessions) — root.innerHTML gets rebuilt a second
+// time, which silently detaches whatever we just focused. A single focus()
+// call right after the dispatcher's render() isn't enough to survive that.
+// So this doesn't run once — render() (below) re-asserts it on EVERY render
+// while _pendingModalFocus is set, and clears the flag itself the moment
+// focus is genuinely inside the modal (including right after this call
+// succeeds) — so it stops re-grabbing focus the instant the user has it, and
+// never fights a deliberate interaction (every one of these modals has a
+// full-viewport backdrop, so there's no click path to "outside" without
+// going through a close action first).
+let _pendingModalFocus = false;
+function focusModalOnOpen() {
+  const modal = topmostModal();
+  if (!modal) { _pendingModalFocus = false; return; }
+  const container = root.querySelector(modal.selector) || document.querySelector(modal.selector);
+  const alreadyInside = !!(container && container.contains(document.activeElement) && document.activeElement !== document.body);
+  if (alreadyInside) { _pendingModalFocus = false; return; }
+  const first = container ? trapOrder(container)[0] : null;
+  if (first && first.focus) first.focus({ preventScroll: true });
+}
+
 // ---- event delegation -----------------------------------------------------
 root.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');
@@ -438,10 +580,31 @@ root.addEventListener('click', (e) => {
   const name = t.getAttribute('data-act');
   const fn = actions[name];
   if (!fn) return;
+  // Modal focus-return (mechanic 1): remember the trigger before an "open"
+  // action runs (t is exactly that trigger), restore it after a "close"
+  // action's render has settled. See MODAL_OPEN_ACTIONS/MODAL_CLOSE_ACTIONS.
+  if (MODAL_OPEN_ACTIONS.has(name)) { _modalFocusReturn = focusLocator(t); _pendingModalFocus = true; }
   fn(t.getAttribute('data-arg'), e);
   applyCloseSheet(state, t.getAttribute('data-close-sheet'));
   render();
+  if (MODAL_CLOSE_ACTIONS.has(name)) restoreModalFocus();
   loadActive(); // fetch live data for any newly-activated surface (idempotent)
+});
+
+// Keyboard activation for clickable rows that aren't native <button>/<a>/
+// <input> elements (conv rows, model rows, capture-type chips — tagged with
+// tabindex+role by their surface modules). Native controls already respond to
+// Enter/Space on their own; skip them so this never double-fires. Dispatching
+// a real click lets the existing delegated click handler above do the actual
+// work — no parallel action-dispatch path to keep in sync.
+root.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const t = e.target;
+  if (!t || !t.matches || !t.matches('[data-act][tabindex]')) return;
+  const tag = (t.tagName || '').toLowerCase();
+  if (tag === 'button' || tag === 'a' || tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  e.preventDefault();
+  t.click();
 });
 
 // Mobile: send from pointerup instead of click. Tapping any button blurs the
@@ -538,7 +701,13 @@ root.addEventListener('input', (e) => {
   const field = t.getAttribute('data-model');
   if (field === 'inboxEditTask' && state.inboxEditFor) { state.inboxEditFor = { ...state.inboxEditFor, task: t.value }; return; }
   state[field] = t.value;
-  if (field === 'draft') state.forceSlash = false; // typing manages the slash menu
+  if (field === 'draft') {
+    state.forceSlash = false; // typing manages the slash menu
+    // A fresh keystroke re-opens the dropdown even if Escape just dismissed it,
+    // and the old highlighted command may no longer be in the filtered list.
+    state.slashDismissed = false;
+    state.slashSel = null;
+  }
   // The conversation filter also fires a debounced semantic search over ALL
   // chats' message content (title filtering stays instant + local below).
   if (field === 'convFilter') {
@@ -734,7 +903,40 @@ root.addEventListener('keydown', (e) => {
   const t = e.target;
   if (!t || !t.getAttribute) return;
   const fk = t.getAttribute('data-focus');
-  if (e.key !== 'Enter' || (fk !== 'draft' && fk !== 'mdraft')) return;
+  if (fk !== 'draft' && fk !== 'mdraft') return;
+
+  // Slash-command autocomplete (mechanic 4 — desktop only, fk==='draft'; the
+  // mobile composer doesn't render this dropdown): ArrowUp/Down move the
+  // highlight, Enter picks the highlighted command, Escape dismisses the
+  // dropdown WITHOUT clearing the typed text. This must run before the plain
+  // Enter-to-send handling below, or Enter would send "/rem" as a chat
+  // message instead of completing the command.
+  if (fk === 'draft' && root.querySelector('.slash-menu')) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const filtered = filterSlashCommands(state.draft);
+      const current = filtered.find((c) => c.name === state.slashSel) || null;
+      const next = nextFocus(filtered, current, e.key === 'ArrowUp');
+      if (next) state.slashSel = next.name;
+      render();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const filtered = filterSlashCommands(state.draft);
+      const pick = filtered.find((c) => c.name === state.slashSel) || filtered[0];
+      if (pick && actions.pickSlash) { actions.pickSlash(pick.name); render(); }
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      state.slashDismissed = true;
+      render();
+      return;
+    }
+  }
+
+  if (e.key !== 'Enter') return;
   // Cmd/Ctrl+Enter always sends (desktop & mobile). Plain Enter sends on desktop
   // only (Shift+Enter = newline there); on mobile (mdraft) plain Enter inserts a
   // newline — the box auto-grows and the Send button or ⌘/Ctrl+Enter sends.
@@ -761,6 +963,8 @@ root.addEventListener('scroll', (e) => {
 //   "/"         → focus the chat composer (when not already typing in a field)
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    // Dismiss the nearest/most-local layer first: a small anchored dropdown
+    // (if one happens to be open) before a true modal/sheet underneath it.
     if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen) {
       state.chatMenuOpen = false;
       state.modelMenuOpen = false;
@@ -768,8 +972,37 @@ document.addEventListener('keydown', (e) => {
       render();
       return;
     }
+    // Mechanic 1: Escape closes the topmost true modal/sheet via the SAME
+    // close action its own Cancel/X button or backdrop-tap uses — not a
+    // parallel path (see MODAL_SURFACES above).
+    const modal = topmostModal();
+    if (modal) {
+      e.preventDefault();
+      const fn = actions[modal.close];
+      if (fn) { fn(); render(); restoreModalFocus(); }
+      return;
+    }
+  }
+  // Mechanic 1: trap Tab / Shift+Tab inside the topmost open modal/sheet so
+  // keyboard focus can never leave it onto the page behind the backdrop.
+  if (e.key === 'Tab') {
+    const modal = topmostModal();
+    if (modal) {
+      const container = root.querySelector(modal.selector) || document.querySelector(modal.selector);
+      const order = container ? trapOrder(container) : [];
+      if (order.length) {
+        e.preventDefault();
+        const next = nextFocus(order, document.activeElement, e.shiftKey) || order[0];
+        next.focus();
+      }
+      return; // a modal owns Tab while it's open — don't fall through below
+    }
   }
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+    // While a modal is open it owns focus — the filter inputs this shortcut
+    // targets are background elements (still in the DOM behind the compose
+    // overlay etc.); focusing one would silently escape the trap.
+    if (topmostModal()) return;
     const el = root.querySelector('[data-model="convFilter"],[data-model="notesFilter"],[data-model="libQuery"],[data-model="emailQuery"]');
     if (el) { e.preventDefault(); el.focus(); }
     return;
@@ -781,6 +1014,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (topmostModal()) return; // same trap-escape hatch as ⌘K — composer is behind the backdrop
     const tag = (e.target && e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
     const ta = root.querySelector('[data-focus="draft"]');

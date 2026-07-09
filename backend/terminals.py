@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import fcntl
 import json
+import logging
 import os
 import pty
 import re
@@ -24,7 +25,10 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
 from . import config
+from . import fsutil
 from . import workspace_files
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -45,23 +49,70 @@ def _shell() -> str:
     return os.environ.get("SHELL") or "/bin/bash"
 
 
-def terminal_access_allowed(client_host: str | None, headers) -> bool:
+_LOOPBACK_HOSTS = ("127.0.0.1", "::1")
+_TAILSCALE_HEADER = "tailscale-user-login"
+
+
+def terminal_access_allowed(client_host: str | None, headers, *,
+                            capability_ok: bool = False) -> bool:
     """Authenticate terminal access.
 
-    uvicorn binds 127.0.0.1 only, so the LAN cannot reach this port at all — the
-    sole remote path is Tailscale Serve, which injects a `Tailscale-User-Login`
-    identity header for the authenticated tailnet user. Behind Serve, uvicorn
-    surfaces the *tailnet* client IP (via X-Forwarded-For), NOT loopback, so we
-    must key on the identity header, not the client IP (the original loopback
-    check rejected every Serve request). Genuine on-box loopback callers
-    (health checks, local curl) are always allowed — they already have shell.
-    OPENCLAW_TERMINAL_REQUIRE_TSHEADER=0 trusts the 127.0.0.1 bind and allows all
-    — the escape hatch if a deployment's Serve lacks identity headers."""
-    if client_host in ("127.0.0.1", "::1"):
+    uvicorn binds 127.0.0.1 only, so the LAN cannot reach this port directly.
+    Two paths reach it remotely: Tailscale Serve, which injects a
+    `Tailscale-User-Login` identity header on an otherwise tailnet-IP,
+    NON-loopback connection (X-Forwarded-For) — so we key on the header, not
+    client_host, for that path; and a same-host reverse proxy (nginx/Caddy)
+    that terminates the real remote connection and forwards to uvicorn over
+    loopback, making EVERY proxied client look like 127.0.0.1 here. That
+    second path used to be trusted unconditionally (bare loopback -> allow),
+    which handed a real interactive shell to anyone such a proxy fronted —
+    that is the gap Task 14 closes.
+
+    Truth table (mirrored by backend/tests/test_terminals.py):
+      (a) WORKSPACE_AUTH_TOKEN or session-cookie auth is ACTIVE
+          (config.auth_active()) -> allow, unconditionally. AuthGateMiddleware
+          (auth_gate.py) wraps the whole ASGI app and rejects any
+          unauthenticated HTTP/WS request before it ever reaches a router
+          handler; none of the /api/terminal/* paths are on its allowlist.
+          So if auth is active and we're executing at all, the caller already
+          presented valid credentials at the outer layer — re-deriving that
+          here would be redundant, not safer. (unchanged)
+      (b) no auth configured + Tailscale identity header present -> allow.
+          This is Frank's production path (unchanged) — must keep working or
+          it locks him out of his own terminal.
+      (c) no auth + loopback + NO Tailscale header -> DENY by default. Allow
+          only with OPENCLAW_TERMINAL_ALLOW_PLAIN_LOOPBACK=1 (new, default
+          off). *** THE CHANGED CELL ***
+      (d) non-loopback, no auth, no Tailscale header -> deny (unchanged).
+      (e) Gary-drive/MCP (/api/terminal/mcp/run|read|write): these route
+          through this exact gate too. They mint their own short-lived,
+          unguessable per-turn capability token (mint_terminal_token) and are
+          the ONLY callers that resolve it themselves and pass
+          capability_ok=True. A resolved token + loopback allows regardless
+          of the Tailscale header/opt-in — the token IS the auth factor — but
+          loopback is still required, matching the PR2 audit's "MCP endpoints
+          require token + gary_mode + loopback". Without this cell, (c)'s new
+          default-deny would also lock out Gary's own loopback curl calls in
+          the common no-token, no-Serve deployment: a functional regression,
+          not a hardening.
+
+    OPENCLAW_TERMINAL_REQUIRE_TSHEADER=0 is a legacy escape hatch that
+    predates ALLOW_PLAIN_LOOPBACK: it already meant "I accept loopback trust,
+    skip the Serve identity header" for ANY caller (loopback or not). It keeps
+    working exactly as before (unconditional allow) and now ALSO implies
+    OPENCLAW_TERMINAL_ALLOW_PLAIN_LOOPBACK=1 — it's a strict superset of the
+    new opt-in, so an operator who already set it needs to set nothing new."""
+    if config.auth_active():                                     # (a)
         return True
     if os.environ.get("OPENCLAW_TERMINAL_REQUIRE_TSHEADER", "1") == "0":
-        return True
-    return bool(headers.get("tailscale-user-login"))
+        return True                                               # legacy hatch
+    if bool(headers.get(_TAILSCALE_HEADER)):
+        return True                                                # (b)
+    if client_host not in _LOOPBACK_HOSTS:
+        return False                                                # (d)
+    if capability_ok:
+        return True                                                 # (e)
+    return os.environ.get("OPENCLAW_TERMINAL_ALLOW_PLAIN_LOOPBACK", "0") == "1"  # (c)
 
 
 class PtySession:
@@ -512,9 +563,18 @@ def load_tail(session_key: str, limit: int = MAX_BUFFER) -> str:
 
 
 def read_meta(session_key: str) -> dict:
+    path = persist_meta_path(session_key)
     try:
-        return json.loads(persist_meta_path(session_key).read_text())
-    except (FileNotFoundError, ValueError, OSError):
+        return fsutil.load_json_guarded(path, {}, logger=log)
+    except OSError:
+        # Missing file already returns {} inside load_json_guarded; this
+        # catches the OTHER OSErrors (PermissionError, IsADirectoryError,
+        # EIO, ...). Callers — the terminal WS stream, the MCP run/write
+        # routes, the persist routes — call read_meta bare, so raising here
+        # would 500 routes and tear down the WS where the old broad except
+        # degraded to default meta. Unreadable is not corruption: the file
+        # stays put (no quarantine), we just run with defaults and log.
+        log.warning("terminal meta unreadable %s", path, exc_info=True)
         return {}
 
 
@@ -902,12 +962,27 @@ async def _await_settled_output(sess, cursor, settle=1.2, cap=20.0):
     return sess.buffer[-new_chars:] if new_chars <= len(sess.buffer) else sess.buffer
 
 
+async def _read_json_body(request: Request) -> dict:
+    """Best-effort JSON body parse for the MCP endpoints, which now need the
+    token BEFORE the transport gate runs (see terminal_access_allowed's
+    capability_ok cell). Malformed/empty bodies degrade to {} rather than
+    raising, so an untrusted caller sending garbage gets the gate's clean 403
+    instead of a parse error leaking ahead of the auth decision."""
+    try:
+        body = await request.json()
+    except Exception:
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
 @router.post("/api/terminal/mcp/run")
 async def terminal_mcp_run(request: Request):
-    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
-        raise HTTPException(status_code=403, detail="forbidden")
-    body = await request.json()
+    body = await _read_json_body(request)
     session_key = resolve_terminal_token(str(body.get("token", "")))
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers,
+                                   capability_ok=session_key is not None):
+        raise HTTPException(status_code=403, detail="forbidden")
     if not session_key:
         raise HTTPException(status_code=404, detail="invalid or expired terminal token")
     if not gary_mode_for_session(session_key):
@@ -926,12 +1001,16 @@ async def terminal_mcp_run(request: Request):
 
 @router.post("/api/terminal/mcp/read")
 async def terminal_mcp_read(request: Request):
-    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
-        raise HTTPException(status_code=403, detail="forbidden")
-    body = await request.json()
+    body = await _read_json_body(request)
     session_key = resolve_terminal_token(str(body.get("token", "")))
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers,
+                                   capability_ok=session_key is not None):
+        raise HTTPException(status_code=403, detail="forbidden")
     if not session_key:
         raise HTTPException(status_code=404, detail="invalid or expired terminal token")
+    if not gary_mode_for_session(session_key):
+        raise HTTPException(status_code=403, detail="Gary terminal control is off for this chat")
     sess = _sessions.get(session_key)
     tail = int(body.get("tail", 4000))
     return {"output": (sess.buffer[-tail:] if sess else ""), "running": bool(sess and not sess.exited)}
@@ -939,10 +1018,12 @@ async def terminal_mcp_read(request: Request):
 
 @router.post("/api/terminal/mcp/write")
 async def terminal_mcp_write(request: Request):
-    if not terminal_access_allowed(request.client.host if request.client else None, request.headers):
-        raise HTTPException(status_code=403, detail="forbidden")
-    body = await request.json()
+    body = await _read_json_body(request)
     session_key = resolve_terminal_token(str(body.get("token", "")))
+    client_host = request.client.host if request.client else None
+    if not terminal_access_allowed(client_host, request.headers,
+                                   capability_ok=session_key is not None):
+        raise HTTPException(status_code=403, detail="forbidden")
     if not session_key:
         raise HTTPException(status_code=404, detail="invalid or expired terminal token")
     if not gary_mode_for_session(session_key):

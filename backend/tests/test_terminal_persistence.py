@@ -1,9 +1,6 @@
 """Tier-A terminal persistence: on-disk scrollback store + secret scrubber.
 The autouse conftest fixture points config.DATA_DIR at a tmp dir, so every
 store call here writes under tmp_path, never the live .data/ store."""
-import json
-import os
-import time
 
 from backend import terminals
 

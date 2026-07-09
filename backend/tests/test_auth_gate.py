@@ -13,7 +13,6 @@ Part B — WORKSPACE_AUTH_TOKEN gate:
 The middleware reads the token via config.auth_token() at request-time, so we
 monkeypatch config.auth_token (and os.environ["WORKSPACE_USER"]) between cases.
 """
-import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -84,6 +83,91 @@ class TestAuthGateUnset:
         monkeypatch.setattr(config, "auth_token", lambda: None)
         r = client.get("/api/auth/status")
         assert r.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# "Honest health" (Task 13): /api/health gains gateway state + disk-free
+# decoration but must stay a no-IO, always-200 liveness probe — the
+# doctor-alert timer (deploy/systemd/bin/openclaw-doctor-alert) polls it every
+# 5 min expecting exactly that.
+# ---------------------------------------------------------------------------
+
+class TestHealthFields:
+    def test_health_has_all_fields_with_sane_types(self, client, tmp_path, monkeypatch):
+        # Point DATA_DIR at a dir that EXISTS: _disk_free_gb is deliberately
+        # read-only (no mkdir — a liveness probe must not mutate the fs), so
+        # the conftest's never-created tmp_path/"data" would read as None.
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+        r = client.get("/api/health")
+        assert r.status_code == 200
+        data = r.json()
+        # Pre-existing fields keep their names/types.
+        assert data["ok"] is True
+        assert isinstance(data["session"], str)
+        assert isinstance(data["has_password"], bool)
+        assert isinstance(data["gateway"], str)  # was a ws:// URL; still a str
+        # New fields (Task 13).
+        assert data["gateway"] in ("ok", "restarting", "down")
+        assert isinstance(data["disk_free_gb"], (int, float))
+        assert data["disk_free_gb"] >= 0
+        assert isinstance(data["tmp_free_gb"], (int, float))
+        assert data["tmp_free_gb"] >= 0
+        assert data["schema"] == 1
+
+    def test_health_missing_data_dir_reads_none_not_created(self, client, tmp_path, monkeypatch):
+        """_disk_free_gb must never mkdir: a 5-minutely liveness probe that
+        recreates deleted dirs is a mutating side effect (and would silently
+        undo intentional /tmp cleanup on this quota-sensitive host). Missing
+        path -> OSError -> None, and the dir stays missing."""
+        missing = tmp_path / "never-created"
+        monkeypatch.setattr(config, "DATA_DIR", missing)
+        r = client.get("/api/health")
+        assert r.status_code == 200  # degradation, never a 500
+        assert r.json()["disk_free_gb"] is None
+        assert not missing.exists()  # the probe must not have created it
+
+    def test_health_gateway_field_reflects_monitor_state(self, client, monkeypatch):
+        """gateway now surfaces monitor.current_state() — the same source
+        /api/gateway/status reads — instead of the static gateway_ws_url()
+        that never changed and told you nothing about actual health."""
+        from backend import monitor
+
+        monkeypatch.setattr(monitor, "current_state", lambda: "down")
+        assert client.get("/api/health").json()["gateway"] == "down"
+
+        monkeypatch.setattr(monitor, "current_state", lambda: "restarting")
+        assert client.get("/api/health").json()["gateway"] == "restarting"
+
+    def test_health_never_awaits_monitor_status(self, client, monkeypatch):
+        """/api/health must do zero gateway I/O (its docstring's — and the
+        doctor-alert script's — load-bearing assumption): monitor.status() is
+        the awaitable sibling that makes a live gateway RPC when state is
+        "ok"; poison it and confirm /api/health still answers 200 without
+        touching it."""
+        from backend import monitor
+
+        async def _boom(*a, **kw):
+            raise AssertionError("must not be called by /api/health")
+
+        monkeypatch.setattr(monitor, "status", _boom)
+        r = client.get("/api/health")
+        assert r.status_code == 200
+
+    def test_health_survives_unreadable_disk_paths(self, client, monkeypatch):
+        """A disk-usage read failure degrades a field to None, never a 500 —
+        /api/health answering non-200 is exactly the alarm the doctor-alert
+        timer is watching for, so this decoration must not be able to trip it."""
+        from backend import app as app_module
+
+        def _boom(_path):
+            raise OSError("disk gone")
+
+        monkeypatch.setattr(app_module.shutil, "disk_usage", _boom)
+        r = client.get("/api/health")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["disk_free_gb"] is None
+        assert data["tmp_free_gb"] is None
 
 
 # ---------------------------------------------------------------------------

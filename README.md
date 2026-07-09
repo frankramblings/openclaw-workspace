@@ -144,6 +144,9 @@ cp .env.example .env           # set gateway WS + password
 docker compose up --build      # http://127.0.0.1:8800
 ```
 
+The Docker path isn't exercised by CI, so treat it as best-effort — file an
+issue if it breaks for you.
+
 </details>
 
 <details>
@@ -155,11 +158,20 @@ scripts/install-launchagent.sh        # 127.0.0.1:8800, auto-restart
 
 </details>
 
+<details>
+<summary>Run on boot (Linux/systemd)</summary>
+
+See [`deploy/systemd/`](deploy/systemd/) for the canonical unit files (the
+web app + gateway, plus optional tmp-reaper/backup/health-alert timers) and
+[`deploy/RUNBOOK.md`](deploy/RUNBOOK.md) for day-to-day operation.
+
+</details>
+
 ## Security
 
 By default the port binds to `127.0.0.1`, so it's **not reachable from the LAN**. The recommended remote-access path is **Tailscale Serve** in front of `127.0.0.1:8800`.
 
-> ⚠️ The token gate covers HTTP only. The terminal PTY WebSocket is gated by your reverse proxy. Don't expose the workspace on an untrusted network on the strength of a token alone. **The terminal is a real shell.**
+> ⚠️ The token gate covers both HTTP requests **and** WebSocket handshakes (an unauthenticated socket is declined before accept, HTTP 403) — but the terminal PTY additionally requires a Tailscale identity header (or an explicit opt-out env var) on top of the token, since it's a real shell. Don't expose the workspace on an untrusted network on the strength of a token alone. **The terminal is a real shell.**
 
 ## Under the hood
 

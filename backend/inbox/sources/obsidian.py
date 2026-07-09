@@ -15,12 +15,13 @@ import time
 import urllib.parse
 from pathlib import Path
 
+from ... import config
 from .. import settings as _inbox_settings
 
 # VAULT and WINDOW_DAYS resolved via inbox.settings at call time (env still wins).
 VAULT = Path(os.environ.get(
     "INBOX_MEETINGS_DIR", str(Path.home() / ".openclaw/workspace/Meetings"))).expanduser()
-WINDOW_DAYS = int(os.environ.get("OBSIDIAN_WINDOW_DAYS", "120"))
+WINDOW_DAYS = config._env_int("OBSIDIAN_WINDOW_DAYS", 120)
 
 _FILENAME_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 _SECTION_HEADER_RE = re.compile(r"^\s*#{2,4}\s+(.+?)\s*$")

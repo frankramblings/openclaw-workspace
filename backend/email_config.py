@@ -11,6 +11,8 @@ import re
 import tomllib
 from pathlib import Path
 
+from .fsutil import atomic_write_text, file_lock
+
 GMAIL = {"imap_host": "imap.gmail.com", "imap_port": 993,
          "smtp_host": "smtp.gmail.com", "smtp_port": 465}
 
@@ -127,5 +129,6 @@ def add_account(*, provider, email, display_name, password, config_path,
     # 3. append (one blank line between blocks)
     sep = "" if not existing else ("\n" if existing.endswith("\n") else "\n\n")
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(existing + sep + block)
+    with file_lock(config_path):
+        atomic_write_text(config_path, existing + sep + block)
     return {"account_id": account_id, "is_default": is_default, "address": email}

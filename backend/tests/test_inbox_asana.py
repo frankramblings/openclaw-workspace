@@ -80,7 +80,7 @@ def test_map_task_detail_handles_missing_bits():
     assert d["assignee"] is None
 
 
-import asyncio
+import asyncio  # noqa: E402 - intentionally scoped to this section (house style)
 
 def test_create_task_posts_to_project(monkeypatch):
     calls = {}

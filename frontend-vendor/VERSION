@@ -1,0 +1,51 @@
+# frontend-vendor provenance
+
+This directory vendors a snapshot of the Odysseus SPA base (see
+frontend-vendor/THIRD-PARTY.md for upstream project/license/source), modified
+in place by workspace-repo commits since. It is NOT a pristine upstream
+checkout — see "upstream revision" below.
+
+## Upstream source
+
+  https://github.com/pewdiepie-archdaemon/odysseus (AGPL-3.0-or-later)
+
+upstream Odysseus revision unrecorded — record it on the next vendor refresh.
+(No commit/tag/checkout date for the exact upstream snapshot that
+frontend-vendor/ was originally vendored from was captured at vendoring time;
+this VERSION file did not exist yet. From this point forward, whoever runs the
+refresh command below should paste the upstream commit hash/tag here.)
+
+## This repo's vendor-touching history
+
+  first commit touching frontend-vendor/: 00d633d 2026-06-08
+    feat(ship): vendor neutral SPA base so a fresh clone has a working UI
+  last  commit touching frontend-vendor/: 161f72e 2026-06-28
+    license: relicense to AGPL-3.0 + add §13 source link; Gary easter eggs
+
+(Full list: `git log --format='%h %ad %s' --date=short -- frontend-vendor
+':!frontend-vendor/VERSION' | cat`. The `:!frontend-vendor/VERSION` pathspec
+excludes commits that only touch this marker file — by design, so edits to
+VERSION itself don't count as "vendor-touching" and make these facts stale.)
+
+## Refresh command
+
+`scripts/sync-frontend.sh` reads its source dir from `ODYSSEUS_STATIC` (falls
+back to this directory, frontend-vendor/, when unset):
+
+  ODYSSEUS_STATIC=/path/to/upstream/odysseus/static scripts/sync-frontend.sh
+
+Point it at a fresh upstream `static/` checkout to build+smoke-test against
+the new version before committing it. To actually refresh the vendored copy
+(not just build against it once), replace this directory's contents with the
+new upstream tree (see docs/SHIPPING.md "Tier 1.5" for the original vendoring
+process: revert workspace-specific renames back to "Odysseus"/`__AGENT_NAME__`
+tokens, strip override-derived files that `frontend-overrides/` re-adds at
+sync time), then re-run `scripts/sync-frontend.sh` (no ODYSSEUS_STATIC) and
+verify it still builds clean — the DRIFT gate at the bottom of the script will
+fail loudly (`FATAL: vendor drift`) if any anchor-guarded patch (Gary
+easter-egg swaps, SerpAPI provider-map patch, welcome-subtitle patch, or the
+SW precache/CACHE_NAME patch) no longer finds its expected text, which is
+exactly the signal that this file's provenance note needs updating too.
+
+After a refresh, update the "upstream revision" line above and the vendor-
+touching history above (or just note the new range) in the same commit.

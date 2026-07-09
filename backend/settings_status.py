@@ -17,7 +17,6 @@ import tomllib
 from pathlib import Path
 
 from fastapi import APIRouter, Body
-from fastapi.responses import JSONResponse
 
 router = APIRouter()
 

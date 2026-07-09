@@ -51,3 +51,7 @@ frontend-overrides/.redesign.css.*
 # it's excluded from the publish-bound repo. Already-tracked files must also be
 # untracked once: `git rm -r --cached docs/superpowers/`.
 /docs/superpowers/
+
+# Runtime branch-context handoff payloads (per-branch pending-context store,
+# written by the live checkout at runtime; not source).
+/data/branch_context/

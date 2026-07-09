@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Nightly state backup. Code lives on GitHub; this covers everything that
+# doesn't: workspace runtime state, agent memory/config, secrets, systemd units.
+set -euo pipefail
+source "$HOME/.config/openclaw-secrets/restic.env"
+export RESTIC_PASSWORD RESTIC_REPOSITORY
+"$HOME/.local/bin/restic" backup \
+  "$HOME/openclaw-workspace/.data" \
+  "$HOME/.openclaw/openclaw.json" \
+  "$HOME/.openclaw/credentials" \
+  "$HOME/.openclaw/memory" \
+  "$HOME/.openclaw/agents" \
+  "$HOME/.openclaw/config-history" \
+  "$HOME/.openclaw/workspace/OpenClaw_Vault" \
+  "$HOME/.openclaw/workspace/memory" \
+  "$HOME/.openclaw/workspace/artifacts" \
+  "$HOME/.openclaw/workspace/granola" \
+  "$HOME/.config/openclaw-secrets" \
+  "$HOME/.config/systemd/user" \
+  --exclude "$HOME/.openclaw/agents/**/cache" \
+  --exclude "$HOME/.openclaw/agents/**/node_modules" \
+  --exclude "$HOME/.openclaw/agents/*/agent/codex-home/logs_2.sqlite*" \
+  --tag scheduled --quiet
+"$HOME/.local/bin/restic" forget --keep-daily 7 --keep-weekly 4 --keep-monthly 3 --prune --quiet

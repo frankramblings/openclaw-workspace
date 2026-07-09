@@ -50,8 +50,8 @@ def test_has_default_account():
     assert ec.has_default_account("not valid toml {{{") is False
 
 
-import os
-import stat
+import os  # noqa: E402 - intentionally scoped to this section (house style)
+import stat  # noqa: E402 - intentionally scoped to this section (house style)
 
 
 def test_add_account_fresh_is_default(tmp_path):
@@ -103,7 +103,8 @@ def test_secret_path_with_quote_is_shell_safe():
 
 
 def test_add_account_secret_is_600_atomic(tmp_path):
-    import os as _os, stat as _stat
+    import os as _os
+    import stat as _stat
     secret = tmp_path / ".pw"
     ec.add_account(provider="gmail", email="me@gmail.com", display_name="Me",
                    password="p w", config_path=tmp_path / "c.toml", secret_path=secret)

@@ -150,6 +150,21 @@ def start_watcher() -> None:
     _watch_task = asyncio.create_task(_watcher())
 
 
+async def stop() -> None:
+    """Call once from FastAPI shutdown. Cancels the watcher task and awaits it
+    so it doesn't get orphaned to uvicorn's force-close window. Tolerates the
+    task never having started (e.g. watchfiles absent, or startup never ran —
+    the module lazy-imports watchfiles inside `_watcher()` and is fine without
+    it)."""
+    global _watch_task
+    if _watch_task is None:
+        return
+    _watch_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await _watch_task
+    _watch_task = None
+
+
 @router.websocket("/api/workspace/watch")
 async def workspace_watch(websocket: WebSocket):
     await websocket.accept()

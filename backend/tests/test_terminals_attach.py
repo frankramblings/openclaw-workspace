@@ -56,9 +56,9 @@ def test_close_session_clears_registry():
 
 # --- HTTP route tests ---------------------------------------------------------
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402 - intentionally scoped to this section (house style)
 
-from backend.app import app
+from backend.app import app  # noqa: E402 - intentionally scoped to this section (house style)
 
 
 @pytest.fixture

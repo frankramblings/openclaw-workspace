@@ -6,9 +6,57 @@ so they never live in this repo. Everything is overridable via environment vars.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
+
+from . import fsutil
+
+log = logging.getLogger(__name__)
+
+
+# --- Numeric env vars: parse defensively, never crash -------------------------
+# Most numeric env vars here (and in research.py / inbox/sources/*) are cast
+# as plain module-level assignments, i.e. AT IMPORT TIME. A bare
+# float(os.environ...) there means a finger-slip like WORKSPACE_STALL_CAP=24o
+# kills the whole process with a raw ValueError during `import backend.app`,
+# before any startup check can run. These helpers make a bad value degrade to
+# the call site's default with a logged warning instead. config_check reuses
+# parse_env_number as its single source of truth, so the same bad var is ALSO
+# reported as a startup problem string (visible in the boot log) — degrade
+# here, report there, one parse implementation.
+
+def parse_env_number(name: str, caster):
+    """Parse env var `name` with `caster` (int/float). Returns
+    (value, problem): value is the parsed number or None (unset OR invalid);
+    problem is a human-readable string only when the var is SET but does not
+    parse. Never raises."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return None, None
+    try:
+        return caster(raw), None
+    except (TypeError, ValueError):
+        kind = "integer" if caster is int else "number"
+        return None, f"env {name}={raw!r} is not a valid {kind}"
+
+
+def _env_number(name: str, caster, default):
+    value, problem = parse_env_number(name, caster)
+    if problem is not None:
+        log.warning("invalid %s=%r, using default %r",
+                    name, os.environ.get(name), default)
+    return default if value is None else value
+
+
+def _env_int(name: str, default: int) -> int:
+    return _env_number(name, int, default)
+
+
+def _env_float(name: str, default: float) -> float:
+    return _env_number(name, float, default)
+
 
 OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw"))
 OPENCLAW_CONFIG = OPENCLAW_HOME / "openclaw.json"
@@ -35,8 +83,14 @@ def _openclaw_json() -> dict:
 
 
 def gateway_port() -> int:
-    return int(os.environ.get("OPENCLAW_GATEWAY_PORT")
-               or _openclaw_json().get("gateway", {}).get("port", 18789))
+    fallback = _openclaw_json().get("gateway", {}).get("port", 18789)
+    try:
+        fallback = int(fallback)
+    except (TypeError, ValueError):
+        log.warning("invalid gateway.port %r in %s, using default 18789",
+                    fallback, OPENCLAW_CONFIG)
+        fallback = 18789
+    return _env_int("OPENCLAW_GATEWAY_PORT", fallback)
 
 
 def gateway_ws_url() -> str:
@@ -127,12 +181,12 @@ def inbox_triage_model() -> str:
 DATA_DIR = Path(os.environ.get("WORKSPACE_DATA_DIR", REPO_ROOT / ".data"))
 
 # How long to wait on a single chat turn before giving up.
-TURN_TIMEOUT_S = float(os.environ.get("WORKSPACE_TURN_TIMEOUT_S", "180"))
+TURN_TIMEOUT_S = _env_float("WORKSPACE_TURN_TIMEOUT_S", 180.0)
 
 # Stall watchdog (workspace chat): run-silence thresholds for the bridge's
 # WS relay. Notice → SSE "stall" frames; cap → abort + retry-once.
-STALL_NOTICE_S = float(os.environ.get("WORKSPACE_STALL_NOTICE", "45"))
-STALL_CAP_S = float(os.environ.get("WORKSPACE_STALL_CAP", "240"))
+STALL_NOTICE_S = _env_float("WORKSPACE_STALL_NOTICE", 45.0)
+STALL_CAP_S = _env_float("WORKSPACE_STALL_CAP", 240.0)
 # Chat auto-titles run on a cheap model so they never race the user's real
 # turn through codex on the big one.
 TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL", "openai/gpt-5.4-mini")
@@ -155,11 +209,10 @@ BRANDING_PATH = DATA_DIR / "branding.json"
 
 
 def load_branding() -> dict:
-    """Read .data/branding.json (best-effort). Never raises."""
-    try:
-        return json.loads(BRANDING_PATH.read_text())
-    except (FileNotFoundError, ValueError):
-        return {}
+    """Read .data/branding.json (best-effort). Never raises. A corrupt file
+    is quarantined aside rather than silently treated as absent — see
+    fsutil.load_json_guarded."""
+    return fsutil.load_json_guarded(BRANDING_PATH, {}, logger=log)
 
 
 def save_branding(**fields) -> dict:
@@ -216,11 +269,10 @@ CONNECTION_FIELDS = frozenset({"gateway_ws", "agent_id", "integrations"})
 
 
 def load_connection() -> dict:
-    """Read .data/connection.json (non-secret connection info). Never raises."""
-    try:
-        return json.loads(CONNECTION_PATH.read_text())
-    except (FileNotFoundError, ValueError):
-        return {}
+    """Read .data/connection.json (non-secret connection info). Never raises.
+    A corrupt file is quarantined aside rather than silently treated as
+    absent — see fsutil.load_json_guarded."""
+    return fsutil.load_json_guarded(CONNECTION_PATH, {}, logger=log)
 
 
 def save_connection(**fields) -> dict:
@@ -264,7 +316,7 @@ def auth_session_cookie() -> str:
 
 
 def auth_session_max_age() -> int:
-    return int(os.environ.get("SHARE_SESSION_DAYS", "30")) * 86400
+    return _env_int("SHARE_SESSION_DAYS", 30) * 86400
 
 
 def auth_login_url() -> str | None:

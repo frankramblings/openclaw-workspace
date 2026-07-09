@@ -17,11 +17,14 @@ Frontend contract (js/notes.js):
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from . import vault_store as vs
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -108,7 +111,14 @@ async def reorder_notes(request: Request):
         note = vs.load_entry(path)
         note["sort"] = idx
         content = note.pop("content", "")
-        vs.save_entry(path, note, content)
+        try:
+            vs.save_entry(path, note, content)
+        except Exception:  # noqa: BLE001 - fsutil now raises on write failure
+            # (Task 10); an unguarded reorder used to look like it succeeded
+            # (200 {"ok": true}) even when the sort order silently didn't
+            # persist. Surface it honestly instead.
+            log.error("vault write failed reordering note %s", nid, exc_info=True)
+            return JSONResponse({"error": "write failed"}, status_code=500)
     return {"ok": True}
 
 
@@ -123,5 +133,15 @@ def _write(note: dict):
     content = note.pop("content", "") or ""
     note["content"] = content  # keep for the returned object
     meta = {k: v for k, v in note.items() if k != "content"}
-    vs.save_entry(_path(note["id"]), meta, content)
+    try:
+        vs.save_entry(_path(note["id"]), meta, content)
+    except Exception:  # noqa: BLE001 - fsutil now raises on write failure
+        # (Task 10, fsutil.atomic_write_text). Without this catch the route
+        # boundary was an unhandled 500 with no logging; worse, a caller that
+        # didn't check the body could mistake it for a saved note. Log +
+        # return an honest error the frontend's fetch handling already
+        # understands (the `.error` key, same shape as the "not found" 404s
+        # elsewhere in this router).
+        log.error("vault write failed saving note %s", note.get("id"), exc_info=True)
+        return JSONResponse({"error": "write failed"}, status_code=500)
     return JSONResponse(note)

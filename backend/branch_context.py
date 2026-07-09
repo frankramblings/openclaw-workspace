@@ -11,7 +11,9 @@ One JSON file per branched new-session id. Override the directory in tests via
 env var OPENCLAW_BRANCH_CONTEXT_DIR.
 """
 from __future__ import annotations
-import json, os, tempfile
+import json
+import os
+import tempfile
 from pathlib import Path
 
 _DEFAULT_DIR = Path(__file__).resolve().parent.parent / "data" / "branch_context"

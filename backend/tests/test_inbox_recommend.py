@@ -76,11 +76,11 @@ def test_ai_rec_with_disallowed_action_is_ignored():
 
 # --- regression: recs must not outlive their stats on cached items -----------
 
-import pytest
-from httpx import ASGITransport, AsyncClient
+import pytest  # noqa: E402 - intentionally scoped to this section (house style)
+from httpx import ASGITransport, AsyncClient  # noqa: E402 - intentionally scoped to this section (house style)
 
-import backend.inbox as inbox
-from backend.inbox import state
+import backend.inbox as inbox  # noqa: E402 - intentionally scoped to this section (house style)
+from backend.inbox import state  # noqa: E402 - intentionally scoped to this section (house style)
 
 
 @pytest.fixture

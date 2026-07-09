@@ -6,13 +6,12 @@ edited and then goes stale AGAIN gets a fresh id and resurfaces.
 Spec: docs/superpowers/specs/2026-06-05-documents-drafting-mode-design.md"""
 from __future__ import annotations
 
-import os
 import time
 from datetime import datetime
 
-from ... import documents, vault_store as vs
+from ... import config, documents, vault_store as vs
 
-STALE_DAYS = float(os.environ.get("DOCS_STALE_DAYS", "4"))
+STALE_DAYS = config._env_float("DOCS_STALE_DAYS", 4.0)
 
 
 def _iso_ms(iso: str) -> int | None:

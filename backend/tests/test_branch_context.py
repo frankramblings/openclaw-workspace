@@ -1,5 +1,6 @@
-import os, pytest, tempfile, importlib
-from pathlib import Path
+import pytest
+import tempfile
+import importlib
 
 @pytest.fixture
 def bc(monkeypatch):

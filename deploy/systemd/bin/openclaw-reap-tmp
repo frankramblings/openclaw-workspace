@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Reap orphaned OpenClaw gateway render dirs. The gateway creates rf_*/ge_*
+# temp dirs per render job and does not always remove them; a live render
+# rarely exceeds ~30 min, so >60 min old means orphaned.
+set -u
+for root in /tmp "$HOME/.cache/openclaw-tmp"; do
+  [ -d "$root" ] || continue
+  find "$root" -maxdepth 1 \( -name 'rf_*' -o -name 'ge_*' \) -mmin +60 \
+    -user "$(id -un)" -exec rm -rf {} + 2>/dev/null
+done
+# Anything else in our private temp root older than 7 days is abandoned.
+find "$HOME/.cache/openclaw-tmp" -mindepth 1 -maxdepth 1 -mtime +7 -exec rm -rf {} + 2>/dev/null
+exit 0

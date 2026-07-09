@@ -1,0 +1,36 @@
+[Unit]
+Description=OpenClaw Workspace (web shell on :8800, loopback; tailscale serve :8443 in front)
+After=openclaw-gateway.service
+Wants=openclaw-gateway.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/openclaw-workspace
+Environment=HOME=%h
+Environment=WORKSPACE_AGENT_NAME=Gary
+Environment=INBOX_INTERNAL_DOMAIN=example.com
+Environment=INBOX_MEETINGS_DIR=%h/obsidian/Meetings
+Environment=SLACK_DOMAIN=example.slack.com
+# set your own values; production values live only in ~/.config/systemd/user/
+Environment=PATH=%h/openclaw-workspace/.venv/bin:%h/.nvm/versions/node/v22.22.0/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/go/bin:%h/.local/bin:%h/go/bin
+ExecStart=%h/openclaw-workspace/.venv/bin/python3.14 -m uvicorn backend.app:app --host 127.0.0.1 --port 8800 --log-level warning --timeout-graceful-shutdown 2
+LimitNOFILE=8192
+Restart=always
+RestartSec=3
+# Shutdown speed. The app ALWAYS holds long-lived SSE/WS streams (jobs feed,
+# chat tail, terminals) that never drain on their own, so uvicorn's graceful
+# shutdown always ran out its full window — every restart cost that many seconds
+# of tailscale :8443 502s, even clean ones. The app is built for abrupt stream
+# death (turns persist in event_store + resume by cursor; clients reconnect), so
+# force-close fast: --timeout-graceful-shutdown 2, with 5s as the systemd backstop.
+TimeoutStopSec=5
+# KillMode=mixed: SIGTERM the main process only, then SIGKILL the whole cgroup at
+# TimeoutStopSec. The app closes its PTY shells on shutdown (app.py lifespan), but
+# an interactive `bash -i` or a descendant it spawned can still ignore the SIGTERM
+# systemd would otherwise send the entire cgroup — which held the unit open until
+# TimeoutStopSec on every restart. mixed stops that: children get SIGKILL, not a
+# SIGTERM they can swallow.
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

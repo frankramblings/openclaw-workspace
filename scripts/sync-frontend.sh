@@ -5,6 +5,13 @@
 # (base) or frontend-overrides/ (customizations), never in frontend/ directly.
 set -euo pipefail
 
+# DRIFT: set to 1 by any anchor-guarded vendor patch below that had to SKIP
+# because its expected text wasn't found (upstream/vendor changed). Individual
+# patches print a SKIP line and keep going, so a single run surfaces every
+# mismatch instead of stopping at the first one; the gate at the end of the
+# script turns any DRIFT=1 into a hard failure (see bottom of file).
+DRIFT=0
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # The neutral SPA base ships vendored in the repo at frontend-vendor/ (it plays
 # the role the external Odysseus checkout used to). Point ODYSSEUS_STATIC at an
@@ -33,7 +40,9 @@ else sedi() { sed -i '' "$@"; }; fi
 
 if [[ -d "$SRC" ]]; then
   mkdir -p "$DEST"
-  rsync -a --delete "$SRC"/ "$DEST"/
+  # --exclude '__tests__': defensive — the vendored base doesn't currently ship
+  # test files, but nothing shipped to $DEST should ever include them.
+  rsync -a --delete --exclude '__tests__' "$SRC"/ "$DEST"/
   echo "synced $SRC -> $DEST"
 elif [[ -d "$DEST" ]]; then
   # Vendored base missing but a prior frontend/ exists: layer overrides +
@@ -47,8 +56,11 @@ fi
 # --- Re-apply durable overrides (mirror frontend-overrides/ into frontend/) ---
 if [[ -d "$OVERRIDES" ]]; then
   # Copy every override file into frontend/, preserving sub-paths. Exclude the
-  # docs file. -R . copies the tree contents (not the dir itself).
-  ( cd "$OVERRIDES" && find . -type f ! -name 'README.md' -print0 \
+  # docs file and any __tests__/ dir (jest specs live alongside their modules
+  # under frontend-overrides/js/__tests__/ — dev-only, must never ship to
+  # $DEST, let alone into the SW precache). -R . copies the tree contents (not
+  # the dir itself).
+  ( cd "$OVERRIDES" && find . -type f ! -name 'README.md' ! -path '*/__tests__/*' -print0 \
       | while IFS= read -r -d '' f; do
           mkdir -p "$DEST/$(dirname "$f")"
           cp "$f" "$DEST/$f"
@@ -244,19 +256,24 @@ fi
 # loop below, so the leftover `_cmdOdyssey` symbol gets renamed consistently by
 # that capitalized-"Odysseus" swap. Each patch is anchor-guarded: if upstream
 # moves a line, it prints SKIP instead of silently corrupting the file.
-python3 - "$DEST" <<'PYEOF'
+# Note: `|| DRIFT=1` conflates the intentional drift-exit (sys.exit(1) below)
+# with an unexpected python error (traceback → nonzero); acceptable — both mean
+# "this build is not trustworthy" — but revisit if these heredocs grow.
+python3 - "$DEST" <<'PYEOF' || DRIFT=1
 import sys, pathlib
 dest = pathlib.Path(sys.argv[1])
+_drift = False
 
 def swap(rel, old, new):
+    global _drift
     p = dest / rel
     if not p.exists():
-        print(f"gary-egg: SKIP {rel} (missing)"); return
+        print(f"gary-egg: SKIP {rel} (missing)", file=sys.stderr); _drift = True; return
     t = p.read_text()
     if old in t:
         p.write_text(t.replace(old, new)); print(f"gary-egg: patched {rel}")
     else:
-        print(f"gary-egg: SKIP {rel} (anchor not found — upstream changed)")
+        print(f"gary-egg: SKIP {rel} (anchor not found — upstream changed)", file=sys.stderr); _drift = True
 
 # 1. Character persona preset: Odysseus the strategist -> Gary the Superman Robot
 swap("js/presets.js", "id: 'odysseus',", "id: 'gary',")
@@ -307,6 +324,8 @@ swap("js/slashCommands.js",
 
 # 4. Calendar quick-add hint
 swap("js/calendar.js", "return home to Ithaca 1pm tmrw", "feed Krypto 1pm tmrw")
+
+sys.exit(1 if _drift else 0)
 PYEOF
 
 # --- Agent-name rebrand of app.js + js/ modules -----------------------------
@@ -336,9 +355,17 @@ while IFS= read -r -d '' f; do rebrand "$f"; done < <(
 )
 # Welcome-screen subtitle (a specific phrase, not an Odysseus->Gary swap).
 MODELS="$DEST/js/models.js"
-if [[ -f "$MODELS" ]] && grep -q "Yours for the voyage\." "$MODELS"; then
+if [[ ! -f "$MODELS" ]]; then
+  echo "welcome-subtitle: SKIP js/models.js (missing — upstream changed)" >&2
+  DRIFT=1
+elif grep -q "Yours for the voyage\." "$MODELS"; then
   sedi 's/Yours for the voyage\./Merely an automaton, here to serve./g' "$MODELS"
   echo "rebranded welcome subtitle in js/models.js"
+elif grep -q "Merely an automaton, here to serve\." "$MODELS"; then
+  : # already patched (idempotent re-run)
+else
+  echo "welcome-subtitle: SKIP js/models.js (anchor not found — upstream changed)" >&2
+  DRIFT=1
 fi
 
 # --- SerpAPI as a first-class search provider --------------------------------
@@ -347,10 +374,18 @@ fi
 # index.html override; search.js is a full-file override. The actual search
 # runs server-side via backend/websearch.py (key from OpenClaw's serpapi skill).
 SETTINGS="$DEST/js/settings.js"
-if [[ -f "$SETTINGS" ]] && ! grep -q "serpapi: 'SerpAPI'" "$SETTINGS"; then
+if [[ ! -f "$SETTINGS" ]]; then
+  echo "serpapi: SKIP js/settings.js (missing — upstream changed)" >&2
+  DRIFT=1
+elif grep -q "serpapi: 'SerpAPI'" "$SETTINGS"; then
+  : # already patched (idempotent re-run)
+elif grep -q "var _searchLabels = {" "$SETTINGS" && grep -q "var _SEARCH_PROVIDER_LOGOS = {" "$SETTINGS"; then
   sedi "s|var _searchLabels = {|var _searchLabels = { serpapi: 'SerpAPI',|" "$SETTINGS"
   sedi "s|var _SEARCH_PROVIDER_LOGOS = {|var _SEARCH_PROVIDER_LOGOS = { serpapi: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/><path d=\"M8.5 11a2.5 2.5 0 0 1 5 0c0 1.5-1.2 2-2.5 2\"/></svg>',|" "$SETTINGS"
   echo "patched serpapi into settings.js provider maps"
+else
+  echo "serpapi: SKIP js/settings.js provider-map patch (anchor not found — upstream changed)" >&2
+  DRIFT=1
 fi
 
 # --- Auto-version the service worker cache -----------------------------------
@@ -364,29 +399,107 @@ fi
 SW="$DEST/sw.js"
 if [[ -f "$SW" ]]; then
   # Generate the precache manifest from what's actually deployed (sw.js holds
-  # a /*__PRECACHE__*/ token). Keep it to the shell the app needs offline:
-  # all JS/CSS, fonts, icons, manifests. Exclude sw.js itself and source maps.
-  # index.html (the redesign, start_url '/') must be precached for offline PWA
-  # launches. index-classic.html is also included for completeness.
-  PRECACHE_LIST=$(cd "$DEST" && find . -type f \
-      \( -name '*.js' -o -name '*.css' -o -name '*.woff2' -o -name '*.png' \
-         -o -name '*.svg' -o -name 'manifest.json' \
-         -o -name 'index.html' -o -name 'index-classic.html' \) \
-      ! -name 'sw.js' ! -name '*.map' \
-    | sort | sed "s|^\./|'/static/|; s|\$|',|" | tr '\n' ' ')
-  python3 - "$SW" "$PRECACHE_LIST" <<'PYEOF'
+  # a /*__PRECACHE__*/ token). The LIVE app served at '/' is the redesign
+  # (index.html -> js/redesign/app.js); the classic UI (index-classic.html,
+  # top-level js/*.js like document.js/app.js, style.css) is dead-but-still-
+  # served at /classic — kept on disk so that route still works, but it is
+  # NOT part of the offline app shell, so it is deliberately excluded here
+  # (network-only). Precaching it too used to cost ~230 entries / ~16MB for
+  # code nothing links to. This list is the redesign's actual asset closure,
+  # traced from frontend/index.html's <script>/<link> tags plus what the
+  # redesign lazy-loads at runtime:
+  #   - js/redesign/**  — the whole module tree, including live/*.js (loaded
+  #     by name from live/index.js's dynamic `import(`./${file}.js`)`) and
+  #     mobile/*.js.
+  #   - A handful of top-level js/*.js modules that live outside js/redesign/
+  #     but are real redesign dependencies, not classic leftovers. Chain:
+  #     dualDragInit.js (index.html's 2nd <script> tag) -> chatWindow.js ->
+  #     {windowDrag.js, modalSnap.js, markdown.js} -> modalSnap.js ->
+  #     modalManager.js -> {ui.js, tileManager.js} -> ui.js ->
+  #     {theme.js, spinner.js} -> theme.js -> {storage.js, colorPicker.js}.
+  #     (markdown.js is also imported directly by three js/redesign/** files,
+  #     independent of the chatWindow.js chain.) This is a one-way import
+  #     graph, not a bundler-tracked one, so it can silently drift; sanity
+  #     check it after touching any file in the chain with, e.g.:
+  #       grep -n "^import" js/dualDragInit.js js/chatWindow.js js/windowDrag.js \
+  #         js/modalSnap.js js/modalManager.js js/ui.js js/tileManager.js \
+  #         js/theme.js js/spinner.js js/storage.js js/colorPicker.js js/markdown.js
+  #     run from $DEST after a sync — every target should already be in the
+  #     printf list below (or under js/redesign/, already globbed in).
+  #   - The two lazy-loaded vendor libs: Toast UI editor (document-editor.js)
+  #     and xterm + its addon-fit + MonoLisa webfont (terminal.js) — only the
+  #     files those two modules actually request, not the whole vendor dirs
+  #     (classic's workspace-terminal.js pulls in extra xterm addons/fonts
+  #     that the redesign never touches).
+  #   - Fonts redesign.css @font-faces (HankenGrotesk, MonoLisa), the PWA
+  #     manifest + its icon set, and the couple of images theme.js/data.js
+  #     fetch by literal /static/ path (brand mark, avatar, favicon fallback).
+  # Excludes sw.js itself and source maps.
+  PRECACHE_LIST=$(cd "$DEST" && {
+      printf '%s\n' index.html manifest.json \
+        redesign.css chat-window-redesign.css js/redesign/mobile/mobile.css
+      find js/redesign -type f -name '*.js'
+      printf '%s\n' \
+        js/chatWindow.js js/colorPicker.js js/dualDragInit.js js/markdown.js \
+        js/modalManager.js js/modalSnap.js js/spinner.js js/storage.js \
+        js/theme.js js/tileManager.js js/ui.js js/windowDrag.js
+      printf '%s\n' \
+        js/vendor/toastui/toastui-editor-all.min.js \
+        js/vendor/toastui/toastui-editor.min.css \
+        js/vendor/toastui/toastui-editor-dark.min.css \
+        js/vendor/xterm/xterm.js js/vendor/xterm/xterm.css \
+        js/vendor/xterm/wt-fonts.css js/vendor/xterm/addon-fit.js \
+        js/vendor/xterm/MonoLisa-normal.woff2 js/vendor/xterm/MonoLisa-italic.woff2
+      find fonts -maxdepth 1 -type f \( -name 'HankenGrotesk*.woff2' -o -name 'MonoLisa*.woff2' \)
+      printf '%s\n' \
+        favicon-16x16.png favicon-32x32.png favicon.svg apple-touch-icon.png \
+        icon-192.png icon-512.png maskable-icon.png logo.svg \
+        redesign-assets/gary-outline.png
+    } | sort -u | sed "s|^|'/static/|; s|\$|',|" | tr '\n' ' ')
+  # The python replace() below is a silent no-op if the token is missing (no
+  # exception, exit 0) — set -e alone would NOT catch that, so the heredoc
+  # explicitly fails (sys.exit(1)) when the token isn't found and we turn
+  # that into a SKIP + DRIFT instead of a false "injected" success message.
+  PRECACHE_OK=1
+  python3 - "$SW" "$PRECACHE_LIST" <<'PYEOF' || PRECACHE_OK=0
 import sys
 sw_path, entries = sys.argv[1], sys.argv[2]
 src = open(sw_path).read()
-src = src.replace("/*__PRECACHE__*/", entries.rstrip())
+token = "/*__PRECACHE__*/"
+if token not in src:
+    sys.exit(1)
+src = src.replace(token, entries.rstrip())
 open(sw_path, "w").write(src)
 PYEOF
-  echo "injected $(echo "$PRECACHE_LIST" | grep -o "/static/" | wc -l | tr -d ' ') precache entries into sw.js"
+  if [[ "$PRECACHE_OK" = 1 ]]; then
+    echo "injected $(echo "$PRECACHE_LIST" | grep -o "/static/" | wc -l | tr -d ' ') precache entries into sw.js"
+  else
+    echo "precache: SKIP sw.js (token /*__PRECACHE__*/ not found — upstream changed)" >&2
+    DRIFT=1
+  fi
 
   # Portable content hash (md5 is macOS-only; md5sum is Linux/CI).
   hash_cmd() { if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi; }
   ASSET_HASH=$(find "$DEST" -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.webmanifest' -o -name 'manifest.json' \) ! -name 'sw.js' -print0 \
     | sort -z | xargs -0 cat | hash_cmd | cut -c1-10)
-  sedi "s/^const CACHE_NAME = .*/const CACHE_NAME = 'gary-${ASSET_HASH}';/" "$SW"
-  echo "stamped sw.js CACHE_NAME = gary-${ASSET_HASH}"
+  if grep -q "^const CACHE_NAME = " "$SW"; then
+    sedi "s/^const CACHE_NAME = .*/const CACHE_NAME = 'gary-${ASSET_HASH}';/" "$SW"
+    echo "stamped sw.js CACHE_NAME = gary-${ASSET_HASH}"
+  else
+    echo "precache: SKIP sw.js CACHE_NAME stamp (anchor not found — upstream changed)" >&2
+    DRIFT=1
+  fi
+else
+  echo "precache: SKIP sw.js (missing — upstream changed; no offline app shell built)" >&2
+  DRIFT=1
+fi
+
+# --- Vendor-drift gate --------------------------------------------------------
+# Any SKIP above means an anchor-guarded patch didn't apply — the build would
+# otherwise succeed while silently shipping stale/un-rebranded/broken content.
+# Fail loudly by default; ODYSSEUS_ALLOW_DRIFT=1 opts into building anyway
+# (e.g. to inspect what changed upstream before fixing the anchors).
+if [ "${DRIFT:-0}" = 1 ] && [ "${ODYSSEUS_ALLOW_DRIFT:-0}" != 1 ]; then
+  echo "FATAL: vendor drift — anchors missed (see SKIP lines above); set ODYSSEUS_ALLOW_DRIFT=1 to build anyway" >&2
+  exit 1
 fi

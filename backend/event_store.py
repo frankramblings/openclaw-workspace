@@ -21,9 +21,12 @@ the store is process-global and other threads may read it.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 import time
 from collections import deque
+
+log = logging.getLogger(__name__)
 
 # Per-session ring buffer cap. Old events past this are evicted (their ids are
 # gone forever — a resume cursor older than the retained window just replays the
@@ -73,7 +76,8 @@ def append(session_key: str, payload: str) -> str:
         try:
             q.put_nowait(item)
         except Exception:  # noqa: BLE001 - full/closed queue must never break append
-            pass
+            log.warning("event_store: failed to wake a subscriber queue for "
+                        "session %s (seq %s)", session_key, seq, exc_info=True)
     return id_str
 
 

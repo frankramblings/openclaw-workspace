@@ -67,7 +67,12 @@ test('unordered and ordered lists with inline formatting', () => {
 
 test('fenced code block keeps content literal and escaped', () => {
   const html = renderMarkdown('```js\nconst a = 1 < 2 && 3;\n```');
-  assert.match(html, /<pre class="md-code"><code>const a = 1 &lt; 2 &amp;&amp; 3;<\/code><\/pre>/);
+  // The code content must be HTML-escaped (the security-critical property).
+  assert.match(html, /<code>const a = 1 &lt; 2 &amp;&amp; 3;<\/code>/);
+  // ...and no raw, unescaped form may leak through.
+  assert.doesNotMatch(html, /const a = 1 < 2 && 3;/);
+  // The block is wrapped in <pre class="md-code"> with the copy-code affordance.
+  assert.match(html, /<pre class="md-code"><button[^>]*class="md-copy-btn"/);
 });
 
 test('paragraphs split on blank lines; single newline becomes <br>', () => {

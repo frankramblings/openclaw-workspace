@@ -6,26 +6,38 @@ dismissed.js had the same single-flight idea)."""
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
 
-from .. import config
+from .. import config, fsutil
+
+log = logging.getLogger(__name__)
 
 STATE_FILE = config.DATA_DIR / "inbox-state.json"
 _LOCK = threading.Lock()
 _mem: dict | None = None
 
+# See sessions_store.SCHEMA_VERSION for the contract: absent = legacy (ok),
+# higher-than-known = a downgrade, logged once per process (the warning
+# fires from inside the `_mem is None` cache-fill branch, so it can't spam
+# every read the way an unconditional per-call check would).
+SCHEMA_VERSION = 1
+
 
 def _load() -> dict:
     global _mem
     if _mem is None:
-        try:
-            _mem = json.loads(STATE_FILE.read_text())
-        except (FileNotFoundError, json.JSONDecodeError):
-            _mem = {}
+        _mem = fsutil.load_json_guarded(STATE_FILE, {}, logger=log)
         if not isinstance(_mem, dict):
             _mem = {}
+        version = _mem.get("schema_version")
+        if isinstance(version, int) and version > SCHEMA_VERSION:
+            log.warning(
+                "inbox-state.json schema_version %s is newer than this app knows "
+                "how to read (%s) -- an older app version, or a downgrade; some "
+                "fields may be ignored", version, SCHEMA_VERSION)
     _mem.setdefault("dismissed", {})
     _mem.setdefault("snoozed", {})
     _mem.setdefault("history", [])
@@ -36,6 +48,7 @@ def _load() -> dict:
 
 def _save() -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _mem["schema_version"] = SCHEMA_VERSION
     tmp = STATE_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(_mem, indent=2))
     os.replace(tmp, STATE_FILE)

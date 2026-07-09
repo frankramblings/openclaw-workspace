@@ -1,0 +1,6 @@
+[Unit]
+Description=Probe workspace app + gateway health, alert via ntfy on state change
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/openclaw-doctor-alert

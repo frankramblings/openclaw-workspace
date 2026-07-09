@@ -40,7 +40,7 @@ SLACK_DOMAIN = os.environ.get("SLACK_DOMAIN", "example.slack.com")
 
 def _slack_domain() -> str:
     return _inbox_settings.slack_domain()
-STALE_MIN = int(os.environ.get("SLACK_STALE_MIN", str(24 * 60)))
+STALE_MIN = config._env_int("SLACK_STALE_MIN", 24 * 60)
 REFRESH_JOB = "ai.openclaw.slack-refresh"
 
 # Row: TS,UserID,userName,RealName,Channel,ThreadTs,Text...,ISO time,reactions,
@@ -274,7 +274,7 @@ async def fetch_my_usergroups() -> set[str]:
 # Bounded: only threads whose newest reply is recent + not mine, capped. No
 # mute/unsubscribe filter exists in the read-only Slack tools, so the recency
 # cap is what keeps busy threads from re-flooding the inbox.
-THREAD_RECENT_HOURS = int(os.environ.get("SLACK_THREAD_RECENT_HOURS", "4"))
+THREAD_RECENT_HOURS = config._env_int("SLACK_THREAD_RECENT_HOURS", 4)
 THREAD_SEARCH_LIMIT = 20      # my recent messages to scan for threads
 THREAD_CHECK_CAP = 12         # threads to actually fetch replies for
 THREAD_RESULT_CAP = 8         # max thread items surfaced

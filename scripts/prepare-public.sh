@@ -32,7 +32,7 @@ done
 echo "── pre-publish checks ───────────────────────────────────"
 
 # 1. No private identifiers in the tracked tree. Extend this list as needed.
-PATTERNS='femanuele|wistia|bespin|bicolor-triceratops|skinny-cloths|/Users/[a-z]'
+PATTERNS='femanuele|wistia|bespin|bicolor-triceratops|skinny-cloths|/Users/[a-z]|/home/[a-z]'
 # docs/superpowers/ is excluded: it contains dev-planning artifacts (paths,
 # tailnet names) that are internal only — they are dropped from the public
 # branch below (step 3a), so they don't need to pass this scan.

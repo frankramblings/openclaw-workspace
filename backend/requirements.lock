@@ -1,4 +1,4 @@
-# Snapshot of the production venv (Python 3.14, naboo) — reproduce with: pip install -r backend/requirements.lock
+# Snapshot of the production venv (Python 3.14) — reproduce with: pip install -r backend/requirements.lock
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0

@@ -103,6 +103,18 @@ def test_mcp_read_bad_token_404():
     assert r.status_code == 404
 
 
+def test_mcp_read_gary_off_403(monkeypatch):
+    # A capability token minted while Gary-control was ON must NOT still allow
+    # buffer reads once the user flips Gary-mode OFF for the session — the
+    # token's 30-min TTL otherwise leaves a read-only side channel open. Must
+    # mirror mcp/run and mcp/write's exact rejection shape (403, same body).
+    token = terminals.mint_terminal_token("sess-read-off")
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: False)
+    r = TestClient(app).post("/api/terminal/mcp/read", json={"token": token})
+    assert r.status_code == 403
+    assert r.json() == {"detail": "Gary terminal control is off for this chat"}
+
+
 # --- MCP endpoints route through the SAME transport gate as the human WS
 # (Task 14, cell e). Gary's real production calls arrive as GENUINE loopback
 # (127.0.0.1) with no Serve identity header and — by default — no

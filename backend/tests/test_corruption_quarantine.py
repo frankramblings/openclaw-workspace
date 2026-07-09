@@ -48,6 +48,34 @@ def test_missing_file_returns_default_no_rename_no_log(tmp_path):
     assert log.errors == []
 
 
+def test_empty_file_returns_default_no_quarantine_no_log(tmp_path):
+    """A 0-byte store is an uninitialized store, not corruption — e.g. a
+    process crashing between create() and the first write, or a filesystem
+    that truncates before writing. json.loads("") raises JSONDecodeError,
+    but that must NOT trigger the quarantine-rename-and-error-log path."""
+    log = _RecordingLogger()
+    p = tmp_path / "store.json"
+    p.write_bytes(b"")
+    result = fsutil.load_json_guarded(p, {"sessions": []}, logger=log)
+    assert result == {"sessions": []}
+    assert p.exists()  # NOT renamed away
+    assert p.read_bytes() == b""  # left untouched
+    assert list(tmp_path.iterdir()) == [p]  # no .corrupt-* sibling created
+    assert log.errors == []  # no error logged
+
+
+def test_whitespace_only_file_returns_default_no_quarantine_no_log(tmp_path):
+    log = _RecordingLogger()
+    p = tmp_path / "store.json"
+    p.write_text("   \n\t  \n")
+    result = fsutil.load_json_guarded(p, {"sessions": []}, logger=log)
+    assert result == {"sessions": []}
+    assert p.exists()
+    assert p.read_text() == "   \n\t  \n"
+    assert list(tmp_path.iterdir()) == [p]
+    assert log.errors == []
+
+
 def test_valid_json_loads_normally_no_quarantine(tmp_path):
     log = _RecordingLogger()
     p = tmp_path / "store.json"

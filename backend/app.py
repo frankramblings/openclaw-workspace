@@ -84,6 +84,14 @@ _late_reply = chat_turn._late_reply
 # engine resolves terminal-drop images via attachments._terminal_attachments.
 _terminal_attachments = chat_turn._terminal_attachments
 
+# Two seam shapes, don't conflate them: the attachments import and every
+# chat_turn.X alias above are one-time DIRECT-CALL re-exports — the engine
+# calls its OWN module-global, so patching app.X is a no-op (patch chat_turn.X
+# / attachments.X to affect it). _spawn / maybe_auto_extract / _log_turn_timing
+# (the drive_turn call below, ~:492) are PASS-THROUGH seams instead, looked up
+# on `app` at call time and passed in as kwargs, so patching app.X for those
+# three DOES reach the engine.
+
 # Configure root logging ONCE, here, at import time — before the FastAPI app
 # object (and anything that might log) is built. Only 3 of ~40 backend
 # modules called getLogger before this task; every module's `logging.warning`/

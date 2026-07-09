@@ -1009,6 +1009,8 @@ async def terminal_mcp_read(request: Request):
         raise HTTPException(status_code=403, detail="forbidden")
     if not session_key:
         raise HTTPException(status_code=404, detail="invalid or expired terminal token")
+    if not gary_mode_for_session(session_key):
+        raise HTTPException(status_code=403, detail="Gary terminal control is off for this chat")
     sess = _sessions.get(session_key)
     tail = int(body.get("tail", 4000))
     return {"output": (sess.buffer[-tail:] if sess else ""), "running": bool(sess and not sess.exited)}

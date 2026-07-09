@@ -88,11 +88,16 @@ def load_json_guarded(path: Path, default, *, logger):
 
     - Missing file: returns `default` as-is. This is the normal first-run
       path, not corruption, so no rename and no log.
+    - Empty or whitespace-only file: returns `default` as-is, same as a
+      missing file. A 0-byte store is an uninitialized store (e.g. a
+      process crashed between create() and its first write), not
+      corruption — json.loads("") raises JSONDecodeError, but that alone
+      isn't evidence of garbage on disk, so no rename and no log.
     - Valid JSON: returns the parsed value.
-    - Malformed JSON or undecodable bytes (JSONDecodeError /
-      UnicodeDecodeError): renames `path` to `<name>.corrupt-<timestamp>`
-      (see `_quarantine`), logs an error naming both paths, and returns
-      `default`.
+    - Malformed JSON (non-empty, non-whitespace) or undecodable bytes
+      (JSONDecodeError / UnicodeDecodeError): renames `path` to
+      `<name>.corrupt-<timestamp>` (see `_quarantine`), logs an error
+      naming both paths, and returns `default`.
     """
     path = Path(path)
     try:
@@ -101,6 +106,8 @@ def load_json_guarded(path: Path, default, *, logger):
         return default
     except UnicodeDecodeError:
         _quarantine(path, logger)
+        return default
+    if not text.strip():
         return default
     try:
         return json.loads(text)

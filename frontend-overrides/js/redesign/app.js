@@ -843,8 +843,16 @@ runtime.patchMessage = (msgId) => {
   // leave their scroll position alone (they scrolled up to read).
   const scroller = root.querySelector('.chat-thread, .m-thread');
   const stick = scroller && (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80);
+  // outerHTML replacement removes the node then inserts the new one — between
+  // those two steps the scroller's scrollHeight briefly drops, and the browser
+  // CLAMPS scrollTop to the (temporarily-smaller) max. At ~60 patches/sec that
+  // clamp yanks the user's scroll back toward the bottom on every frame, making
+  // it impossible to scroll up to read the top of a streaming reply. Preserve
+  // scrollTop across the swap when we're not intentionally sticking.
+  const savedTop = scroller ? scroller.scrollTop : 0;
   el.outerHTML = isMobile() ? mChatMsg(m, state) : chatMsg(m, state);
   if (stick && scroller) scroller.scrollTop = scroller.scrollHeight;
+  else if (scroller && scroller.scrollTop !== savedTop) scroller.scrollTop = savedTop;
   return true;
 };
 

@@ -20,10 +20,10 @@ Only `_watcher`'s two tests fake the awatch boundary:
     so `_watcher()`'s `async for` loop drains it and returns on its own —
     no cancellation or timing assumptions needed.
 
-Note: the code path exercised by the "absent" test currently has no logging
-statement (`except Exception: return`) — it degrades silently rather than
-logging once. The test below asserts the actual behavior (clean, silent
-exit); it does not assert a log record, since none is emitted today.
+Note: the "absent" path (`except Exception: return`) now logs a single
+WARNING before returning, so the silent no-op doesn't go unnoticed in
+production logs. The test below asserts that one such record is emitted
+and that it mentions watchfiles.
 """
 from __future__ import annotations
 
@@ -221,11 +221,12 @@ async def test_watcher_exits_cleanly_when_watchfiles_import_fails(
         await workspace_watch._watcher()  # must return (not raise, not hang)
 
     assert workspace_watch._subscribers == []  # never even reached the fan-out
-    # KNOWN GAP, pinned deliberately: the absent-watchfiles path is a SILENT
-    # no-op today (`except Exception: return`, no log statement). If someone
-    # later adds the missing warning log, flip this to assert the record
-    # EXISTS instead.
-    assert caplog.records == []
+    # The absent-watchfiles path now logs once before returning, so the
+    # silent no-op is visible in production logs.
+    assert len(caplog.records) == 1
+    record = caplog.records[0]
+    assert record.levelno == logging.WARNING
+    assert "watchfiles" in record.getMessage()
 
 
 # --- _watcher: watchfiles present (faked awatch boundary) -------------------

@@ -246,17 +246,16 @@ async def test_mcporter_json_malformed_output_degrades_to_empty_servers(tmp_path
 
 
 @pytest.mark.anyio
-async def test_mcporter_json_missing_binary_raises_file_not_found(tmp_path, monkeypatch):
-    """_MCPORTER_BIN resolution and the create_subprocess_exec call sit
-    OUTSIDE _mcporter_json's try/except — only communicate()/json.loads are
-    guarded. A genuinely-missing mcporter binary therefore raises rather than
-    degrading to {"servers": []}; this documents that actual behavior (not
-    necessarily the intended one)."""
+async def test_mcporter_json_missing_binary_degrades_to_empty_servers(tmp_path, monkeypatch):
+    """The create_subprocess_exec call now sits inside _mcporter_json's
+    try/except alongside communicate()/json.loads, so a genuinely-missing
+    mcporter binary (FileNotFoundError) degrades to {"servers": []} the
+    same way malformed output or a subprocess timeout does, instead of
+    raising and taking down the caller."""
     monkeypatch.setattr(settings_status, "_MCPORTER_BIN", str(tmp_path / "does-not-exist-bin"))
     monkeypatch.setattr(settings_status, "_MCPORTER_CONFIG", tmp_path / "mcporter.json")
 
-    with pytest.raises(FileNotFoundError):
-        await settings_status._mcporter_json()
+    assert await settings_status._mcporter_json() == {"servers": []}
 
 
 # --- MCP routes ----------------------------------------------------------------

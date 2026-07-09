@@ -88,10 +88,10 @@ async def _mcporter_json() -> dict:
     """Run `mcporter list --json` against the OpenClaw config (cached)."""
     if _MCP_CACHE["data"] is not None and time.time() - _MCP_CACHE["ts"] < _MCP_TTL:
         return _MCP_CACHE["data"]
-    proc = await asyncio.create_subprocess_exec(
-        _MCPORTER_BIN, "list", "--config", str(_MCPORTER_CONFIG), "--json",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
+        proc = await asyncio.create_subprocess_exec(
+            _MCPORTER_BIN, "list", "--config", str(_MCPORTER_CONFIG), "--json",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=40)
         data = json.loads(out.decode() or "{}")
     except Exception:  # noqa: BLE001

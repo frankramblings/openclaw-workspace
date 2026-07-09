@@ -12,10 +12,17 @@ functions (not re-testing the core logic through HTTP).
 """
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 
 from backend import config, memory
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 @pytest.fixture
@@ -293,6 +300,27 @@ def test_auto_memory_enabled_false_when_pref_explicitly_false(mem_env):
 def test_auto_memory_enabled_true_when_pref_explicitly_true(mem_env):
     memory._write_json(memory._PREFS, {"auto_memory": True})
     assert memory.auto_memory_enabled() is True
+
+
+# --- maybe_auto_extract: belt-and-suspenders guard around the whole body ----
+
+@pytest.mark.anyio
+@pytest.mark.skipif(os.geteuid() == 0, reason="chmod 000 does not block root")
+async def test_maybe_auto_extract_swallows_unreadable_prefs_file(mem_env):
+    """auto_memory_enabled() reads _PREFS via _read_json, which deliberately
+    raises OSError (e.g. PermissionError) on an unreadable file — see
+    test_memory_read_json_raises_on_unreadable_file in
+    test_corruption_quarantine.py. maybe_auto_extract is a detached
+    background task fired after every web turn; that read used to sit
+    OUTSIDE its own try/except Exception guard, so a permission hiccup on
+    the prefs file would propagate out of the background task. It's now
+    inside the guarded region, so this completes silently instead."""
+    memory._write_json(memory._PREFS, {"auto_memory": True})
+    os.chmod(memory._PREFS, 0o000)
+    try:
+        await memory.maybe_auto_extract("some-session-key")  # must not raise
+    finally:
+        os.chmod(memory._PREFS, 0o600)  # so pytest's tmp cleanup can proceed
 
 
 # --- routes: thin wiring proof over the already-tested core functions -------

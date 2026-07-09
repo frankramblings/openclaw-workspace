@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 from pathlib import Path
 
@@ -28,6 +29,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from . import vault_store as vs
 from .workspace_files import SKIP_CONTENTS, TEXT_EXTS, _BINARY_EXTS
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -125,6 +128,7 @@ async def _watcher() -> None:
     try:
         from watchfiles import awatch
     except Exception:
+        _log.warning("workspace file-watch disabled: watchfiles not installed")
         return
     root = str(vs.WORKSPACE)
     if not os.path.isdir(root):

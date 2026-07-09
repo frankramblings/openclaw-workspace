@@ -343,14 +343,19 @@ async def extract_suggestions(session_key: str, limit_msgs: int = 30) -> list[st
 
 async def maybe_auto_extract(session_key: str) -> None:
     """Background, best-effort: extract + directly add new facts. Cooldown is
-    stamped up front so a stalled brain isn't re-hit every message."""
-    if not auto_memory_enabled():
-        return
-    now = time.monotonic()
-    if now - _last_auto.get(session_key, 0.0) < _AUTO_COOLDOWN_S:
-        return
-    _last_auto[session_key] = now
+    stamped up front so a stalled brain isn't re-hit every message.
+
+    The whole body — including the auto_memory_enabled() toggle read, which
+    can raise OSError on a prefs file that's unreadable — is inside the
+    guard below: this is a detached background task, so any failure here
+    must swallow rather than propagate."""
     try:
+        if not auto_memory_enabled():
+            return
+        now = time.monotonic()
+        if now - _last_auto.get(session_key, 0.0) < _AUTO_COOLDOWN_S:
+            return
+        _last_auto[session_key] = now
         for fact in await extract_suggestions(session_key, limit_msgs=16):
             add_memory(fact, category=_AUTO_CATEGORY)
     except Exception:  # noqa: BLE001 - never break or noise up the chat path

@@ -14,7 +14,6 @@ import contextlib
 import json
 import logging
 import os
-import re
 import shutil
 import time
 from contextlib import asynccontextmanager
@@ -25,7 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, chat_search, config, config_check, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
+from . import bridge, capabilities, chat_search, chat_turn, config, config_check, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -58,8 +57,32 @@ from .attachments import (
     _persist_msg_attachments,
     _prepend_text_attachments,
     _resolve_attachments,
-    _terminal_attachments,
 )
+# Re-export the turn-engine helpers (extracted to chat_turn.py in Task 19) on the
+# app module so every existing import site and monkeypatch seam keeps resolving
+# them at backend.app.X: followup.py reads app._model_ref / app._sse_frame /
+# app._late_reply / app._start_turn_recorder; tests do `from backend.app import
+# _is_done_frame / _wants_web / reply_after / ...` and patch app._log_turn_timing.
+# Plain module-level aliases (not `from ... import`) so ruff sees them as used.
+_model_ref = chat_turn._model_ref
+_thinking_for_speed = chat_turn._thinking_for_speed
+_is_done_frame = chat_turn._is_done_frame
+_DONE_SSE = chat_turn._DONE_SSE
+_needs_title = chat_turn._needs_title
+_first_chars_title = chat_turn._first_chars_title
+_sanitize_title = chat_turn._sanitize_title
+_generate_ai_title = chat_turn._generate_ai_title
+_wants_web = chat_turn._wants_web
+_sse_frame = chat_turn._sse_frame
+reply_after = chat_turn.reply_after
+_turn_timing_record = chat_turn._turn_timing_record
+_log_turn_timing = chat_turn._log_turn_timing
+_LATE_REPLY_SCHEDULE = chat_turn._LATE_REPLY_SCHEDULE
+_late_reply = chat_turn._late_reply
+# Also re-exposed for tests that call app._terminal_attachments directly
+# (test_bridge_terminal_images); the route itself no longer references it — the
+# engine resolves terminal-drop images via attachments._terminal_attachments.
+_terminal_attachments = chat_turn._terminal_attachments
 
 # Configure root logging ONCE, here, at import time — before the FastAPI app
 # object (and anything that might log) is built. Only 3 of ~40 backend
@@ -230,51 +253,15 @@ def _spawn(coro) -> asyncio.Task:
 # turn or lose the work done while away.
 _TURN_TASKS: dict[str, asyncio.Task] = {}
 
-# Idle keepalive for the POST tail (seconds): a `: keepalive` comment keeps
-# proxies from killing the connection while the agent is thinking. Matches
-# resume_route's tail loop.
-_TURN_KEEPALIVE_S = 15.0
-
-
-async def _record_turn(session_key: str, source) -> None:
-    """The single writer. Drain `source` (the async generator of SSE frames for
-    one turn) into `event_store`, independent of any reader. Marks the turn
-    active on entry and inactive on exit, and ALWAYS lands a terminal `[DONE]`
-    frame so every tail closes cleanly — even on error or an explicit Stop
-    (CancelledError). Appending must never raise into the turn."""
-    event_store.begin_turn(session_key)
-    done_emitted = False
-    try:
-        async for chunk in source:
-            try:
-                event_store.append(session_key, chunk)
-            except Exception:  # noqa: BLE001 - event log issue can't break the turn
-                _log.warning("event_store.append failed mid-turn for session %s",
-                             session_key, exc_info=True)
-            if _is_done_frame(chunk):
-                done_emitted = True
-    finally:
-        if not done_emitted:
-            try:
-                event_store.append(session_key, _DONE_SSE)
-            except Exception:  # noqa: BLE001
-                _log.warning("event_store.append failed writing [DONE] for session %s",
-                             session_key, exc_info=True)
-        event_store.end_turn(session_key)
-        _TURN_TASKS.pop(session_key, None)
-
 
 def _start_turn_recorder(session_key: str, source_factory):
-    """Launch the detached recorder for a turn if one isn't already running for
-    this session. `source_factory` is a zero-arg callable returning the turn's
-    SSE async generator; it is invoked ONLY when we actually start, so a guarded
-    no-op never spins up a second gateway run. Returns the recorder Task."""
-    prev = _TURN_TASKS.get(session_key)
-    if prev is not None and not prev.done():
-        return prev  # a turn is already recording for this session
-    task = asyncio.create_task(_record_turn(session_key, source_factory()))
-    _TURN_TASKS[session_key] = task
-    return task
+    """Thin binding to chat_turn.start_turn_recorder against THIS app's shared
+    _TURN_TASKS registry — the one the lifespan reaper, the busy guard, and the
+    resume/stop routes (and followup.py) all read. Kept on the app module so
+    those callers and their tests keep resolving app._start_turn_recorder /
+    app._TURN_TASKS unchanged after the engine moved to chat_turn.py."""
+    return chat_turn.start_turn_recorder(session_key, source_factory,
+                                         turn_tasks=_TURN_TASKS)
 
 
 def _disk_free_gb(path) -> float | None:
@@ -428,209 +415,6 @@ async def client_log(request: Request):
 
 # --- The one real, load-bearing endpoint: chat ------------------------------
 
-def _model_ref(rec: dict | None) -> str | None:
-    """Build a gateway model ref ("provider/model") from a session record, or
-    None to leave the model at the agent default. Returns None for the
-    "openclaw" placeholder (legacy/bootstrap) AND when the pick already equals
-    the configured default — so we only set an override when it actually
-    differs (no per-turn sessions.create churn for default chats)."""
-    if not rec:
-        return None
-    model = (rec.get("model") or "").strip()
-    if not model or model == "openclaw":
-        return None
-    provider = (rec.get("endpoint_id") or "").strip()
-    def_provider, def_model = config.default_model()
-    if model == def_model and (not provider or provider in (def_provider, "openclaw")):
-        return None
-    return f"{provider}/{model}" if provider and provider != "openclaw" else model
-
-
-# --- Auto-title: name a fresh thread from its first message (AI + fallback) ---
-# The SPA names new chats "{model} {time}" (a placeholder). On the first message
-# we retitle the session — instantly to a first-line snippet, then upgraded to an
-# AI title generated by the brain (ChatGPT-style). Backend-only: the Library list
-# already reloads after a turn, so the new title just appears.
-
-_SPEED_THINKING = {"fast": "low", "deep": "high"}
-
-
-def _thinking_for_speed(speed: str | None) -> str | None:
-    """Map the chat's speed setting to chat.send's per-turn thinking override.
-    normal (and anything unknown) sends NO override — the default path stays
-    byte-identical to pre-toggle behavior."""
-    return _SPEED_THINKING.get(speed or "")
-
-
-_DONE_SSE = "data: [DONE]\n\n"
-
-
-def _is_done_frame(chunk: str) -> bool:
-    """True only for the exact terminal marker `data: [DONE]` — NOT for a delta
-    whose text merely CONTAINS the literal "[DONE]". Frames are single
-    `data: <body>` SSE messages; comparing the stripped body exactly stops a
-    real reply (or a message about this very code) that mentions [DONE] from
-    being dropped mid-stream or cutting the tail short."""
-    for line in chunk.splitlines():
-        if line.startswith("data:") and line[5:].strip() == "[DONE]":
-            return True
-    return False
-
-
-_TITLE_SESSION_KEY = f"{config.web_session_prefix()}-titler"
-# "{base} 1:56:53 PM" / "{base} 14:05:09" — the SPA's placeholder name.
-_PLACEHOLDER_RE = re.compile(r".+\s\d{1,2}:\d{2}:\d{2}(\s?[AP]M)?$", re.I)
-
-
-def _needs_title(rec: dict) -> bool:
-    name = (rec.get("name") or "").strip()
-    if not name or name in ("New chat", "Nobody"):
-        return True
-    return bool(_PLACEHOLDER_RE.match(name))
-
-
-def _first_chars_title(message: str, n: int = 42) -> str:
-    text = (message or "").strip()
-    if not text:
-        return ""
-    line = text.splitlines()[0].strip()
-    return line if len(line) <= n else line[:n].rstrip() + "…"
-
-
-def _sanitize_title(raw: str) -> str:
-    if not raw:
-        return ""
-    line = raw.strip().splitlines()[0].strip().strip('"\'').strip()
-    line = re.sub(r"^(chat title|title)\s*[:\-]\s*", "", line, flags=re.I)
-    return line.rstrip(" .!,;:")[:60].strip()
-
-
-async def _collect_brain_text(prompt: str, session_key: str,
-                              model_ref: str | None = None) -> str:
-    chunks: list[str] = []
-    async for sse in bridge.stream_turn(prompt, session_key=session_key,
-                                        model_ref=model_ref):
-        if not sse.startswith("data:"):
-            continue
-        body = sse[5:].strip()
-        if not body or body == "[DONE]":
-            continue
-        try:
-            obj = json.loads(body)
-        except Exception:  # noqa: BLE001
-            continue
-        if isinstance(obj, dict) and obj.get("delta"):
-            chunks.append(obj["delta"])
-    return "".join(chunks).strip()
-
-
-async def _generate_ai_title(message: str) -> str:
-    prompt = ("Generate a short, specific chat title (3-6 words, no quotes, no "
-              "trailing punctuation) for the topic of a conversation that opens "
-              f"with this message:\n\n{message[:600]}\n\nOutput ONLY the title.")
-    return _sanitize_title(await _collect_brain_text(
-        prompt, _TITLE_SESSION_KEY, model_ref=config.TITLE_MODEL))
-
-
-def _wants_web(use_web: str, allow_web_search: str) -> bool:
-    """The globe toggle's FIELD NAME depends on the SPA's vestigial chat/agent
-    mode: `use_web` in chat mode, `allow_web_search` in agent mode (chat.js
-    ~747-753). Accept both — agent mode silently lost web search before."""
-    return any(v.lower() in ("true", "1", "on", "yes")
-               for v in (use_web, allow_web_search))
-
-
-def _sse_frame(chunk: str):
-    """Parse one of the bridge's `data: {...}` SSE strings back to its dict
-    (None for [DONE]/non-JSON). Used to observe what the turn relayed."""
-    body = chunk[5:].strip() if chunk.startswith("data:") else ""
-    if not body or body == "[DONE]":
-        return None
-    try:
-        obj = json.loads(body)
-    except ValueError:
-        return None
-    return obj if isinstance(obj, dict) else None
-
-
-def reply_after(history: list, brain_message: str) -> str | None:
-    """Assistant text following the LAST occurrence of this turn's user message
-    in the transcript — i.e. THIS turn's reply, never an earlier one."""
-    idx = next((i for i in range(len(history) - 1, -1, -1)
-                if history[i].get("role") == "user"
-                and history[i].get("content") == brain_message), None)
-    if idx is None:
-        return None
-    text = "\n".join(str(m.get("content") or "") for m in history[idx + 1:]
-                     if m.get("role") == "assistant").strip()
-    return text or None
-
-
-def _turn_timing_record(run_info: dict, session_key: str, model_ref: str | None,
-                        *, text_seen: bool, failed: bool,
-                        thinking: str | None = None) -> dict:
-    """One flat JSONL record describing where this turn's wall-clock went.
-    All *_ms fields are measured from chat.send write; None = never happened."""
-    timing = run_info.get("timing") or {}
-
-    def ms(a: str, b: str) -> int | None:
-        return (int((timing[b] - timing[a]) * 1000)
-                if a in timing and b in timing else None)
-
-    return {
-        "ts": int(time.time()),
-        "session": session_key,
-        "model": model_ref or "default",
-        "thinking": thinking,   # the chat.send override sent (None = normal)
-        "ack_ms": ms("t_send", "t_ack"),
-        "first_frame_ms": ms("t_send", "t_first_frame"),
-        "first_text_ms": ms("t_send", "t_first_text"),
-        "late_ms": ms("t_send", "t_late"),
-        "total_ms": ms("t_send", "t_end"),
-        "stalled": bool(run_info.get("stalled")),
-        "retried": bool(run_info.get("retried")),
-        "text_seen": text_seen,
-        "failed": failed,
-    }
-
-
-def _log_turn_timing(record: dict) -> None:
-    """Append one JSONL line to .data/turn_timings.jsonl. Telemetry must never
-    break a turn: every failure is swallowed. Single-generation rotation at
-    2MB keeps the file bounded on this disk-starved box."""
-    with contextlib.suppress(Exception):
-        path = config.DATA_DIR / "turn_timings.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() and path.stat().st_size > 2_000_000:
-            path.replace(path.with_name(path.name + ".old"))
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record) + "\n")
-
-
-# First checks fire fast — the reply usually already sits in the transcript
-# when this poll starts (it lands seconds *before* we get here on slow turns,
-# milliseconds after on fast ones). Tail stays ~10s total like the old
-# 5 × 2s schedule.
-_LATE_REPLY_SCHEDULE = (0.3, 0.5, 1.0, 2.0, 2.0, 2.0, 2.2)
-
-
-async def _late_reply(session_key: str, brain_message: str,
-                      _sleep=asyncio.sleep) -> str | None:
-    """Fetch the reply that the gateway commits to the transcript only AFTER
-    the run's lifecycle end (message-tool delivery — see _relay_events docs).
-    Polls with fast-start backoff; returns None if nothing lands (genuinely
-    textless turn)."""
-    for delay_s in _LATE_REPLY_SCHEDULE:
-        await _sleep(delay_s)
-        try:
-            data = await bridge.fetch_history(session_key)
-        except Exception:  # noqa: BLE001 - transient WS trouble: keep polling
-            continue
-        text = reply_after(data.get("history") or [], brain_message)
-        if text:
-            return text
-    return None
-
 
 @app.post("/api/chat_stream")
 async def chat_stream(message: str = Form(...), session: str = Form(default=""),
@@ -653,29 +437,22 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
 
     # One turn per session at a time. The detached recorder already guards
     # against a second concurrent turn for this sessionKey, so if we proceeded
-    # here the new message's _drive_turn would never run — the gateway would
+    # here the new message's drive_turn would never run — the gateway would
     # never see it and this POST would silently tail the PREVIOUS turn as if it
     # were the answer. Tell the client instead (a fresh chat and a second unsaved
     # chat both share config.web_session_key(), so this also covers double-send).
     prev_turn = _TURN_TASKS.get(session_key)
     if prev_turn is not None and not prev_turn.done():
-        async def _busy():
-            yield bridge._sse({"type": "tool_start", "tool": "bridge",
-                               "tool_id": "busy", "command": "turn in progress",
-                               "round": 1})
-            yield bridge._sse({"type": "tool_output", "tool": "bridge",
-                               "tool_id": "busy", "exit_code": 1,
-                               "output": "A turn is already running for this chat — "
-                                         "wait for it to finish, then resend."})
-            yield _DONE_SSE
-        return StreamingResponse(_busy(), media_type="text/event-stream")
+        return StreamingResponse(chat_turn.busy_stream(),
+                                 media_type="text/event-stream")
 
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
     # Off the event loop: image conversion (ffmpeg, up to a 30s timeout) and
     # office/PDF text extraction (openpyxl/pypdf/python-docx/python-pptx) are
     # blocking calls that would otherwise stall every concurrent SSE stream
     # for the duration of one file-heavy message. Same pattern as
-    # notes.py/_load_all and documents.py/_scan_docs.
+    # notes.py/_load_all and documents.py/_scan_docs. These to_thread call
+    # sites stay in the route (Task 12); the engine consumes the resolved lists.
     chat_attachments = await asyncio.to_thread(_resolve_attachments, attachments)  # image uploads → vision
     # Non-image uploads (CSV, XLSX, DOCX, PPTX, PDF, text): extract and inline
     # into the message so they reach the model (the gateway drops non-image
@@ -701,160 +478,19 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
             sessions_store.update(rec["id"], name=snippet)
         title_task = asyncio.create_task(_generate_ai_title(message))
 
-    async def _drive_turn():
-        """Produce every SSE frame for this turn (web search, the gateway relay,
-        late reply, metrics, draft doc_update, DONE). This is the turn's source
-        of truth; the detached recorder (`_record_turn`) drains it into
-        event_store and owns the turn boundary + the event ids. Readers never
-        consume this directly — they tail event_store — so the turn survives any
-        reader leaving."""
-        brain_message = message
-        text_seen = False    # any non-thinking {"delta"} relayed this turn?
-        tools_seen = False   # any tool card relayed (fresh bubble needed)?
-        failed = False       # bridge/agent error or user abort — no reply coming
-        try:
-            # Web search (the composer's globe toggle — field name varies by
-            # the SPA's vestigial mode, see _wants_web). Search failures
-            # degrade to a visible failed tool card — never break the turn.
-            if _wants_web(use_web, allow_web_search):
-                s = websearch.load_settings()
-                if s.get("search_provider") != "disabled":
-                    yield bridge._sse({"type": "tool_start", "tool": "web_search",
-                                       "tool_id": "websearch",
-                                       "command": message[:120], "round": 1})
-                    try:
-                        results = await websearch.search(
-                            message, int(s.get("search_result_count") or 5))
-                        yield bridge._sse({
-                            "type": "tool_output", "tool": "web_search",
-                            "tool_id": "websearch", "exit_code": 0,
-                            "output": "\n".join(f"[{i+1}] {r['title']} — {r['url']}"
-                                                for i, r in enumerate(results))
-                                      or "no results"})
-                        if results:
-                            brain_message = websearch.context_block(message, results)
-                    except Exception as exc:  # noqa: BLE001
-                        yield bridge._sse({"type": "tool_output", "tool": "web_search",
-                                           "tool_id": "websearch",
-                                           "output": f"web search failed: {exc}",
-                                           "exit_code": 1})
-            if draft_doc is not None:
-                brain_message = draft_mode.wrap_message(brain_message, draft_doc)
-            # Gary-drive: when terminal control is on for this chat, prepend a
-            # per-turn capability hint + a freshly-minted token (stripped from
-            # the history view in the /api/history handler below).
-            # CRITICAL: bind Gary to the SAME PTY key the human panel uses — the
-            # SPA chat id (rec["id"], == frontend getCurrentSessionId()), NOT the
-            # gateway sessionKey. Otherwise Gary drives a different terminal than
-            # the one the user sees. New/unsaved chats fall back to "global",
-            # which is what the panel sends (curSession() || "global").
-            terminal_key = rec["id"] if rec else "global"
-            # Terminal image drops: prepend the (history-stripped) token→path map
-            # and merge any pending dropped images into THIS turn's vision blocks.
-            att_note = terminals.terminal_attachment_note(terminal_key)
-            if att_note:
-                brain_message = att_note + brain_message
-            turn_attachments = chat_attachments + _terminal_attachments(terminal_key)
-            if terminals.gary_mode_for_session(terminal_key):
-                brain_message = terminals.gary_capability_note(terminal_key) + brain_message
-            _ACTIVE_RUNS[session_key] = run_info
-
-            async for chunk in bridge.stream_turn(brain_message, session_key=session_key,
-                                                  model_ref=_model_ref(rec),
-                                                  attachments=turn_attachments,
-                                                  run_info=run_info,
-                                                  thinking=_thinking_for_speed((rec or {}).get("speed"))):
-                if _is_done_frame(chunk):
-                    continue  # hold DONE until the title settles, then send our own
-                frame = _sse_frame(chunk)
-                if isinstance(frame, dict):
-                    if frame.get("delta") and not frame.get("thinking"):
-                        text_seen = True
-                    if frame.get("type") in ("tool_start", "tool_output"):
-                        tools_seen = True
-                    if (frame.get("exit_code") == 1
-                            and frame.get("tool") in ("bridge", "agent")
-                            # stall terminal card still allows the late-reply
-                            # poll to salvage a transcript-landed reply.
-                            and frame.get("tool_id") != "stall") \
-                            or frame.get("tool_id") == "abort":
-                        failed = True
-                # Pure source: just yield the frame. The detached recorder
-                # (`_record_turn`) is the single writer to event_store; the POST
-                # response and every other reader are tails of that log, so a
-                # dropped reader can't stop the turn or lose mid-flight frames.
-                yield chunk
-            # Late delivery: the agent often replies via its `message` tool,
-            # whose text lands in the transcript seconds AFTER the run's
-            # lifecycle end — the live stream then carries no text at all and
-            # the reply only appeared on the next refresh. Same workaround the
-            # research engine needed: poll chat.history briefly and emit it.
-            if not text_seen and not failed:
-                late = await _late_reply(session_key, brain_message)
-                if late:
-                    run_info.setdefault("timing", {})["t_late"] = time.monotonic()
-                    if tools_seen:
-                        yield bridge._sse({"type": "agent_step"})  # fresh bubble
-                    yield bridge._sse({"delta": late})
-            # Final turn metrics: the vendor SPA renders a footer time from a
-            # {type:"metrics"} frame (chatRenderer.displayMetrics) that its
-            # original backends sent and we never did. response_time prefers
-            # t_late over t_end — that's when the user actually saw the reply.
-            # No token/cost fields: the gateway doesn't expose usage, and
-            # displayMetrics degrades to a plain "12.3s" without them.
-            timing = run_info.get("timing") or {}
-            if "t_send" in timing and not failed:
-                t_done = timing.get("t_late") or timing.get("t_end") or time.monotonic()
-                data = {"response_time": round(t_done - timing["t_send"], 1)}
-                if "t_first_text" in timing:  # pre-text wait = thinking + prep
-                    data["agent_model_wait_time"] = round(
-                        timing["t_first_text"] - timing["t_send"], 1)
-                if _model_ref(rec):
-                    data["model"] = _model_ref(rec)
-                yield bridge._sse({"type": "metrics", "data": data})
-        finally:
-            _ACTIVE_RUNS.pop(session_key, None)
-            # begin_turn/end_turn + event_store.append are owned by the detached
-            # recorder (_record_turn), NOT this source generator.
-            _log_turn_timing(_turn_timing_record(
-                run_info, session_key, _model_ref(rec),
-                text_seen=text_seen, failed=failed,
-                thinking=_thinking_for_speed((rec or {}).get("speed"))))
-            if draft_doc is not None:
-                try:
-                    update = draft_mode.post_turn_payload(draft_doc)
-                    if update:
-                        # NOTE: a yield in finally is deliberate (matches _DONE_SSE
-                        # below). On client disconnect (GeneratorExit) the frame is
-                        # silently discarded — the browser refetches the doc on
-                        # session reopen, so no state is lost.
-                        yield bridge._sse(update)
-                except Exception:  # noqa: BLE001 - never break the turn close
-                    _log.warning("draft_mode.post_turn_payload failed for doc %s",
-                                 draft_doc.get("id"), exc_info=True)
-            if title_task is not None:
-                try:
-                    ai = await asyncio.wait_for(title_task, timeout=12)
-                    if ai:
-                        sessions_store.update(rec["id"], name=ai)
-                except Exception:  # noqa: BLE001 - keep the first-chars fallback
-                    _log.warning("AI title generation/sessions_store.update failed "
-                                 "for session %s", rec["id"], exc_info=True)
-                    title_task.cancel()
-            # Touch the session's `updated` stamp so the semantic-search reindex
-            # re-embeds this turn. It's otherwise bumped only on metadata edits
-            # (title/rename/archive), so every message after a chat is first
-            # titled would be invisible to search — the incremental reindex keys
-            # its skip check on exactly this stamp.
-            if rec:
-                try:
-                    sessions_store.update(rec["id"])
-                except Exception:  # noqa: BLE001 - never break the turn close
-                    _log.warning("sessions_store.update (touch) failed for session %s",
-                                 rec["id"], exc_info=True)
-            # Auto-extract memories (gated inside: toggle pref + cooldown).
-            _spawn(maybe_auto_extract(session_key))
-            yield _DONE_SSE
+    # The turn's source of truth (web search → gateway relay → late reply →
+    # metrics → draft doc_update → DONE) lives in chat_turn.drive_turn. Pass the
+    # shared _ACTIVE_RUNS registry and the app-module hooks (_spawn,
+    # maybe_auto_extract, _log_turn_timing) explicitly so nothing imports app
+    # back and every monkeypatch seam on those names keeps taking effect. Look
+    # them up here (route runs after any test patch) so the patched values flow.
+    def _source():
+        return chat_turn.drive_turn(
+            message=message, use_web=use_web, allow_web_search=allow_web_search,
+            draft_doc=draft_doc, rec=rec, session_key=session_key,
+            run_info=run_info, chat_attachments=chat_attachments,
+            title_task=title_task, active_runs=_ACTIVE_RUNS, spawn=_spawn,
+            auto_extract=maybe_auto_extract, log_turn_timing=_log_turn_timing)
 
     # Detach the turn from any single reader: a background recorder drains the
     # gateway relay into event_store and owns the turn boundary (begin/end_turn),
@@ -864,45 +500,11 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     # return, and a post-reload resume are all the same replay-then-subscribe.
     cursor = event_store.latest_id(session_key)  # replay only THIS turn, not prior
     queue = event_store.subscribe(session_key)   # subscribe before start: no gap
-    _start_turn_recorder(session_key, _drive_turn)
+    _start_turn_recorder(session_key, _source)
 
-    async def _post_tail():
-        """Replay this turn's events (everything after `cursor`), then live-tail
-        new events until [DONE]. Dedupes the replay/live overlap by seq, emits a
-        keepalive on idle, and always unsubscribes. Mirrors resume_route's tail
-        but terminates at [DONE] (the POST closes when the turn finishes)."""
-        replayed_max = -1
-        try:
-            for eid, payload in event_store.since(session_key, cursor):
-                yield f"id: {eid}\n{payload}"
-                try:
-                    replayed_max = max(replayed_max, int(eid))
-                except (TypeError, ValueError):
-                    pass
-                if _is_done_frame(payload):
-                    return
-            while True:
-                try:
-                    eid, payload = await asyncio.wait_for(
-                        queue.get(), timeout=_TURN_KEEPALIVE_S)
-                except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"  # keep proxies from killing the idle conn
-                    continue
-                try:
-                    seq = int(eid)
-                except (TypeError, ValueError):
-                    seq = None
-                if seq is not None and seq <= replayed_max:
-                    continue  # already sent during backlog replay
-                if seq is not None:
-                    replayed_max = seq
-                yield f"id: {eid}\n{payload}"
-                if _is_done_frame(payload):
-                    return
-        finally:
-            event_store.unsubscribe(session_key, queue)
-
-    return StreamingResponse(_post_tail(), media_type="text/event-stream")
+    return StreamingResponse(
+        chat_turn.post_tail(session_key=session_key, cursor=cursor, queue=queue),
+        media_type="text/event-stream")
 
 
 # --- Session persistence: metadata here, message content from the brain ------

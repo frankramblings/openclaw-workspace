@@ -173,6 +173,95 @@ async def test_run_turn_raises_marks_job_failed_without_crashing(monkeypatch):
     assert research._load_record("fail1") is None   # never reached _save_record
 
 
+FINDINGS_R1 = [{"title": "Alpha", "url": "https://alpha.example", "summary": "a"}]
+FINDINGS_R2 = FINDINGS_R1 + [
+    {"title": "Beta", "url": "https://beta.example", "summary": "b"}]
+
+
+def _rounds_fake(prompts: list, per_round: list):
+    """Multi-round bridge.stream_turn stand-in: records every prompt it
+    receives and answers the Nth round turn with per_round[N-1] (clamped to
+    the last entry, so a clamp test can run more rounds than canned blocks).
+    Each round's streamed text MUST contain a parseable findings block —
+    otherwise _turn's expect() fails and it falls into the chat.history
+    recovery poll, which does real 4-second sleeps."""
+    state = {"n": 0}
+
+    async def fake(message, session_key=None, model_ref=None, **kwargs):
+        prompts.append(message)
+        if "deep-research job" in message:
+            state["n"] += 1
+            n = min(state["n"], len(per_round))
+            block = "```json\n" + json.dumps(per_round[n - 1]) + "\n```"
+            yield bridge._sse({"delta": f"Round {state['n']} summary.\n{block}"})
+            yield bridge._sse("[DONE]")
+        elif "final deep-research report" in message:
+            yield bridge._sse({"delta": _REPORT_BODY})
+            yield bridge._sse("[DONE]")
+        else:  # pragma: no cover - guard against a prompt template change
+            raise AssertionError(f"unexpected prompt: {message[:80]!r}")
+
+    return fake
+
+
+@pytest.mark.anyio
+async def test_run_two_rounds_accumulates_and_swaps_in_gap_prompt(monkeypatch):
+    prompts: list[str] = []
+    monkeypatch.setattr(bridge, "stream_turn",
+                        _rounds_fake(prompts, [FINDINGS_R1, FINDINGS_R2]))
+    job = research.Job(id="multi1", query="python news",
+                       settings={"max_rounds": 2})
+
+    await research._run(job)
+    assert job.status == "done"
+
+    # (3) total round count: exactly two round turns + one report turn ran.
+    round_prompts = [p for p in prompts if "deep-research job" in p]
+    report_prompts = [p for p in prompts if "final deep-research report" in p]
+    assert len(round_prompts) == 2 and len(report_prompts) == 1
+    assert "round 1 of" in round_prompts[0] and "round 2 of" in round_prompts[1]
+    assert job.progress["round"] == 2
+
+    # (2) the gap-filling extra is swapped in for round 2 ONLY.
+    gap_marker = "You already researched this in earlier rounds"
+    assert gap_marker not in round_prompts[0]
+    assert gap_marker in round_prompts[1]
+
+    # (1) findings/sources accumulate across rounds. NOTE: accumulation is the
+    # cumulative-output contract (each round re-emits ALL findings so far and
+    # the engine keeps the LAST extraction — `extract_findings(text) or
+    # job.findings` only falls back on a parse miss), so round 2's cumulative
+    # block carries both entries and nothing from round 1 is lost.
+    assert job.findings == FINDINGS_R2
+    assert [s["url"] for s in job.sources] == [
+        "https://alpha.example", "https://beta.example"]
+
+    # Cross-round notes accumulation: the report prompt inlines BOTH rounds'
+    # stripped summaries (notes.append per round), not just the last one.
+    assert "Round 1 summary." in report_prompts[0]
+    assert "Round 2 summary." in report_prompts[0]
+
+    persisted = research._load_record("multi1")
+    assert persisted["rounds"] == 2
+
+
+@pytest.mark.anyio
+async def test_run_clamps_requested_rounds_to_max(monkeypatch):
+    # max_rounds is user-reachable via the /start payload — a huge ask must be
+    # clamped to MAX_ROUNDS, never run verbatim.
+    prompts: list[str] = []
+    monkeypatch.setattr(bridge, "stream_turn", _rounds_fake(prompts, [FINDINGS]))
+    job = research.Job(id="clamp1", query="python news",
+                       settings={"max_rounds": 99})
+
+    await research._run(job)
+
+    assert job.status == "done"
+    assert len([p for p in prompts
+                if "deep-research job" in p]) == research.MAX_ROUNDS
+    assert research._load_record("clamp1")["rounds"] == research.MAX_ROUNDS
+
+
 # --- _maybe_compare: trigger/skip conditions --------------------------------
 
 @pytest.mark.anyio
@@ -255,6 +344,9 @@ async def test_start_route_returns_session_id_and_job_starts_running(monkeypatch
         rid = r.json()["session_id"]
         assert rid in research._JOBS
         job = research._JOBS[rid]
+        # Relies on deterministic asyncio scheduling: nothing has awaited the
+        # job task yet, so the canned run can't have reached _finish — an edit
+        # that awaits/yields more before this assert may flip it to "done".
         assert job.status == "running"   # not yet awaited — still in flight
         await job.task                    # let the canned run finish for cleanup
 
@@ -272,6 +364,8 @@ async def test_status_route_reflects_lifecycle_and_unknown_id_404(monkeypatch):
         rid = r.json()["session_id"]
 
         running = await c.get(f"/api/research/status/{rid}")
+        # Same deterministic-scheduling reliance as the start-route test: the
+        # job task hasn't been awaited yet, so it can't have finished here.
         assert running.json()["status"] == "running"
 
         await research._JOBS[rid].task

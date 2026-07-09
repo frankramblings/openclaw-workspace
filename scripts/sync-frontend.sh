@@ -5,6 +5,13 @@
 # (base) or frontend-overrides/ (customizations), never in frontend/ directly.
 set -euo pipefail
 
+# DRIFT: set to 1 by any anchor-guarded vendor patch below that had to SKIP
+# because its expected text wasn't found (upstream/vendor changed). Individual
+# patches print a SKIP line and keep going, so a single run surfaces every
+# mismatch instead of stopping at the first one; the gate at the end of the
+# script turns any DRIFT=1 into a hard failure (see bottom of file).
+DRIFT=0
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # The neutral SPA base ships vendored in the repo at frontend-vendor/ (it plays
 # the role the external Odysseus checkout used to). Point ODYSSEUS_STATIC at an
@@ -249,19 +256,21 @@ fi
 # loop below, so the leftover `_cmdOdyssey` symbol gets renamed consistently by
 # that capitalized-"Odysseus" swap. Each patch is anchor-guarded: if upstream
 # moves a line, it prints SKIP instead of silently corrupting the file.
-python3 - "$DEST" <<'PYEOF'
+python3 - "$DEST" <<'PYEOF' || DRIFT=1
 import sys, pathlib
 dest = pathlib.Path(sys.argv[1])
+_drift = False
 
 def swap(rel, old, new):
+    global _drift
     p = dest / rel
     if not p.exists():
-        print(f"gary-egg: SKIP {rel} (missing)"); return
+        print(f"gary-egg: SKIP {rel} (missing)"); _drift = True; return
     t = p.read_text()
     if old in t:
         p.write_text(t.replace(old, new)); print(f"gary-egg: patched {rel}")
     else:
-        print(f"gary-egg: SKIP {rel} (anchor not found — upstream changed)")
+        print(f"gary-egg: SKIP {rel} (anchor not found — upstream changed)"); _drift = True
 
 # 1. Character persona preset: Odysseus the strategist -> Gary the Superman Robot
 swap("js/presets.js", "id: 'odysseus',", "id: 'gary',")
@@ -312,6 +321,8 @@ swap("js/slashCommands.js",
 
 # 4. Calendar quick-add hint
 swap("js/calendar.js", "return home to Ithaca 1pm tmrw", "feed Krypto 1pm tmrw")
+
+sys.exit(1 if _drift else 0)
 PYEOF
 
 # --- Agent-name rebrand of app.js + js/ modules -----------------------------
@@ -341,9 +352,17 @@ while IFS= read -r -d '' f; do rebrand "$f"; done < <(
 )
 # Welcome-screen subtitle (a specific phrase, not an Odysseus->Gary swap).
 MODELS="$DEST/js/models.js"
-if [[ -f "$MODELS" ]] && grep -q "Yours for the voyage\." "$MODELS"; then
+if [[ ! -f "$MODELS" ]]; then
+  echo "welcome-subtitle: SKIP js/models.js (missing — upstream changed)" >&2
+  DRIFT=1
+elif grep -q "Yours for the voyage\." "$MODELS"; then
   sedi 's/Yours for the voyage\./Merely an automaton, here to serve./g' "$MODELS"
   echo "rebranded welcome subtitle in js/models.js"
+elif grep -q "Merely an automaton, here to serve\." "$MODELS"; then
+  : # already patched (idempotent re-run)
+else
+  echo "welcome-subtitle: SKIP js/models.js (anchor not found — upstream changed)" >&2
+  DRIFT=1
 fi
 
 # --- SerpAPI as a first-class search provider --------------------------------
@@ -352,10 +371,18 @@ fi
 # index.html override; search.js is a full-file override. The actual search
 # runs server-side via backend/websearch.py (key from OpenClaw's serpapi skill).
 SETTINGS="$DEST/js/settings.js"
-if [[ -f "$SETTINGS" ]] && ! grep -q "serpapi: 'SerpAPI'" "$SETTINGS"; then
+if [[ ! -f "$SETTINGS" ]]; then
+  echo "serpapi: SKIP js/settings.js (missing — upstream changed)" >&2
+  DRIFT=1
+elif grep -q "serpapi: 'SerpAPI'" "$SETTINGS"; then
+  : # already patched (idempotent re-run)
+elif grep -q "var _searchLabels = {" "$SETTINGS" && grep -q "var _SEARCH_PROVIDER_LOGOS = {" "$SETTINGS"; then
   sedi "s|var _searchLabels = {|var _searchLabels = { serpapi: 'SerpAPI',|" "$SETTINGS"
   sedi "s|var _SEARCH_PROVIDER_LOGOS = {|var _SEARCH_PROVIDER_LOGOS = { serpapi: '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><line x1=\"16.5\" y1=\"16.5\" x2=\"21\" y2=\"21\"/><path d=\"M8.5 11a2.5 2.5 0 0 1 5 0c0 1.5-1.2 2-2.5 2\"/></svg>',|" "$SETTINGS"
   echo "patched serpapi into settings.js provider maps"
+else
+  echo "serpapi: SKIP js/settings.js provider-map patch (anchor not found — upstream changed)" >&2
+  DRIFT=1
 fi
 
 # --- Auto-version the service worker cache -----------------------------------
@@ -426,19 +453,50 @@ if [[ -f "$SW" ]]; then
         icon-192.png icon-512.png maskable-icon.png logo.svg \
         redesign-assets/gary-outline.png
     } | sort -u | sed "s|^|'/static/|; s|\$|',|" | tr '\n' ' ')
-  python3 - "$SW" "$PRECACHE_LIST" <<'PYEOF'
+  # The python replace() below is a silent no-op if the token is missing (no
+  # exception, exit 0) — set -e alone would NOT catch that, so the heredoc
+  # explicitly fails (sys.exit(1)) when the token isn't found and we turn
+  # that into a SKIP + DRIFT instead of a false "injected" success message.
+  PRECACHE_OK=1
+  python3 - "$SW" "$PRECACHE_LIST" <<'PYEOF' || PRECACHE_OK=0
 import sys
 sw_path, entries = sys.argv[1], sys.argv[2]
 src = open(sw_path).read()
-src = src.replace("/*__PRECACHE__*/", entries.rstrip())
+token = "/*__PRECACHE__*/"
+if token not in src:
+    sys.exit(1)
+src = src.replace(token, entries.rstrip())
 open(sw_path, "w").write(src)
 PYEOF
-  echo "injected $(echo "$PRECACHE_LIST" | grep -o "/static/" | wc -l | tr -d ' ') precache entries into sw.js"
+  if [[ "$PRECACHE_OK" = 1 ]]; then
+    echo "injected $(echo "$PRECACHE_LIST" | grep -o "/static/" | wc -l | tr -d ' ') precache entries into sw.js"
+  else
+    echo "precache: SKIP sw.js (token /*__PRECACHE__*/ not found — upstream changed)" >&2
+    DRIFT=1
+  fi
 
   # Portable content hash (md5 is macOS-only; md5sum is Linux/CI).
   hash_cmd() { if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi; }
   ASSET_HASH=$(find "$DEST" -type f \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.webmanifest' -o -name 'manifest.json' \) ! -name 'sw.js' -print0 \
     | sort -z | xargs -0 cat | hash_cmd | cut -c1-10)
-  sedi "s/^const CACHE_NAME = .*/const CACHE_NAME = 'gary-${ASSET_HASH}';/" "$SW"
-  echo "stamped sw.js CACHE_NAME = gary-${ASSET_HASH}"
+  if grep -q "^const CACHE_NAME = " "$SW"; then
+    sedi "s/^const CACHE_NAME = .*/const CACHE_NAME = 'gary-${ASSET_HASH}';/" "$SW"
+    echo "stamped sw.js CACHE_NAME = gary-${ASSET_HASH}"
+  else
+    echo "precache: SKIP sw.js CACHE_NAME stamp (anchor not found — upstream changed)" >&2
+    DRIFT=1
+  fi
+else
+  echo "precache: SKIP sw.js (missing — upstream changed; no offline app shell built)" >&2
+  DRIFT=1
+fi
+
+# --- Vendor-drift gate --------------------------------------------------------
+# Any SKIP above means an anchor-guarded patch didn't apply — the build would
+# otherwise succeed while silently shipping stale/un-rebranded/broken content.
+# Fail loudly by default; ODYSSEUS_ALLOW_DRIFT=1 opts into building anyway
+# (e.g. to inspect what changed upstream before fixing the anchors).
+if [ "${DRIFT:-0}" = 1 ] && [ "${ODYSSEUS_ALLOW_DRIFT:-0}" != 1 ]; then
+  echo "FATAL: vendor drift — anchors missed (see SKIP lines above); set ODYSSEUS_ALLOW_DRIFT=1 to build anyway" >&2
+  exit 1
 fi

@@ -1,5 +1,17 @@
 # Chat Strip — sticky live-checklist above the composer
 
+## Status: parked 2026-07-09 — implementation complete, live verification pending
+
+Audit against the code (2026-07-09): Phases 0–6 are all implemented and shipped —
+reducer + state (`redesign/chat-strip.js`, 347 lines), rendering wired into
+`redesign/live/chat.js`, desktop CSS (`css/chat-strip.css`) linked in
+`index.html`, mobile CSS in `mobile.css:806-817`, localStorage collapse
+persistence, plan-preview dismiss, and 325 lines of passing reducer tests.
+The stop-agent overflow item was a no-op stub for v1 and was not built.
+**Resume point:** the Phase 6 live `/verify` walkthrough — trigger a TodoWrite
+in a real session, watch the strip populate/tick/auto-clear, on desktop and
+mobile PWA.
+
 **Goal:** surface multi-step assistant activity (TodoWrite checklists, ExitPlanMode plan previews, background-agent progress) in a dedicated sticky+collapsible strip above the composer. Not another copy of the per-message activity trail — a single always-live view of what's happening *now*.
 
 ## Scope

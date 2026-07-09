@@ -8,3 +8,6 @@ extend-exclude = ["frontend", "frontend-vendor", "frontend-overrides", ".worktre
 # Default E4/E7/E9/F rules: real errors (undefined names, unused imports,
 # syntax hazards), not style opinions — the codebase has never been linted.
 select = ["E4", "E7", "E9", "F"]
+
+[tool.pytest.ini_options]
+timeout = 300  # Per-test timeout in seconds; catches genuine hangs (full suite runs ~79s)

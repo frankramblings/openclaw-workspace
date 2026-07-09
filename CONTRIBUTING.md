@@ -40,6 +40,14 @@ changes, not on every commit.
   Defaults must be generic (`example.com`, `~/...`), never a real domain or abs path.
 - **Run `scripts/smoke.sh`** before opening a PR.
 
+## Known test warnings
+
+The suite emits a few expected warnings that don't indicate bugs:
+- **Python 3.14 `forkpty()` DeprecationWarning** (7× from `test_terminals_mcp.py`):
+  Informational — raised when PTYs are spawned after threads exist. Awaiting upstream
+  guidance; harmless until then.
+- **Starlette/httpx deprecation warnings**: Pre-existing, informational.
+
 ## Frontend changes
 
 Never edit `frontend/` directly — it's generated and gitignored. Instead:

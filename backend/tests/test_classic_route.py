@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import app
+from backend import config
 
 
 @pytest.fixture()
@@ -19,6 +20,10 @@ def client():
         yield c
 
 
+@pytest.mark.skipif(
+    not (config.FRONTEND_DIR / "index-classic.html").exists(),
+    reason="frontend/index-classic.html not built; run scripts/sync-frontend.sh"
+)
 class TestClassicRouteInstrumentation:
     def test_classic_route_still_returns_200_html(self, client):
         r = client.get("/classic")

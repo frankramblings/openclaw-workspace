@@ -424,9 +424,8 @@ def build_calendar_reply_mime(*, to: str, subject: str, attendee: str,
 
 async def perform_rsvp(uid: str, folder: str, status: str) -> dict:
     """Send a REPLY to the organizer, mark the email Seen, and move it out of
-    INBOX. Yes/Maybe -> Archive, No -> Trash. Shared by the inbox action branch
-    and POST /api/email/rsvp. Raises CalendarError when the message isn't an
-    actionable invite."""
+    INBOX. Yes/Maybe -> Archive, No -> Trash. Called by the POST /api/email/rsvp/{uid}
+    endpoint. Raises CalendarError when the message isn't an actionable invite."""
     if status not in calendar_invite._PARTSTAT:
         raise calendar_invite.CalendarError(f"invalid RSVP status '{status}'")
     raw = await himalaya_cli.run_raw(

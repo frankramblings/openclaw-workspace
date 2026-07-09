@@ -2,7 +2,12 @@
 
 Pure stdlib + hand-built iCal text (RFC 5545). No network/disk I/O so the
 mappers stay unit-testable; the backend orchestrator (email_himalaya.perform_rsvp)
-supplies the raw bytes and the DTSTAMP."""
+supplies the raw bytes and the DTSTAMP.
+
+See also: backend.calendar_invite.parse_ics_calendar — the separate display parser
+normalizes/resolves TZIDs for UI rendering but this module must preserve raw
+unfolded lines verbatim (TZID parameters intact) so build_reply can echo them
+back in the RFC-correct REPLY. These parsers must NOT be merged."""
 from __future__ import annotations
 
 import email

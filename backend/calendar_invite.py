@@ -2,7 +2,12 @@
 
 Extracts the first VEVENT into a flat dict the inbox reader renders as a
 When/Where/Organizer card. Dependency-free (stdlib only); TZID datetimes are
-resolved via zoneinfo when available. Read-only — no RSVP/write here."""
+resolved via zoneinfo when available. Read-only — no RSVP/write here.
+
+See also: backend.inbox.calendar_invite.extract_invite — the separate
+REPLY-building parser must preserve raw unfolded lines verbatim (TZID intact)
+for RFC-correct reply construction. These parsers must NOT be merged; display
+normalization here would destroy the line fidelity build_reply requires."""
 from __future__ import annotations
 
 import re

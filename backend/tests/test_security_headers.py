@@ -78,6 +78,21 @@ class TestCSPReportOnlyDefault:
         assert "content-security-policy-report-only" in r.headers
         assert "content-security-policy" not in r.headers
 
+    def test_csp_policy_value_complete(self, client, monkeypatch):
+        """Verify the full CSP policy string value (not just header presence).
+        A typo in _CSP would pass the 'header in response' test but fail here.
+        The expected policy is copied verbatim so edits to security_headers._CSP
+        must also update this literal."""
+        monkeypatch.delenv("WORKSPACE_CSP_ENFORCE", raising=False)
+        r = client.get("/")
+        expected_policy = (
+            "default-src 'self'; img-src 'self' data: blob:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self'; "
+            "connect-src 'self' ws: wss:; worker-src 'self'; "
+            "frame-ancestors 'none'"
+        )
+        assert r.headers.get("content-security-policy-report-only") == expected_policy
+
 
 class TestCSPEnforceFlip:
     def test_index_enforces_when_flag_set(self, client, monkeypatch):

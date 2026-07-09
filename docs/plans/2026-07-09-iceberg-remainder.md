@@ -523,3 +523,25 @@ then behavioral tests for the `USER_SECTION` bullet parsing (`_BULLET` regex) ag
 ## One-line summary
 
 Yesterday the boat had no lifejackets; today it does, and they're proven. What's left: dock the cargo that's already built (one merge), stitch the last two seams (quarantine/schema), put locks on the doors (headers, offline shell), tighten four deck fittings (auto-restart, memory cap, restore drill, deploy guard) — and finally cut loose the 86K-line dead hull still lashed to the side.
+
+---
+
+## Run outcome (2026-07-09) + follow-up register
+
+Executed same-day via subagent-driven development: all tasks complete, merged as `f7091cf`, deployed (suites on merged tree: 959 backend / 207 JS). Final reviews: security CLEAN, architecture READY. Ledger: `.superpowers/sdd/progress.md`.
+
+**Deferred to Frank:**
+- **RSVP endpoint is live but headless** — `POST /api/email/rsvp/{uid}` sends a real iCal REPLY to the organizer (gated, injection-safe, tested) with no UI button. Wire an Accept/Decline affordance into the read-view calendar card (whose "Read-only — RSVP in your calendar" copy now understates), or leave API-only deliberately. The per-row `is_invite_candidate` flag ships unused until then.
+- **CSP enforce flip** — blocked by 2 inline `<script>` blocks in `frontend-overrides/index.html` (UA sniff + SW registration). Move them to files, soak report-only console for a week, then set `WORKSPACE_CSP_ENFORCE=1`.
+- **Classic-UI retirement** — soak clock started at the 2026-07-09 deploy restart. Gate: one week of `journalctl --user -u openclaw-workspace | grep -c "classic UI served"` = 0, then execute Task 18 steps 2–5 under its own plan.
+- **Branch cleanup** — `calendar-rsvp` is fully salvaged and safe to delete (original SHAs recorded in the salvage doc); PWA device checks pending: manifest shortcuts (long-press icon) and offline deep-link fallback (devtools offline → navigate anywhere → shell loads).
+
+**Code follow-ups (all reviewed as non-blocking; none gets harder post-deploy):**
+- workspace_watch: add one warning log when `watchfiles` is absent (test's caplog-empty assertion is pre-staged to flip).
+- settings_status: catch `FileNotFoundError` when the mcporter binary is missing.
+- sw.js navigate fallback: try `caches.match(e.request)` before `caches.match('/')`.
+- security-headers tests: assert the full CSP string value, not just header presence.
+- Once-per-process gate for newer-schema warnings (terminals.read_meta + followup._load).
+- Cross-reference comments between the two ics parsers (`backend/calendar_invite.py` ↔ `backend/inbox/calendar_invite.py`); fix `perform_rsvp` docstring ("shared by inbox action branch" — nothing else calls it).
+- Manifest "New chat" shortcut lands on the chat surface, not a fresh chat (no chat-new route exists); rename or add the route.
+- memory.maybe_auto_extract: widen its except guard to cover the `auto_memory_enabled()` prefs read (contained today — detached task).

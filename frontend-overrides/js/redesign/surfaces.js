@@ -12,8 +12,10 @@ import {
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
 import { renderActivity } from './chat-activity.js';
+import './task-rows.js'; // side-effect: starts polling /api/tasks/active and injecting live rows
 import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
+import { renderChatStrip } from './chat-strip.js';
 
 // ===========================================================================
 // CHAT
@@ -120,8 +122,9 @@ function semanticHits(s, titleGroups) {
 
 // Per-message hover toolbar: client-side Copy + Download, bound to the message id.
 // Download expands to a small flyout offering Markdown or PDF.
-function msgTools(m, openId) {
+function msgTools(m, openId, ctx) {
   const open = openId === m.id;
+  const canEdit = !!(ctx && ctx.canEdit && m.role === 'user');
   const menu = open
     ? `<div class="msg-dl-menu" data-act="noop" role="menu">`
         + `<button class="msg-dl-item" data-act="downloadMessage" data-arg="${esc(m.id)}" role="menuitem"><span class="msg-dl-ic">${I.download(13)}</span>Markdown</button>`
@@ -130,6 +133,10 @@ function msgTools(m, openId) {
     : '';
   return `<div class="msg-tools">`
     + `<button class="msg-tool" data-act="copyMessage" data-arg="${esc(m.id)}" title="Copy message" aria-label="Copy message">${I.copy(15)}</button>`
+    + `<button class="msg-tool" data-act="branchFromMessage" data-arg="${esc(m.id)}" title="Branch conversation here" aria-label="Branch here">${I.branch(15)}</button>`
+    + (canEdit
+        ? `<button class="msg-tool" data-act="editMessage" data-arg="${esc(m.id)}" title="Edit message" aria-label="Edit">${I.edit(15)}</button>`
+        : '')
     + `<div class="msg-dl-wrap">`
       + `<button class="msg-tool${open ? ' on' : ''}" data-act="toggleMsgMenu" data-arg="${esc(m.id)}" title="Download message" aria-label="Download message" aria-haspopup="menu" aria-expanded="${open}">${I.download(15)}</button>`
       + menu
@@ -177,12 +184,44 @@ function renderRounds(m, s) {
 export function chatMsg(m, s) {
   const hasText = String(m.text || '').trim().length > 0;
   const paras = hasText ? renderMarkdown(m.text) : '';
+  const carriedCls = m._carried ? ` msg-carried${m._carriedFirst ? ' msg-carried-first' : ''}` : '';
   if (m.role === 'user' && m.sys) {
-    return `<div class="msg-sys" data-msg-id="${esc(m.id)}"><span class="msg-sys-txt">${esc(m.text)}</span></div>`;
+    return `<div class="msg-sys${carriedCls}" data-msg-id="${esc(m.id)}"><span class="msg-sys-txt">${esc(m.text)}</span></div>`;
   }
   if (m.role === 'user') {
     const attachHtml = renderAttachments(m.attach);
-    return `<div class="msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span><span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div>`;
+    const canEdit = !!(s.live?.chat?.pendingSend && s.live.chat.pendingSend.messageId === m.id);
+    const ctx = { canEdit };
+    // Inline editor (Task 8): app.js's editMessage sets chat.editingId rather
+    // than touching the DOM directly, because every action dispatch is
+    // followed by a full render() that rebuilds root.innerHTML wholesale —
+    // any manual DOM swap would be wiped the instant the click handler
+    // returns. So the textarea + Save/Cancel bar is template output, gated on
+    // state, same as everything else here.
+    if (canEdit && s.live?.chat?.editingId === m.id) {
+      const val = s.editDraft != null ? s.editDraft : m.text;
+      const rows = Math.max(2, String(val || '').split('\n').length + 1);
+      return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user msg-editing">`
+        + `<textarea class="msg-edit-ta" data-model="editDraft" data-focus="msgEdit" rows="${rows}">${esc(val || '')}</textarea>`
+        + `<div class="msg-edit-bar">`
+          + `<button class="msg-edit-cancel ocbtn" data-act="cancelEdit" data-arg="${esc(m.id)}">Cancel</button>`
+          + `<button class="msg-edit-save ocbtn" data-act="saveEdit" data-arg="${esc(m.id)}">Save &amp; send</button>`
+        + `</div>`
+      + `</div></div>`;
+    }
+    // While the 700ms send-buffer is armed (Task 7), a small ring next to the
+    // timestamp drains as the deadline approaches — the visible countdown
+    // before this bubble actually hits the gateway. The drain itself is a
+    // pure CSS animation (see .msg-pending-ring / @keyframes ring-drain in
+    // redesign.css) driven off this element's own mount time — no per-frame
+    // JS render loop needed, so it never competes with the surgical-patch
+    // rendering the rest of chat.js relies on.
+    let pendingRing = '';
+    if (m._optimistic && m._deadline) {
+      const remaining = Math.max(0, m._deadline - Date.now());
+      pendingRing = `<span class="msg-pending-ring" title="Sending in ${Math.ceil(remaining / 100) / 10}s — edit to change it"></span>`;
+    }
+    return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span>${pendingRing}<span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an
@@ -192,7 +231,9 @@ export function chatMsg(m, s) {
     : '';
   const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
-  return `<div class="msg-asst" data-msg-id="${esc(m.id)}"><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen) : ''}</div></div>`;
+  const streamAttr = m.streaming ? ' data-streaming="1"' : '';
+  const asstCtx = { canEdit: false };
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
 }
 
 
@@ -270,7 +311,7 @@ function chatWelcome() {
   </div>`;
 }
 
-function chatSurface(s) {
+export function chatSurface(s) {
   const d = s.draft || '';
   const typedSlash = d.startsWith('/');
   const open = typedSlash || s.forceSlash;
@@ -288,7 +329,14 @@ function chatSurface(s) {
   const model = chat.model ?? 'opus-4';
   const modelLogo = providerLogo(chat.endpointId, model);
   const pct = chat.usagePct != null ? chat.usagePct : 4.4;
-  const msgs = chat.thread || [];
+  const liveMsgs = chat.thread || [];
+  const prefix = s.branchPrefix || [];
+  const msgs = prefix.length
+    ? [
+        ...prefix.map((m, i) => ({ ...m, _carried: true, _carriedFirst: i === 0 })),
+        ...liveMsgs,
+      ]
+    : liveMsgs;
   const thread = map(msgs, (msg) => chatMsg(msg, s));
   const isEmpty = msgs.length === 0;
 
@@ -311,6 +359,7 @@ function chatSurface(s) {
   </div>
   <div class="chat-thread">${isEmpty ? chatWelcome() : thread}</div>
   <div class="composer-wrap">
+    ${renderChatStrip(chat.chatStrip, { renderMarkdown })}
     <button class="scroll-btm ocbtn" data-act="scrollChatBottom" title="Jump to latest" style="position:absolute;right:16px;top:-44px;z-index:25;width:34px;height:34px;border-radius:50%;background:var(--panel,#1e2025);border:1px solid var(--border);color:var(--fg);cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)">↓</button>
     ${when(slashOpen, `
     <div class="slash-menu" role="listbox" aria-label="Slash commands">

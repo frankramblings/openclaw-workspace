@@ -7,10 +7,12 @@ import { AVATAR } from '../data.js';
 import { QUICK_CHIPS } from '../surfaces.js';
 import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
+import { renderChatStrip } from '../chat-strip.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
 import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
+import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 
 const ic = {
   mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
@@ -55,9 +57,17 @@ export function mChatMsg(m, s) {
         ? `<img class="m-attach-img" src="${esc(a.url)}" alt="${esc(a.name || 'image')}">`
         : `<span class="m-attach-chip">📎 ${esc(a.name || a.id)}</span>`;
     }).join('') : '';
-    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div></div>`;
+    const pending = !!(m._optimistic && m._deadline);
+    const ring = pending ? `<span class="m-msg-pending-ring" title="Sending…"></span>` : '';
+    const chip = pending ? `<button class="m-msg-edit-chip" data-act="editPendingOnMobile" data-arg="${esc(m.id)}">Tap to edit</button>` : '';
+    const meta = pending ? `<div class="m-msg-user-meta">${ring}${chip}</div>` : '';
+    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div>${meta}</div>`;
   }
-  return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"><div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}</div></div>`;
+  const streamAttr = m.streaming ? ' data-streaming="1"' : '';
+  return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
+    + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${assistantToolbar(m, s)}</div>`
+  + `</div>`;
 }
 
 // Pull-to-refresh indicator. Any .m-scroll marked data-ptr="1" with this as its
@@ -91,22 +101,26 @@ export function mChat(s) {
   </div>`;
   const threadHtml = thread.length ? map(thread, (msg) => mChatMsg(msg, s)) : mWelcome;
   // composing layout: keyboard up, tab bar hidden (handled by shell), composer lifts
+  const sheetId = s.live?.chat?.mobileSheetMsgId;
+  const sheetMsg = sheetId ? (thread.find((m) => m.id === sheetId) || null) : null;
+  const sheetHtml = sheetMsg ? userSheet(sheetMsg, s) : '';
   return `
   <div class="m-head">
     <div class="m-gary">
-      <div class="m-gav"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+      <button class="m-icon-btn m-hide-kb m-nav-btn" data-act="openConvSheet" title="Chats" aria-label="Chats">${icon('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>', { size: 18, sw: 1.9 })}</button>
       <button class="m-gary-id" data-act="openConvSheet" title="Switch conversation">
-        <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span><span class="m-conv-caret">▾</span></div>
+        <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span></div>
         <div class="m-conv-sub"><span class="dot"></span>__AGENT_NAME__ · online</div>
       </button>
       <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="m-model-name">${esc(modelLabel)}</span></button>
-      <button class="m-icon-btn m-hide-kb" data-act="newChat" title="New chat">${I.plus(17)}</button>
     </div>
   </div>
   <div class="m-comp-handle m-hide-kb"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>
   <div class="m-scroll m-thread${thread.length ? '' : ' empty'}" data-ptr="1">${mPtr(s, 'Refreshing chat…')}${threadHtml}</div>
   <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;bottom:calc(env(safe-area-inset-bottom,0px) + 122px)">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
   <div class="m-composer${focused ? ' focused' : ''}">
+    ${renderChatStrip(s.live?.chat?.chatStrip, { renderMarkdown })}
+    ${when(s.mobileEditingPending, `<div class="m-comp-edit-chip"><span class="m-comp-edit-lbl">Editing message</span><button class="m-comp-edit-cancel" data-act="cancelMobileEdit">Cancel</button></div>`)}
     ${when(s.live?.chat?.queued, `<div class="m-queued" data-act="queueRecall"><span class="q-ico">⏳</span><span class="q-txt">Queued${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 50))}` : ' · image'}</span><button class="m-q-x" data-act="queueCancel">✕</button></div>`)}
     ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], (a) => `<span class="m-attach-chip"><span class="nm">${esc(a.name || a.id)}</span><span class="x" data-act="removeAttach" data-arg="${esc(a.id)}">✕</span></span>`)}</div>`)}
     <div class="bar">
@@ -114,9 +128,10 @@ export function mChat(s) {
       <textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message __AGENT_NAME__…">
 ${esc(s.draft || '')}</textarea>
       <button class="m-round-btn m-hide-kb">${ic.mic()}</button>
-      <button class="m-send" data-act="send">${I.send(16)}</button>
+      <button class="m-send${s.mobileEditingPending ? ' editing' : ''}" data-act="send">${I.send(16)}${s.mobileEditingPending ? `<span class="m-send-lbl">Save</span>` : ''}</button>
     </div>
-  </div>`;
+  </div>
+  ${sheetHtml}`;
 }
 
 // ---- inbox ----------------------------------------------------------------

@@ -140,8 +140,11 @@
   document.addEventListener('click', (e) => {
     const a = e.target && e.target.closest && e.target.closest('a[href]');
     if (!a) return;
-    const chat = document.getElementById('chat-history');
-    if (!chat || !chat.contains(a)) return;
+    // Chat surface differs by shell: legacy = #chat-history, redesign desktop =
+    // .chat-thread, mobile PWA = .m-thread. Gate on any of them so mobile taps
+    // don't fall through to the raw target="_blank" (which opens a blank tab).
+    const chat = a.closest('#chat-history, .chat-thread, .m-thread');
+    if (!chat) return;
     const path = vaultPath(a.getAttribute('href'));
     if (!path) return;
     e.preventDefault();

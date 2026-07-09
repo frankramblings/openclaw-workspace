@@ -12,6 +12,10 @@ import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
+import { maybeShowThreadsHint } from './mobile/threads-hint.js';
+import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
+import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
+import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
@@ -324,6 +328,18 @@ const actions = {
   toggleGroup: (id) => { const g = state.chatUI.group; g[id] = !g[id]; },
   stopRun: () => { /* overridden by the live chat module to abort the stream */ },
 
+  // mobile message action sheet (long-press on a user bubble)
+  openMobileMsgSheet: (msgId) => {
+    if (!state.live?.chat) return;
+    state.live.chat.mobileSheetMsgId = msgId || null;
+  },
+  closeMobileMsgSheet: () => {
+    if (!state.live?.chat) return;
+    state.live.chat.mobileSheetMsgId = null;
+  },
+  editPendingOnMobile: (msgId) => editPendingOnMobile(state, msgId, { clearTimeout: (id) => clearTimeout(id) }),
+  cancelMobileEdit: () => cancelMobileEdit(state),
+
   // companion
   compTab: (tab) => { state.compTab = tab; state.compSplit = false; state.compHidden = false; },
   toggleSplit: () => { state.compSplit = !state.compSplit; },
@@ -409,6 +425,33 @@ function doRefresh() {
   refreshTimer = setTimeout(() => { state.refreshing = false; render(); }, 900);
 }
 actions.refreshChat = doRefresh;
+
+// Code-block copy button. Handled at capture phase and short-circuited so
+// the delegated dispatcher below doesn't trigger a render() that would wipe
+// the transient "Copied" state on the button.
+root.addEventListener('click', (e) => {
+  const btn = e.target.closest('.md-copy-btn');
+  if (!btn) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const pre = btn.closest('pre.md-code');
+  const code = pre && pre.querySelector('code');
+  const text = code ? code.textContent : '';
+  const done = () => {
+    btn.classList.add('is-copied');
+    btn.setAttribute('title', 'Copied');
+    setTimeout(() => { btn.classList.remove('is-copied'); btn.setAttribute('title', 'Copy'); }, 1200);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => { /* silent */ });
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch (_) {}
+    document.body.removeChild(ta);
+  }
+}, true);
 
 // ---- modal/sheet focus management ------------------------------------------
 // Bounded a11y pass (mechanic 1): focus trap + Escape-to-close + focus-return
@@ -542,6 +585,7 @@ root.addEventListener('click', (e) => {
   // action's render has settled. See MODAL_OPEN_ACTIONS/MODAL_CLOSE_ACTIONS.
   if (MODAL_OPEN_ACTIONS.has(name)) { _modalFocusReturn = focusLocator(t); _pendingModalFocus = true; }
   fn(t.getAttribute('data-arg'), e);
+  applyCloseSheet(state, t.getAttribute('data-close-sheet'));
   render();
   if (MODAL_CLOSE_ACTIONS.has(name)) restoreModalFocus();
   loadActive(); // fetch live data for any newly-activated surface (idempotent)
@@ -578,9 +622,59 @@ root.addEventListener('pointerup', (e) => {
   const fn = actions[name];
   if (!fn) return;
   fn(sb.getAttribute('data-arg'), e);
+  if (name === 'send') {
+    commitMobileEditIfPending(state);
+  }
   render();
   loadActive();
 });
+
+// Long-press on a mobile user bubble → open the message action sheet.
+// Uses a pure state machine (mobile/longpress.js) so behavior is unit-tested.
+const lpState = { active: null };
+const lpIO = {
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (t) => clearTimeout(t),
+  dispatch: (name, arg) => {
+    const fn = actions[name];
+    if (fn) { fn(arg); render(); }
+  },
+};
+root.addEventListener('pointerdown', (e) => {
+  const bubble = e.target.closest('.m-msg-user');
+  if (!bubble) return;
+  const wrap = bubble.closest('[data-msg-id]');
+  if (!wrap) return;
+  const msgId = wrap.getAttribute('data-msg-id');
+  startLongPress(lpState, { msgId, x: e.clientX, y: e.clientY }, lpIO);
+});
+root.addEventListener('pointermove', (e) => {
+  moveLongPress(lpState, { x: e.clientX, y: e.clientY }, lpIO);
+});
+root.addEventListener('pointerup', () => endLongPress(lpState, lpIO));
+root.addEventListener('pointercancel', () => resetLongPress(lpState, lpIO));
+document.addEventListener('scroll', () => resetLongPress(lpState, lpIO), true);
+
+// Swipe-down on the message action sheet dismisses it.
+let sheetTouchStart = null;
+root.addEventListener('touchstart', (e) => {
+  const sheet = e.target.closest('.m-msg-sheet');
+  if (!sheet) { sheetTouchStart = null; return; }
+  const t = e.touches[0];
+  sheetTouchStart = { y: t.clientY, ts: Date.now() };
+}, { passive: true });
+root.addEventListener('touchmove', (e) => {
+  if (!sheetTouchStart) return;
+  const t = e.touches[0];
+  const dy = t.clientY - sheetTouchStart.y;
+  const dtMs = Date.now() - sheetTouchStart.ts;
+  if (shouldSwipeDismiss({ dy, dtMs })) {
+    const fn = actions.closeMobileMsgSheet;
+    if (fn) { fn(); render(); }
+    sheetTouchStart = null;
+  }
+}, { passive: true });
+root.addEventListener('touchend', () => { sheetTouchStart = null; }, { passive: true });
 
 // live-bound inputs/textareas
 // Grow the composer to fit its text so you never have to scroll the field to
@@ -643,6 +737,13 @@ root.addEventListener('input', (e) => {
   // pure CSS (:placeholder-shown), so skipping render here is safe. Desktop
   // keeps its live render — it drives the slash-command palette as you type.
   if (fk === 'mdraft') return;
+  // The inline message editor (Task 8, msg-edit-ta / data-focus="msgEdit") has
+  // no slash palette to drive, so there's no reason for it to pay render()'s
+  // cost of re-running chatMsg→renderMarkdown for every message in the thread
+  // on each keystroke — the same lag the draft/mdraft composers already skip.
+  // State is synced above so saveEdit() sees the typed text; the DOM already
+  // holds it, so skipping the rebuild here is safe.
+  if (fk === 'msgEdit') return;
   // Typing in the desktop composer must not move the thread at all. render()
   // rebuilds the DOM and re-focuses the textarea; pin the chat scroll to exactly
   // where it was so a keystroke changes nothing in the viewport.
@@ -697,6 +798,23 @@ root.addEventListener('compositionend', (e) => {
   if (savedTop != null) {
     const after = root.querySelector('.chat-thread');
     if (after) after.scrollTop = savedTop;
+  }
+});
+
+// Inline message editor (Task 8): ⌘/Ctrl+Enter saves & sends, Esc cancels.
+// Scoped to .msg-edit-ta so it never shadows the composer's own shortcuts.
+root.addEventListener('keydown', (e) => {
+  const ta = e.target.closest && e.target.closest('.msg-edit-ta');
+  if (!ta) return;
+  const wrap = ta.closest('[data-msg-id]');
+  const id = wrap && wrap.getAttribute('data-msg-id');
+  if (!id) return;
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    if (actions.saveEdit) { actions.saveEdit(id); render(); }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if (actions.cancelEdit) { actions.cancelEdit(id); render(); }
   }
 });
 
@@ -959,8 +1077,16 @@ runtime.patchMessage = (msgId) => {
   // leave their scroll position alone (they scrolled up to read).
   const scroller = root.querySelector('.chat-thread, .m-thread');
   const stick = scroller && (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80);
+  // outerHTML replacement removes the node then inserts the new one — between
+  // those two steps the scroller's scrollHeight briefly drops, and the browser
+  // CLAMPS scrollTop to the (temporarily-smaller) max. At ~60 patches/sec that
+  // clamp yanks the user's scroll back toward the bottom on every frame, making
+  // it impossible to scroll up to read the top of a streaming reply. Preserve
+  // scrollTop across the swap when we're not intentionally sticking.
+  const savedTop = scroller ? scroller.scrollTop : 0;
   el.outerHTML = isMobile() ? mChatMsg(m, state) : chatMsg(m, state);
   if (stick && scroller) scroller.scrollTop = scroller.scrollHeight;
+  else if (scroller && scroller.scrollTop !== savedTop) scroller.scrollTop = savedTop;
   return true;
 };
 
@@ -1001,6 +1127,9 @@ loadActive(); // kick off live data for the initial surface
 // First-run only: on a mobile browser (not already installed), show a small,
 // easy-to-dismiss "Add to Home Screen" hint. Shares the shell's isMobile().
 maybeShowInstallHint(isMobile);
+// First-run only: point mobile users at the hamburger button + edge-swipe as
+// the two ways to see all their threads. Waits for install-hint to clear.
+maybeShowThreadsHint(isMobile);
 // Safety net: if live loading fails entirely (network down, all throws), reveal
 // after 3 s so the page doesn't stay permanently invisible.
 setTimeout(() => { if (!rootRevealed) { rootRevealed = true; root.style.visibility = ''; hideBootLoader(); } }, 3000);

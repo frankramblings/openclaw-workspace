@@ -1133,6 +1133,22 @@ _TOOL_ITEM_KINDS = {"command", "tool"}
 # and the reload renderer (frontend historySteps skips the same names).
 _REPLY_DELIVERY_TOOLS = {"message", "mcp__openclaw__message"}
 
+# Tools whose raw input the frontend chat-strip needs (todo list, plan markdown,
+# subagent label). We forward `input` on tool_start ONLY for these — every other
+# tool's frame stays byte-identical so nothing else regresses.
+_STRIP_INPUT_TOOLS = {
+    # Claude Code CLI names (kept for parity if that harness is ever used).
+    "TodoWrite", "ExitPlanMode", "Task", "sessions_spawn",
+    # OpenClaw workspace task tools (this is what actually flows through the
+    # claude-cli agent path here — TaskCreate seeds a step, TaskUpdate mutates
+    # its status, TaskList reconciles). EnterPlanMode pairs with ExitPlanMode.
+    "TaskCreate", "TaskUpdate", "TaskList", "EnterPlanMode",
+}
+
+# Tools whose raw output the frontend chat-strip needs (to extract task IDs
+# from TaskCreate confirmation and reconcile from TaskList snapshots).
+_STRIP_OUTPUT_TOOLS = {"TaskCreate", "TaskList"}
+
 
 async def _relay_events(ws, run_id, run_info: dict | None = None,
                         session_key: str | None = None):
@@ -1291,8 +1307,13 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                         session_context.bump_tool_calls(session_key)
                     except Exception:  # noqa: BLE001
                         pass
-                yield _sse({"type": "tool_start", "tool": label,
-                            "tool_id": tool_id, "command": detail, "round": 1})
+                frame = {"type": "tool_start", "tool": label,
+                         "tool_id": tool_id, "command": detail, "round": 1}
+                if label in _STRIP_INPUT_TOOLS:
+                    raw_input = data.get("args") or data.get("input")
+                    if raw_input is not None:
+                        frame["input"] = raw_input
+                yield _sse(frame)
             elif data.get("phase") == "end":
                 tool_since_text = True
                 yield _sse({"type": "tool_output", "tool": label,
@@ -1317,8 +1338,13 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                     except Exception:  # noqa: BLE001
                         pass
                 command = _tool_command({"arguments": data.get("args")})
-                yield _sse({"type": "tool_start", "tool": name,
-                            "tool_id": tool_id, "command": command, "round": 1})
+                frame = {"type": "tool_start", "tool": name,
+                         "tool_id": tool_id, "command": command, "round": 1}
+                if name in _STRIP_INPUT_TOOLS:
+                    raw_input = data.get("args")
+                    if raw_input is not None:
+                        frame["input"] = raw_input
+                yield _sse(frame)
             elif phase == "result":
                 tool_since_text = True
                 yield _sse({"type": "tool_output", "tool": name,

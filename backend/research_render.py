@@ -37,9 +37,13 @@ def _md_inline(text: str) -> str:
     text = html.escape(text)
     text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
     text = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<em>\1</em>", text)
+    # Anchor (not button) so the citation is a *functional* link in the PDF —
+    # Chrome print-to-pdf keeps <a href="#..."> as a clickable jump to the
+    # numbered source. On screen, JS intercepts the click for the popover.
     text = re.sub(
         r"\[(\d+)\]",
-        lambda m: '<button class="cite" data-n="%s">%s</button>' % (m.group(1), m.group(1)),
+        lambda m: '<a class="cite" href="#src-%s" data-n="%s">%s</a>' % (
+            m.group(1), m.group(1), m.group(1)),
         text,
     )
     return text
@@ -74,12 +78,17 @@ def _render_table(header: list, rows: list) -> str:
 _SKIP_BODY_SECTIONS = {"bottom line", "tl;dr", "tldr"}
 
 
-def _md_to_html(body: str):
+def _md_to_html(body: str, collapsible: bool = True):
     """Minimal markdown -> html, scoped to what these reports emit. Returns
     (title, html). Title is the first H1 (page title, not repeated in body).
     H2 sections become collapsed-by-default accordions so the report reads
     answer-first instead of as one wall of text; GFM pipe tables render as
-    real tables."""
+    real tables.
+
+    collapsible=False is the print/PDF path: every section is emitted expanded
+    (<details open>). A closed <details> is not just a style — Chrome's
+    print-to-pdf drops its contents entirely, so the sections must be open in
+    the DOM, not merely forced open via CSS."""
     body = re.split(r"\n##\s+Sources\s*\n", body)[0]  # drop the flat source list
     lines = body.split("\n")
     title = None
@@ -161,7 +170,10 @@ def _md_to_html(body: str):
             continue
         if not inner:
             continue
-        open_attr = " open" if not first_open_used else ""
+        if collapsible:
+            open_attr = " open" if not first_open_used else ""
+        else:
+            open_attr = " open"  # print: expand every section in the DOM
         first_open_used = True
         out.append('<details class="sec"%s><summary>%s</summary>'
                     '<div class="sec-body">%s</div></details>'
@@ -286,6 +298,47 @@ padding:14px 15px;box-shadow:0 12px 40px rgba(0,0,0,.28);font-size:13px;line-hei
 #pop .pt{font-weight:600;margin:0 0 6px;color:#fff}
 #pop a{color:#b9afff;font-size:12px;word-break:break-all}
 .foot{margin-top:40px;color:var(--muted);font-size:12px;text-align:center}
+.pdf-btn{position:fixed;top:15px;right:15px;z-index:40;text-decoration:none;
+font:600 12px/1 ui-monospace,monospace;color:#fff;background:var(--accent);
+border-radius:999px;padding:9px 14px;box-shadow:var(--shadow);letter-spacing:.03em}
+.pdf-btn:hover{background:#372e9e}
+/* Print / PDF: this is a *document*, not a printed screen UI. The interactive
+   affordances (collapsible accordions, tap citations, hover popover) have no
+   meaning on paper, so dissolve them into flowing typography with functional,
+   quiet citation links and a proper bibliography. */
+@media print{
+ @page{margin:16mm 14mm}
+ html,body{background:#fff}
+ body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-size:11.5pt;line-height:1.5}
+ .wrap{max-width:none;margin:0;padding:0}
+ #pop,.pdf-btn{display:none!important}
+
+ /* accordions -> plain document sections: no card, no border, no toggle */
+ .sec{border:0!important;border-radius:0;box-shadow:none;background:none;margin:0;overflow:visible}
+ .sec>*{display:block!important}
+ .sec>summary{cursor:default;padding:0;border:0!important;background:none!important;
+  font:600 15pt/1.3 Georgia,serif;margin:20px 0 7px}
+ .sec>summary::after{content:""!important;display:none!important}
+ .sec-body{padding:0}
+ .sec-body>:first-child{margin-top:0}
+
+ /* citations -> quiet, still-clickable superscript references */
+ .cite{background:none!important;border:0!important;color:var(--accent)!important;
+  padding:0 1px;font-weight:700;text-decoration:none}
+ a{color:var(--accent);text-decoration:none}
+
+ /* keep the answer card as a calm exec-summary callout; drop heavy shadows */
+ .answer,.grid,.src{box-shadow:none}
+ /* sources -> lightweight bibliography rather than UI cards */
+ .src{border:0;border-top:1px solid var(--line);border-radius:0;background:none;padding:9px 0;margin:0}
+ .src .n{background:var(--muted)}
+ .sources{margin-top:22px}
+
+ /* pagination hygiene */
+ .answer,.grow,.src,.tbl tr,h1.title{break-inside:avoid;page-break-inside:avoid}
+ .sec>summary,article h2,article h3,.matrix h2,.answer,.matrix{break-after:avoid;page-break-after:avoid}
+ .foot{margin-top:24px}
+}
 """
 
 _JS = """
@@ -294,7 +347,7 @@ function hide(){pop.style.display='none';document.querySelectorAll('.cite.active
 document.addEventListener('click',e=>{
  const c=e.target.closest('.cite');
  if(!c){if(!e.target.closest('#pop'))hide();return;}
- e.stopPropagation();
+ e.stopPropagation();e.preventDefault();
  const n=+c.dataset.n,src=DATA.sources[n-1],find=DATA.findings[n-1];if(!src)return;
  document.querySelectorAll('.cite.active').forEach(x=>x.classList.remove('active'));c.classList.add('active');
  pop.innerHTML='<div class="pn">SOURCE ['+n+']</div><div class="pt">'+(src.title||'')+'</div><div>'+
@@ -365,11 +418,11 @@ def _render_matrix(mx: dict) -> str:
 
 # ---------- entry point ----------
 
-def render_html(rec: dict) -> str:
+def render_html(rec: dict, pdf_url: str | None = None, for_print: bool = False) -> str:
     body = rec.get("result") or ""
     sources = rec.get("sources") or []
     findings = rec.get("findings") or []
-    title, body_html = _md_to_html(body)
+    title, body_html = _md_to_html(body, collapsible=not for_print)
     title = title or (rec.get("query") or "Research Report")[:120]
 
     bottom = _lead_answer(body)
@@ -411,9 +464,12 @@ def render_html(rec: dict) -> str:
 
     data_json = json.dumps({"sources": sources, "findings": findings}).replace("</", "<\\/")
 
+    pdf_btn = ('<a class="pdf-btn" href="%s">↓ PDF</a>' % html.escape(pdf_url)
+               if pdf_url else "")
+
     return """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>%s</title><style>%s</style></head><body><div class="wrap">
+<title>%s</title><style>%s</style></head><body>%s<div class="wrap">
 <div class="kicker">Deep Research</div>
 <h1 class="title">%s</h1>
 <p class="query">%s</p>
@@ -423,7 +479,7 @@ def render_html(rec: dict) -> str:
 <section class="sources"><h2>Sources · %d</h2>%s</section>
 <div class="foot">Rendered from the report's own structured data — click any [n] to inspect its source.</div>
 </div><div id="pop"></div><script>%s</script></body></html>""" % (
-        html.escape(title), _CSS, html.escape(title),
+        html.escape(title), _CSS, pdf_btn, html.escape(title),
         html.escape(rec.get("query") or ""), prov_html,
         answer, matrix_html, body_html,
         len(sources), cards_html, _JS % data_json)

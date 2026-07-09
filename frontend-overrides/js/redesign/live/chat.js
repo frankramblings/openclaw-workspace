@@ -14,6 +14,39 @@ import { runtime } from './runtime.js';
 import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
+import {
+  initStripState, stripReducer, onTurnDone as stripOnTurnDone,
+  onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
+  toggleCollapsed as stripToggleCollapsed, readCollapsed as stripReadCollapsed,
+  sweepAgents as stripSweepAgents, renderChatStrip,
+} from '../chat-strip.js';
+
+// The throttled per-token render only patches the active message bubble in
+// place — it does NOT re-render `.composer-wrap`, which is where the strip
+// lives. So each reducer mutation needs its own targeted DOM patch or nothing
+// visible changes until the next full render (which may never come during a
+// long tool-heavy turn). This finds the existing `.chat-strip` and swaps its
+// outerHTML for the freshly-rendered version; if none exists yet (idle → first
+// tool event), it inserts the new one at the top of `.composer-wrap`. Empty
+// strip → remove the node entirely so nothing lingers when idle.
+function patchChatStrip(chat) {
+  if (!chat) return;
+  try {
+    // Desktop: .composer-wrap (strip is first child, above .composer).
+    // Mobile: .m-composer (strip is first child, above .bar).
+    const wrap = document.querySelector('.composer-wrap') || document.querySelector('.m-composer');
+    if (!wrap) return;
+    const html = renderChatStrip(chat.chatStrip, { renderMarkdown });
+    const existing = wrap.querySelector(':scope > .chat-strip');
+    if (!html) { if (existing) existing.remove(); return; }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const fresh = tmp.firstElementChild;
+    if (!fresh) { if (existing) existing.remove(); return; }
+    if (existing) existing.replaceWith(fresh);
+    else wrap.insertBefore(fresh, wrap.firstChild);
+  } catch (_) { /* fall back to next full render */ }
+}
 
 // ---- helpers --------------------------------------------------------------
 
@@ -128,9 +161,34 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+// One pending timer per chat is enough — the next-earliest clearAt wins.
+function scheduleStripSweep(chat) {
+  if (!chat || !chat.chatStrip) return;
+  const now = Date.now();
+  let earliest = Infinity;
+  for (const id in chat.chatStrip.agents) {
+    const a = chat.chatStrip.agents[id];
+    if (a.clearAt != null && a.clearAt < earliest) earliest = a.clearAt;
+  }
+  if (!Number.isFinite(earliest)) return;
+  const delay = Math.max(0, earliest - now) + 50;
+  if (chat._stripSweepTimer) clearTimeout(chat._stripSweepTimer);
+  chat._stripSweepTimer = setTimeout(() => {
+    chat._stripSweepTimer = null;
+    const before = chat.chatStrip;
+    chat.chatStrip = stripSweepAgents(chat.chatStrip, Date.now());
+    if (chat.chatStrip !== before) runtime.render();
+    scheduleStripSweep(chat);
+  }, delay);
+}
+
 function ensureChat(state) {
   if (!state.live) state.live = {};
   if (!state.live.chat) state.live.chat = {};
+  if (!state.live.chat.chatStrip) {
+    state.live.chat.chatStrip = initStripState();
+    try { state.live.chat.chatStrip.collapsed = stripReadCollapsed(window.localStorage); } catch (_) {}
+  }
   return state.live.chat;
 }
 
@@ -299,6 +357,20 @@ let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
 let _notifyResuming = null;  // session id with a notifier-driven resume in flight
 
+// Adaptive render cadence: each patch re-parses the WHOLE active message
+// (markdown + re-highlight every code block via chatMsg), so per-render cost
+// grows with the message. A fixed 60ms tick on a long reply = ~16 ever-larger
+// renders/sec → O(n²) main-thread work that starves keystrokes ("type slow or
+// it arrives in a burst"). So we stretch the interval as the message grows:
+// short replies stay at 60ms (instant), long ones back off toward a 260ms
+// ceiling, bounding total render work. No content is lost — the trailing
+// flushRender() on 'done' always paints the final complete state.
+function renderDelay() {
+  const len = (turn && turn.asstMsg && turn.asstMsg.text ? turn.asstMsg.text.length : 0);
+  if (len < 2000) return 60;
+  return Math.min(260, 60 + Math.floor((len - 2000) / 100));
+}
+
 function throttledRender() {
   if (renderTimer) return;
   renderTimer = setTimeout(() => {
@@ -308,12 +380,52 @@ function throttledRender() {
     // that's what killed text selection, scroll, and composer typing mid-stream.
     // Fall back to a full render if the bubble isn't mounted yet.
     if (!(turn && runtime.patchMessage && runtime.patchMessage(turn.msgId))) runtime.render();
-  }, 60);
+  }, renderDelay());
 }
 
 function flushRender() {
   if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
   runtime.render();
+}
+
+// ---- buttery streaming pump -----------------------------------------------
+// Server chunks arrive bursty (whole sentences at a time). Appending them
+// straight to the DOM feels choppy. Instead we buffer incoming text on
+// `turn.pending` and drain a handful of chars per animation frame — so a
+// 400-char burst plays out as a smooth typewriter over ~1s. Adaptive: if the
+// buffer grows, we drain faster so we never fall behind the model.
+function drainStreamBuffer() {
+  if (!turn || !turn.asstMsg || !turn.pending) { if (turn) turn.pumpRAF = 0; return; }
+  const q = turn.pending;
+  // Chars per frame: floor 2, scale up with backlog so a big burst catches up
+  // in ~30 frames (~0.5s at 60fps). Never more than half the buffer per frame,
+  // so the tail still animates instead of dumping.
+  const perFrame = Math.max(1, Math.min(Math.ceil(q.length / 60), Math.ceil(q.length / 2)));
+  const take = q.slice(0, perFrame);
+  turn.pending = q.slice(perFrame);
+  turn.asstMsg.text += take;
+  // Paint EVERY frame during the pump — the throttled path coalesces at 60–260ms
+  // which makes 2-char-per-frame progress land as 15-char chunks. Bypass it so
+  // each frame's small edit actually reaches the DOM.
+  if (!(turn && runtime.patchMessage && runtime.patchMessage(turn.msgId))) runtime.render();
+  if (turn.pending.length > 0) {
+    turn.pumpRAF = requestAnimationFrame(drainStreamBuffer);
+  } else {
+    turn.pumpRAF = 0;
+  }
+}
+function enqueueStreamText(delta) {
+  if (!turn || !turn.asstMsg) return;
+  turn.pending = (turn.pending || '') + delta;
+  if (!turn.pumpRAF) turn.pumpRAF = requestAnimationFrame(drainStreamBuffer);
+}
+function flushStreamBuffer() {
+  if (!turn) return;
+  if (turn.pumpRAF) { cancelAnimationFrame(turn.pumpRAF); turn.pumpRAF = 0; }
+  if (turn.pending && turn.asstMsg) {
+    turn.asstMsg.text += turn.pending;
+    turn.pending = '';
+  }
 }
 
 // ---- activity-trail mapping (live SSE → step model) -----------------------
@@ -397,6 +509,35 @@ async function refreshSidebarUsage(state) {
   runtime.render();
 }
 
+// Pure slicing step for branchFromMessage — split out so it's unit-testable
+// without a DOM/fetch/localStorage environment (see
+// __tests__/redesign-branch-from-message.test.js). Returns null if msgId
+// isn't in the thread; otherwise the {role,text} (+id) prefix through and
+// including that message, in thread order.
+export function sliceBranchPrefix(thread, msgId) {
+  const list = Array.isArray(thread) ? thread : [];
+  const idx = list.findIndex((m) => m.id === msgId);
+  if (idx < 0) return null;
+  return list.slice(0, idx + 1).map((m) => ({ id: m.id, role: m.role, text: m.text }));
+}
+
+// localStorage key a branched session's carried prefix is stashed under —
+// shared by branchFromMessage (write), selectSession (rehydrate on reopen),
+// and clearBranchPrefixIfStarted (delete once the branch has a real message).
+const branchPrefixKey = (sessionId) => `branchPrefix:${sessionId}`;
+
+// Once a live message actually lands in a branched session's thread, the
+// carried prefix bubbles (state.branchPrefix, rendered by chatSurface — see
+// surfaces.js) have done their job: the backend already prepended the
+// preamble to that first send. Clear both the in-memory flag and its
+// localStorage backing so a reload doesn't resurrect stale carried bubbles.
+export function clearBranchPrefixIfStarted(state, chat) {
+  if (state.branchPrefix && Array.isArray(chat.thread) && chat.thread.length > 0) {
+    state.branchPrefix = null;
+    try { if (chat.activeId) localStorage.removeItem(branchPrefixKey(chat.activeId)); } catch (_) {}
+  }
+}
+
 async function createSession(model) {
   let endpoint_url = '';
   let endpoint_id = '';
@@ -468,9 +609,18 @@ function beginTurn(chat, modelLabel, sessionId) {
 
   const onEvent = (ev) => {
     if (!ev) return;
+    // Guard against stray frames arriving after the turn was torn down
+    // (turn = null on 'done'/'error'/404). A late delta or a trailing event
+    // from a resumed EventSource tail would otherwise deref null → the
+    // "Cannot read properties of null (reading 'asstMsg')" crash. Drop it.
+    if (!turn) return;
 
     if (ev.type === 'done') {
+      flushStreamBuffer();
+      if (turn.asstMsg) turn.asstMsg.streaming = false;
       if (turn.thinkStep) finalizeStep(turn.thinkStep);
+      chat.chatStrip = stripOnTurnDone(chat.chatStrip);
+      patchChatStrip(chat);
       const a = turn.activity;
       if (a) {
         finalizeAll(a);
@@ -494,6 +644,8 @@ function beginTurn(chat, modelLabel, sessionId) {
       return;
     }
     if (ev.type === 'error') {
+      flushStreamBuffer();
+      if (turn.asstMsg) turn.asstMsg.streaming = false;
       if (ev.status === 404) { turn.got404 = true; return; }
       const m = ensureAsst();
       m.error = true;
@@ -514,6 +666,8 @@ function beginTurn(chat, modelLabel, sessionId) {
     // a message-tool delivery). Drop the text shown so far so the final reply
     // isn't doubled ("Sent…Hey 👋"). Tool/thinking steps are kept.
     if (ev.type === 'reply_reset') {
+      if (turn.pumpRAF) { cancelAnimationFrame(turn.pumpRAF); turn.pumpRAF = 0; }
+      turn.pending = '';
       if (turn.asstMsg) turn.asstMsg.text = '';
       throttledRender();
       return;
@@ -531,8 +685,8 @@ function beginTurn(chat, modelLabel, sessionId) {
       if (turn.thinkStep) finalizeStep(turn.thinkStep);
       if (turn.activity) finalizeTools(turn.activity);
       ensureAsst();
-      turn.asstMsg.text += ev.delta;
-      throttledRender();
+      turn.asstMsg.streaming = true;
+      enqueueStreamText(ev.delta);
       return;
     }
     // tool start → a running tool step (prior running tools check off)
@@ -542,6 +696,8 @@ function beginTurn(chat, modelLabel, sessionId) {
       const kind = toolKind(ev.tool);
       const st = newStep(kind, ev.command || ev.file || ev.path || ev.tool || '', ev.tool_id);
       st.cursor = true;
+      chat.chatStrip = stripReducer(chat.chatStrip, ev);
+      patchChatStrip(chat);
       throttledRender();
       return;
     }
@@ -558,6 +714,10 @@ function beginTurn(chat, modelLabel, sessionId) {
           finalizeStep(st);
           if (ev.exit_code !== 0) st.state = 'error';
         }
+        chat.chatStrip = stripReducer(chat.chatStrip, ev);
+        patchChatStrip(chat);
+        // Schedule an agent-linger sweep so the row disappears ~5s after done.
+        scheduleStripSweep(chat);
         throttledRender();
       }
       return;
@@ -568,41 +728,18 @@ function beginTurn(chat, modelLabel, sessionId) {
   return { onEvent, ensureActivity };
 }
 
-// The actual send: optimistic user bubble + POST /api/chat_stream. Shared by the
-// composer `send` action and the queued-message auto-send (flushQueued). Assumes
-// the caller already cleared the draft/pendingAttach.
-async function dispatchSend(text, attachSnap) {
+// The network half of a send: detach any prior live reader, open a turn, and
+// POST /api/chat_stream. Shared by the immediate path (dispatchSend) and the
+// buffered composer flow (flushPending) — in both cases the optimistic bubble
+// is already sitting in chat.thread by the time this runs.
+function fireSend(sessionId, text, attachSnap) {
   const state = runtime.state;
   if (!state) return;
   const chat = ensureChat(state);
   const attachIds = (attachSnap || []).map((a) => a.id);
-  if (!text && !attachIds.length) return;
   // Sending is a user gesture — a good moment to ask for OS-notification
   // permission so a reply finishing while you're elsewhere can notify you.
   ensureNotifyPermission();
-
-  if (!chat.activeId) {
-    try {
-      const id = await createSession(chat.model);
-      if (!id) return;
-      chat.activeId = id;
-      storeActiveId(id);
-      // Surface the brand-new thread in the sidebar IMMEDIATELY — don't wait for
-      // the turn's `done` event (refreshSidebarUsage) to rebuild the list. Fire
-      // and forget so it never delays the send; the row appears the moment you
-      // send, so leaving the thread before the reply lands still lets you find
-      // it in the conversations list.
-      refreshSidebarUsage(state).catch(() => {});
-    } catch (_) {
-      return;
-    }
-  }
-  const sessionId = chat.activeId;
-
-  if (!Array.isArray(chat.thread)) chat.thread = [];
-  chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
-  runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
-  runtime.render();
 
   // Detach any prior live reader. Safe now: the server-side recorder owns the
   // turn, so aborting the reader only drops THIS client's stream.
@@ -627,6 +764,130 @@ async function dispatchSend(text, attachSnap) {
     },
     onEvent,
   );
+}
+
+// Ensure a session exists for the active chat, creating one on first send.
+// Returns the session id, or null if creation failed.
+async function ensureSessionId(chat) {
+  if (chat.activeId) return chat.activeId;
+  try {
+    const id = await createSession(chat.model);
+    if (!id) return null;
+    chat.activeId = id;
+    storeActiveId(id);
+    // Surface the brand-new thread in the sidebar IMMEDIATELY — don't wait for
+    // the turn's `done` event (refreshSidebarUsage) to rebuild the list. Fire
+    // and forget so it never delays the send; the row appears the moment you
+    // send, so leaving the thread before the reply lands still lets you find
+    // it in the conversations list.
+    refreshSidebarUsage(runtime.state).catch(() => {});
+    return id;
+  } catch (_) {
+    return null;
+  }
+}
+
+// The unbuffered send: optimistic user bubble + immediate POST /api/chat_stream.
+// Used by the queued-message auto-send (flushQueued), which already had its own
+// review pass in the composer before it got queued. Assumes the caller already
+// cleared the draft/pendingAttach.
+async function dispatchSend(text, attachSnap) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  const attachIds = (attachSnap || []).map((a) => a.id);
+  if (!text && !attachIds.length) return;
+
+  const sessionId = await ensureSessionId(chat);
+  if (!sessionId) return;
+
+  if (!Array.isArray(chat.thread)) chat.thread = [];
+  chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
+  chat.chatStrip = stripOnUserSend(chat.chatStrip);
+  clearBranchPrefixIfStarted(state, chat);
+  runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
+  runtime.render();
+
+  fireSend(sessionId, text, attachSnap);
+}
+
+// ---- composer send-buffer (700ms edit window) ------------------------------
+// Gives Frank a brief window to fix a just-sent message before it actually
+// hits the gateway. The optimistic bubble renders immediately — with a
+// draining countdown ring (see chatMsg's m._optimistic branch in surfaces.js)
+// — while the real POST is deferred until the buffer elapses or something
+// explicitly flushes it early (a second send, or Task 8's Save & Send).
+const BUFFER_MS = 700;
+
+// Buffered composer submit: append the optimistic bubble now (with
+// `_optimistic`/`_deadline` so it renders the countdown ring + the Edit
+// affordance), and defer the real network fire for BUFFER_MS.
+async function submitFromComposer(text, attachSnap) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  const attachIds = (attachSnap || []).map((a) => a.id);
+  if (!text && !attachIds.length) return;
+
+  // A message is already buffered → flush it now, in submission order, before
+  // this new one claims its own buffer window.
+  if (chat.pendingSend) flushPending(chat.pendingSend.sessionId);
+
+  const sessionId = await ensureSessionId(chat);
+  if (!sessionId) return;
+
+  const messageId = 'live-u-' + Date.now();
+  const deadline = Date.now() + BUFFER_MS;
+  if (!Array.isArray(chat.thread)) chat.thread = [];
+  chat.thread.push({
+    id: messageId, role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [],
+    _optimistic: true, _deadline: deadline,
+  });
+  chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0 };
+  chat.chatStrip = stripOnUserSend(chat.chatStrip);
+  clearBranchPrefixIfStarted(state, chat);
+  runtime.wantChatBottom = true;
+  // The countdown ring's drain is a pure CSS animation keyed off its own
+  // mount time (see .msg-pending-ring / @keyframes ring-drain in
+  // redesign.css) — no rAF re-render loop needed here. This one render()
+  // mounts the ring; the only other render this buffer window needs is the
+  // flush below.
+  runtime.render();
+  chat.pendingSend.timerId = setTimeout(() => flushPending(sessionId), BUFFER_MS);
+}
+
+// Fires a buffered send early — timer expiry, a second send arriving, or (in
+// Task 8) an explicit Save & Send mid-edit. Clears pendingSend + the
+// optimistic flags before handing off to fireSend, so msgTools' canEdit
+// predicate flips false (the Edit button disappears) the instant this runs.
+function flushPending(sessionId) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  const p = chat.pendingSend;
+  if (!p) return;
+  if (p.timerId) clearTimeout(p.timerId);
+  chat.pendingSend = null;
+  const msg = (chat.thread || []).find((m) => m.id === p.messageId);
+  if (msg) { msg.text = p.text; delete msg._optimistic; delete msg._deadline; }
+  runtime.render();
+  fireSend(sessionId || p.sessionId, p.text, p.attachSnap);
+}
+
+// A buffered send that's still sitting in its 700ms window when the tab
+// closes was, until now, silently dropped: the setTimeout backing it never
+// fires because the page is gone, so the "sent" optimistic bubble the user
+// saw never actually hit the gateway. `pagehide` fires reliably on tab
+// close/navigation (and, as a bonus, on iOS Safari backgrounding, which never
+// fires 'unload'); flush synchronously so the request goes out before the
+// page tears down. Guarded for non-browser test environments, where
+// `window.addEventListener` doesn't exist.
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', () => {
+    const state = runtime.state;
+    const chat = state && state.live && state.live.chat;
+    if (chat && chat.pendingSend) flushPending(chat.pendingSend.sessionId);
+  });
 }
 
 // When a turn ends, fire any message the user queued while it was streaming.
@@ -696,6 +957,48 @@ async function resumeIfActive(chat, state, sessionId) {
   es.onerror = () => { /* EventSource auto-reconnects with Last-Event-ID */ };
   return true;
 }
+
+// ---- visibility / focus re-sync -------------------------------------------
+// A backgrounded tab throttles rAF/timers and can silently drop the SSE tail
+// (readyState stays OPEN but no bytes arrive). And even for the currently-
+// visible thread, a turn that *ends* while we're away leaves local `liveES` /
+// `turn` still set — so the UI shows a working state that never finalizes
+// until a manual refresh. On visibility restore, snapshot-replay the active
+// chat's server state: if there's still a turn, `resumeIfActive` closes the
+// stale ES and re-tails from the last cursor. If not, clean up local state
+// and clear the chat-strip so the UI unfreezes.
+let _visSyncWired = false;
+let _visSyncInFlight = false;
+async function _syncActiveOnVisible() {
+  if (_visSyncInFlight) return;
+  const state = runtime.state;
+  const chat = state && state.live && state.live.chat;
+  if (!chat || !chat.activeId) return;
+  _visSyncInFlight = true;
+  try {
+    const ok = await resumeIfActive(chat, state, chat.activeId);
+    if (!ok && (turn || liveES)) {
+      // Server says the turn is over but we still hold stale local state.
+      if (liveES) { try { liveES.close(); } catch (_) {} liveES = null; }
+      if (turn) { turn = null; }
+      stopElapsed();
+      if (chat.chatStrip) { stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }
+      flushRender();
+    }
+  } catch (_) { /* non-fatal — next visibility flip retries */ }
+  finally { _visSyncInFlight = false; }
+}
+function wireVisibilityResume() {
+  if (_visSyncWired) return;
+  _visSyncWired = true;
+  try {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) _syncActiveOnVisible();
+    });
+    window.addEventListener('focus', _syncActiveOnVisible);
+  } catch (_) { /* environments without document/window: harmless */ }
+}
+wireVisibilityResume();
 
 // ---- cross-session turn notifier ------------------------------------------
 // Poll which sessions have a turn in flight. When one FINISHES while you're not
@@ -809,6 +1112,24 @@ function showChatToast(text, id) {
     host.appendChild(el);
     requestAnimationFrame(() => el.classList.add('in'));
     setTimeout(close, 6000);
+  } catch (_) { /* DOM unavailable */ }
+}
+
+// Lightweight, non-clickable info/error toast (branch/edit failures). Reuses
+// the same #oc-toast-host as showChatToast but drops the "Open" affordance —
+// there's no session to jump to for "couldn't branch" / "too late to edit".
+function toast(text) {
+  try {
+    let host = document.getElementById('oc-toast-host');
+    if (!host) { host = document.createElement('div'); host.id = 'oc-toast-host'; document.body.appendChild(host); }
+    const el = document.createElement('div');
+    el.className = 'oc-toast';
+    el.style.cursor = 'default';
+    el.innerHTML = '<span class="oc-toast-dot"></span><span class="oc-toast-msg"></span>';
+    el.querySelector('.oc-toast-msg').textContent = text;
+    host.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('in'));
+    setTimeout(() => { el.classList.remove('in'); setTimeout(() => el.remove(), 220); }, 4500);
   } catch (_) { /* DOM unavailable */ }
 }
 
@@ -954,8 +1275,18 @@ export const actions = {
     turn = null;
     chat.rowMenuOpen = null;
     chat.activeId = id;
+    chat.chatStrip = stripOnSessionSwitch();
+    chat.editingId = null;
     if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
     storeActiveId(id);
+    // Rehydrate a carried branch prefix (Task 8): branchFromMessage stashes it
+    // in localStorage keyed by the NEW session's id before switching to it, so
+    // this covers both the initial jump into a freshly-branched thread and any
+    // later reopen (e.g. after a reload) before its first real message lands.
+    try {
+      const raw = localStorage.getItem(branchPrefixKey(id));
+      state.branchPrefix = raw ? JSON.parse(raw) : null;
+    } catch (_) { state.branchPrefix = null; }
     if (Array.isArray(chat.groups)) {
       for (const g of chat.groups) {
         for (const r of g.rows) r.active = r.id === id;
@@ -977,6 +1308,9 @@ export const actions = {
       if (t.title) chat.title = t.title;
       chat.subtitle = t.subtitle;
       if (t.model) chat.model = t.model;
+      // A reopened session that already has real history (e.g. another tab
+      // already sent its first message) shouldn't still show carried bubbles.
+      clearBranchPrefixIfStarted(state, chat);
       runtime.wantChatBottom = true;   // land on the latest message once loaded
     } catch (_) { /* keep prior */ }
     // Re-attach to an in-flight turn for this thread, if one is still running
@@ -1000,9 +1334,12 @@ export const actions = {
     stopElapsed();
     turn = null;
     chat.activeId = null;
+    chat.chatStrip = stripOnSessionSwitch();
+    chat.editingId = null;
     storeActiveId(null);
     chat.thread = [];
     chat.title = 'New chat';
+    state.branchPrefix = null; // a fresh chat carries no branch context
     if (Array.isArray(chat.groups)) {
       for (const g of chat.groups) for (const r of g.rows) r.active = false;
     }
@@ -1045,7 +1382,7 @@ export const actions = {
 
     state.draft = '';
     state.pendingAttach = []; // consumed by this turn
-    await dispatchSend(text, attachSnap);
+    await submitFromComposer(text, attachSnap);
   },
 
   // Pull a queued message back into the composer to edit/recall it.
@@ -1220,6 +1557,27 @@ export const actions = {
     const state = runtime.state;
     if (!state) return;
     state.chatMenuOpen = !state.chatMenuOpen;
+    runtime.render();
+  },
+
+  // Chat-strip: collapse/expand toggle (persists to localStorage).
+  toggleChatStrip: () => {
+    const state = runtime.state;
+    if (!state) return;
+    const chat = ensureChat(state);
+    let storage = null;
+    try { storage = window.localStorage; } catch (_) {}
+    chat.chatStrip = stripToggleCollapsed(chat.chatStrip, storage);
+    runtime.render();
+  },
+
+  // Chat-strip: dismiss the plan preview without waiting for the next send.
+  dismissStripPlan: () => {
+    const state = runtime.state;
+    if (!state) return;
+    const chat = ensureChat(state);
+    if (!chat.chatStrip || !chat.chatStrip.plan) return;
+    chat.chatStrip = { ...chat.chatStrip, plan: null };
     runtime.render();
   },
   // Rename the active conversation → PATCH /api/session/{id} (FormData name).
@@ -1424,6 +1782,106 @@ export const actions = {
     const msg = (chat.thread || []).find((m) => m.id === id);
     if (!msg || !msg.text) return;
     try { await navigator.clipboard.writeText(msg.text); } catch (_) {}
+  },
+
+  // Message toolbar: branch a NEW session off the transcript up through this
+  // message. The client already rendered these bubbles, so it slices its own
+  // `chat.thread` rather than trusting the server to re-fetch/re-slice history
+  // (see backend's /api/session/branch docstring — same reasoning). Stash the
+  // echoed-back prefix in localStorage BEFORE switching sessions so
+  // selectSession's rehydrate step (above) picks it up as part of the same
+  // open, whether this is the initial jump or a later reopen.
+  branchFromMessage: async (msgId) => {
+    const state = runtime.state;
+    if (!state || !msgId) return;
+    const chat = ensureChat(state);
+    const sourceId = chat.activeId;
+    const prefixSlice = sliceBranchPrefix(chat.thread, msgId);
+    if (!prefixSlice) { toast(`Couldn't find that message`); return; }
+    if (!sourceId) { toast(`Couldn't branch: no active session`); return; }
+    let body = {};
+    try {
+      const res = await fetch('/api/session/branch', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_session_id: sourceId, prefix: prefixSlice }),
+      });
+      try { body = await res.json(); } catch (_) { body = {}; }
+      if (!res.ok) { toast(`Couldn't branch: ${body.error || res.status}`); return; }
+    } catch (e) {
+      toast(`Couldn't branch: ${String(e && e.message || e)}`);
+      return;
+    }
+    const { session_id, prefix } = body;
+    if (!session_id) { toast(`Couldn't branch: no session returned`); return; }
+    try { await refreshSidebarUsage(state); } catch (_) { /* sidebar refresh is best-effort */ }
+    try { localStorage.setItem(branchPrefixKey(session_id), JSON.stringify(prefix || prefixSlice)); } catch (_) {}
+    await actions.selectSession(session_id);
+  },
+
+  // Message toolbar: open the inline editor for the still-buffered optimistic
+  // bubble (msgTools' canEdit only shows the button while pendingSend.messageId
+  // matches — this re-checks server-side-of-the-click in case the 700ms window
+  // lapsed between render and click). Actual DOM swap happens through state:
+  // chatMsg (surfaces.js) renders a textarea + Save/Cancel bar when
+  // chat.editingId === m.id, since render() rebuilds root.innerHTML wholesale
+  // on every action dispatch (direct DOM surgery here would be wiped the
+  // instant this handler returns).
+  editMessage: (msgId) => {
+    const state = runtime.state;
+    if (!state || !msgId) return;
+    const chat = ensureChat(state);
+    if (!chat.pendingSend || chat.pendingSend.messageId !== msgId) return;
+    chat.editingId = msgId;
+    state.editDraft = chat.pendingSend.text;
+    runtime.render();
+  },
+
+  // Save & Send: commit the textarea's value into the still-buffered message
+  // and flush immediately — Frank made his final call, no reason to wait out
+  // the rest of the 700ms window.
+  saveEdit: (msgId) => {
+    const state = runtime.state;
+    if (!state || !msgId) return;
+    const chat = ensureChat(state);
+    chat.editingId = null;
+    if (!chat.pendingSend || chat.pendingSend.messageId !== msgId) {
+      // The buffer already flushed (timer won the race) — too late to edit.
+      toast(`Too late to edit — __AGENT_NAME__ already started`);
+      state.editDraft = null;
+      runtime.render();
+      return;
+    }
+    const text = state.editDraft != null ? state.editDraft : chat.pendingSend.text;
+    // Empty-text guard: if Frank cleared the textarea, treat Save & Send as
+    // "drop the buffered send" — better UX than posting an empty message and
+    // safer than fireSend, which no longer has its own empty guard on this path.
+    if (!text.trim() && !(chat.pendingSend.attachSnap && chat.pendingSend.attachSnap.length)) {
+      clearTimeout(chat.pendingSend.timerId);
+      chat.pendingSend = null;
+      const idx = (chat.thread || []).findIndex((m) => m.id === msgId);
+      if (idx >= 0) chat.thread.splice(idx, 1);
+      state.editDraft = null;
+      runtime.render();
+      return;
+    }
+    chat.pendingSend.text = text;
+    const msg = (chat.thread || []).find((m) => m.id === msgId);
+    if (msg) msg.text = text;
+    state.editDraft = null;
+    flushPending(chat.activeId);
+  },
+
+  // Cancel: close the inline editor, keep the original buffered text/deadline
+  // untouched (it still fires on its own timer, or on the next explicit flush).
+  cancelEdit: (msgId) => {
+    const state = runtime.state;
+    if (!state) return;
+    const chat = ensureChat(state);
+    if (chat.editingId === msgId) chat.editingId = null;
+    state.editDraft = null;
+    runtime.render();
   },
 
   // Message toolbar: open/close the per-message download flyout (MD vs PDF).

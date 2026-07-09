@@ -1,0 +1,173 @@
+/*
+ * chat-strip.css — sticky live-activity strip above the composer.
+ * Renders when TodoWrite / ExitPlanMode / Task / sessions_spawn are active;
+ * hides entirely when idle (mode A per plan §2).
+ */
+
+.chat-strip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px;
+  margin: 0 0 6px 0;
+  background: var(--panel, #1e2025);
+  border: 1px solid var(--border, #2a2d33);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--fg, #e5e7eb);
+  max-height: 42vh;
+  overflow: hidden;
+}
+
+.chat-strip.collapsed {
+  padding: 4px 10px;
+}
+
+.cs-toggle {
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--faint, #9aa0a6);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-chev {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.cs-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-left: 22px;
+  min-height: 20px;
+}
+
+.cs-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--panel-2, #23262c);
+  border: 1px solid var(--border, #2a2d33);
+  white-space: nowrap;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cs-pill .cs-ic {
+  color: var(--faint, #9aa0a6);
+  font-size: 11px;
+}
+
+.cs-pill .cs-lbl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg, #e5e7eb);
+}
+
+.cs-pill .cs-count,
+.cs-pill .cs-elapsed {
+  color: var(--faint, #9aa0a6);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+}
+
+.cs-pill-todos .cs-ic { color: var(--accent, #7fb37f); }
+.cs-pill-plan  .cs-ic { color: var(--violet, #a48fff); }
+.cs-agent-run .cs-ic  { color: var(--accent, #7fb37f); animation: cs-spin 1.4s linear infinite; }
+.cs-agent-done .cs-ic { color: var(--accent, #7fb37f); }
+.cs-agent-err .cs-ic  { color: var(--warn, #e5a06a); }
+
+@keyframes cs-spin { to { transform: rotate(360deg); } }
+
+.cs-body {
+  overflow: auto;
+  max-height: calc(42vh - 32px);
+  padding: 2px 4px 4px;
+  border-top: 1px solid var(--border, #2a2d33);
+  margin-top: 4px;
+}
+
+.cs-sec + .cs-sec {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border, #2a2d33);
+}
+
+.cs-sec-hd {
+  color: var(--faint, #9aa0a6);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 4px 0 4px 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cs-todo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 2px;
+  line-height: 1.35;
+}
+
+.cs-todo-ic {
+  width: 14px;
+  color: var(--faint, #9aa0a6);
+  flex: none;
+}
+
+.cs-todo-completed .cs-todo-ic { color: var(--accent, #7fb37f); }
+.cs-todo-in_progress .cs-todo-ic { color: var(--violet, #a48fff); }
+
+.cs-todo-completed .cs-todo-text {
+  color: var(--faint, #9aa0a6);
+  text-decoration: line-through;
+  text-decoration-color: rgba(154, 160, 166, 0.4);
+}
+
+.cs-todo-in_progress .cs-todo-text { color: var(--fg, #e5e7eb); font-weight: 500; }
+
+.cs-plan-body {
+  padding: 4px 2px;
+  color: var(--fg, #e5e7eb);
+}
+
+.cs-plan-body :is(p, ul, ol, pre) { margin: 4px 0; }
+
+.cs-plan-dismiss {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--faint, #9aa0a6);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.cs-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 2px;
+}
+
+.cs-agent-ic { width: 14px; flex: none; }
+.cs-agent-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-agent-elapsed { color: var(--faint, #9aa0a6); font-variant-numeric: tabular-nums; font-size: 11.5px; }

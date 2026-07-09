@@ -189,6 +189,36 @@ def test_claude_cli_structured_tool_args_serialized():
     assert "select:foo" in start["command"]
 
 
+def test_strip_input_tools_forward_raw_input_on_start():
+    # TodoWrite / ExitPlanMode / Task / sessions_spawn payloads carry structured
+    # state the chat-strip needs (checklist items, plan markdown, subagent
+    # label). Forward `input` on tool_start for these — every other tool's frame
+    # stays byte-identical.
+    todos = [{"content": "audit backend", "status": "in_progress",
+              "activeForm": "Auditing backend"}]
+    out = collect([
+        _cli_tool("start", name="TodoWrite", toolCallId="toolu_t",
+                  args={"todos": todos}),
+        _cli_tool("result", name="TodoWrite", toolCallId="toolu_t",
+                  isError=False, result="ok"),
+        _end(),
+    ])
+    start = next(f for f in out if f.get("type") == "tool_start")
+    assert start["input"] == {"todos": todos}
+
+
+def test_non_strip_tool_start_has_no_input_field():
+    out = collect([
+        _cli_tool("start", name="Bash", toolCallId="toolu_b",
+                  args={"command": "true"}),
+        _cli_tool("result", name="Bash", toolCallId="toolu_b",
+                  isError=False, result=""),
+        _end(),
+    ])
+    start = next(f for f in out if f.get("type") == "tool_start")
+    assert "input" not in start
+
+
 def test_analysis_items_map_to_thinking_deltas_with_cumulative_diff():
     def item(phase, **fields):
         return {"type": "event", "event": "agent",

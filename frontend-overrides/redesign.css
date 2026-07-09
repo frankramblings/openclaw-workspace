@@ -302,6 +302,14 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-sys{display:flex;justify-content:center;margin:10px 0}
 .msg-sys-txt{font-size:12px;color:var(--faint);background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--bd);border-radius:999px;padding:4px 12px;max-width:82%;text-align:center;line-height:1.4}
 .msg-user{max-width:520px;background:var(--tealtint);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent);border-radius:12px 12px 4px 12px;padding:13px 16px}
+/* Inline editor for a still-buffered send (Task 8: msgTools Edit button). */
+.msg-user.msg-editing{width:100%;max-width:520px}
+.msg-edit-ta{width:100%;min-height:44px;resize:vertical;background:var(--panel);border:1px solid color-mix(in srgb,var(--teal) 30%,transparent);border-radius:8px;color:var(--fg);font:inherit;font-size:15.5px;line-height:1.5;padding:9px 11px;box-sizing:border-box}
+.msg-edit-ta:focus{outline:none;border-color:var(--teal)}
+.msg-edit-bar{display:flex;justify-content:flex-end;gap:8px;margin-top:9px}
+.msg-edit-bar .ocbtn{font-size:13px;padding:5px 12px;border-radius:7px;border:1px solid var(--bd);background:var(--panel2);color:var(--mut);cursor:pointer}
+.msg-edit-bar .msg-edit-save{border-color:color-mix(in srgb,var(--teal) 40%,transparent);color:var(--teal);font-weight:600}
+.msg-edit-bar .ocbtn:hover{color:var(--fg)}
 .msg-attachments{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
 .msg-attach-img{max-width:100%;max-height:280px;border-radius:8px;display:block;object-fit:contain}
 .msg-attach-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.07);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent);border-radius:7px;padding:4px 10px;font-size:14.5px;color:var(--mut)}
@@ -329,7 +337,11 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-body .md-quote,.msg-user .md-quote{margin:0 0 18px;padding:1px 0 1px 13px;border-left:2px solid var(--bd);color:var(--mut)}
 .msg-body .md-quote :last-child,.msg-user .md-quote :last-child{margin-bottom:0}
 .msg-body .md-hr,.msg-user .md-hr{border:none;border-top:1px solid var(--bd2);margin:16px 0}
-.msg-body .md-code,.msg-user .md-code{margin:0 0 18px;padding:11px 13px;background:#121317;border:1px solid var(--bd);border-radius:10px;overflow-x:auto}
+.msg-body .md-code,.msg-user .md-code{position:relative;margin:0 0 18px;padding:11px 13px;background:#121317;border:1px solid var(--bd);border-radius:10px;overflow-x:auto}
+.msg-body .md-code .md-copy-btn,.msg-user .md-code .md-copy-btn{position:absolute;top:6px;right:6px;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;background:rgba(30,32,38,.85);border:1px solid var(--bd);border-radius:6px;color:var(--faint,#9aa0a6);cursor:pointer;opacity:0;transition:opacity .12s ease,color .12s ease,background .12s ease;backdrop-filter:blur(4px)}
+.msg-body .md-code:hover .md-copy-btn,.msg-user .md-code:hover .md-copy-btn,.msg-body .md-code .md-copy-btn:focus-visible,.msg-user .md-code .md-copy-btn:focus-visible{opacity:1}
+.msg-body .md-code .md-copy-btn:hover,.msg-user .md-code .md-copy-btn:hover{color:var(--fg,#e6e8ec);background:rgba(45,48,56,.95)}
+.msg-body .md-code .md-copy-btn.is-copied,.msg-user .md-code .md-copy-btn.is-copied{opacity:1;color:#7ed492}
 .msg-body .md-code:last-child,.msg-user .md-code:last-child{margin-bottom:0}
 .msg-body .md-code code,.msg-user .md-code code{font-family:var(--mono);font-size:13px;line-height:1.7;color:#cfd3da;white-space:pre}
 .msg-body .md-table,.msg-user .md-table{margin:0 0 18px;border-collapse:collapse;max-width:100%;display:block;overflow-x:auto;font-size:15px;line-height:1.6}
@@ -891,6 +903,33 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-tool.on{color:var(--fg);background:var(--row-hover)}
 /* Keep the toolbar visible while its download flyout is open (no hover needed). */
 .msg-tools:has(.msg-dl-menu){opacity:1;transform:none}
+
+/* 700ms composer send-buffer countdown ring (Task 7): drains from full to
+   empty next to the just-sent bubble's timestamp while the real POST is
+   still deferred, so an edit made during the window still has time to land.
+   Driven purely by a CSS animation on --pct — NOT a per-frame JS
+   runtime.render() loop. A rAF loop that re-renders the whole tree ~42x
+   during the window would collide with the surgical-patch convention used
+   everywhere else for high-frequency UI (see chat.js's throttledRender /
+   patchMessage comment) — full re-renders drop text selection, scroll
+   position, and composer typing mid-animation. Registering --pct as an
+   animatable custom property lets the browser tween the conic-gradient
+   angle on the compositor with zero DOM/JS work per frame. */
+@property --pct{
+  syntax:'<number>';
+  inherits:false;
+  initial-value:1;
+}
+@keyframes ring-drain{
+  from{--pct:1}
+  to{--pct:0}
+}
+.msg-pending-ring{
+  display:inline-block;width:9px;height:9px;margin:0 6px;border-radius:50%;
+  background:conic-gradient(var(--accent,#4a90e2) calc(var(--pct,1) * 360deg), transparent 0);
+  vertical-align:middle;flex:none;
+  animation:ring-drain 700ms linear forwards;
+}
 .msg-dl-wrap{position:relative;display:flex}
 /* Opens UPWARD from the icon (the toolbar sits low, near the composer) and
    aligns to the icon's left edge. Same panel language as .conv-menu. */
@@ -905,7 +944,15 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
   .msg-tools{transition:none;transform:none}
   .conv-kebab,.cm-item,.msg-tool,.msg-dl-item{transition:none}
   .conv-menu,.msg-dl-menu{animation:none}
+  .msg-pending-ring{animation:none;--pct:1}
 }
+
+/* branch-carried prefix bubbles — messages rendered above the live transcript
+   that came from a source thread's cache, not chat.history. Subtly dimmed;
+   the first one gets a small caption marking the seam. */
+.msg-carried{opacity:.72}
+.msg-carried-first{position:relative}
+.msg-carried-first::before{content:"↳ carried from source thread";display:block;font-size:11px;color:var(--faint);margin:12px 0 6px;text-align:center;letter-spacing:.02em}
 
 /* Drag-and-drop image attach overlay (chat). Toggled by app.js; pointer-events
    none so the drop lands on the chat underneath and bubbles to the root handler. */
@@ -965,3 +1012,4 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .msg-meta .name  { font-family: var(--prose); font-size: 14px; font-weight: 600; letter-spacing: -0.006em; }
 .msg-meta .model { font-family: var(--mono); font-size: 11.5px; }
 .msg-meta .time  { font-family: var(--mono); font-size: 11.5px; }
+

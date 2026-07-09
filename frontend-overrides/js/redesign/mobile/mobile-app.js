@@ -264,15 +264,16 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   root.addEventListener('touchend', endPull);
   root.addEventListener('touchcancel', endPull);
 
-  // --- pull-up from bottom edge → quick capture ----------------------------
+  // --- pull-up from bottom edge → refresh thread ---------------------------
   // Arm only when the touch starts within 60px of the viewport bottom and
   // the target is not an interactive element (button, input, textarea).
-  const CAPTURE_TRIGGER = 50; // px upward travel that fires the sheet
+  // Quick Capture lives on long-press of the center "+" (see below).
+  const REFRESH_TRIGGER = 50; // px upward travel that fires refresh
   const BOTTOM_ZONE = 60;
   let pup = null; // { startY }
 
   root.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) { pup = null; return; }
+    if (e.touches.length !== 1 || state.refreshing) { pup = null; return; }
     if (state.quickCaptureOpen || state.companionSheetOpen) { pup = null; return; }
     const t = e.touches[0];
     if (window.innerHeight - t.clientY > BOTTOM_ZONE) { pup = null; return; }
@@ -286,11 +287,7 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     const t = e.changedTouches[0];
     const dy = pup.startY - t.clientY; // positive = upward
     pup = null;
-    if (dy >= CAPTURE_TRIGGER) {
-      state.quickCaptureOpen = true;
-      state.captureType = state.captureType || 'remind';
-      render();
-    }
+    if (dy >= REFRESH_TRIGGER) refresh();
   });
   root.addEventListener('touchcancel', () => { pup = null; });
 

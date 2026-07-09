@@ -24,7 +24,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import bridge, capabilities, chat_search, chat_turn, config, config_check, doctor, draft_mode, event_store, followup, monitor, sessions_store, terminals, websearch
+from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
+               config_check, doctor, draft_mode, event_store, followup, monitor,
+               sessions_store, terminals, websearch)
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -492,13 +494,17 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     # maybe_auto_extract, _log_turn_timing) explicitly so nothing imports app
     # back and every monkeypatch seam on those names keeps taking effect. Look
     # them up here (route runs after any test patch) so the patched values flow.
+    # session/compose carry the msg-branch-edit feature: drive_turn splices the
+    # pending branch preamble in (before web-search context-building, Task 4) via
+    # _compose_outgoing_for_session, kept as a passed hook like the others.
     def _source():
         return chat_turn.drive_turn(
             message=message, use_web=use_web, allow_web_search=allow_web_search,
             draft_doc=draft_doc, rec=rec, session_key=session_key,
             run_info=run_info, chat_attachments=chat_attachments,
             title_task=title_task, active_runs=_ACTIVE_RUNS, spawn=_spawn,
-            auto_extract=maybe_auto_extract, log_turn_timing=_log_turn_timing)
+            auto_extract=maybe_auto_extract, log_turn_timing=_log_turn_timing,
+            session=session, compose=_compose_outgoing_for_session)
 
     # Detach the turn from any single reader: a background recorder drains the
     # gateway relay into event_store and owns the turn boundary (begin/end_turn),
@@ -531,6 +537,72 @@ async def create_session(name: str = Form(default=""), model: str = Form(default
                                  endpoint_url=endpoint_url or None,
                                  endpoint_id=endpoint_id or None,
                                  speed=speed or None)
+
+
+async def _compose_outgoing_for_session(session_id: str, user_text: str) -> str:
+    """Consume any pending branch-context for this session and prepend its
+    preamble to the outgoing text. Idempotent per session: `consume` deletes
+    the pending record on read, so only the FIRST call after a branch prepends
+    the preamble — every subsequent call for the same session_id returns
+    user_text unchanged."""
+    ctx = branch_context.consume(session_id)
+    if not ctx:
+        return user_text
+    preamble = ctx.get("preamble") or ""
+    return f"{preamble}\n\nFrank: {user_text}" if preamble else user_text
+
+
+def _build_preamble(prefix: list[dict]) -> str:
+    """Compact serialization of the branched-from transcript prefix, used as
+    the first-send context preamble. Role + text, one per line."""
+    lines = []
+    for m in prefix:
+        role = (m.get("role") or "user").strip()
+        text = (m.get("text") or m.get("content") or "").strip()
+        if not text:
+            continue
+        who = "Frank" if role == "user" else "Gary"
+        lines.append(f"{who}: {text}")
+    body = "\n".join(lines)
+    return (
+        "For context, this conversation was branched from an earlier thread. "
+        "Here is what was said before, verbatim:\n\n"
+        f"{body}\n\n"
+        "Continue from here."
+    )
+
+
+@app.post("/api/session/branch")
+async def branch_session(payload: dict = Body(default=None)):
+    """Create a new session and stash a client-provided transcript prefix as
+    pending context. The frontend already knows the prefix (it rendered those
+    bubbles); we trust its slice verbatim and echo it back — no
+    bridge.fetch_history call, no server-side re-slicing (see
+    .superpowers/sdd/task-3-brief.md). The next composer submit into this
+    session consumes the pending context and prepends a preamble."""
+    payload = payload or {}
+    source_session_id = str(payload.get("source_session_id") or "").strip()
+    prefix = payload.get("prefix") or []
+    if not source_session_id:
+        return JSONResponse(status_code=400, content={"error": "source_session_id required"})
+    if not prefix:
+        return JSONResponse(status_code=400, content={"error": "prefix must not be empty"})
+
+    src = sessions_store.get(source_session_id)
+    if src is None:
+        return JSONResponse(status_code=404, content={"error": "source session not found"})
+
+    name = (payload.get("name") or "").strip() or f"↳ {src.get('name') or 'chat'}"
+    new_sess = sessions_store.create(
+        name=name,
+        model=payload.get("model") or src.get("model"),
+        endpoint_url=src.get("endpoint_url"),
+        endpoint_id=src.get("endpoint_id"),
+        speed=payload.get("speed") or src.get("speed"),
+    )
+    preamble = _build_preamble(prefix)
+    branch_context.write(new_sess["id"], source_session_id, prefix, preamble)
+    return {"session_id": new_sess["id"], "session_key": new_sess["sessionKey"], "prefix": prefix}
 
 
 @app.get("/api/history/{session_id}")

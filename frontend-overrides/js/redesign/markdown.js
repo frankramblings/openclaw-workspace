@@ -6,8 +6,8 @@
 // Links are restricted to http(s)/mailto/relative; anything else is defused.
 //
 // Scope is the common chat subset — headings, bold/italic/strike, inline code,
-// fenced code, links, ordered/unordered lists, blockquotes, hr, paragraphs with
-// soft line breaks. Tables and nested lists are intentionally out of scope.
+// fenced code, links, ordered/unordered lists, blockquotes, hr, GFM pipe tables,
+// paragraphs with soft line breaks. Nested lists are intentionally out of scope.
 import { esc } from './dom.js';
 
 // Sentinels that protect inline-code spans from markdown/escaping. NUL never
@@ -139,6 +139,53 @@ function startsBlock(line) {
     || RE.quote.test(line) || RE.ul.test(line) || RE.ol.test(line);
 }
 
+// --- GFM pipe tables --------------------------------------------------------
+// A table is a header row containing a pipe, immediately followed by a
+// delimiter row of dashes (with optional : alignment markers), e.g.
+//   | A | B |
+//   |:--|--:|
+//   | 1 | 2 |
+// The delimiter row is what disambiguates a real table from prose that merely
+// contains a "|", so a header alone never triggers table parsing.
+const RE_TABLE_SEP = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+function isTableSep(line) {
+  return line != null && line.includes('-') && RE_TABLE_SEP.test(line);
+}
+
+function isTableStart(lines, i) {
+  const head = lines[i];
+  return head != null && head.includes('|') && /\S/.test(head)
+    && isTableSep(lines[i + 1]);
+}
+
+// Split one table row into trimmed cells, honoring \| escapes and ignoring the
+// optional leading/trailing pipes.
+function splitTableRow(row) {
+  let s = row.trim();
+  if (s.startsWith('|')) s = s.slice(1);
+  if (s.endsWith('|')) s = s.slice(0, -1);
+  const cells = [];
+  let cur = '';
+  for (let k = 0; k < s.length; k++) {
+    if (s[k] === '\\' && s[k + 1] === '|') { cur += '|'; k++; continue; }
+    if (s[k] === '|') { cells.push(cur); cur = ''; continue; }
+    cur += s[k];
+  }
+  cells.push(cur);
+  return cells.map((c) => c.trim());
+}
+
+function tableAlign(sepRow) {
+  return splitTableRow(sepRow).map((c) => {
+    const l = c.startsWith(':'), r = c.endsWith(':');
+    if (l && r) return 'center';
+    if (r) return 'right';
+    if (l) return 'left';
+    return '';
+  });
+}
+
 export function renderMarkdown(src, topLevel = true) {
   let source = String(src == null ? '' : src).replace(/\r\n?/g, '\n');
   // Lift shared images out at the top level only (don't re-scan blockquote
@@ -160,13 +207,31 @@ export function renderMarkdown(src, topLevel = true) {
       const buf = [];
       while (i < lines.length && !RE.fence.test(lines[i])) { buf.push(lines[i]); i++; }
       i++; // consume closing fence (if present)
-      out.push(`<pre class="md-code"><code>${esc(buf.join('\n'))}</code></pre>`);
+      out.push(`<pre class="md-code"><button type="button" class="md-copy-btn" data-act="copyCode" title="Copy" aria-label="Copy code"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H10"/></svg></button><code>${esc(buf.join('\n'))}</code></pre>`);
       continue;
     }
     if (RE.blank.test(line)) { i++; continue; }
     const h = line.match(RE.heading);
     if (h) { const n = h[1].length; out.push(`<h${n} class="md-h">${inline(h[2].trim())}</h${n}>`); i++; continue; }
     if (RE.hr.test(line)) { out.push('<hr class="md-hr">'); i++; continue; }
+    if (isTableStart(lines, i)) {         // GFM pipe table
+      const header = splitTableRow(lines[i]);
+      const align = tableAlign(lines[i + 1]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && !RE.blank.test(lines[i])
+             && lines[i].includes('|') && !startsBlock(lines[i])) {
+        rows.push(splitTableRow(lines[i])); i++;
+      }
+      const alignAttr = (idx) => (align[idx] ? ` style="text-align:${align[idx]}"` : '');
+      const thead = `<thead><tr>${header
+        .map((c, idx) => `<th${alignAttr(idx)}>${inline(c)}</th>`).join('')}</tr></thead>`;
+      const tbody = `<tbody>${rows.map((r) => `<tr>${header
+        .map((_, idx) => `<td${alignAttr(idx)}>${inline(r[idx] == null ? '' : r[idx])}</td>`)
+        .join('')}</tr>`).join('')}</tbody>`;
+      out.push(`<table class="md-table">${thead}${tbody}</table>`);
+      continue;
+    }
     if (RE.quote.test(line)) {            // blockquote (recursive)
       const buf = [];
       while (i < lines.length && RE.quote.test(lines[i])) { buf.push(lines[i].replace(RE.quote, '')); i++; }
@@ -187,7 +252,8 @@ export function renderMarkdown(src, topLevel = true) {
     }
     // paragraph: gather consecutive non-blank lines that don't start a block
     const buf = [];
-    while (i < lines.length && !RE.blank.test(lines[i]) && !startsBlock(lines[i])) { buf.push(lines[i]); i++; }
+    while (i < lines.length && !RE.blank.test(lines[i]) && !startsBlock(lines[i])
+           && !isTableStart(lines, i)) { buf.push(lines[i]); i++; }
     out.push(`<p>${inline(buf.join('\n')).replace(/\n/g, '<br>')}</p>`);
   }
   return out.join('') + imagesHtml;

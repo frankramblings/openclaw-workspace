@@ -499,7 +499,47 @@ def _os_user() -> str:
         return os.environ.get("USER") or os.environ.get("LOGNAME") or ""
 
 
+_ENV_FILE_CACHE: dict[str, str] | None = None
+
+
+def _slack_env_file() -> dict[str, str]:
+    """Parse ~/.config/openclaw-secrets/slack.env (or $SLACK_MCP_ENV). Linux has
+    no login keychain, so this is the primary token source on naboo."""
+    global _ENV_FILE_CACHE
+    if _ENV_FILE_CACHE is not None:
+        return _ENV_FILE_CACHE
+    path = os.environ.get("SLACK_MCP_ENV") or os.path.expanduser(
+        "~/.config/openclaw-secrets/slack.env")
+    out: dict[str, str] = {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                if line.startswith("export "):
+                    line = line[7:]
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    _ENV_FILE_CACHE = out
+    return out
+
+
+# Map legacy macOS-keychain service names → env var names used on Linux.
+_KEYCHAIN_TO_ENV = {
+    "openclaw.slack.xoxc": "SLACK_MCP_XOXC_TOKEN",
+    "openclaw.slack.xoxd": "SLACK_MCP_XOXD_TOKEN",
+}
+
+
 def _keychain(service: str) -> str | None:
+    env_key = _KEYCHAIN_TO_ENV.get(service)
+    if env_key:
+        val = os.environ.get(env_key) or _slack_env_file().get(env_key)
+        if val:
+            return val
     try:
         out = subprocess.run(
             ["security", "find-generic-password", "-a", _keychain_account(),
@@ -510,8 +550,17 @@ def _keychain(service: str) -> str | None:
         return None
 
 
+_CHANNEL_ID_RE = re.compile(r"\b([CDG][A-Z0-9]{7,})\b")
+
+
 async def mark_read(msg_id: str, channel_handle: str) -> None:
     cid = _handle_map().get(channel_handle)
+    if not cid:
+        # DMs come through as "D056H0S5XD5 (#U…)" — no name in the handle map,
+        # but the raw channel id is right there. Pluck the first C/D/G-prefixed
+        # id out of the string as a fallback so DMs can be marked read.
+        m = _CHANNEL_ID_RE.search(channel_handle or "")
+        cid = m.group(1) if m else None
     if not cid:
         raise RuntimeError(f"no channel id for {channel_handle}")
     xoxc, xoxd = await asyncio.gather(

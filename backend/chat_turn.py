@@ -323,7 +323,8 @@ async def busy_stream():
 async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                      draft_doc, rec, session_key: str, run_info: dict,
                      chat_attachments: list, title_task,
-                     active_runs: dict, spawn, auto_extract, log_turn_timing):
+                     active_runs: dict, spawn, auto_extract, log_turn_timing,
+                     session: str = "", compose=None):
     """Produce every SSE frame for this turn (web search, the gateway relay,
     late reply, metrics, draft doc_update, DONE). This is the turn's source
     of truth; the detached recorder (`record_turn`) drains it into
@@ -333,8 +334,18 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
 
     `active_runs` is app's _ACTIVE_RUNS (for the Stop button's server-side
     abort); `spawn`/`auto_extract`/`log_turn_timing` are app-module hooks the
-    route passes in so their monkeypatch seams keep working."""
+    route passes in so their monkeypatch seams keep working. `session`/`compose`
+    carry the msg-branch-edit feature: on the first send into a freshly-branched
+    session, `compose` (app._compose_outgoing_for_session) splices the pending
+    prefix's preamble into the outgoing text — passed as a hook, same reason as
+    the others (no import back into app)."""
     brain_message = message
+    if session and compose:
+        # First send after a branch: splice the pending prefix's preamble in
+        # BEFORE web-search context-building (Task 4 — a branch-first-send with
+        # web search on must not drop its one-shot preamble). The search QUERY
+        # below still runs on the raw `message`, not the composed preamble.
+        brain_message = await compose(session, brain_message)
     text_seen = False    # any non-thinking {"delta"} relayed this turn?
     tools_seen = False   # any tool card relayed (fresh bubble needed)?
     failed = False       # bridge/agent error or user abort — no reply coming
@@ -358,7 +369,14 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                                             for i, r in enumerate(results))
                                   or "no results"})
                     if results:
-                        brain_message = websearch.context_block(message, results)
+                        # Build on brain_message (which may already carry the
+                        # branch preamble spliced in above), NOT the raw `message`
+                        # param — the search itself still queries off `message`
+                        # (the websearch.search call above); only this "user text"
+                        # wrapper needs the composed value so a branch-first-send
+                        # with web search on doesn't silently drop its one-shot
+                        # preamble (msg-branch-edit Task 4 review Critical).
+                        brain_message = websearch.context_block(brain_message, results)
                 except Exception as exc:  # noqa: BLE001
                     yield bridge._sse({"type": "tool_output", "tool": "web_search",
                                        "tool_id": "websearch",

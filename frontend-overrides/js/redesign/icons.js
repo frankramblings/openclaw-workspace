@@ -56,6 +56,8 @@ export const I = {
   x: (s = 14) => icon('<path d="M18 6 6 18M6 6l12 12"/>', { size: s, sw: 1.8 }),
   copy: (s = 15) => icon('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', { size: s, sw: 1.8 }),
   download: (s = 15) => icon('<path d="M12 3v12M7 11l5 5 5-5M4 21h16"/>', { size: s, sw: 1.8 }),
+  branch: (s = 15) => icon('<path d="M6 3v6M18 9a3 3 0 100 6 3 3 0 000-6zM6 3a3 3 0 100 6 3 3 0 000-6zM6 15v6M6 15a3 3 0 100 6 3 3 0 000-6zM18 15a6 6 0 01-6 6"/>', { size: s, sw: 1.8 }),
+  edit: (s = 15) => icon('<path d="M4 20h4l10-10-4-4L4 16v4z M14 6l4 4"/>', { size: s, sw: 1.8 }),
   star: (s = 13, filled = false) => icon('<path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z"/>', { size: s, sw: 1.5, fill: filled ? 'currentColor' : 'none' }),
   dots: (s = 15) => icon('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>', { size: s, sw: 1.6, fill: 'currentColor' }),
   pencil: (s = 14) => icon('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>', { size: s, sw: 1.8 }),

@@ -67,7 +67,12 @@ test('unordered and ordered lists with inline formatting', () => {
 
 test('fenced code block keeps content literal and escaped', () => {
   const html = renderMarkdown('```js\nconst a = 1 < 2 && 3;\n```');
-  assert.match(html, /<pre class="md-code"><code>const a = 1 &lt; 2 &amp;&amp; 3;<\/code><\/pre>/);
+  // The code content must be HTML-escaped (the security-critical property).
+  assert.match(html, /<code>const a = 1 &lt; 2 &amp;&amp; 3;<\/code>/);
+  // ...and no raw, unescaped form may leak through.
+  assert.doesNotMatch(html, /const a = 1 < 2 && 3;/);
+  // The block is wrapped in <pre class="md-code"> with the copy-code affordance.
+  assert.match(html, /<pre class="md-code"><button[^>]*class="md-copy-btn"/);
 });
 
 test('paragraphs split on blank lines; single newline becomes <br>', () => {
@@ -86,4 +91,38 @@ test('mixed document: heading + para + list renders all blocks', () => {
 test('empty / nullish input is safe', () => {
   assert.equal(renderMarkdown(''), '');
   assert.equal(renderMarkdown(null), '');
+});
+
+test('GFM table: header + delimiter + rows render as a real table', () => {
+  const html = renderMarkdown('| Test | Result |\n|------|--------|\n| api | 401 |\n| nav | 302 |');
+  assert.match(html, /<table class="md-table">/);
+  assert.match(html, /<thead><tr><th[^>]*>Test<\/th><th[^>]*>Result<\/th><\/tr><\/thead>/);
+  assert.match(html, /<tbody>.*<td[^>]*>api<\/td><td[^>]*>401<\/td>.*<\/tbody>/s);
+  assert.doesNotMatch(html, /\|/); // no raw pipes leak through
+});
+
+test('GFM table: cells get inline formatting and are XSS-safe', () => {
+  const html = renderMarkdown('| Col |\n|-----|\n| **b** |\n| <img src=x> |');
+  assert.match(html, /<td[^>]*><strong>b<\/strong><\/td>/);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img/);
+});
+
+test('GFM table: colon alignment sets text-align', () => {
+  const html = renderMarkdown('| L | C | R |\n|:--|:-:|--:|\n| a | b | c |');
+  assert.match(html, /<th style="text-align:left">L<\/th>/);
+  assert.match(html, /<th style="text-align:center">C<\/th>/);
+  assert.match(html, /<th style="text-align:right">R<\/th>/);
+});
+
+test('a lone line with a pipe but no delimiter row stays a paragraph', () => {
+  const html = renderMarkdown('a | b | c is just prose');
+  assert.match(html, /<p>a \| b \| c is just prose<\/p>/);
+  assert.doesNotMatch(html, /<table/);
+});
+
+test('table directly under a paragraph (no blank line) still renders', () => {
+  const html = renderMarkdown('Results below:\n| K | V |\n|---|---|\n| x | 1 |');
+  assert.match(html, /<p>Results below:<\/p>/);
+  assert.match(html, /<table class="md-table">/);
 });

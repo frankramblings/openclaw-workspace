@@ -26,7 +26,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup, monitor,
-               sessions_store, terminals, websearch)
+               pending_tokens, sessions_store, terminals, websearch)
 from .auth_gate import AuthGateMiddleware
 from .memory import maybe_auto_extract
 from .calendar import router as calendar_router
@@ -224,6 +224,7 @@ app.include_router(settings_router)
 app.include_router(notes_router)
 app.include_router(documents_router)
 app.include_router(followup.router)
+app.include_router(pending_tokens.router)
 app.include_router(uploads_router)
 app.include_router(research_router)
 app.include_router(emoji_router)

@@ -18,3 +18,4 @@ openpyxl>=3.1     # xlsx attachment text
 pypdf>=5.0        # pdf attachment text
 python-docx>=1.0  # docx attachment text
 python-pptx>=1.0  # pptx attachment text
+watchfiles>=0.21  # live workspace file-watch (workspace_watch)

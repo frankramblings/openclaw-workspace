@@ -1005,6 +1005,23 @@ async def _read_json_body(request: Request) -> dict:
     return body if isinstance(body, dict) else {}
 
 
+def _sniff_terminal_command(terminal_key: str, command: str) -> None:
+    """Gary's dominant exec path on this box is the workspace terminal (this
+    endpoint) — the bridge relay only ever sees his `curl` wrapper, so the
+    Phase-3 launch sniffer must hook HERE to see the real command text.
+    Guarded: sniffing can never break a terminal run."""
+    try:
+        from . import launch_sniffer, sessions_store
+        rec = sessions_store.get(terminal_key)
+        if not rec:
+            return          # "global" or unknown key — no chat to attribute to
+        launch_sniffer.on_tool_start(rec["sessionKey"], "terminal", command,
+                                     item_is_command=True)
+    except Exception:  # noqa: BLE001
+        log.warning("terminal launch-sniff failed for key %s", terminal_key,
+                    exc_info=True)
+
+
 @router.post("/api/terminal/mcp/run")
 async def terminal_mcp_run(request: Request):
     body = await _read_json_body(request)
@@ -1025,6 +1042,7 @@ async def terminal_mcp_run(request: Request):
     await _await_shell_quiescent(sess)
     cursor = sess.total_written
     sess.write(str(body.get("command", "")) + "\n")
+    _sniff_terminal_command(session_key, str(body.get("command", "")))
     output = await _await_settled_output(sess, cursor, cap=float(body.get("timeout", 20)))
     return {"output": output, "exited": sess.exited, "exit_code": sess.exit_code}
 

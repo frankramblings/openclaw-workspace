@@ -280,6 +280,28 @@ def test_mcp_run_happy_path(monkeypatch):
         terminals.close_session(key)
 
 
+def test_mcp_run_invokes_launch_sniffer(monkeypatch):
+    """End-to-end guard for the Phase-3 sniffer fix: a real mcp/run call must
+    reach _sniff_terminal_command with the TERMINAL key (not the token) and
+    the raw command text, since this endpoint — not the bridge's curl
+    wrapper — is Gary's real exec path."""
+    key = "mcp-sniff"
+    token = terminals.mint_terminal_token(key)
+    monkeypatch.setattr(terminals, "gary_mode_for_session", lambda k: True)
+    calls = []
+    monkeypatch.setattr(terminals, "_sniff_terminal_command",
+                        lambda tk, cmd: calls.append((tk, cmd)))
+    try:
+        r = TestClient(app).post(
+            "/api/terminal/mcp/run",
+            json={"token": token, "command": "printf SNIFF_OK", "timeout": 20},
+        )
+        assert r.status_code == 200, r.text
+        assert calls == [(key, "printf SNIFF_OK")]
+    finally:
+        terminals.close_session(key)
+
+
 def test_mcp_read_returns_buffer_tail(monkeypatch):
     key = "mcp-read"
     token = terminals.mint_terminal_token(key)

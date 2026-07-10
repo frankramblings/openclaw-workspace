@@ -18,6 +18,8 @@
 //      the chat store re-renders the msg during Gary's tool calls, our node
 //      gets nuked and re-injected within the same paint frame.
 
+import { liveTurn } from './live/turn-ref.js';
+
 const CHAT_ACTIVE_ID_LSKEY = 'redesign.chat.activeId';
 
 function activeChatId() {
@@ -54,6 +56,7 @@ const KIND_COLOR = {
   export:  'var(--violet)',
   scan:    'var(--faint)',
   followup:'var(--teal)',
+  auto:    'var(--amber)',
 };
 
 // Per-task state: taskId -> { row, refs, domMsgId }
@@ -106,16 +109,17 @@ export function nativeView(rec) {
     : state === 'done' ? 'done' : 'failed';
   if (rec.source === 'followup') {
     return {
-      id: rec.id, label: rec.label || rec.id, kind: 'followup',
+      id: rec.id, label: rec.label || rec.id, kind: rec.kind === 'auto' ? 'auto' : 'followup',
       status: statusFor(rec.state), detail: rec.detail || '',
       error: rec.state === 'interrupted' ? 'interrupted by a backend restart' : (rec.error || ''),
       sessionKey: rec.session_key || '',
       elapsed: rec.state === 'running' && rec.created ? (Date.now() - rec.created) / 1000 : null,
+      _recTurnId: rec.turn_id ?? null,
     };
   }
   const native = (rec.extra && rec.extra.native) || null;
   if (!native || !native.id) return null;
-  const out = { ...native, status: statusFor(rec.state) };
+  const out = { ...native, status: statusFor(rec.state), _recTurnId: rec.turn_id ?? null };
   out.sessionKey = out.sessionKey || rec.session_key || '';
   if (rec.state === 'interrupted') out.error = out.error || 'interrupted by a backend restart';
   return out;
@@ -256,11 +260,22 @@ function renderOrUpdateRow(task) {
     _tasks.set(task.id, state);
     ensureGlobalObserver();
   }
-  // First injection: find the newest asst bubble and PIN to its client-side id.
+  // First injection: pin to the exact bubble, then append via the spine.
+  // Both anchor paths below fall through to the same lookup + append code —
+  // only HOW domMsgId gets its first value differs.
   if (!state.domMsgId) {
+    // Deterministic anchor: the record knows its originating ledger turn and
+    // that turn is live right now — pin to its exact bubble, no heuristic.
+    const lt = liveTurn();
+    if (lt && anchorMode({ turn_id: task._recTurnId }, lt.turnId) === 'turn'
+        && lt.sessionId === activeChatId()) {
+      state.domMsgId = lt.msgId;
+    }
+    // Heuristic fallback: "newest asst bubble" (findMsgEl uses domMsgId when
+    // set, so this also resolves the deterministic pin above by its exact id).
     const msgEl = findMsgEl(state);
     if (!msgEl) return;                    // no bubble yet — wait
-    state.domMsgId = msgEl.getAttribute('data-msg-id');
+    if (!state.domMsgId) state.domMsgId = msgEl.getAttribute('data-msg-id');
     const { spine } = findOrMakeSpine(msgEl);
     spine.appendChild(state.row);
   } else {

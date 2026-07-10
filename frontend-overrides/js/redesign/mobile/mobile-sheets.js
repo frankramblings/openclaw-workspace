@@ -85,9 +85,8 @@ function convListHtml(s) {
   // while closed — finger-tracked off-screen rather than removed — so its
   // rows must NOT be in the tab order while hidden, or a keyboard user could
   // Tab into an invisible drawer. tabindex flips to -1 whenever the drawer
-  // isn't open; convListHtml's other caller (the legacy conv sheet) is
-  // unreachable dead code (mConvSheetOpen is never set true) so this is a
-  // no-op there either way.
+  // isn't open. (The legacy conv sheet that also called convListHtml was
+  // unreachable dead code and has been removed.)
   const rowTabindex = s.mDrawerOpen ? '0' : '-1';
   const convRow = (r) => {
     const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
@@ -149,16 +148,6 @@ export function renderConvDrawer(s) {
     <div class="m-drawer-head"><span class="t">Conversations</span><div class="m-spacer"></div><button class="m-round-btn" data-act="mNewChat" title="New chat">${I.plus(16)}</button><button class="cancel" data-act="closeDrawer">Close</button></div>
     <div class="m-drawer-search">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"></div>
     <div class="m-conv-list" data-ptr-skip>${convListHtml(s)}</div>
-  </div>`;
-}
-
-export function renderConvSheet(s) {
-  return `
-  <div class="m-scrim" data-act="closeConvSheet"></div>
-  <div class="m-sheet conv-sheet">
-    <div class="m-grab"><div class="h"></div></div>
-    <div class="m-cap-head"><span class="t">Conversations</span><div class="m-spacer"></div><button class="m-round-btn" data-act="newChat" title="New chat">${I.plus(16)}</button><button class="cancel" data-act="closeConvSheet">Close</button></div>
-    <div class="m-conv-list">${convListHtml(s)}</div>
   </div>`;
 }
 

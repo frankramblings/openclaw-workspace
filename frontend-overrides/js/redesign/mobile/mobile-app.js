@@ -6,7 +6,7 @@
 import { icon } from '../icons.js';
 import { renderCenter } from '../surfaces.js';
 import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore } from './mobile-surfaces.js';
-import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvSheet, renderConvDrawer, renderModelSheet } from './mobile-sheets.js';
+import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvDrawer, renderModelSheet } from './mobile-sheets.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
 import { cardActions, isInvite, swipeIntent } from '../live/inbox-logic.js';
@@ -45,7 +45,6 @@ export function renderMobile(s) {
     (s.companionSheetOpen ? renderCompanionSheet(s) : '') +
     (s.quickCaptureOpen ? renderCaptureSheet(s) : '') +
     (s.composeOpen ? renderComposeSheet(s) : '') +
-    (s.mConvSheetOpen ? renderConvSheet(s) : '') +
     (s.mModelSheetOpen ? renderModelSheet(s) : '');
 
   // The conversation drawer is ALWAYS in the DOM (off-screen when closed) so the
@@ -91,7 +90,6 @@ export function mobileActions(state) {
     // thread is always there, regardless of send-timing. Fire-and-forget: the
     // drawer opens instantly and re-renders when the list lands.
     openConvSheet: () => { closeSheets(); state.mDrawerOpen = true; if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions(); },
-    closeConvSheet: () => { state.mConvSheetOpen = false; },
     // Edge-swipe conversation drawer (the finger-tracked open/close lives in
     // wireMobileGestures; these handle the tap affordances / scrim dismiss).
     openConvDrawer: (side) => { closeSheets(); state.mDrawerSide = (side === 'right' ? 'right' : 'left'); state.mDrawerOpen = true; if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions(); },

@@ -24,7 +24,7 @@ const LS_WIDTH = 'oc-doc-dock-width';
 const DOCK_MIN = 360;
 const DOCK_MAX_VW = 0.75; // cap width at 75vw
 const DOCK_DEFAULT = 560;
-const MOBILE_BP = 640;
+const MOBILE_BP = 768; // match the mobile-shell breakpoint (app.js max-width:768)
 
 let editor = null;     // Toast UI instance
 let host = null;       // editor mount element

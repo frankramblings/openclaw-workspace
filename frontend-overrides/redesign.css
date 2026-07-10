@@ -42,9 +42,11 @@ body{background:var(--bg);font-family:var(--sans);color:var(--fg);-webkit-font-s
 
 /* Document editor dock: when open, reserve horizontal space so #oc-root reflows
    beside the dock instead of sliding under it. --doc-dock-w is set by
-   document-editor.js and forced to 0 on <=640px viewports (dock goes full-screen). */
+   document-editor.js and forced to 0 on <=768px viewports (dock goes full-screen
+   — matches the mobile-shell breakpoint so no band exists where the single-column
+   shell still reserves side-dock space). */
 body.oc-doc-docked{padding-right:var(--doc-dock-w,0px);transition:padding-right .16s ease}
-@media (max-width:640px){body.oc-doc-docked{padding-right:0}}
+@media (max-width:768px){body.oc-doc-docked{padding-right:0}}
 .oc-doc-grabber:hover{background:var(--teal,#4fe3d1);opacity:.35}
 
 /* Files pane root picker — small popover of allowlisted roots the tree can walk.

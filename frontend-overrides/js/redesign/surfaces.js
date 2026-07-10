@@ -354,11 +354,13 @@ export function chatSurface(s) {
   const slashSel = filtered.find((c) => c.name === s.slashSel) || filtered[0];
   const agent = s.chatMode === 'agent';
   const chat = s.live?.chat || {};
-  const title = chat.title ?? 'Workspace Streaming Chat Updates';
-  const subtitle = chat.subtitle ?? '12 messages · claude-opus-4';
-  const model = chat.model ?? 'opus-4';
+  // No mock fallbacks — before live data lands the header shows neutral
+  // placeholders, never invented titles/models/usage numbers.
+  const title = chat.title ?? 'New chat';
+  const subtitle = chat.subtitle ?? '';
+  const model = chat.model ?? '';
   const modelLogo = providerLogo(chat.endpointId, model);
-  const pct = chat.usagePct != null ? chat.usagePct : 4.4;
+  const pct = chat.usagePct != null ? chat.usagePct : null;
   const liveMsgs = chat.thread || [];
   const prefix = s.branchPrefix || [];
   const msgs = prefix.length
@@ -408,10 +410,10 @@ ${esc(d)}</textarea>
       <div class="composer-row">
         <button class="icon-btn ocbtn" data-act="toggleSlash" title="More tools">${I.plus()}</button>
         <label class="icon-btn ocbtn" title="Attach files" style="cursor:pointer;display:inline-flex;align-items:center"><input type="file" data-upload multiple style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></label>
-        <div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>
+        ${pct != null ? `<div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>` : ''}
         <div class="oc-spacer"></div>
         <button class="icon-btn ocbtn" data-act="toggleIncognito" title="${s.incognito ? 'Incognito ON — this chat is not saved' : 'Incognito — don’t save this chat'}" style="${s.incognito ? 'color:var(--violet)' : ''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7"/><path d="M2 12s3 7 10 7 10-7 10-7"/><circle cx="12" cy="12" r="2.5"/>${s.incognito ? '<line x1="3" y1="3" x2="21" y2="21"/>' : ''}</svg></button>
-        <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="model-btn-name">${esc(currentModelLabel(s, model))}</span>${I.chevDownSm()}</button>
+        <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="model-btn-name">${esc(currentModelLabel(s, model) || '…')}</span>${I.chevDownSm()}</button>
         <div class="mode-toggle">
           <button class="${agent ? 'active-agent' : ''}" data-act="setMode" data-arg="agent">Agent</button>
           <button class="${!agent ? 'active-chat' : ''}" data-act="setMode" data-arg="chat">Chat</button>

@@ -113,7 +113,7 @@ const mPtrBtm = (s, label = 'Refreshing chat…') => `<div class="m-ptr-btm${s.r
 export function mChat(s) {
   const focused = s.keyboard;
   const thread = s.live?.chat?.thread || [];
-  const model = s.live?.chat?.model || 'opus-4';
+  const model = s.live?.chat?.model || '';
   const modelLogo = providerLogo(s.live?.chat?.endpointId, model);
   // Friendly model name (e.g. "Opus 4.8") from the live model list, matching the
   // desktop header's currentModelLabel; falls back to the raw id.
@@ -146,7 +146,7 @@ export function mChat(s) {
         <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span></div>
         <div class="m-conv-sub"><span class="dot"></span>__AGENT_NAME__ · online</div>
       </button>
-      <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="m-model-name">${esc(modelLabel)}</span></button>
+      <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="m-model-name">${esc(modelLabel || '…')}</span></button>
     </div>
   </div>
   <div class="m-comp-handle m-hide-kb"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>

@@ -76,10 +76,10 @@ export const PANELS = {
   ],
   integrations: [
     card({ title: 'Connections', icon: TAB.integrations[2], sub: 'All external service connections in one place.', rows: [
-      ep('GM', 'Gmail', 'you@example.com · IMAP + SMTP', 'rgba(240,114,106,.14)', 'var(--red)'),
-      ep('SL', 'Slack', 'your-workspace.slack.com', 'rgba(91,217,127,.14)', 'var(--green)'),
-      ep('GC', 'Google Calendar', '6 calendars · CalDAV', 'rgba(123,182,255,.14)', 'var(--blue)'),
-      ep('AS', 'Asana', '2 workspaces', 'rgba(232,194,104,.14)', 'var(--gold)'),
+      ep('GM', 'Gmail', 'IMAP + SMTP', 'rgba(240,114,106,.14)', 'var(--red)'),
+      ep('SL', 'Slack', 'workspace app', 'rgba(91,217,127,.14)', 'var(--green)'),
+      ep('GC', 'Google Calendar', 'CalDAV', 'rgba(123,182,255,.14)', 'var(--blue)'),
+      ep('AS', 'Asana', 'API', 'rgba(232,194,104,.14)', 'var(--gold)'),
       ep('OB', 'Obsidian', 'vault: ~/Obsidian/Frank', 'rgba(169,155,245,.14)', 'var(--violet)'),
       ep('NT', 'ntfy', 'ntfy.sh/frank-reminders', 'rgba(79,227,209,.14)', 'var(--teal)'),
       btns([{ label: '+ Add Integration' }]),

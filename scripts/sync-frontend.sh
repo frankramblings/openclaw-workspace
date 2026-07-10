@@ -412,7 +412,10 @@ if [[ -f "$SW" ]]; then
   #     by name from live/index.js's dynamic `import(`./${file}.js`)`) and
   #     mobile/*.js.
   #   - A handful of top-level js/*.js modules that live outside js/redesign/
-  #     but are real redesign dependencies, not classic leftovers. Chain:
+  #     but are real redesign dependencies, not classic leftovers. Two are
+  #     referenced directly by index.html <script src> tags (boot-critical,
+  #     formerly inline): native-shell.js (head, pre-paint UA sniff) and
+  #     sw-register.js (SW registration + deploy auto-reload). Chain:
   #     dualDragInit.js (index.html's 2nd <script> tag) -> chatWindow.js ->
   #     {windowDrag.js, modalSnap.js, markdown.js} -> modalSnap.js ->
   #     modalManager.js -> {ui.js, tileManager.js} -> ui.js ->
@@ -441,8 +444,9 @@ if [[ -f "$SW" ]]; then
       find js/redesign -type f -name '*.js'
       printf '%s\n' \
         js/chatWindow.js js/colorPicker.js js/dualDragInit.js js/markdown.js \
-        js/modalManager.js js/modalSnap.js js/spinner.js js/storage.js \
-        js/theme.js js/tileManager.js js/ui.js js/windowDrag.js
+        js/modalManager.js js/modalSnap.js js/native-shell.js js/spinner.js \
+        js/storage.js js/sw-register.js js/theme.js js/tileManager.js \
+        js/ui.js js/windowDrag.js
       printf '%s\n' \
         js/vendor/toastui/toastui-editor-all.min.js \
         js/vendor/toastui/toastui-editor.min.css \

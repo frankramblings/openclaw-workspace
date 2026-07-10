@@ -1002,15 +1002,13 @@ function finalizeLocal(chat, interrupted) {
   stopElapsed();
   if (chat.chatStrip) { chat.chatStrip = stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }
   flushRender();
-  // Rescue a queued message, mirroring the two live teardown paths: stale =
-  // the turn ended normally → auto-send like the 'done' handler (flushQueued);
-  // interrupted = session state uncertain → recall to the composer like the
-  // 'error' handler, rather than auto-firing into a possibly-broken session.
-  if (interrupted) {
-    if (chat.queued) { actions.queueRecall(); }
-  } else {
-    flushQueued(chat);
-  }
+  // Rescue a queued message on the interrupted path, mirroring the 'error'
+  // handler: session state is uncertain, so recall to the composer rather
+  // than auto-firing into a possibly-broken session. (The stale flavor's
+  // flushQueued lives in reconcileTurn, AFTER its thread refetch settles —
+  // flushing here would race dispatchSend's optimistic bubbles against the
+  // refetch's chat.thread reassignment and leave the auto-sent turn invisible.)
+  if (interrupted && chat.queued) { actions.queueRecall(); }
 }
 
 // THE single authority for "is this turn alive?". Every caller that used to
@@ -1051,6 +1049,18 @@ async function reconcileTurn(chat, state, sessionId) {
           chat.subtitle = t.subtitle || chat.subtitle;
           flushRender();
         } catch (_) { /* keep the finalized local state; next trigger retries */ }
+        // Auto-send the queued follow-up ('done'-handler precedent) only AFTER
+        // the refetch settles (success or catch): dispatchSend pushes the
+        // optimistic user bubble + beginTurn's asstMsg into chat.thread, and a
+        // still-pending refetch would replace the array wholesale, leaving the
+        // whole auto-sent turn invisible. Inside the activeId guard on purpose:
+        // dispatchSend targets chat.activeId (ensureSessionId), so flushing
+        // after a mid-reconcile thread switch would fire the message into the
+        // WRONG (newly selected) thread. Not stranded on mismatch:
+        // selectSession leaves chat.queued intact, the composer banner
+        // (recall/cancel) renders from it regardless of thread, and the normal
+        // turn-end flush paths still own it.
+        flushQueued(chat);
       }
     }
     return false;

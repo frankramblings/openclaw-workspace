@@ -1002,6 +1002,15 @@ function finalizeLocal(chat, interrupted) {
   stopElapsed();
   if (chat.chatStrip) { chat.chatStrip = stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }
   flushRender();
+  // Rescue a queued message, mirroring the two live teardown paths: stale =
+  // the turn ended normally → auto-send like the 'done' handler (flushQueued);
+  // interrupted = session state uncertain → recall to the composer like the
+  // 'error' handler, rather than auto-firing into a possibly-broken session.
+  if (interrupted) {
+    if (chat.queued) { actions.queueRecall(); }
+  } else {
+    flushQueued(chat);
+  }
 }
 
 // THE single authority for "is this turn alive?". Every caller that used to

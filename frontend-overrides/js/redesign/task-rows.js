@@ -116,6 +116,7 @@ export function nativeView(rec) {
   const native = (rec.extra && rec.extra.native) || null;
   if (!native || !native.id) return null;
   const out = { ...native, status: statusFor(rec.state) };
+  out.sessionKey = out.sessionKey || rec.session_key || '';
   if (rec.state === 'interrupted') out.error = out.error || 'interrupted by a backend restart';
   return out;
 }

@@ -34,6 +34,14 @@ test('followup records synthesize a native view', () => {
   assert.equal(v.sessionKey, 'agent:main:web-6b3ccecab880');
 });
 
+test('taskfile view backstops sessionKey from the registry record', () => {
+  const v = nativeView(reg({
+    session_key: 'agent:main:web-6b3ccecab880',
+    extra: { native: { id: 't1', label: 'publish', status: 'done' } },  // terminal write dropped sessionKey
+  }));
+  assert.equal(v.sessionKey, 'agent:main:web-6b3ccecab880');
+});
+
 test('job-source records are not chat rows', () => {
   assert.equal(nativeView(reg({ source: 'job', id: 'job:x' })), null);
 });

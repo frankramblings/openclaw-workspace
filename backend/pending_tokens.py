@@ -296,7 +296,10 @@ def resolve_and_emit(session_key: str, turn_id: int, token_id: str,
     })
     try:
         task_registry.upsert(f"pending:{token_id}", kind="deferred", source="pending",
-                             state="done", detail=removed.get("kind", ""))
+                             label=removed.get("label", ""),
+                             session_key=session_key,
+                             state="done", detail=removed.get("kind", ""),
+                             extra={"turn_ref": turn_id})
     except Exception:  # noqa: BLE001
         log.warning("task_registry mirror failed for pending token %s", token_id, exc_info=True)
     return removed

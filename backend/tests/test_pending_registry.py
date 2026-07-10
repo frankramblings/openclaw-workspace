@@ -36,6 +36,18 @@ def test_resolve_marks_done():
     assert task_registry.get(f"pending:{tok['id']}")["state"] == "done"
 
 
+def test_resolve_after_restart_creates_attributed_record():
+    tok = pending_tokens.register_and_emit(SK, 41, kind="image_generate",
+                                           label="sunset render", source_ref="r")
+    task_registry.reset_for_tests()          # simulate restart: registry empty
+    pending_tokens.resolve_and_emit(SK, 41, tok["id"], {"url": "/x.png"})
+    rec = task_registry.get(f"pending:{tok['id']}")
+    assert rec["state"] == "done"
+    assert rec["label"] == "sunset render"
+    assert rec["session_key"] == SK
+    assert rec["extra"]["turn_ref"] == 41
+
+
 def test_registry_failure_never_breaks_register(monkeypatch):
     def boom(*a, **k):
         raise OSError("disk full")
@@ -43,3 +55,13 @@ def test_registry_failure_never_breaks_register(monkeypatch):
     tok = pending_tokens.register_and_emit(SK, 41, kind="image_generate",
                                            label="x", source_ref="r")
     assert tok["id"]      # token creation + emit survived the mirror failure
+
+
+def test_registry_failure_never_breaks_resolve(monkeypatch):
+    tok = pending_tokens.register_and_emit(SK, 41, kind="image_generate",
+                                           label="x", source_ref="r")
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(pending_tokens.task_registry, "upsert", boom)
+    out = pending_tokens.resolve_and_emit(SK, 41, tok["id"], {"url": "/x.png"})
+    assert out is not None                    # resolve + emit survived

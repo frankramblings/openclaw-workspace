@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -40,6 +41,8 @@ from .vault_store import (WORKSPACE, dump_frontmatter, ensure_dir, new_id,
                           now_iso, parse_frontmatter)
 
 router = APIRouter()
+
+log = logging.getLogger(__name__)
 
 RESEARCH_DIR = WORKSPACE / "Research"
 
@@ -99,15 +102,19 @@ def _publish(job: Job, **fields) -> None:
     job.progress = ev
     for q in list(job.subscribers):
         q.put_nowait(ev)
-    task_registry.upsert(
-        f"research:{job.id}", kind="research", source="research",
-        label=(job.query or "")[:120],
-        state="running" if job.status == "running" else
-              ("done" if job.status == "done" else "failed"),
-        pct=ev.get("pct"), detail=str(ev.get("phase") or ""),
-        error=str(ev.get("error") or ("cancelled" if job.status == "cancelled" else "")),
-        volatile=True,   # research engines die with the process — always ledgered
-    )
+    try:
+        task_registry.upsert(
+            f"research:{job.id}", kind="research", source="research",
+            label=(job.query or "")[:120],
+            state="running" if job.status == "running" else
+                  ("done" if job.status == "done" else "failed"),
+            pct=ev.get("pct"), detail=str(ev.get("phase") or ""),
+            error=str(ev.get("error") or ("cancelled" if job.status == "cancelled" else "")),
+            volatile=True,   # research engines die with the process — always ledgered
+        )
+    except Exception:  # noqa: BLE001 - registry mirror must never break the engine
+        log.warning("task_registry mirror failed for research job %s", job.id,
+                    exc_info=True)
 
 
 def _finish(job: Job, status: str, error: str | None = None) -> None:

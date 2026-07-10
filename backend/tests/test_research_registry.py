@@ -44,3 +44,12 @@ def test_finish_done_and_error():
     research._finish(bad, "error", error="provider 500")
     rec = task_registry.get("research:r_test2")
     assert rec["state"] == "failed" and rec["error"] == "provider 500"
+
+
+def test_registry_failure_never_breaks_publish(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(research.task_registry, "upsert", boom)
+    job = _job()
+    research._publish(job, phase="searching")   # must not raise
+    assert job.progress.get("phase") == "searching"   # fan-out already happened

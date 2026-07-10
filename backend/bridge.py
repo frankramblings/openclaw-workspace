@@ -866,6 +866,11 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
 # delete the gateway credential (reversible: remove "anthropic" from this set).
 _HIDDEN_ENDPOINTS = {"anthropic"}
 
+# Per-provider model ids to hide from the picker even if the gateway lists them.
+# `google/gemini-3.1-pro-preview` is present in the catalog but 429s on the free
+# tier — quietly drop it so users don't land on a broken row.
+_HIDDEN_MODELS = {"google": {"gemini-3.1-pro-preview"}}
+
 
 def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
     """Map models.list + models.authStatus onto the SPA's {items:[...]} shape."""
@@ -888,7 +893,8 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
     for provider in order:
         if provider in _HIDDEN_ENDPOINTS:
             continue  # per-token API endpoint — see _HIDDEN_ENDPOINTS
-        objs = [m for m in by_provider[provider] if m.get("id")]
+        hidden = _HIDDEN_MODELS.get(provider, set())
+        objs = [m for m in by_provider[provider] if m.get("id") and m["id"] not in hidden]
         if not objs:
             continue
         # The SPA picker auto-defaults every NEW chat to models[0] (it never

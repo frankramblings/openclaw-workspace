@@ -16,8 +16,10 @@ import contextlib
 import json
 import logging
 import mimetypes
+import re
 import subprocess
 import tempfile
+import urllib.parse
 from pathlib import Path
 
 from . import terminals
@@ -314,28 +316,83 @@ def _persist_msg_attachments(session_id: str, message: str, attachments_raw: str
 
 def _apply_msg_attachments(session_id: str, history: list[dict]) -> None:
     """Assign persisted image attachments to user messages in `history`, matching
-    on (trimmed) text in send order. Mutates `history` in place; best-effort."""
+    on (trimmed) text in send order. Mutates `history` in place; best-effort.
+
+    Also rehydrates images from two shapes NOT covered by the composer sidecar:
+    - `@/…/.openclaw-cli-images/<hash>.<ext>` refs in the user message content
+      (screenshots pasted into the webchat land here — gateway-stashed, then
+      injected as `@<abs>` tokens the transcript keeps).
+    Both are served by the existing `/api/workspace-media` route, so no new
+    endpoint is needed."""
     p = _attach_log_path(session_id)
-    if not p or not p.exists():
-        return
-    try:
-        log = json.loads(p.read_text() or "[]")
-    except Exception:  # noqa: BLE001
-        return
-    if not isinstance(log, list) or not log:
-        return
+    log = []
+    if p and p.exists():
+        try:
+            log = json.loads(p.read_text() or "[]")
+        except Exception:  # noqa: BLE001
+            log = []
+    if not isinstance(log, list):
+        log = []
     used = [False] * len(log)
     for m in history:
         if m.get("role") != "user":
             continue
         text = (m.get("content") or "").strip()
+        # 1) Composer-uploaded images (sidecar hit by text-match, in send order).
         for i, rec in enumerate(log):
             if used[i]:
                 continue
             if (rec.get("text") or "").strip() == text:
-                m["attachments"] = rec.get("att") or []
+                m["attachments"] = list(rec.get("att") or [])
                 used[i] = True
                 break
+        # 2) CLI screenshots pasted into the composer. The gateway stashes them
+        # under `.openclaw-cli-images/<hash>.<ext>` and leaves an `@<abs-path>`
+        # token in the message text; that token survives in the transcript, so
+        # we can rebuild the attachment record from it on reload.
+        cli_refs = _extract_cli_image_refs(m.get("content") or "")
+        if cli_refs:
+            existing = list(m.get("attachments") or [])
+            ids = {a.get("id") for a in existing}
+            for ref in cli_refs:
+                if ref["id"] not in ids:
+                    existing.append(ref)
+                    ids.add(ref["id"])
+            m["attachments"] = existing
+
+
+# Matches an `@/abs/path/.openclaw-cli-images/<hash>.<ext>` reference. The
+# gateway prefixes the absolute path with `@`; hashes are lowercase hex; only
+# image extensions are considered (mimetypes handles both jpg/jpeg).
+_CLI_IMAGE_RE = re.compile(
+    r"@(/[^\s`<>\"']*?/\.openclaw-cli-images/[A-Fa-f0-9]+\.(?:png|jpe?g|gif|webp|heic|heif))",
+    re.IGNORECASE,
+)
+
+
+def _extract_cli_image_refs(content: str) -> list[dict]:
+    """Find `@…/.openclaw-cli-images/<hash>.<ext>` refs in message text and
+    return them as attachment records (`{id, name, url}`) served by the
+    existing `/api/workspace-media` route. Missing files are skipped so a
+    stale reference never breaks rehydration."""
+    if not content or "openclaw-cli-images" not in content:
+        return []
+    seen: set[str] = set()
+    out: list[dict] = []
+    for m in _CLI_IMAGE_RE.finditer(content):
+        abs_path = m.group(1)
+        if abs_path in seen:
+            continue
+        seen.add(abs_path)
+        p = Path(abs_path)
+        if not p.is_file():
+            continue
+        out.append({
+            "id": p.name,
+            "name": p.name,
+            "url": "/api/workspace-media?path=" + urllib.parse.quote(abs_path, safe=""),
+        })
+    return out
 
 
 def _terminal_attachments(terminal_key: str) -> list[dict]:

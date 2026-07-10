@@ -658,13 +658,32 @@ def _merge_assistant_meta(meta: dict, msg: dict) -> None:
 
 def _content_text(content) -> str:
     """Pull plain text out of a message content field (string or block list).
-    Only `text` blocks contribute — toolCall/toolResult blocks are ignored."""
+    `text` blocks contribute prose; `image` blocks are re-emitted as `MEDIA:<url>`
+    lines so images the assistant sent this turn (managed-outgoing attachments,
+    served from `/api/chat/media/outgoing/…`) survive a reload — the frontend
+    markdown pipeline already lifts MEDIA lines into inline <img>s. Without this,
+    `_map_history` dropped image blocks and every outgoing image vanished on
+    refresh. toolCall/toolResult blocks stay ignored."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        parts = [b.get("text", "") for b in content
-                 if isinstance(b, dict) and b.get("type") == "text"]
-        return "".join(parts)
+        parts: list[str] = []
+        media: list[str] = []
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            btype = b.get("type")
+            if btype == "text":
+                parts.append(b.get("text", ""))
+            elif btype == "image":
+                url = b.get("url") or b.get("openUrl")
+                if isinstance(url, str) and url:
+                    media.append("MEDIA:" + url)
+        text = "".join(parts)
+        if media:
+            joined = "\n".join(media)
+            text = (text + "\n\n" + joined) if text.strip() else joined
+        return text
     return ""
 
 

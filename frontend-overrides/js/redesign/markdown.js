@@ -121,8 +121,14 @@ function extractSharedImages(text) {
   text = text.replace(/^[ \t>*-]*MEDIA:\s*`?\s*([^\n`]+?)\s*`?[ \t]*$/gim, (_m, raw) => {
     const p = raw.trim();
     if (!p) return '';
-    const src = /^(https?:|data:image\/)/i.test(p)
-      ? p : '/api/workspace-media?path=' + encodeURIComponent(p);
+    // http(s), data:, and same-origin URLs (`/api/…`, `/__openclaw__/…`) pass
+    // through as-is. Everything else (bare filesystem paths like `/home/frank/…`
+    // or `~/…`) goes through the allow-listed workspace-media proxy. Without
+    // the `/api/` / `/__openclaw__/` carve-out, managed-outgoing image URLs
+    // rehydrated by `_map_history` on refresh got wrapped as file paths and
+    // 404'd.
+    const isDirectUrl = /^(https?:|data:image\/|\/(api|__openclaw__)\/)/i.test(p);
+    const src = isDirectUrl ? p : '/api/workspace-media?path=' + encodeURIComponent(p);
     imagesHtml += sharedImageHtml(src);
     return '';
   });

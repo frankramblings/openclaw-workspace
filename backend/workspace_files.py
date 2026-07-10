@@ -581,49 +581,22 @@ def workspace_file(path: str, root_key: str = "workspace"):
 # docs/task-progress-schema.md. The PWA polls this endpoint to inject live
 # status rows into the activity trail of the message that started each task.
 
-# Terminal-state grace period: how long a done/failed task stays visible after
-# its last update before we stop returning it. Client can still fetch by id.
-_TASK_TERMINAL_GRACE_SEC = 60
-# Ignore task files older than this if still running — stale writers.
-_TASK_MAX_AGE_SEC = 24 * 3600
-
 
 @router.get("/api/tasks/active")
 def tasks_active(session_key: str | None = None):
-    """Return every share/tasks/*/progress.json that is running, or done/failed
-    within the last _TASK_TERMINAL_GRACE_SEC seconds. Optionally filter by
-    sessionKey so a chat session only sees its own tasks."""
-    import json as _json
-    root = workspace_root()
-    tdir = root / "share" / "tasks"
-    if not tdir.is_dir():
-        return {"tasks": []}
-    now = time.time()
+    """Native progress.json payloads for every live bin/task record, read
+    from the task registry (task_ingest mirrors share/tasks/*/progress.json
+    into it). Shape unchanged: {"tasks": [payload, ...]}, optional sessionKey
+    filter. Terminal records now linger task_registry.RETAIN_TERMINAL_S
+    (300 s) instead of the old 60 s grace — strictly more visible."""
+    from . import task_registry
     out = []
-    for entry in tdir.iterdir():
-        if not entry.is_dir():
+    for rec in task_registry.list_tasks(source="taskfile"):
+        native = dict((rec.get("extra") or {}).get("native") or {})
+        if not native.get("id"):
             continue
-        pj = entry / "progress.json"
-        if not pj.is_file():
+        if session_key and native.get("sessionKey") and native.get("sessionKey") != session_key:
             continue
-        try:
-            st = pj.stat()
-            data = _json.loads(pj.read_bytes())
-        except Exception:
-            continue
-        status = str(data.get("status") or "").lower()
-        age = now - st.st_mtime
-        if status in ("done", "failed"):
-            if age > _TASK_TERMINAL_GRACE_SEC:
-                continue
-        elif status == "running":
-            if age > _TASK_MAX_AGE_SEC:
-                continue
-        else:
-            continue
-        if session_key and data.get("sessionKey") and data.get("sessionKey") != session_key:
-            continue
-        out.append(data)
-    # Sort newest-first by startedAt / updatedAt fallback
+        out.append(native)
     out.sort(key=lambda d: d.get("updatedAt") or d.get("startedAt") or "", reverse=True)
     return {"tasks": out}

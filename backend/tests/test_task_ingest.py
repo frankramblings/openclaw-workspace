@@ -77,3 +77,42 @@ def test_malformed_file_is_skipped(tmp_path):
     (task_ingest._jobs_dir() / "bad.json").write_text("{not json")
     task_ingest.scan_once()          # must not raise
     assert task_registry.list_tasks() == []
+
+
+def test_unchanged_scan_emits_nothing(tmp_path):
+    import asyncio
+
+    async def main():
+        _write_job(tmp_path, "steady", pct=10)
+        task_ingest.scan_once()
+        q = task_registry.subscribe()
+        try:
+            task_ingest.scan_once()          # nothing changed on disk
+            assert q.qsize() == 0
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
+def test_changed_content_still_emits(tmp_path):
+    import asyncio
+
+    async def main():
+        _write_job(tmp_path, "moving", pct=10)
+        task_ingest.scan_once()
+        q = task_registry.subscribe()
+        try:
+            _write_job(tmp_path, "moving", pct=20)
+            task_ingest.scan_once()
+            assert q.qsize() >= 1
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
+def test_stale_terminal_file_never_ingested(tmp_path):
+    import time as _t
+    _write_job(tmp_path, "ancient", status="done",
+               _updatedEpoch=_t.time() - task_registry.RETAIN_TERMINAL_S - 10)
+    task_ingest.scan_once()
+    assert task_registry.get("job:ancient") is None

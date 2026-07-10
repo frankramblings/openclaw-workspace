@@ -10,7 +10,10 @@ happens once per process, and every consumer rides the registry's pub/sub.
 
 Reconciliation contract:
   running file → upsert running (stalled if quiet > STALL_S)
-  terminal file → upsert done/failed
+  terminal file → upsert done/failed; SKIPPED entirely once older than
+    task_registry.RETAIN_TERMINAL_S (else a pruned record would resurrect)
+  unchanged file (same native payload, same derived state) → no upsert at
+    all, so an idle scan emits zero SSE frames and never touches `updated`
   vanished file, record was running → interrupted (honesty rule)
   vanished file, record was terminal → remove() (native sweeps clean up)
 Malformed/partial files are skipped, never fatal (bin/job writes are atomic
@@ -41,6 +44,18 @@ def _taskfiles_dir():
     return workspace_root() / "share" / "tasks"
 
 
+def _stale_terminal(native: dict, updated_epoch: float, now: float) -> bool:
+    """True when a done/failed file is older than the registry's terminal
+    retention window. Such files are never ingested: without this, a terminal
+    record pruned by list_tasks would be re-created as a "new" record by the
+    very next scan — a done row resurrecting every RETAIN_TERMINAL_S. Same
+    self-heal contract the old jobs.py _read_all had with its RETAIN_SECS
+    drop; the producers' own sweeps eventually delete the files."""
+    status = str(native.get("status") or "").lower()
+    return (status in ("done", "failed")
+            and now - updated_epoch > task_registry.RETAIN_TERMINAL_S)
+
+
 def _state_for(native: dict, updated_epoch: float, now: float) -> str:
     status = str(native.get("status") or "").lower()
     if status == "done":
@@ -54,11 +69,23 @@ def _state_for(native: dict, updated_epoch: float, now: float) -> str:
 
 def _upsert_native(task_id: str, native: dict, updated_epoch: float,
                    now: float, session_key: str | None) -> None:
+    state = _state_for(native, updated_epoch, now)
+    # Compare-before-upsert: a file that hasn't changed since the last scan
+    # must NOT fire an upsert — every upsert fans out an SSE frame to every
+    # subscriber and refreshes `updated` (which would keep terminal records
+    # with a lingering file alive in list_tasks forever). The state check is
+    # separate from the content check because running→stalled flips with
+    # UNCHANGED file content as quiet time crosses STALL_S.
+    cur = task_registry.get(task_id)
+    if (cur is not None
+            and (cur.get("extra") or {}).get("native") == native
+            and cur["state"] == state):
+        return
     task_registry.upsert(
         task_id, kind="job", source=task_id.split(":", 1)[0],
         label=str(native.get("label") or native.get("id") or ""),
         session_key=session_key,
-        state=_state_for(native, updated_epoch, now),
+        state=state,
         pct=native.get("pct"), eta=native.get("eta"),
         detail=str(native.get("detail") or ""),
         error=str(native.get("error") or ""),
@@ -79,10 +106,12 @@ def scan_once() -> None:
                 continue
             if not isinstance(native, dict) or "id" not in native:
                 continue
+            updated_epoch = float(native.get("_updatedEpoch") or 0)
+            if _stale_terminal(native, updated_epoch, now):
+                continue
             tid = f"job:{native['id']}"
             seen.add(tid)
-            _upsert_native(tid, native, float(native.get("_updatedEpoch") or 0),
-                           now, session_key=None)
+            _upsert_native(tid, native, updated_epoch, now, session_key=None)
 
     tf_dir = _taskfiles_dir()
     if tf_dir.is_dir():
@@ -96,6 +125,8 @@ def scan_once() -> None:
             except Exception:  # noqa: BLE001
                 continue
             if not isinstance(native, dict) or "id" not in native:
+                continue
+            if _stale_terminal(native, mtime, now):
                 continue
             tid = f"taskfile:{native['id']}"
             seen.add(tid)

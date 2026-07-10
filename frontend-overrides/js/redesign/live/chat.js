@@ -629,7 +629,7 @@ function beginTurn(chat, modelLabel, sessionId) {
   // `sessionId` tags the turn with the thread it belongs to so the send-gate can
   // distinguish "THIS thread is busy" (queue) from "another thread is busy"
   // (send freely — that turn keeps streaming + recording server-side).
-  turn = { sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), got404: false };
+  turn = { sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), lastFrameMs: Date.now(), got404: false };
 
   const ensureAsst = () => {
     if (!turn.asstMsg) {

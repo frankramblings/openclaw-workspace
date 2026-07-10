@@ -95,3 +95,41 @@ def test_exactly_one_turn_end_per_turn():
     ends = [f for f in _frames(key)
             if isinstance(f, dict) and f.get("type") == "turn_end"]
     assert len(ends) == 1
+
+
+def test_ledger_failure_cannot_break_the_turn(monkeypatch):
+    key = "test:frames:ledger-start-fails"
+
+    def boom(_key):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(chat_turn.turn_state, "turn_started", boom)
+
+    async def source():
+        yield bridge._sse({"delta": "hi"})
+        yield chat_turn._DONE_SSE
+
+    tasks = {}
+    asyncio.run(chat_turn.record_turn(key, source(), turn_tasks=tasks))
+    frames = _frames(key)
+    assert frames[0]["type"] == "turn_start"
+    assert frames[0]["turn_id"] == 0
+    assert frames[-1] == "[DONE]"
+    assert tasks == {}
+
+
+def test_ledger_end_failure_still_pops_turn_tasks(monkeypatch):
+    key = "test:frames:ledger-end-fails"
+
+    def boom(_key):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(chat_turn.turn_state, "turn_ended", boom)
+
+    async def source():
+        yield chat_turn._DONE_SSE
+
+    tasks = {}
+    asyncio.run(chat_turn.record_turn(key, source(), turn_tasks=tasks))
+    assert _frames(key)[-1] == "[DONE]"
+    assert tasks == {}

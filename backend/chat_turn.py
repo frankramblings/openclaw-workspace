@@ -290,7 +290,12 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
     `turn_tasks` is app's shared _TURN_TASKS registry (passed in so this module
     never imports app back); the finished turn pops itself off it."""
     event_store.begin_turn(session_key)
-    turn_id = turn_state.turn_started(session_key)
+    try:
+        turn_id = turn_state.turn_started(session_key)
+    except Exception:  # noqa: BLE001 - ledger I/O must never break the turn
+        turn_id = 0
+        _log.warning("turn_state.turn_started failed for session %s -- "
+                     "continuing with turn_id=0", session_key, exc_info=True)
 
     def _append(payload: str) -> None:
         try:
@@ -337,7 +342,11 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
             _append_turn_end(status)
             _append(_DONE_SSE)
         event_store.end_turn(session_key)
-        turn_state.turn_ended(session_key)
+        try:
+            turn_state.turn_ended(session_key)
+        except Exception:  # noqa: BLE001 - ledger I/O must never break the turn
+            _log.warning("turn_state.turn_ended failed for session %s -- "
+                         "continuing", session_key, exc_info=True)
         turn_tasks.pop(session_key, None)
 
 

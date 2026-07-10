@@ -2,6 +2,7 @@
 watcher. Everything external (promise creation, pid discovery, /proc) is
 monkeypatched — the flow logic is what's under test."""
 import asyncio
+import re
 
 import pytest
 
@@ -63,6 +64,10 @@ def test_grace_expires_then_registers_and_watches(monkeypatch):
     assert created[0]["label"] == "./render.sh"
     assert len(pings) == 1
     assert pings[0][0] == "p0" and pings[0][1]["exit_code"] == -1
+    # The grace-pending counter must never leak past the registration
+    # decision — the promise guard would stay wrongly suppressed for this
+    # session key forever otherwise.
+    assert launch_sniffer._GRACE_PENDING == {}
 
 
 def test_grace_registration_suppresses_auto(monkeypatch):
@@ -77,6 +82,7 @@ def test_grace_registration_suppresses_auto(monkeypatch):
 
     asyncio.run(main())
     assert created == []
+    assert launch_sniffer._GRACE_PENDING == {}
 
 
 def test_no_pid_leaves_deadline_only_promise(monkeypatch):
@@ -128,10 +134,14 @@ def test_find_pid_pattern_is_escaped(monkeypatch):
 
     monkeypatch.setattr(launch_sniffer.asyncio, "create_subprocess_exec", fake_exec)
     monkeypatch.setattr(launch_sniffer, "PID_TRIES", 1)
-    asyncio.run(launch_sniffer._find_pid("foo | tee log"))
+    # "| tee log" is truncated away by watch_pattern (redirection tokens never
+    # appear in the child's argv) — what's left, "foo (build)", still needs
+    # its parens regex-escaped so pgrep -f (an ERE) doesn't treat them as a
+    # capture group.
+    asyncio.run(launch_sniffer._find_pid("foo (build) | tee log"))
     argv = captured["argv"]
     assert argv[:4] == ("pgrep", "-f", "-n", "--")
-    assert "\\|" in argv[4]          # regex-escaped, not raw alternation
+    assert argv[4] == re.escape("foo (build)")
 
 
 def test_watcher_stops_at_deadline(monkeypatch):

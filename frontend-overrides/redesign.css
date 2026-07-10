@@ -25,6 +25,7 @@
   --fg:#dfe2e8; --mut:#9498a2; --faint:#5f636d;
   --teal:#4fe3d1; --teal2:#2f8d83; --tealtint:rgba(79,227,209,.10);
   --gold:#e8c268; --green:#5bd97f; --red:#f0726a; --violet:#a99bf5; --blue:#7bb6ff;
+  --amber:#d8a24a;
   --ink:#0c1413;                 /* text/icon on teal fills */
   --row-hover:#1d1f24; --nav-hover:#1e2025;
   --mono:'MonoLisa',ui-monospace,monospace;

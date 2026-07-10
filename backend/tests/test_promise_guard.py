@@ -73,6 +73,22 @@ def test_check_turn_ignores_auto_registrations(tmp_path, monkeypatch):
         turn_state.turn_ended(SK)
 
 
+def test_check_turn_quiet_while_grace_pending(tmp_path, monkeypatch):
+    # A sniffed launch is mid-grace-window (registration outcome not decided
+    # yet): the guard must stay quiet — the launch WILL be tracked one way or
+    # another, so warning now would be the fast-turn contradiction (amber
+    # card beside a row that pings).
+    from backend import config, launch_sniffer
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    turn_state.turn_started(SK)
+    try:
+        monkeypatch.setitem(launch_sniffer._GRACE_PENDING, SK, 1)
+        assert promise_guard.check_turn(SK, "I'll let you know when it's done") is None
+    finally:
+        launch_sniffer._GRACE_PENDING.pop(SK, None)
+        turn_state.turn_ended(SK)
+
+
 def test_drive_turn_emits_promise_warning(monkeypatch):
     # Integration seam: feed drive_turn a fake bridge stream whose reply is a
     # bare promise; assert the frame appears after text, before [DONE].

@@ -60,6 +60,16 @@ def test_exec_tool_gate():
     assert launch_sniffer.is_exec_tool("weird", item_is_command=True) is True
 
 
+def test_watch_pattern_stops_at_redirection():
+    # Redirection/control-operator tokens never appear in the child's argv
+    # (the shell consumes them to set up fds / sequence commands), so a
+    # pgrep -f pattern that includes them can never match — the fix is to
+    # truncate at the first one.
+    assert launch_sniffer.watch_pattern("./render.sh out.mp4 > r.log 2>&1") == "./render.sh out.mp4"
+    assert launch_sniffer.watch_pattern("a | tee b") == "a"
+    assert launch_sniffer.watch_pattern("plain cmd") == "plain cmd"
+
+
 def test_core_command_strips_tokens():
     core = launch_sniffer.core_command("nohup ./render.sh out.mp4 &")
     assert core == "./render.sh out.mp4"

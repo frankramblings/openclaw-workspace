@@ -158,12 +158,20 @@ STALL_SURFACE_S = 24 * 3600
 
 def _busy_cap_reached(pid: str, overdue: bool = False) -> bool:
     """The busy-wait cap was hit while trying to fire `pid`'s turn. If the
-    promise still has runway (deadline unset or in the future), leave it
+    completion ping already arrived, the report is in hand — never eat it,
+    defer regardless of deadline (a pinged promise that's merely waiting on
+    a busy session isn't overdue in any sense that should fail it). Absent a
+    ping, a promise with runway (deadline unset or in the future) also stays
     PENDING — due_promises() re-selects it on the next 30s sweep, so a busy
-    session defers the follow-up instead of eating it. Past a real deadline,
-    fail honestly. Returns True if the caller should stop trying."""
+    session defers the follow-up instead of eating it. Only a real deadline
+    with no ping fails honestly. Returns True if the caller should stop
+    trying."""
     p = get_promise(pid)
     if p is None:
+        return True
+    if p.get("pinged"):
+        _log.info("followup %s deferred: completion recorded, session busy; "
+                  "sweeper will retry", pid)
         return True
     deadline = int(p.get("deadline_ms") or 0)
     if deadline and _now_ms() >= deadline:
@@ -226,7 +234,22 @@ def due_promises(now_ms: int) -> list[tuple[str, bool]]:
 def reseed_registry() -> int:
     """Re-mirror still-pending promises after a boot (the registry is
     in-memory; promises are the flagship producer and must be visible
-    immediately, not on their next state change)."""
+    immediately, not on their next state change).
+
+    Auto-origin promises that are pending and unpinged also get their
+    process watcher RE-ARMED here: the watcher is an asyncio Task, which
+    doesn't survive a restart, so without this a promise from a launch that
+    finished (or is still running) across the restart would sit mute until
+    its 4h deadline backstop, instead of completing the moment it actually
+    exits. Pinged promises don't need this — they're already in the
+    sweeper's recorded-but-unfired path (due_promises() fires them directly).
+
+    Late import: launch_sniffer imports followup at module level (it calls
+    followup.create_promise / record_completion), so importing it at
+    followup's module level here would be a cycle. The in-function import
+    breaks it.
+    """
+    from . import launch_sniffer
     n = 0
     for p in list_promises():
         if p.get("state") != "pending":
@@ -241,6 +264,12 @@ def reseed_registry() -> int:
         except Exception:  # noqa: BLE001
             _log.warning("followup registry reseed failed for %s", p.get("id"),
                         exc_info=True)
+        if p.get("origin") == "auto" and not p.get("pinged"):
+            try:
+                launch_sniffer.rearm_watch(p["id"], p.get("label", ""))
+            except Exception:  # noqa: BLE001
+                _log.warning("launch_sniffer re-arm failed for %s", p.get("id"),
+                            exc_info=True)
         n += 1
     return n
 

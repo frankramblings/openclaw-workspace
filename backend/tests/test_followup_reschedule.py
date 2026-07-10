@@ -27,12 +27,23 @@ def test_busy_cap_before_deadline_leaves_pending():
 
 
 def test_busy_cap_past_deadline_fails():
+    # NOT pinged: an overdue promise that never reported back still fails
+    # once the deadline passes, busy session or not.
     rec = followup.create_promise(SID, SK, "render", 1)   # 1s deadline
-    followup.record_completion(rec["id"], exit_code=0, duration_s=1.0, tail="")
     time.sleep(1.1)
     followup._busy_cap_reached(rec["id"])
     p = followup.get_promise(rec["id"])
     assert p["state"] == "failed" and "busy past deadline" in p["error"]
+
+
+def test_busy_cap_pinged_defers_even_past_deadline():
+    # The completion ping IS the report — a busy session must never eat it,
+    # deadline or no deadline.
+    rec = followup.create_promise(SID, SK, "render", 1)
+    followup.record_completion(rec["id"], exit_code=0, duration_s=1.0, tail="")
+    import time as _t; _t.sleep(1.1)
+    followup._busy_cap_reached(rec["id"])
+    assert followup.get_promise(rec["id"])["state"] == "pending"
 
 
 def test_overdue_busy_cap_keeps_honest_message():

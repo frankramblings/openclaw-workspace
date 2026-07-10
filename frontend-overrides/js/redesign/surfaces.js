@@ -445,7 +445,7 @@ function emailSurface(s) {
         }).join('')}
       </div>
     </div>
-    <div class="reader">
+    ${(s.live?.email?.current || emails.length) ? `<div class="reader">
       <div class="reader-head">
         <h1>${esc(m.subj)}</h1>
         <div class="reader-from">
@@ -469,7 +469,6 @@ function emailSurface(s) {
         <div class="col">
           ${map(m.body || [], (p) => `<p>${esc(p)}</p>`)}
           ${when(attach.length > 0, `<div class="attach-row">${map(attach, (att) => `<div class="attach ocbtn"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(att.name)}</div><div class="sz">${esc(att.size)}</div></div></div>`)}</div>`)}
-          <div class="quote"><div class="hd">On Wed, Jun 17, 2026 at 2:16 PM, Alex Rivera <span class="mono">&lt;alex@example.com&gt;</span> wrote:</div><p>Hi Sam, Thank you! Here is the signed agreement. Looking forward to working together! — Alex</p></div>
         </div>
       </div>
       <div class="reply-bar">
@@ -479,7 +478,7 @@ function emailSurface(s) {
           <button class="btn-send-sm ocbtn" title="Reply" data-act="composeReply" data-arg="reply">${I.send(15)}</button>
         </div>
       </div>
-    </div>
+    </div>` : `<div class="reader reader-empty"><div>No email to show yet — new mail lands here.</div></div>`}
   </div>
   ${when(s.composeOpen, composeOverlay(s))}`;
 }

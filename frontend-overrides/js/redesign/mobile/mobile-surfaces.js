@@ -87,9 +87,14 @@ export function mChatMsg(m, s) {
     const title = tokens.map((t) => `${t.kind} · ${t.label}`).join('\n');
     return `<span class="m-turn-pending-pill" title="${esc(title)}"><span class="m-turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
+  // Failed-turn notice — same safeguard as the desktop thread (surfaces.js
+  // chatMsg): never leave an errored turn as a silent blank bubble.
+  const notice = m.error
+    ? `<div class="m-msg-error"><span aria-hidden="true">⚠</span><span>${esc(m.notice || 'No response from this model.')}</span></div>`
+    : '';
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}</div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}</div>`
   + `</div>`;
 }
 
@@ -293,7 +298,7 @@ export function mEmailList(s) {
   const emailUnread = emails.filter((e) => e.unread).length;
   return `
   <div class="m-head">
-    <div class="m-head-row"><span class="m-title">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="m-spacer"></div><button class="m-icon-btn">${I.plus(16)}</button></div>
+    <div class="m-head-row"><span class="m-title">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="m-spacer"></div><button class="m-icon-btn" data-act="composeNew" aria-label="New message">${I.plus(16)}</button></div>
     <div class="m-search">${I.search()}<span class="ph">Search · INBOX</span></div>
   </div>
   <div class="m-scroll m-mail-list" data-ptr="1">
@@ -319,8 +324,6 @@ export function mEmailReader(s) {
   <div class="m-head" style="display:flex;align-items:center;gap:6px;padding-left:12px;padding-right:12px">
     <button class="m-back" data-act="mCloseReader">${ic.back()}<span>Email</span></button>
     <div class="m-spacer"></div>
-    <button class="m-icon-btn" style="border:none">${ic.archive()}</button>
-    <button class="m-icon-btn" style="border:none">${ic.dots()}</button>
   </div>
   <div class="m-scroll m-reader">
     <h1>${esc(m.subj)}</h1>

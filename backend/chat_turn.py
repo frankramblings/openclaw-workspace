@@ -259,6 +259,23 @@ async def _late_reply(session_key: str, brain_message: str,
 
 # --- The detached recorder (single writer to event_store) ----------------------
 
+# Proof-of-life cadence while a turn records. The frontend treats a gap of
+# ~2.5× this (25s) as "the pipe may be dead — reconcile".
+_HB_INTERVAL_S = 10.0
+
+
+async def _heartbeat(session_key: str, turn_id: int, start_ms: float) -> None:
+    """Append an `hb` frame every _HB_INTERVAL_S while the turn records.
+    Cancelled by record_turn's finally. Appending must never raise (same rule
+    as the recorder); CancelledError passes through suppress(Exception)."""
+    while True:
+        await asyncio.sleep(_HB_INTERVAL_S)
+        with contextlib.suppress(Exception):
+            event_store.append(session_key, bridge._sse(
+                {"type": "hb", "turn_id": turn_id,
+                 "elapsed_ms": max(0, int(time.time() * 1000 - start_ms))}))
+
+
 async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
     """The single writer. Drain `source` (the async generator of SSE frames for
     one turn) into `event_store`, independent of any reader. Brackets the turn
@@ -296,6 +313,8 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
     _append(bridge._sse({"type": "turn_start", "turn_id": turn_id,
                          "session_key": session_key,
                          "ts": int(time.time() * 1000)}))
+    hb_task = asyncio.create_task(
+        _heartbeat(session_key, turn_id, time.time() * 1000))
     done_emitted = False
     status = "ok"
     try:
@@ -313,6 +332,7 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
         status = "error"
         raise
     finally:
+        hb_task.cancel()
         if not done_emitted:
             _append_turn_end(status)
             _append(_DONE_SSE)

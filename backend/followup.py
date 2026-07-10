@@ -23,7 +23,7 @@ import threading
 import time
 import uuid
 
-from . import config, fsutil, task_registry
+from . import config, fsutil, task_registry, turn_state
 
 _log = logging.getLogger(__name__)
 
@@ -74,7 +74,8 @@ def _save(data: dict) -> None:
 
 
 def create_promise(session_id: str, session_key: str, label: str,
-                   deadline_s: int) -> dict:
+                   deadline_s: int, *, origin: str = "followup",
+                   turn_id: int | None = None) -> dict:
     rec = {
         "id": uuid.uuid4().hex[:12],
         "session_id": session_id,
@@ -87,6 +88,7 @@ def create_promise(session_id: str, session_key: str, label: str,
         # Completion payload — set once by record_completion.
         "pinged": 0, "exit_code": None, "duration_s": None, "tail": "",
         "fired": 0, "error": "",
+        "origin": origin, "turn_id": turn_id,
     }
     with _LOCK:
         data = _load()
@@ -98,9 +100,11 @@ def create_promise(session_id: str, session_key: str, label: str,
         # in-memory only, but upsert also touches the volatile ledger file
         # for some sources) must never take the promise store down with it.
         try:
-            task_registry.upsert(f"followup:{rec['id']}", kind="followup",
+            task_registry.upsert(f"followup:{rec['id']}",
+                                 kind=("auto" if origin == "auto" else "followup"),
                                  source="followup", label=rec["label"],
-                                 session_key=session_key, state="running",
+                                 session_key=session_key, turn_id=turn_id,
+                                 state="running",
                                  detail="waiting for completion ping")
         except Exception:  # noqa: BLE001
             _log.warning("task_registry mirror failed for promise %s", rec["id"],
@@ -206,9 +210,11 @@ def reseed_registry() -> int:
         if p.get("state") != "pending":
             continue
         try:
-            task_registry.upsert(f"followup:{p['id']}", kind="followup",
+            task_registry.upsert(f"followup:{p['id']}",
+                                 kind=("auto" if p.get("origin") == "auto" else "followup"),
                                  source="followup", label=p.get("label", ""),
-                                 session_key=p.get("session_key"), state="running",
+                                 session_key=p.get("session_key"),
+                                 turn_id=p.get("turn_id"), state="running",
                                  detail="waiting for completion ping")
         except Exception:  # noqa: BLE001
             _log.warning("followup registry reseed failed for %s", p.get("id"),
@@ -422,7 +428,14 @@ async def register(request: Request, session: str = Form(...),
     rec = _resolve_session(session.strip())
     if not rec:
         return JSONResponse(status_code=404, content={"error": "no such session"})
-    p = create_promise(rec["id"], rec["sessionKey"], label, deadline_s)
+    turn_id = None
+    try:
+        info = turn_state.inflight_for(rec["sessionKey"])
+        if info:
+            turn_id = info.get("turn_id")
+    except Exception:  # noqa: BLE001 - enrichment must never break registration
+        _log.warning("turn_id enrichment failed for followup register", exc_info=True)
+    p = create_promise(rec["id"], rec["sessionKey"], label, deadline_s, turn_id=turn_id)
     return {"id": p["id"]}
 
 

@@ -26,7 +26,8 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup, monitor,
-               pending_tokens, sessions_store, task_registry, terminals, turn_state, websearch)
+               pending_tokens, sessions_store, task_ingest, task_registry, terminals,
+               turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -171,6 +172,9 @@ async def _lifespan(_app: FastAPI):
                      len(interrupted_tasks))
     # Followup promises: deadline + crash-recovery backstop.
     followup_task = asyncio.create_task(followup.sweeper())
+    # Progress-UX mirror loop: tmp/jobs/*.json + share/tasks/*/progress.json
+    # into task_registry, once per process (see task_ingest.py).
+    ingest_task = asyncio.create_task(task_ingest.ingest_loop())
     # Filesystem watcher for the doc editor's live-refresh (broadcasts to
     # /api/workspace/watch subscribers). Cheap Rust-backed inotify; one task.
     workspace_watch.start_watcher()
@@ -192,7 +196,8 @@ async def _lifespan(_app: FastAPI):
         task.cancel()
         search_task.cancel()
         followup_task.cancel()
-        for t in (task, search_task, followup_task):
+        ingest_task.cancel()
+        for t in (task, search_task, followup_task, ingest_task):
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         # Own every other task we've spun up over the app's life so nothing is

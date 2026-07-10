@@ -93,7 +93,7 @@ self.addEventListener('fetch', (e) => {
   // rather than the browser error page. Hash routing means the shell can
   // render any route once loaded.
   if (e.request.mode === 'navigate') {
-    e.respondWith(fetch(e.request).catch(() => caches.match('/')));
+    e.respondWith(fetch(e.request).catch(() => caches.match(e.request).then(c => c || caches.match('/'))));
     return;
   }
 

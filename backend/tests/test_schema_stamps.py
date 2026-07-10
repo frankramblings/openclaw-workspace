@@ -186,7 +186,13 @@ def test_followup_legacy_file_load_does_not_warn(caplog):
     assert not any("schema_version" in r.getMessage() for r in caplog.records)
 
 
-def test_followup_higher_schema_version_logs_warning(caplog):
+def test_followup_higher_schema_version_logs_warning_once_per_process(caplog, monkeypatch):
+    """Once-per-process gate, same idiom as inbox.state (see
+    _fresh_inbox_state above): the warning fires on the first _load() that
+    sees a newer schema_version and is silent on subsequent loads within
+    the same process. Reset the module-level gate via monkeypatch so this
+    test doesn't depend on run order relative to other tests."""
+    monkeypatch.setattr(followup, "_warned_schema_version", False)
     followup._store_file().parent.mkdir(parents=True, exist_ok=True)
     future = {"promises": [_legacy_promise("x")],
               "schema_version": followup.SCHEMA_VERSION + 1}
@@ -194,12 +200,15 @@ def test_followup_higher_schema_version_logs_warning(caplog):
 
     with caplog.at_level(logging.WARNING, logger="backend.followup"):
         promises = followup.list_promises()
+        promises_again = followup.list_promises()  # second load: gate suppresses the repeat
 
     assert [p["id"] for p in promises] == ["x"]  # still loads, best-effort
-    assert any(
-        "schema_version" in r.getMessage() and str(followup.SCHEMA_VERSION + 1) in r.getMessage()
-        for r in caplog.records
-    )
+    assert [p["id"] for p in promises_again] == ["x"]  # data unaffected by the gate
+    warnings = [
+        r for r in caplog.records
+        if "schema_version" in r.getMessage() and str(followup.SCHEMA_VERSION + 1) in r.getMessage()
+    ]
+    assert len(warnings) == 1
 
 
 # --- terminals: per-session meta.json ----------------------------------------
@@ -243,7 +252,13 @@ def test_terminal_meta_legacy_file_load_does_not_warn(caplog):
     assert not any("schema_version" in r.getMessage() for r in caplog.records)
 
 
-def test_terminal_meta_higher_schema_version_logs_warning(caplog):
+def test_terminal_meta_higher_schema_version_logs_warning_once_per_process(caplog, monkeypatch):
+    """Once-per-process gate, same idiom as inbox.state (see
+    _fresh_inbox_state above): the warning fires on the first read_meta()
+    that sees a newer schema_version and is silent on subsequent reads
+    within the same process. Reset the module-level gate via monkeypatch
+    so this test doesn't depend on run order relative to other tests."""
+    monkeypatch.setattr(terminals, "_warned_schema_version", False)
     key = "future-meta"
     terminals.persist_dir(key).mkdir(parents=True, exist_ok=True)
     future = {"persist": True, "schema_version": terminals.SCHEMA_VERSION + 1}
@@ -251,9 +266,12 @@ def test_terminal_meta_higher_schema_version_logs_warning(caplog):
 
     with caplog.at_level(logging.WARNING, logger="backend.terminals"):
         meta = terminals.read_meta(key)
+        meta_again = terminals.read_meta(key)  # second load: gate suppresses the repeat
 
     assert meta["persist"] is True  # still loads, best-effort
-    assert any(
-        "schema_version" in r.getMessage() and str(terminals.SCHEMA_VERSION + 1) in r.getMessage()
-        for r in caplog.records
-    )
+    assert meta_again["persist"] is True  # data unaffected by the gate
+    warnings = [
+        r for r in caplog.records
+        if "schema_version" in r.getMessage() and str(terminals.SCHEMA_VERSION + 1) in r.getMessage()
+    ]
+    assert len(warnings) == 1

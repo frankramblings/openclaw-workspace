@@ -574,8 +574,16 @@ def load_tail(session_key: str, limit: int = MAX_BUFFER) -> str:
 # expecting every value to be a record dict, so it's deliberately excluded.
 SCHEMA_VERSION = 1
 
+# Once-per-process gate for the newer-schema warning below, same idiom as
+# inbox.state.SCHEMA_VERSION's contract: read_meta() reloads from disk on
+# every call (unlike inbox.state's permanent _mem cache), so without this
+# flag the warning would re-fire on every read of an affected session's
+# meta.json instead of once per process.
+_warned_schema_version = False
+
 
 def read_meta(session_key: str) -> dict:
+    global _warned_schema_version
     path = persist_meta_path(session_key)
     try:
         meta = fsutil.load_json_guarded(path, {}, logger=log)
@@ -590,7 +598,8 @@ def read_meta(session_key: str) -> dict:
         log.warning("terminal meta unreadable %s", path, exc_info=True)
         return {}
     version = meta.get("schema_version")
-    if isinstance(version, int) and version > SCHEMA_VERSION:
+    if isinstance(version, int) and version > SCHEMA_VERSION and not _warned_schema_version:
+        _warned_schema_version = True
         log.warning(
             "%s schema_version %s is newer than this app knows how to read "
             "(%s) -- an older app version, or a downgrade; some fields may "

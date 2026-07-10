@@ -37,6 +37,12 @@ _LOCK = threading.Lock()
 # unnoticed.
 SCHEMA_VERSION = 1
 
+# Once-per-process gate for the newer-schema warning below, same idiom as
+# inbox.state.SCHEMA_VERSION's contract: _load() reloads from disk on every
+# call (unlike inbox.state's permanent _mem cache), so without this flag the
+# warning would re-fire on every load instead of once per process.
+_warned_schema_version = False
+
 
 def _store_file():
     return config.DATA_DIR / "followups.json"
@@ -47,9 +53,11 @@ def _now_ms() -> int:
 
 
 def _load() -> dict:
+    global _warned_schema_version
     data = fsutil.load_json_guarded(_store_file(), {"promises": []}, logger=_log)
     version = data.get("schema_version")
-    if isinstance(version, int) and version > SCHEMA_VERSION:
+    if isinstance(version, int) and version > SCHEMA_VERSION and not _warned_schema_version:
+        _warned_schema_version = True
         _log.warning(
             "followups.json schema_version %s is newer than this app knows "
             "how to read (%s) -- an older app version, or a downgrade; some "

@@ -35,6 +35,16 @@ def test_busy_cap_past_deadline_fails():
     assert p["state"] == "failed" and "busy past deadline" in p["error"]
 
 
+def test_overdue_busy_cap_keeps_honest_message():
+    rec = followup.create_promise(SID, SK, "silent render", 1)
+    import time as _t
+    _t.sleep(1.1)                      # deadline passed, never pinged
+    followup._busy_cap_reached(rec["id"], overdue=True)
+    p = followup.get_promise(rec["id"])
+    assert p["state"] == "failed"
+    assert "never reported back" in p["error"]
+
+
 def test_deadline_zero_surfaces_stalled_once():
     rec = followup.create_promise(SID, SK, "forever", 0)
     # Age the promise past the surfacing threshold.

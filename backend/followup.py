@@ -156,7 +156,7 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
 STALL_SURFACE_S = 24 * 3600
 
 
-def _busy_cap_reached(pid: str) -> bool:
+def _busy_cap_reached(pid: str, overdue: bool = False) -> bool:
     """The busy-wait cap was hit while trying to fire `pid`'s turn. If the
     promise still has runway (deadline unset or in the future), leave it
     PENDING — due_promises() re-selects it on the next 30s sweep, so a busy
@@ -167,7 +167,9 @@ def _busy_cap_reached(pid: str) -> bool:
         return True
     deadline = int(p.get("deadline_ms") or 0)
     if deadline and _now_ms() >= deadline:
-        mark(pid, "failed", error="session busy past deadline")
+        error = ("task never reported back; session stayed busy past the deadline"
+                 if overdue else "session busy past deadline")
+        mark(pid, "failed", error=error)
         return True
     _log.info("followup %s deferred: session busy; sweeper will retry", pid)
     return True
@@ -383,7 +385,7 @@ async def fire_followup(pid: str, *, overdue: bool = False,
             if prev is None or prev.done():
                 break
             if time.monotonic() - wait_start >= _BUSY_CAP_S:
-                _busy_cap_reached(pid)
+                _busy_cap_reached(pid, overdue=overdue)
                 return
             await _sleep(_BUSY_POLL_S)
         # A competing fire (endpoint spawn vs. sweeper, or a prior retry loop

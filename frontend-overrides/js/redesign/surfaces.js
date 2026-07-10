@@ -55,11 +55,11 @@ function convListBody(s) {
   if (!groups) {
     return `
       <div class="conv-group top"><span class="sect-label">TODAY</span></div>
-      <div class="conv-row active"><span class="conv-badge">A\\</span><span class="conv-title">Workspace Streaming Chat</span></div>
-      <div class="conv-row ocrow"><span class="conv-badge">A\\</span><span class="conv-title">Comedy Show Misogyny Check</span></div>
-      <div class="conv-row ocrow"><span class="conv-badge">A\\</span><span class="conv-title">help me organize these thoughts</span></div>
+      <div class="conv-row active"><span class="conv-badge">G</span><span class="conv-title">Workspace Streaming Chat</span></div>
+      <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">Comedy Show Misogyny Check</span></div>
+      <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">help me organize these thoughts</span></div>
       <div class="conv-group"><span class="sect-label">YESTERDAY</span></div>
-      <div class="conv-row ocrow"><span class="conv-badge">A\\</span><span class="conv-title">Punny Names for OpenClaw</span></div>
+      <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">Punny Names for OpenClaw</span></div>
       <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Claude Code on Ubuntu</span></div>`;
   }
   const q = (s.convFilter || '').trim().toLowerCase();
@@ -71,8 +71,12 @@ function convListBody(s) {
     ? [{ label: 'A–Z', rows: groups2.flatMap((g) => g.rows || []).slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' })) }]
     : groups2;
   const rowMenuOpen = s.live?.chat?.rowMenuOpen;
-  const convRow = (r) => `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}" data-act="selectSession" data-arg="${esc(r.id)}">`
-    + `<span class="conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span>`
+  const convRow = (r) => {
+    const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
+    const badgeInner = r.term ? '∿' : (rowLogo || 'G');
+    const badgeClass = 'conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
+    return `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}" data-act="selectSession" data-arg="${esc(r.id)}">`
+    + `<span class="${badgeClass}">${badgeInner}</span>`
     + `<span class="conv-title">${esc(r.title)}</span>`
     + (r.notify ? `<span class="conv-dot notify" title="Reply finished"></span>`
         : r.working ? `<span class="conv-spin working" title="Working…">${fortress(15)}</span>` : '')
@@ -114,7 +118,7 @@ function semanticHits(s, titleGroups) {
   }
   if (!rows.length) return '';
   const hitRow = (r) => `<div class="conv-row ocrow conv-msghit" data-act="selectSession" data-arg="${esc(r.session_id)}">`
-    + `<span class="conv-badge">A\\</span>`
+    + `<span class="conv-badge">G</span>`
     + `<span class="conv-hit"><span class="conv-title">${esc(r.session_name || 'Conversation')}</span>`
     + `<span class="conv-hit-snip">${esc(stripMd(r.content_snippet || ''))}</span></span>`
     + `</div>`;

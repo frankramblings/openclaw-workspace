@@ -146,6 +146,8 @@ function buildGroups(sessions, activeId) {
       term: !!s.gary_terminal,
       active: s.id === activeId,
       important: !!s.important,
+      model: s.model || '',
+      endpointId: s.endpoint_id || '',
     };
     if (s.important) { pinned.push(row); continue; }
     const label = bucketFor(s.updated, now);

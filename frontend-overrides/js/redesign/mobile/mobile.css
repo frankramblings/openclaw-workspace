@@ -489,6 +489,8 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-conv-row.active { background: var(--tealtint); }
 .m-conv-badge { font-size: 9px; font-weight: 700; color: var(--teal); background: var(--tealtint); padding: 2px 6px; border-radius: 5px; flex: none; }
 .m-conv-badge.term { color: var(--faint); background: transparent; border: 1px solid var(--bd); }
+.m-conv-badge.provider { background: transparent; padding: 0; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: var(--mut); }
+.m-conv-badge.provider svg { width: 100%; height: 100%; display: block; }
 .m-conv-title { flex: 1; font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Cross-session run state in the mobile chat list (parity with desktop conv-dot/conv-spin). */
 .m-conv-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }

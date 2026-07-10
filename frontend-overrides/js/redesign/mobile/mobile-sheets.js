@@ -5,6 +5,7 @@ import { I, icon, fortress } from '../icons.js';
 import { esc, map, when, stripMd } from '../dom.js';
 import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, CAPTURE_PARSE, RECENT_CAPTURES } from './mobile-data.js';
+import { providerLogo } from '../provider-logo.js';
 
 // compact file tree (shared FS data) for the companion sheet's Files tab
 function fileTree(s) {
@@ -88,13 +89,18 @@ function convListHtml(s) {
   // unreachable dead code (mConvSheetOpen is never set true) so this is a
   // no-op there either way.
   const rowTabindex = s.mDrawerOpen ? '0' : '-1';
-  const convRow = (r) => `<div class="m-conv-row ocrow${r.active ? ' active' : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}" tabindex="${rowTabindex}" role="button">
-    <span class="m-conv-badge${r.term ? ' term' : ''}">${r.term ? '∿' : 'A\\'}</span>
+  const convRow = (r) => {
+    const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
+    const badgeInner = r.term ? '∿' : (rowLogo || 'G');
+    const badgeClass = 'm-conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
+    return `<div class="m-conv-row ocrow${r.active ? ' active' : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}" tabindex="${rowTabindex}" role="button">
+    <span class="${badgeClass}">${badgeInner}</span>
     <span class="m-conv-title">${esc(r.title)}</span>
     ${r.notify ? `<span class="m-conv-dot notify" title="Reply finished"></span>`
       : r.working ? `<span class="m-conv-spin working" title="Working…">${fortress(14)}</span>`
       : r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
   </div>`;
+  };
   const titleHtml = map(groups, (g) => `<div class="m-conv-grp">${esc(g.label)}</div>${map(g.rows || [], convRow)}`);
   const msgHtml = mConvSemanticHits(s, groups, rowTabindex);
   if (!allGroups.length) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations yet.</div>';
@@ -125,7 +131,7 @@ function mConvSemanticHits(s, titleGroups, rowTabindex) {
   }
   if (!rows.length) return '';
   const hitRow = (r) => `<div class="m-conv-row ocrow m-conv-msghit" data-act="mSelectSession" data-arg="${esc(r.session_id)}" tabindex="${rowTabindex ?? '0'}" role="button">
-    <span class="m-conv-badge">A\\</span>
+    <span class="m-conv-badge">G</span>
     <span class="m-conv-hit"><span class="m-conv-title">${esc(r.session_name || 'Conversation')}</span><span class="m-conv-hit-snip">${esc(stripMd(r.content_snippet || ''))}</span></span>
   </div>`;
   return label + map(rows, hitRow);

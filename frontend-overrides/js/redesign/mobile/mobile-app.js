@@ -264,32 +264,65 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   root.addEventListener('touchend', endPull);
   root.addEventListener('touchcancel', endPull);
 
-  // --- pull-up from bottom edge → refresh thread ---------------------------
-  // Arm only when the touch starts within 60px of the viewport bottom and
-  // the target is not an interactive element (button, input, textarea).
-  // Quick Capture lives on long-press of the center "+" (see below).
-  const REFRESH_TRIGGER = 50; // px upward travel that fires refresh
-  const BOTTOM_ZONE = 60;
-  let pup = null; // { startY }
+  // --- pull-up from bottom → rubber-band → refresh -------------------------
+  // Mirror of the top PTR, anchored to the END of a bottom-pinned feed (chat).
+  // Arms when the finger starts on a [data-ptr-btm] feed pinned at the bottom
+  // and drags UP; grows .m-ptr-btm height while re-pinning scrollTop to the
+  // bottom so the newest message lifts and the indicator reveals underneath.
+  // Release past PULL_TRIGGER → refresh(). Non-passive touchmove wins against
+  // native rubber-band scroll once a real pull is armed.
+  let pup = null; // { feed, el, startX, startY, active, h }
+  const atBottom = (feed) => (feed.scrollHeight - feed.clientHeight - feed.scrollTop) <= 2;
 
   root.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1 || state.refreshing) { pup = null; return; }
     if (state.quickCaptureOpen || state.companionSheetOpen) { pup = null; return; }
+    const feed = e.target.closest('[data-ptr-btm]');
+    if (!feed || !atBottom(feed)) { pup = null; return; }
     const t = e.touches[0];
-    if (window.innerHeight - t.clientY > BOTTOM_ZONE) { pup = null; return; }
-    const tag = (e.target && e.target.tagName || '').toLowerCase();
-    if (tag === 'button' || tag === 'input' || tag === 'textarea' || tag === 'a') { pup = null; return; }
-    pup = { startY: t.clientY };
+    pup = { feed, el: feed.querySelector('.m-ptr-btm'), startX: t.clientX, startY: t.clientY, active: false, h: 0 };
   }, { passive: true });
 
-  root.addEventListener('touchend', (e) => {
+  root.addEventListener('touchmove', (e) => {
     if (!pup) return;
-    const t = e.changedTouches[0];
-    const dy = pup.startY - t.clientY; // positive = upward
-    pup = null;
-    if (dy >= REFRESH_TRIGGER) refresh();
-  });
-  root.addEventListener('touchcancel', () => { pup = null; });
+    const t = e.touches[0];
+    const dx = t.clientX - pup.startX;
+    const dy = pup.startY - t.clientY; // positive = upward drag
+    // Wait for a deliberate upward pull before we commit. Downward drags,
+    // horizontal swipes, or scroll-away-from-bottom releases the arm.
+    if (!pup.active) {
+      const scrolledAway = !atBottom(pup.feed);
+      if (scrolledAway || dy < ARM || Math.abs(dx) > dy) {
+        if (dy < 0 || scrolledAway || Math.abs(dx) > dy) pup = null;
+        return;
+      }
+      pup.active = true;
+    }
+    pup.h = Math.max(0, Math.min((dy - ARM) * RESIST, PULL_MAX));
+    if (pup.el) {
+      pup.el.style.height = pup.h + 'px';
+      pup.el.classList.toggle('open', pup.h > 0);
+      pup.el.classList.toggle('ptr-ready', pup.h >= PULL_TRIGGER);
+    }
+    // Re-pin feed to the bottom so the growing indicator lifts content up
+    // instead of extending below the viewport.
+    pup.feed.scrollTop = pup.feed.scrollHeight;
+    e.preventDefault();
+  }, { passive: false });
+
+  const endPullUp = () => {
+    if (!pup) return;
+    const p = pup; pup = null;
+    if (p.active && p.h >= PULL_TRIGGER) {
+      try { if (navigator.vibrate) navigator.vibrate(6); } catch (_) { /* no haptics */ }
+      refresh();
+    } else if (p.el) {
+      p.el.style.height = '0px';
+      p.el.classList.remove('open', 'ptr-ready');
+    }
+  };
+  root.addEventListener('touchend', endPullUp);
+  root.addEventListener('touchcancel', endPullUp);
 
   // --- long-press the center "+" → quick capture ---------------------------
   // Tap fires mNewChat (new thread); holding ~450ms opens the capture sheet

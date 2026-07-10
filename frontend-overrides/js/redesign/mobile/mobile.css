@@ -255,8 +255,29 @@ html.native .m-tabbar {
    to the bottom (the indicator would otherwise sit scrolled out of view up top).
    At height:0 it's invisible during normal scrolling; it only reveals on pull. */
 .m-ptr { position: sticky; top: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; overflow: hidden; transition: height .2s ease; box-sizing: border-box; }
+/* box-sizing:border-box floors the border-box at padding+border, so height:0 alone
+   can't collapse these (they'd render ~18px tall — a permanent opaque bar pinned at
+   the sticky top). Drop the padding while closed so the collapse is truly 0; the
+   padding is only needed to give the spinner room, which only happens while .open. */
+.m-ptr:not(.open), .m-ptr-btm:not(.open) { padding: 0; }
 .m-ptr .spin { display: inline-flex; align-items: center; color: var(--teal); line-height: 0; }
 .m-ptr .lbl { font-size: 10.5px; color: var(--faint); }
+/* Bottom pull-to-refresh (chat). Normal-flow trailing block at the END of the
+   thread: as the pull grows its height and we re-pin the feed to the bottom, the
+   newest message lifts and this reveals underneath — a rubber-band into refresh.
+   height:0 keeps it invisible during normal scrolling. */
+.m-ptr-btm { z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 12px 0 6px; overflow: hidden; height: 0; transition: height .2s ease; box-sizing: border-box; }
+.m-ptr-btm .spin { display: inline-flex; align-items: center; color: var(--teal); line-height: 0; }
+.m-ptr-btm .lbl { font-size: 10.5px; color: var(--faint); }
+/* The crystal is only present while the indicator is OPEN (mid-pull or actively
+   refreshing) — otherwise the ~18px the padding reserves at height:0 would show a
+   permanently parked crystal. .open is added by render() when refreshing and by
+   the pull handler while dragging. */
+.m-ptr .spin, .m-ptr-btm .spin { opacity: 0; transition: opacity .15s ease, transform .12s ease, color .12s ease; }
+.m-ptr.open .spin, .m-ptr-btm.open .spin { opacity: 1; }
+/* "release to refresh" cue — fires with the haptic tick once the pull crosses
+   the trigger, on either the top or bottom indicator. */
+.m-ptr.ptr-ready .spin, .m-ptr-btm.ptr-ready .spin { color: var(--gold); transform: scale(1.14); }
 .m-grp { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; margin: 4px 2px 9px; }
 .m-grp.needs { color: var(--teal); } .m-grp.fyi { color: var(--violet); margin-top: 16px; }
 .m-card { background: var(--panel); border: 1px solid var(--bd); border-radius: 13px; padding: 13px 14px; margin-bottom: 9px; }
@@ -815,3 +836,42 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-composer .chat-strip.collapsed { padding: 5px 10px; }
 .m-composer .chat-strip .cs-body { max-height: calc(32vh - 32px); }
 .m-composer .chat-strip .cs-pill { max-width: 22ch; }
+
+/* ── Mobile pending-work pill (mirrors desktop .turn-pending-pill) ───────── */
+.m-turn-pending-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+  cursor: help;
+  vertical-align: middle;
+}
+.m-turn-pending-spin { display: inline-flex; line-height: 0; color: currentColor; }
+
+/* ── Mobile in-place update block (mirrors desktop .turn-update-*) ──────── */
+.m-turn-update-block {
+  margin-top: 10px;
+  border-top: 1px dashed rgba(120, 120, 120, 0.4);
+  padding-top: 8px;
+}
+.m-turn-update-header {
+  font-size: 12px;
+  color: rgba(120, 120, 120, 0.9);
+  margin-bottom: 6px;
+}
+.m-turn-update-image {
+  max-width: 100%;
+  border-radius: 8px;
+  cursor: zoom-in;
+  display: block;
+}
+.m-turn-update-error {
+  color: #b91c1c;
+  font-style: italic;
+  font-size: 13px;
+}

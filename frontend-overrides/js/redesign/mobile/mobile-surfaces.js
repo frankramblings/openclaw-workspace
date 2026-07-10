@@ -73,7 +73,13 @@ export function mChatMsg(m, s) {
 // Pull-to-refresh indicator. Any .m-scroll marked data-ptr="1" with this as its
 // first child becomes pullable (see wireMobileGestures); refresh() re-fetches
 // whatever surface is active, so the markup is all each surface needs.
-const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr" style="height:${s.refreshing ? 'auto' : '0'}">${when(s.refreshing, `<span class="spin">${fortress(20)}</span><span class="lbl">${label}</span>`)}</div>`;
+const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr${s.refreshing ? ' open' : ''}" style="height:${s.refreshing ? 'auto' : '0'}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
+
+// Bottom pull-to-refresh indicator — the mirror of mPtr, anchored to the END of
+// a bottom-pinned feed (chat). A .m-scroll marked data-ptr-btm="1" with this as
+// its LAST child rubber-bands and refreshes when you keep dragging up past the
+// newest message (see wireMobileGestures). Easier to reach than the top pull.
+const mPtrBtm = (s, label = 'Refreshing chat…') => `<div class="m-ptr-btm${s.refreshing ? ' open' : ''}" style="height:${s.refreshing ? 'auto' : '0'}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
 
 // ---- chat -----------------------------------------------------------------
 export function mChat(s) {
@@ -116,7 +122,7 @@ export function mChat(s) {
     </div>
   </div>
   <div class="m-comp-handle m-hide-kb"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>
-  <div class="m-scroll m-thread${thread.length ? '' : ' empty'}" data-ptr="1">${mPtr(s, 'Refreshing chat…')}${threadHtml}</div>
+  <div class="m-scroll m-thread${thread.length ? '' : ' empty'}" data-ptr="1" data-ptr-btm="1">${mPtr(s, 'Refreshing chat…')}${threadHtml}${mPtrBtm(s, 'Refreshing chat…')}</div>
   <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;bottom:calc(env(safe-area-inset-bottom,0px) + 122px)">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
   <div class="m-composer${focused ? ' focused' : ''}">
     ${renderChatStrip(s.live?.chat?.chatStrip, { renderMarkdown })}

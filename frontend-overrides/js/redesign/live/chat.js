@@ -15,6 +15,8 @@ import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
 import { reconcileDecision } from './reconcile-decision.js';
+import { promiseWarningText } from './promise-warning.js';
+import { setLiveTurn } from './turn-ref.js';
 import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
   onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
@@ -755,7 +757,11 @@ function beginTurn(chat, modelLabel, sessionId) {
     // Every frame is proof of life — the hb-gap watchdog (reconcile) keys off
     // this timestamp, so it must update for ALL frame types, not just hb.
     turn.lastFrameMs = Date.now();
-    if (ev.type === 'turn_start') { turn.turnId = ev.turn_id; return; }
+    if (ev.type === 'turn_start') {
+      turn.turnId = ev.turn_id;
+      setLiveTurn({ sessionId: turn.sessionId, turnId: ev.turn_id, msgId: turn.msgId });
+      return;
+    }
     if (ev.type === 'hb') return;
     // turn_end precedes [DONE]; remember the status so the done handler can
     // label a Stop ("aborted") differently from a normal finish.
@@ -785,8 +791,9 @@ function beginTurn(chat, modelLabel, sessionId) {
         m.notice = 'No response from this model — it may not be available on your plan or endpoint. Try another model from the picker.';
       }
       flushRender();
-      if (turn.got404) { actions.reloadSessions(); turn = null; return; }
+      if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); turn = null; return; }
       refreshSidebarUsage(runtime.state);
+      setLiveTurn(null);
       turn = null;
       flushQueued(chat);
       return;
@@ -802,6 +809,7 @@ function beginTurn(chat, modelLabel, sessionId) {
         : 'The connection dropped before a response arrived. Try again.';
       stopElapsed();
       flushRender();
+      setLiveTurn(null);
       turn = null;
       // A turn that errored leaves the queued message intact — recall it to the
       // composer so the user doesn't lose it (rather than auto-firing into a
@@ -817,6 +825,14 @@ function beginTurn(chat, modelLabel, sessionId) {
       if (turn.pumpRAF) { cancelAnimationFrame(turn.pumpRAF); turn.pumpRAF = 0; }
       turn.pending = '';
       if (turn.asstMsg) turn.asstMsg.text = '';
+      throttledRender();
+      return;
+    }
+    // Promise guard (Phase 3): the reply promised a follow-up but nothing is
+    // registered — surface the amber card on this turn's bubble.
+    if (ev.type === 'promise_warning') {
+      const m = ensureAsst();
+      m.warnNotice = promiseWarningText(ev.phrase || '');
       throttledRender();
       return;
     }
@@ -1079,6 +1095,7 @@ function finalizeLocal(chat, interrupted) {
     turn.asstMsg.error = true;
     turn.asstMsg.notice = 'This turn was interrupted by a backend restart — the reply may be incomplete.';
   }
+  setLiveTurn(null);
   turn = null;
   stopElapsed();
   if (chat.chatStrip) { chat.chatStrip = stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }

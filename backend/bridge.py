@@ -19,7 +19,7 @@ import uuid
 import httpx
 import websockets
 
-from . import config, session_context, sessions_store
+from . import config, launch_sniffer, session_context, sessions_store
 
 
 def _sse(payload: dict | str) -> str:
@@ -1338,6 +1338,15 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                     raw_input = data.get("args") or data.get("input")
                     if raw_input is not None:
                         frame["input"] = raw_input
+                # Only command-kind items carry real command text in `detail`;
+                # tool-kind items carry a human-readable title, whose prose
+                # ("Run nohup …") must never false-fire the sniffer.
+                if data.get("kind") == "command":
+                    try:
+                        launch_sniffer.on_tool_start(
+                            session_key, label, detail, item_is_command=True)
+                    except Exception:  # noqa: BLE001 - sniffer never breaks the relay
+                        pass
                 yield _sse(frame)
             elif data.get("phase") == "end":
                 tool_since_text = True
@@ -1369,6 +1378,11 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                     raw_input = data.get("args")
                     if raw_input is not None:
                         frame["input"] = raw_input
+                try:
+                    launch_sniffer.on_tool_start(session_key, name, command,
+                                                 item_is_command=False)
+                except Exception:  # noqa: BLE001 - sniffer never breaks the relay
+                    pass
                 yield _sse(frame)
             elif phase == "result":
                 tool_since_text = True

@@ -23,7 +23,7 @@ import threading
 import time
 import uuid
 
-from . import config, fsutil, task_registry
+from . import config, fsutil, task_registry, turn_state
 
 _log = logging.getLogger(__name__)
 
@@ -74,7 +74,8 @@ def _save(data: dict) -> None:
 
 
 def create_promise(session_id: str, session_key: str, label: str,
-                   deadline_s: int) -> dict:
+                   deadline_s: int, *, origin: str = "followup",
+                   turn_id: int | None = None) -> dict:
     rec = {
         "id": uuid.uuid4().hex[:12],
         "session_id": session_id,
@@ -87,6 +88,7 @@ def create_promise(session_id: str, session_key: str, label: str,
         # Completion payload — set once by record_completion.
         "pinged": 0, "exit_code": None, "duration_s": None, "tail": "",
         "fired": 0, "error": "",
+        "origin": origin, "turn_id": turn_id,
     }
     with _LOCK:
         data = _load()
@@ -98,9 +100,11 @@ def create_promise(session_id: str, session_key: str, label: str,
         # in-memory only, but upsert also touches the volatile ledger file
         # for some sources) must never take the promise store down with it.
         try:
-            task_registry.upsert(f"followup:{rec['id']}", kind="followup",
+            task_registry.upsert(f"followup:{rec['id']}",
+                                 kind=("auto" if origin == "auto" else "followup"),
                                  source="followup", label=rec["label"],
-                                 session_key=session_key, state="running",
+                                 session_key=session_key, turn_id=turn_id,
+                                 state="running",
                                  detail="waiting for completion ping")
         except Exception:  # noqa: BLE001
             _log.warning("task_registry mirror failed for promise %s", rec["id"],
@@ -147,6 +151,36 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
                                 exc_info=True)
                 return True
     return False
+
+
+STALL_SURFACE_S = 24 * 3600
+
+
+def _busy_cap_reached(pid: str, overdue: bool = False) -> bool:
+    """The busy-wait cap was hit while trying to fire `pid`'s turn. If the
+    completion ping already arrived, the report is in hand — never eat it,
+    defer regardless of deadline (a pinged promise that's merely waiting on
+    a busy session isn't overdue in any sense that should fail it). Absent a
+    ping, a promise with runway (deadline unset or in the future) also stays
+    PENDING — due_promises() re-selects it on the next 30s sweep, so a busy
+    session defers the follow-up instead of eating it. Only a real deadline
+    with no ping fails honestly. Returns True if the caller should stop
+    trying."""
+    p = get_promise(pid)
+    if p is None:
+        return True
+    if p.get("pinged"):
+        _log.info("followup %s deferred: completion recorded, session busy; "
+                  "sweeper will retry", pid)
+        return True
+    deadline = int(p.get("deadline_ms") or 0)
+    if deadline and _now_ms() >= deadline:
+        error = ("task never reported back; session stayed busy past the deadline"
+                 if overdue else "session busy past deadline")
+        mark(pid, "failed", error=error)
+        return True
+    _log.info("followup %s deferred: session busy; sweeper will retry", pid)
+    return True
 
 
 def mark(pid: str, state: str, **fields) -> dict | None:
@@ -200,19 +234,42 @@ def due_promises(now_ms: int) -> list[tuple[str, bool]]:
 def reseed_registry() -> int:
     """Re-mirror still-pending promises after a boot (the registry is
     in-memory; promises are the flagship producer and must be visible
-    immediately, not on their next state change)."""
+    immediately, not on their next state change).
+
+    Auto-origin promises that are pending and unpinged also get their
+    process watcher RE-ARMED here: the watcher is an asyncio Task, which
+    doesn't survive a restart, so without this a promise from a launch that
+    finished (or is still running) across the restart would sit mute until
+    its 4h deadline backstop, instead of completing the moment it actually
+    exits. Pinged promises don't need this — they're already in the
+    sweeper's recorded-but-unfired path (due_promises() fires them directly).
+
+    Late import: launch_sniffer imports followup at module level (it calls
+    followup.create_promise / record_completion), so importing it at
+    followup's module level here would be a cycle. The in-function import
+    breaks it.
+    """
+    from . import launch_sniffer
     n = 0
     for p in list_promises():
         if p.get("state") != "pending":
             continue
         try:
-            task_registry.upsert(f"followup:{p['id']}", kind="followup",
+            task_registry.upsert(f"followup:{p['id']}",
+                                 kind=("auto" if p.get("origin") == "auto" else "followup"),
                                  source="followup", label=p.get("label", ""),
-                                 session_key=p.get("session_key"), state="running",
+                                 session_key=p.get("session_key"),
+                                 turn_id=p.get("turn_id"), state="running",
                                  detail="waiting for completion ping")
         except Exception:  # noqa: BLE001
             _log.warning("followup registry reseed failed for %s", p.get("id"),
                         exc_info=True)
+        if p.get("origin") == "auto" and not p.get("pinged"):
+            try:
+                launch_sniffer.rearm_watch(p["id"], p.get("label", ""))
+            except Exception:  # noqa: BLE001
+                _log.warning("launch_sniffer re-arm failed for %s", p.get("id"),
+                            exc_info=True)
         n += 1
     return n
 
@@ -357,8 +414,8 @@ async def fire_followup(pid: str, *, overdue: bool = False,
             if prev is None or prev.done():
                 break
             if time.monotonic() - wait_start >= _BUSY_CAP_S:
-                mark(pid, "failed", error="session busy for 30m")
-                return False
+                _busy_cap_reached(pid, overdue=overdue)
+                return
             await _sleep(_BUSY_POLL_S)
         # A competing fire (endpoint spawn vs. sweeper, or a prior retry loop
         # elsewhere) may have resolved this promise while we waited.
@@ -422,7 +479,14 @@ async def register(request: Request, session: str = Form(...),
     rec = _resolve_session(session.strip())
     if not rec:
         return JSONResponse(status_code=404, content={"error": "no such session"})
-    p = create_promise(rec["id"], rec["sessionKey"], label, deadline_s)
+    turn_id = None
+    try:
+        info = turn_state.inflight_for(rec["sessionKey"])
+        if info:
+            turn_id = info.get("turn_id")
+    except Exception:  # noqa: BLE001 - enrichment must never break registration
+        _log.warning("turn_id enrichment failed for followup register", exc_info=True)
+    p = create_promise(rec["id"], rec["sessionKey"], label, deadline_s, turn_id=turn_id)
     return {"id": p["id"]}
 
 
@@ -477,6 +541,35 @@ def _spawn_fire(pid: str, *, overdue: bool = False) -> bool:
     return True
 
 
+def surface_stalled() -> int:
+    """Deadline-0 promises that have been pending past STALL_SURFACE_S get
+    their registry mirror flipped to `stalled` — visible instead of
+    invisible-forever. Store state stays `pending` (the wrapper may still
+    ping someday). Idempotent: skips mirrors already stalled."""
+    n = 0
+    now = _now_ms()
+    for p in list_promises():
+        if p.get("state") != "pending" or int(p.get("deadline_ms") or 0) != 0:
+            continue
+        if now - int(p.get("created") or 0) < STALL_SURFACE_S * 1000:
+            continue
+        try:
+            cur = task_registry.get(f"followup:{p['id']}")
+            if cur is not None and cur.get("state") == "stalled":
+                continue
+            task_registry.upsert(
+                f"followup:{p['id']}",
+                kind=("auto" if p.get("origin") == "auto" else "followup"),
+                source="followup", label=p.get("label", ""),
+                session_key=p.get("session_key"), state="stalled",
+                detail="no deadline and no completion ping for 24h")
+            n += 1
+        except Exception:  # noqa: BLE001 - mirror never breaks the sweeper
+            _log.warning("surface_stalled failed for %s", p.get("id"),
+                         exc_info=True)
+    return n
+
+
 def _sweep_once() -> list[str]:
     """Spawn fire_followup for every due promise not already in flight.
     Returns the pids spawned (tests key off this)."""
@@ -501,4 +594,8 @@ async def sweeper(_sleep=asyncio.sleep) -> None:
             _sweep_once()
         except Exception:  # noqa: BLE001 - the backstop must never die
             _log.warning("followup sweep failed", exc_info=True)
+        try:
+            surface_stalled()
+        except Exception:  # noqa: BLE001 - the backstop must never die
+            _log.warning("followup stall surfacing failed", exc_info=True)
         await _sleep(_SWEEP_INTERVAL_S)

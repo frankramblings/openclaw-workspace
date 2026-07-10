@@ -51,3 +51,19 @@ test('anchorMode is turn only on a live turn_id match', () => {
   assert.equal(anchorMode(reg({ turn_id: 7 }), 8), 'pin');
   assert.equal(anchorMode(reg(), 7), 'pin');
 });
+
+test('nativeView carries the registry turn_id for anchoring', () => {
+  assert.equal(nativeView(reg({ turn_id: 9 }))._recTurnId, 9);
+  assert.equal(nativeView(reg())._recTurnId, null);
+});
+
+test('auto followups keep their own kind', () => {
+  const v = nativeView({
+    id: 'followup:a1', kind: 'auto', source: 'followup', label: 'nohup x',
+    session_key: 'agent:main:web-6b3ccecab880', turn_id: 9, state: 'running',
+    pct: null, eta: null, detail: 'waiting for completion ping', error: '',
+    created: 0, updated: 0, extra: {},
+  });
+  assert.equal(v.kind, 'auto');
+  assert.equal(v._recTurnId, 9);
+});

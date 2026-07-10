@@ -183,6 +183,20 @@ def list_tasks(session_key: str | None = None,
     return out
 
 
+def has_session_registration_since(session_key: str, since_ms: int,
+                                   exclude_kinds: tuple = ("auto",)) -> bool:
+    """True if the session has any registration newer than `since_ms`,
+    ignoring `exclude_kinds`. The launch sniffer's grace check and the
+    promise guard both ask this exact question: "did anything REAL get
+    registered for this chat since the turn/launch started?"."""
+    for rec in list_tasks(session_key=session_key):
+        if rec.get("kind") in exclude_kinds:
+            continue
+        if rec.get("created", 0) >= since_ms:
+            return True
+    return False
+
+
 def remove(task_id: str) -> None:
     """Drop a record without an event — ingest reconciliation for a task
     whose backing file vanished after it already went terminal."""

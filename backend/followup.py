@@ -23,7 +23,7 @@ import threading
 import time
 import uuid
 
-from . import config, fsutil
+from . import config, fsutil, task_registry
 
 _log = logging.getLogger(__name__)
 
@@ -92,6 +92,11 @@ def create_promise(session_id: str, session_key: str, label: str,
         data = _load()
         data.setdefault("promises", []).append(rec)
         _save(data)
+    # task_registry uses its own lock and never calls back into followup — no lock-ordering cycle.
+    task_registry.upsert(f"followup:{rec['id']}", kind="followup",
+                         source="followup", label=rec["label"],
+                         session_key=session_key, state="running",
+                         detail="waiting for completion ping")
     return rec
 
 
@@ -124,6 +129,10 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
                 p["duration_s"] = round(float(duration_s), 1)
                 p["tail"] = (tail or "")[-_TAIL_CAP:]
                 _save(data)
+                task_registry.upsert(f"followup:{pid}", kind="followup",
+                                     source="followup", state="running",
+                                     detail=f"finished (exit {int(exit_code)}) — "
+                                            "follow-up turn pending")
                 return True
     return False
 
@@ -143,6 +152,13 @@ def mark(pid: str, state: str, **fields) -> dict | None:
                 for k, v in fields.items():
                     p[k] = v
                 _save(data)
+                reg_state = "failed" if state == "failed" else "done"
+                detail = ("deadline passed — honest no-report turn fired"
+                          if state == "overdue" else "")
+                task_registry.upsert(f"followup:{pid}", kind="followup",
+                                     source="followup", state=reg_state,
+                                     detail=detail,
+                                     error=str(fields.get("error") or ""))
                 return p
     return None
 

@@ -32,8 +32,8 @@ import logging
 import re
 import time
 
-from . import (bridge, config, draft_mode, event_store, sessions_store,
-               terminals, turn_state, websearch)
+from . import (bridge, config, draft_mode, event_store, promise_guard,
+               sessions_store, terminals, turn_state, websearch)
 from .attachments import _terminal_attachments
 
 # Log under "backend.app" (not __name__): these turn-engine warnings were emitted
@@ -410,6 +410,7 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
     text_seen = False    # any non-thinking {"delta"} relayed this turn?
     tools_seen = False   # any tool card relayed (fresh bubble needed)?
     failed = False       # bridge/agent error or user abort — no reply coming
+    reply_parts: list[str] = []  # accumulated reply text (promise guard, Phase 3)
     try:
         # Web search (the composer's globe toggle — field name varies by
         # the SPA's vestigial mode, see _wants_web). Search failures
@@ -475,6 +476,9 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
             if isinstance(frame, dict):
                 if frame.get("delta") and not frame.get("thinking"):
                     text_seen = True
+                    reply_parts.append(frame["delta"])
+                if frame.get("type") == "reply_reset":
+                    reply_parts.clear()   # dual-output: keep only the final reply
                 if frame.get("type") in ("tool_start", "tool_output"):
                     tools_seen = True
                 if (frame.get("exit_code") == 1
@@ -501,6 +505,17 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                 if tools_seen:
                     yield bridge._sse({"type": "agent_step"})  # fresh bubble
                 yield bridge._sse({"delta": late})
+                reply_parts.append(late)
+        # Promise guard (Phase 3): a reply that promises a follow-up with
+        # nothing registered gets a visible warning instead of silence.
+        if not failed:
+            try:
+                phrase = promise_guard.check_turn(session_key, "".join(reply_parts))
+                if phrase:
+                    yield bridge._sse({"type": "promise_warning",
+                                       "phrase": phrase[:80]})
+            except Exception:  # noqa: BLE001 - guard never breaks the turn
+                _log.warning("promise_guard emission failed", exc_info=True)
         # Final turn metrics: the vendor SPA renders a footer time from a
         # {type:"metrics"} frame (chatRenderer.displayMetrics) that its
         # original backends sent and we never did. response_time prefers

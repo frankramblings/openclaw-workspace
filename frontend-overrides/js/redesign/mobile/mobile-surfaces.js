@@ -64,6 +64,13 @@ export function mChatMsg(m, s) {
     return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div>${meta}</div>`;
   }
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
+  // Promise guard (Phase 3, mirrors surfaces.js): amber nudge when a reply
+  // promised a follow-up but no tracked task backs it. Mobile has no existing
+  // `m.notice`/`m.error` render path to extend, so this mirrors the desktop
+  // markup+styles directly.
+  const warn = (!m.error && m.warnNotice)
+    ? `<div class="msg-warn" style="margin-top:6px;display:flex;gap:7px;align-items:flex-start;color:var(--amber,#d8a24a);font-size:13px;line-height:1.45;background:rgba(216,162,74,.08);border:1px solid rgba(216,162,74,.28);border-radius:8px;padding:8px 11px"><span aria-hidden="true">⚠</span><span>${esc(m.warnNotice)}</span></div>`
+    : '';
   const updateBlocksHtml = (() => {
     const blocks = m.updateBlocks;
     if (!Array.isArray(blocks) || !blocks.length) return '';
@@ -89,7 +96,7 @@ export function mChatMsg(m, s) {
   })();
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}</div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${warn}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}</div>`
   + `</div>`;
 }
 

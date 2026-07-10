@@ -229,6 +229,9 @@ export function chatMsg(m, s) {
   const notice = m.error
     ? `<div class="msg-error" style="margin-top:6px;display:flex;gap:7px;align-items:flex-start;color:var(--red,#e5616a);font-size:13px;line-height:1.45;background:rgba(229,97,106,.08);border:1px solid rgba(229,97,106,.28);border-radius:8px;padding:8px 11px"><span aria-hidden="true">⚠</span><span>${esc(m.notice || 'No response from this model.')}</span></div>`
     : '';
+  const warn = (!m.error && m.warnNotice)
+    ? `<div class="msg-warn" style="margin-top:6px;display:flex;gap:7px;align-items:flex-start;color:var(--amber,#d8a24a);font-size:13px;line-height:1.45;background:rgba(216,162,74,.08);border:1px solid rgba(216,162,74,.28);border-radius:8px;padding:8px 11px"><span aria-hidden="true">⚠</span><span>${esc(m.warnNotice)}</span></div>`
+    : '';
   const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
@@ -258,7 +261,7 @@ export function chatMsg(m, s) {
     const title = tokens.map((t) => `${t.kind} · ${t.label}`).join('\n');
     return `<span class="turn-pending-pill" title="${esc(title)}"><span class="turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
 }
 
 

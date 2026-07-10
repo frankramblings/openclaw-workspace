@@ -15,6 +15,7 @@ import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
 import { reconcileDecision } from './reconcile-decision.js';
+import { promiseWarningText } from './promise-warning.js';
 import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
   onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
@@ -815,6 +816,14 @@ function beginTurn(chat, modelLabel, sessionId) {
       if (turn.pumpRAF) { cancelAnimationFrame(turn.pumpRAF); turn.pumpRAF = 0; }
       turn.pending = '';
       if (turn.asstMsg) turn.asstMsg.text = '';
+      throttledRender();
+      return;
+    }
+    // Promise guard (Phase 3): the reply promised a follow-up but nothing is
+    // registered — surface the amber card on this turn's bubble.
+    if (ev.type === 'promise_warning') {
+      const m = ensureAsst();
+      m.warnNotice = promiseWarningText(ev.phrase || '');
       throttledRender();
       return;
     }

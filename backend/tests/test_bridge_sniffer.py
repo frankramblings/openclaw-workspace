@@ -56,6 +56,14 @@ def test_item_command_reaches_sniffer_with_flag(monkeypatch):
     assert calls == [("run", "nohup x &", {"item_is_command": True})]
 
 
+def test_item_tool_kind_not_sniffed(monkeypatch):
+    calls = []
+    _drain([_item_frame("bash", "Run nohup x & for the user", kind="tool"),
+            _lifecycle_end()], monkeypatch,
+           lambda *a, **kw: calls.append(a))
+    assert calls == []      # title prose on a tool-kind item must not reach the sniffer
+
+
 def test_sniffer_crash_never_breaks_relay(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("sniffer exploded")

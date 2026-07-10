@@ -23,7 +23,7 @@ import asyncio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import config, event_store, sessions_store
+from . import config, event_store, sessions_store, turn_state
 
 router = APIRouter()
 
@@ -73,13 +73,22 @@ async def chat_events_resume(request: Request, session: str = "", last_event_id:
 async def chat_current_turn(request: Request, session: str = ""):
     """Snapshot of the session's latest turn, for a client that just (re)loaded.
 
-    Returns event_store.current_turn(): {active, turn_start_id, events, last_event_id}.
-    A reloaded SPA uses this to decide whether an answer is still streaming and,
-    if so, to rebuild it from the turn's first event, then tail /api/chat/stream
-    from last_event_id for the remainder. Purely read-side; initiates nothing.
-    """
+    event_store.current_turn() plus the durable ledger's view: `turn_id` while
+    a turn is active, and — when the previous turn died with the process (boot
+    sweep moved it to interrupted) — an honest
+    `last_turn: {turn_id, status: "interrupted"}` so the client can finalize a
+    frozen 'Working…' state truthfully instead of never. Purely read-side."""
     session_key = _session_key_for(session)
-    return JSONResponse(event_store.current_turn(session_key))
+    snap = event_store.current_turn(session_key)
+    if snap.get("active"):
+        info = turn_state.inflight_for(session_key)
+        snap["turn_id"] = info["turn_id"] if info else None
+    else:
+        info = turn_state.interrupted_for(session_key)
+        if info:
+            snap["last_turn"] = {"turn_id": info["turn_id"],
+                                 "status": "interrupted"}
+    return JSONResponse(snap)
 
 
 @router.get("/api/chat/active_sessions")

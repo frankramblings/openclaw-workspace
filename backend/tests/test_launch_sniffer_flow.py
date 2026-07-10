@@ -113,6 +113,43 @@ def test_no_running_loop_is_safe():
     assert launch_sniffer.on_tool_start(SK, "Bash", "nohup x &") is False
 
 
+def test_find_pid_pattern_is_escaped(monkeypatch):
+    captured = {}
+
+    class _P:
+        returncode = 1
+
+        async def communicate(self):
+            return b"", b""
+
+    async def fake_exec(*argv, **kw):
+        captured["argv"] = argv
+        return _P()
+
+    monkeypatch.setattr(launch_sniffer.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(launch_sniffer, "PID_TRIES", 1)
+    asyncio.run(launch_sniffer._find_pid("foo | tee log"))
+    argv = captured["argv"]
+    assert argv[:4] == ("pgrep", "-f", "-n", "--")
+    assert "\\|" in argv[4]          # regex-escaped, not raw alternation
+
+
+def test_watcher_stops_at_deadline(monkeypatch):
+    created = _capture_promises(monkeypatch)
+    monkeypatch.setattr(launch_sniffer.followup, "record_completion",
+                        lambda pid, **kw: (_ for _ in ()).throw(AssertionError("must not complete")))
+    monkeypatch.setattr(launch_sniffer, "_find_pid", _async_return(4242))
+    monkeypatch.setattr(launch_sniffer, "_pid_alive", lambda pid, core: True)  # never exits
+    monkeypatch.setattr(launch_sniffer, "AUTO_DEADLINE_S", 0.05)
+
+    async def main():
+        launch_sniffer.on_tool_start(SK, "Bash", "nohup ./daemon &")
+        await asyncio.sleep(0.3)
+
+    asyncio.run(main())
+    assert len(created) == 1          # promise exists; watcher gave up quietly
+
+
 def _async_return(value):
     async def _inner(*a, **k):
         return value

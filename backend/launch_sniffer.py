@@ -136,6 +136,11 @@ async def _run(session_key: str, session_id: str, command: str,
                      core, rec["id"])
             return                 # 4h backstop fires the honest turn
         while _pid_alive(pid, core):
+            if time.time() - start > AUTO_DEADLINE_S:
+                log.info("launch_sniffer: watcher for %r outlived the %ss cap; "
+                         "stopping — the deadline backstop owns promise %s",
+                         core, AUTO_DEADLINE_S, rec["id"])
+                return
             await asyncio.sleep(WATCH_POLL_S)
         followup.record_completion(
             rec["id"], exit_code=-1, duration_s=time.time() - start,
@@ -150,11 +155,14 @@ async def _run(session_key: str, session_id: str, command: str,
 async def _find_pid(core: str):
     """Newest process whose command line matches the launched command.
     Same-host guarantee: the gateway runs Gary's tools on this machine."""
-    pattern = core[:60]
+    # re.escape: pgrep -f treats the pattern as an ERE — a raw '|' in the
+    # command becomes alternation and can bind the watcher to the wrong
+    # process. '--' guards against a core that starts with '-'.
+    pattern = re.escape(core[:60])
     for _ in range(PID_TRIES):
         try:
             proc = await asyncio.create_subprocess_exec(
-                "pgrep", "-f", "-n", pattern,
+                "pgrep", "-f", "-n", "--", pattern,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL)
             out, _err = await proc.communicate()

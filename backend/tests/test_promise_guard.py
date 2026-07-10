@@ -20,6 +20,8 @@ def _fresh():
     ("I'll post the link when it lands.", True),
     ("once it's finished I'll update you", True),
     ("I'll keep you posted.", True),
+    ("I’ll let you know when it’s done.", True),      # typographic apostrophe
+    ("Once it’s finished I’ll update you", True),
     ("Done! Here's the file you asked for.", False),
     ("You should let me know if it breaks.", False),
     ("The render finished — no follow-up needed.", False),
@@ -88,7 +90,7 @@ def test_drive_turn_emits_promise_warning(monkeypatch):
         async for chunk in chat_turn.drive_turn(
                 message="go", use_web="", allow_web_search="", draft_doc=None,
                 rec=None, session_key=SK, run_info={}, chat_attachments=[],
-                title_task=None, active_runs={}, spawn=lambda c: None,
+                title_task=None, active_runs={}, spawn=lambda c: c.close(),
                 auto_extract=_async_none, log_turn_timing=lambda r: None):
             frames.append(chunk)
         return frames

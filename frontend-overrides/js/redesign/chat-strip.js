@@ -184,15 +184,19 @@ export function stripReducer(strip, ev, now = Date.now()) {
   return strip;
 }
 
-// Called on turn boundaries — after ev.type === 'done'. Clears the whole todo
-// list; the strip mirrors the CURRENT turn's activity, not a persistent task
-// tracker. TaskCreate items whose status hasn't converged to completed by
-// turn-end would otherwise pin the strip open forever (a real bug: pending
-// items from an earlier turn masking new work in a later one). Plan + agents
-// survive: plan clears on next user send, agents on their linger.
+// Called on turn boundaries — after ev.type === 'done'. TodoWrite items are
+// per-turn plans and always clear. TaskCreate items (identified by tempKey/id)
+// are durable background work — keep them when still pending/in_progress so
+// the strip continues to surface them across turns. Completed TaskCreate items
+// clear too. If nothing survives, drop todos entirely.
 export function onTurnDone(strip) {
-  if (!strip || !strip.todos) return strip;
-  return { ...strip, todos: null };
+  if (!strip || !strip.todos || !strip.todos.items) return strip;
+  const survivors = strip.todos.items.filter(
+    (it) => (it.id != null || it.tempKey != null) &&
+      it.status !== 'completed' && it.status !== 'deleted',
+  );
+  if (!survivors.length) return { ...strip, todos: null };
+  return { ...strip, todos: { ...strip.todos, items: survivors } };
 }
 
 // Called when the user sends a new message — plan preview clears (its window

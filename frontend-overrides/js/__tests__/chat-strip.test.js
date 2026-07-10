@@ -103,12 +103,12 @@ test('sweepAgents drops rows past clearAt', () => {
   assert.equal(after.agents['ag-1'], undefined);
 });
 
-test('onTurnDone clears todos regardless of item status', () => {
+test('onTurnDone clears TodoWrite items regardless of status', () => {
   const s = stripReducer(initStripState(), {
     type: 'tool_start', tool: 'TodoWrite',
     input: { todos: [todo('a', 'completed'), todo('b', 'in_progress')] },
   });
-  assert.equal(onTurnDone(s).todos, null, 'strip is per-turn; stuck items must not pin it open');
+  assert.equal(onTurnDone(s).todos, null, 'TodoWrite is per-turn; must not pin the strip open');
 });
 
 test('onUserSend clears the plan preview only', () => {
@@ -311,7 +311,7 @@ test('TaskList tool_output reconciles a full snapshot', () => {
   assert.equal(s.todos.items[2].content, 'Third');
 });
 
-test('onTurnDone always clears todos (strip mirrors current turn only)', () => {
+test('onTurnDone keeps pending TaskCreate items across turns', () => {
   let s = stripReducer(initStripState(), {
     type: 'tool_start', tool: 'TaskCreate', tool_id: 'tc-1', input: { subject: 'A' },
   }, 1000);
@@ -319,7 +319,19 @@ test('onTurnDone always clears todos (strip mirrors current turn only)', () => {
     type: 'tool_output', tool: 'TaskCreate', tool_id: 'tc-1',
     output: 'Task #1 created successfully: A', exit_code: 0,
   }, 1050);
-  // Even with A left in `pending`, onTurnDone must clear so a stuck task
-  // can't pin the strip open across turns.
-  assert.equal(onTurnDone(s).todos, null);
+  // TaskCreate is durable background work — a pending task must survive
+  // onTurnDone so its progress remains visible in the next turn.
+  const after = onTurnDone(s);
+  assert.ok(after.todos, 'todos survives when a TaskCreate item is still pending');
+  assert.equal(after.todos.items.length, 1);
+  assert.equal(after.todos.items[0].id, '1');
+  assert.equal(after.todos.items[0].status, 'pending');
+});
+
+test('onTurnDone drops completed TaskCreate items and clears when empty', () => {
+  const s = stripReducer(initStripState(), {
+    type: 'tool_output', tool: 'TaskList', tool_id: 'tl-1',
+    output: '#1 [completed] Done', exit_code: 0,
+  }, 1000);
+  assert.equal(onTurnDone(s).todos, null, 'completed-only list clears to null');
 });

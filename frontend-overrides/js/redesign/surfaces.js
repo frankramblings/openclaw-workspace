@@ -250,13 +250,13 @@ export function chatMsg(m, s) {
       return `<div class="turn-update-block">${hdr}${content}</div>`;
     }).join('');
   })();
-  // Pending-work pill: ⏳ pending while any deferred work is outstanding.
+  // Pending-work pill: fortress spinner while any deferred work is outstanding.
   const pendingPillHtml = (() => {
     const tokens = m.pendingTokens;
     if (!Array.isArray(tokens) || !tokens.length) return '';
     const n = tokens.length;
     const title = tokens.map((t) => `${t.kind} · ${t.label}`).join('\n');
-    return `<span class="turn-pending-pill" title="${esc(title)}">${n === 1 ? '⏳ pending' : `⏳ ${n}`}</span>`;
+    return `<span class="turn-pending-pill" title="${esc(title)}"><span class="turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
   return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
 }

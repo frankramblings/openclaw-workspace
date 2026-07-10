@@ -31,6 +31,7 @@ import {
 // strip → remove the node entirely so nothing lingers when idle.
 function patchChatStrip(chat) {
   if (!chat) return;
+  persistStripToServer(chat.activeId, chat.chatStrip);
   try {
     // Desktop: .composer-wrap (strip is first child, above .composer).
     // Mobile: .m-composer (strip is first child, above .bar).
@@ -262,6 +263,8 @@ async function fetchThread(id, fallbackModel, name) {
       msg.attach = h.attachments.map((a) => ({ id: a.id, name: a.name || a.id, url: a.url }));
     }
     if (msg.role === 'assistant') {
+      // Preserve raw epoch-ms timestamp for pending-work hydration matching.
+      if (meta.timestamp != null) msg._ts = Number(meta.timestamp);
       const steps = historySteps(meta.tool_events, i);
       if (steps.length) {
         // The final answer is the LAST non-empty round (backend `content` is the
@@ -296,6 +299,59 @@ async function fetchUsage(id) {
     return round1(u?.context?.usedPct);
   } catch (_) {
     return undefined;
+  }
+}
+
+// Hydrate resolved update_blocks from the server into thread messages so
+// generated images etc. survive a session-switch or page refresh.
+//
+// Calls /api/pending/hydrate for the session (no turn_ids — returns all turns
+// with any stored data). For each turn's update_blocks, finds the best-matching
+// assistant message by _ts proximity to spawned_at, then populates
+// msg.updateBlocks so the render path shows the resolved content.
+//
+// Only runs for sessions with _ts on at least one assistant message (requires
+// the server to have emitted metadata.timestamp for the turn). Non-fatal.
+async function hydrateThread(sessionId, thread) {
+  if (!sessionId || !Array.isArray(thread)) return;
+  let hydration;
+  try {
+    hydration = await apiGet(`/api/pending/hydrate?session=${encodeURIComponent(sessionId)}`);
+  } catch (_) { return; }
+  if (!hydration || typeof hydration !== 'object') return;
+
+  // Collect turns that have update_blocks to apply.
+  const turns = Object.entries(hydration)
+    .map(([tid, d]) => ({
+      turnId: Number(tid),
+      updateBlocks: Array.isArray(d.update_blocks) ? d.update_blocks : [],
+      pendingTokens: Array.isArray(d.pending_tokens) ? d.pending_tokens : [],
+    }))
+    .filter((t) => t.updateBlocks.length > 0 || t.pendingTokens.length > 0);
+
+  if (!turns.length) return;
+
+  // Build a list of assistant messages with raw timestamps for matching.
+  const asstMsgs = thread.filter((m) => m.role === 'assistant' && m._ts != null);
+  if (!asstMsgs.length) return;
+
+  // For each turn, pick the best-matching assistant message: the one whose
+  // _ts is closest to (but ≤) the first update_block's spawned_at epoch-ms.
+  // Falls back to the last assistant message if no timestamp proximity works.
+  for (const t of turns) {
+    if (!t.updateBlocks.length) continue;
+    const spawnedIso = t.updateBlocks[0].spawned_at;
+    const spawnedMs = spawnedIso ? Date.parse(spawnedIso) : NaN;
+    let best = asstMsgs[asstMsgs.length - 1];
+    if (!isNaN(spawnedMs)) {
+      // Latest assistant message whose _ts ≤ spawned_at (the turn that owned this work).
+      for (const m of asstMsgs) {
+        if (m._ts <= spawnedMs) best = m;
+      }
+    }
+    if (!best.updateBlocks || !best.updateBlocks.length) {
+      best.updateBlocks = t.updateBlocks.map((b) => ({ payload: b.payload || {}, elapsed_ms: b.elapsed_ms || 0 }));
+    }
   }
 }
 
@@ -354,6 +410,9 @@ export async function load(state) {
     // Re-attach to an in-flight turn after a page refresh — the live answer
     // keeps streaming instead of vanishing until the turn fully finishes.
     try { await resumeIfActive(chat, state, activeId); } catch (_) { /* non-fatal */ }
+    // Populate resolved update_blocks (generated images etc.) that the frontend
+    // missed while away — survives page refresh and session switch.
+    try { await hydrateThread(activeId, chat.thread); } catch (_) { /* non-fatal */ }
     const pct = await fetchUsage(activeId);
     if (pct != null) chat.usagePct = pct;
   } else {
@@ -375,6 +434,26 @@ let renderTimer = null;      // throttle handle for stream deltas
 let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
 let _notifyResuming = null;  // session id with a notifier-driven resume in flight
+let _stripPersistTimer = null;
+
+// Debounced (500ms) write of the strip's todo items to the server so they
+// survive a full PWA reload. sessionId is chat.activeId (the 12-hex session
+// id). Sends an empty array when todos have been cleared — that keeps the
+// server in sync without needing a separate clear call on every completion.
+function persistStripToServer(sessionId, strip) {
+  if (!sessionId) return;
+  if (_stripPersistTimer) clearTimeout(_stripPersistTimer);
+  _stripPersistTimer = setTimeout(async () => {
+    _stripPersistTimer = null;
+    const tasks = (strip && strip.todos && strip.todos.items) ? strip.todos.items : [];
+    try {
+      const fd = new FormData();
+      fd.append('session', sessionId);
+      fd.append('tasks_json', JSON.stringify(tasks));
+      await fetch('/api/strip/state', { method: 'POST', credentials: 'same-origin', body: fd });
+    } catch (_) { /* non-fatal */ }
+  }, 500);
+}
 
 // Pending-work token state: maps backend turn_id (int) → message object.
 // Persists across turn teardown so token.resolved frames that arrive after
@@ -1333,6 +1412,22 @@ export const actions = {
     saveStripForCurrent(chat);
     chat.activeId = id;
     chat.chatStrip = loadStripForKey(chat, id);
+    // Hydrate from server if in-memory strip has no pending tasks (covers fresh
+    // PWA loads where chatStripByKey is empty). Runs async so it doesn't block
+    // the rest of selectSession; only applied if the user is still on this session.
+    if (!chat.chatStrip.todos || !(chat.chatStrip.todos.items || []).length) {
+      (async () => {
+        try {
+          const res = await apiGet(`/api/strip/state?session=${encodeURIComponent(id)}`);
+          const tasks = Array.isArray(res && res.tasks) ? res.tasks : [];
+          if (tasks.length && chat.activeId === id) {
+            chat.chatStrip = { ...chat.chatStrip, todos: { msgId: null, items: tasks, updatedAt: Date.now() } };
+            patchChatStrip(chat);
+            runtime.render();
+          }
+        } catch (_) { /* non-fatal */ }
+      })();
+    }
     chat.editingId = null;
     if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
     storeActiveId(id);
@@ -1373,6 +1468,8 @@ export const actions = {
     // Re-attach to an in-flight turn for this thread, if one is still running
     // server-side (returning to a thread you left mid-answer).
     try { await resumeIfActive(chat, state, id); } catch (_) { /* non-fatal */ }
+    // Populate resolved update_blocks that the frontend missed while away.
+    try { await hydrateThread(id, chat.thread); } catch (_) { /* non-fatal */ }
     const pct = await fetchUsage(id);
     if (pct != null) chat.usagePct = pct;
     runtime.render();
@@ -1391,7 +1488,13 @@ export const actions = {
     stopElapsed();
     turn = null;
     _pendingByTurnId.clear();
+    const _leavingId = chat.activeId;
     saveStripForCurrent(chat);
+    if (_leavingId) {
+      fetch(`/api/strip/state?session=${encodeURIComponent(_leavingId)}`, {
+        method: 'DELETE', credentials: 'same-origin',
+      }).catch(() => {});
+    }
     chat.activeId = null;
     chat.chatStrip = stripOnSessionSwitch();
     chat.editingId = null;

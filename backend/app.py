@@ -49,6 +49,7 @@ from . import workspace_watch
 from .terminals import router as terminals_router
 from .resume_route import router as resume_router
 from .export_pdf import router as export_pdf_router
+from .strip_state import router as strip_state_router
 from . import workspace_files
 # Attachment subsystem (Task 19): image/text extraction, HEIC→JPEG, persistence.
 # app.py keeps the to_thread call sites (they dispatch the blocking work here off
@@ -242,6 +243,7 @@ app.include_router(workspace_watch_router)
 app.include_router(terminals_router)
 app.include_router(resume_router)
 app.include_router(export_pdf_router)
+app.include_router(strip_state_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
 # server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop

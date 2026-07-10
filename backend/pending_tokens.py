@@ -6,6 +6,12 @@ pending until every token it registered has been resolved.
 
 Storage is JSON on disk (same pattern as sessions_store); this module is the
 single writer. Callers must never touch the file directly.
+
+File shape:
+  {
+    "turns":  { "<session>:<turn_id>": [<token>, ...] },   # unresolved tokens
+    "blocks": { "<session>:<turn_id>": [<update_block>, ...] }  # resolved payloads
+  }
 """
 from __future__ import annotations
 
@@ -41,7 +47,7 @@ def _iso_to_ms(iso: str) -> int:
 
 
 def _load() -> dict:
-    return fsutil.load_json_guarded(_path(), {"turns": {}}, logger=log)
+    return fsutil.load_json_guarded(_path(), {"turns": {}, "blocks": {}}, logger=log)
 
 
 def _save(data: dict) -> None:
@@ -95,6 +101,11 @@ def resolve(session_key: str, turn_id: int, token_id: str,
 def for_turn(session_key: str, turn_id: int) -> list[dict]:
     data = _load()
     return list(data.get("turns", {}).get(_key(session_key, turn_id), []))
+
+
+def update_blocks_for_turn(session_key: str, turn_id: int) -> list[dict]:
+    data = _load()
+    return list(data.get("blocks", {}).get(_key(session_key, turn_id), []))
 
 
 from backend import event_store  # noqa: E402
@@ -157,6 +168,81 @@ async def http_resolve(request: Request, body: dict = Body(...)):
     return {"resolved": removed}
 
 
+@router.get("/api/pending/hydrate")
+async def http_hydrate(session: str = "", turn_ids: str = ""):
+    """Return persisted pending_tokens + update_blocks for a session.
+
+    Accepts either a full session_key or a SPA session_id.
+    `turn_ids` is an optional comma-separated list of int turn ids; when
+    omitted (or empty), ALL turns with any data for the session are returned.
+
+    Response: {"<turn_id>": {"pending_tokens": [...], "update_blocks": [...]}}
+    Unknown session → {} (not 404, so frontend hydration is always safe).
+    """
+    if not session.strip():
+        return {}
+    sk = _resolve_session_key(session.strip())
+    # Unknown session → empty result (non-fatal for the frontend hydration path)
+    if sk is None:
+        return {}
+    data = _load()
+    all_turns = data.get("turns", {})
+    all_blocks = data.get("blocks", {})
+
+    prefix = sk + ":"
+
+    if turn_ids.strip():
+        requested = set()
+        for t in turn_ids.split(","):
+            t = t.strip()
+            if t:
+                try:
+                    requested.add(int(t))
+                except ValueError:
+                    pass
+        keys = {_key(sk, tid): tid for tid in requested}
+    else:
+        # All turn_ids that have any data for this session
+        seen: dict[int, str] = {}
+        for k in list(all_turns) + list(all_blocks):
+            if k.startswith(prefix):
+                try:
+                    tid = int(k[len(prefix):])
+                    seen[tid] = k
+                except ValueError:
+                    pass
+        keys = {k: tid for tid, k in seen.items()}
+
+    result = {}
+    for k, tid in keys.items():
+        pt = list(all_turns.get(k, []))
+        ub = list(all_blocks.get(k, []))
+        if pt or ub:
+            result[str(tid)] = {"pending_tokens": pt, "update_blocks": ub}
+    return result
+
+
+@router.get("/api/pending/current-turn")
+async def http_current_turn(session: str = ""):
+    """Return the current turn_id (event_store turn_start_id) for a session.
+
+    Accepts either a full session_key (contains ':') or a SPA session_id.
+    Used by producers (e.g. the gateway image_generate hook) that need the
+    originating turn_id at spawn time to register a pending token correctly.
+    Returns {"turn_id": int|null, "active": bool}.
+    """
+    sk = _resolve_session_key(session.strip()) if session.strip() else None
+    if sk is None:
+        return JSONResponse(status_code=404, content={"error": "unknown session"})
+    info = event_store.current_turn(sk)
+    raw = info.get("turn_start_id")
+    try:
+        turn_id = int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        turn_id = None
+    return {"turn_id": turn_id, "active": bool(info.get("active"))}
+
+
 # --- end HTTP surface --------------------------------------------------------
 
 
@@ -182,6 +268,19 @@ def resolve_and_emit(session_key: str, turn_id: int, token_id: str,
     removed = resolve(session_key, turn_id, token_id, payload)
     if removed is None:
         return None
+    block = {
+        "id": token_id,
+        "kind": removed.get("kind", ""),
+        "label": removed.get("label", ""),
+        "spawned_at": removed.get("spawned_at", ""),
+        "payload": payload,
+        "resolved_at": _now_iso(),
+        "elapsed_ms": removed["elapsed_ms"],
+    }
+    with _LOCK:
+        data = _load()
+        data.setdefault("blocks", {}).setdefault(_key(session_key, turn_id), []).append(block)
+        _save(data)
     _emit(session_key, {
         "type": "token.resolved",
         "turn_id": turn_id,

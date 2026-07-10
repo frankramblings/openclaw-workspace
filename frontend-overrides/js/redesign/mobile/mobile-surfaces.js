@@ -64,9 +64,32 @@ export function mChatMsg(m, s) {
     return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div>${meta}</div>`;
   }
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
+  const updateBlocksHtml = (() => {
+    const blocks = m.updateBlocks;
+    if (!Array.isArray(blocks) || !blocks.length) return '';
+    return blocks.map((b) => {
+      const mins = Math.max(0, Math.round((b.elapsed_ms || 0) / 60000));
+      const lbl = mins < 1 ? 'just now' : `${mins}m later`;
+      const hdr = `<div class="m-turn-update-header">↳ update, ${esc(lbl)}</div>`;
+      let content = '';
+      if (b.payload && b.payload.image_url) {
+        content = `<img class="m-turn-update-image" src="${esc(b.payload.image_url)}" alt="${esc(b.payload.alt_text || '')}" onclick="window.open(this.src,'_blank')">`;
+      } else if (b.payload && b.payload.error) {
+        content = `<div class="m-turn-update-error">${esc(b.payload.error)}</div>`;
+      }
+      return `<div class="m-turn-update-block">${hdr}${content}</div>`;
+    }).join('');
+  })();
+  const pendingPillHtml = (() => {
+    const tokens = m.pendingTokens;
+    if (!Array.isArray(tokens) || !tokens.length) return '';
+    const n = tokens.length;
+    const title = tokens.map((t) => `${t.kind} · ${t.label}`).join('\n');
+    return `<span class="m-turn-pending-pill" title="${esc(title)}"><span class="m-turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
+  })();
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${assistantToolbar(m, s)}</div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}</div>`
   + `</div>`;
 }
 

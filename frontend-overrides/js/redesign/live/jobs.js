@@ -2,9 +2,10 @@
 // docs/superpowers/specs/2026-06-30-workspace-live-jobs-design.md
 //
 // A self-contained progress overlay: it injects its own CSS + container onto
-// <body>, opens /api/jobs/stream (SSE), keeps a jobs map, and renders live
-// progress bars imperatively. It is deliberately DECOUPLED from the SPA's
-// render() cycle so a chat re-render can never destroy or duplicate it.
+// <body>, subscribes to the shared task feed (task-feed.js — one transport
+// stream for the whole app), keeps a jobs array, and renders live progress
+// bars imperatively. It is deliberately DECOUPLED from the SPA's render()
+// cycle so a chat re-render can never destroy or duplicate it.
 //
 // UX:
 //   * A stack of slim bars, bottom-right, above the composer. Visible only when
@@ -15,19 +16,16 @@
 //     process, which was the whole point).
 //   * done -> green check, failed -> red + error, stalled -> amber "no update".
 //
-// Fail-soft: SSE errors reconnect with backoff; a bad payload is ignored; if the
-// endpoint is missing the overlay simply stays empty and invisible.
+// Fail-soft: transport (reconnect/backoff/fallback poll) lives in task-feed.js;
+// a bad record is simply excluded here.
 
 import { runtime } from './runtime.js';
+import { subscribeTasks } from './task-feed.js';
 
-const STREAM = '/api/jobs/stream';
-const FALLBACK_POLL = '/api/jobs';
 const FADE_AFTER_MS = 4000;      // collapse the panel this long after it empties
 
 let els = null;                  // { root, badge, list }
-let jobs = [];                   // latest record list from the stream
-let es = null;
-let backoff = 1000;
+let jobs = [];                   // latest native-shaped job list from the feed
 let emptySince = 0;
 let pollTimer = null;
 
@@ -206,37 +204,22 @@ function render() {
   list.innerHTML = jobs.map((j) => jobHtml(j, j.thread && cur && j.thread === cur)).join('');
 }
 
-// ---- stream ---------------------------------------------------------------
+// ---- feed -------------------------------------------------------------
 
-function apply(payload) {
-  if (!payload || !Array.isArray(payload.jobs)) return;
-  jobs = payload.jobs;
-  render();
-}
-
-function connect() {
-  try {
-    es = new EventSource(STREAM, { withCredentials: true });
-  } catch (_) { scheduleReconnect(); return; }
-
-  es.onmessage = (e) => {
-    backoff = 1000;
-    try { apply(JSON.parse(e.data)); } catch (_) { /* keepalive or garbage */ }
-  };
-  es.onerror = () => {
-    try { es.close(); } catch (_) {}
-    es = null;
-    scheduleReconnect();
-  };
-}
-
-function scheduleReconnect() {
-  // Fallback: one plain GET so a broken SSE still shows current state.
-  fetch(FALLBACK_POLL, { credentials: 'same-origin' })
-    .then((r) => r.ok ? r.json() : null).then((d) => d && apply(d)).catch(() => {});
-  const wait = Math.min(backoff, 15000);
-  backoff = Math.min(backoff * 2, 15000);
-  setTimeout(connect, wait);
+// Registry records → the native job array render() was built against.
+export function overlayJobs(records) {
+  const out = [];
+  for (const rec of (records || [])) {
+    if (!rec || rec.source !== 'job') continue;
+    const native = (rec.extra && rec.extra.native) || null;
+    if (!native || !native.id) continue;
+    const j = { ...native };
+    if (rec.state === 'stalled') { j.status = 'running'; j.stalled = j.stalled || 1; }
+    else if (rec.state === 'interrupted') { j.status = 'failed'; j.error = j.error || 'interrupted by a backend restart'; }
+    else j.status = rec.state === 'done' ? 'done' : rec.state === 'failed' ? 'failed' : 'running';
+    out.push(j);
+  }
+  return out;
 }
 
 // Re-render on SPA navigation so "mine" highlighting tracks the open thread.
@@ -251,7 +234,7 @@ function watchThread() {
 export function initJobs() {
   if (els) return;                 // idempotent
   ensureDom();
-  connect();
+  subscribeTasks((records) => { jobs = overlayJobs(records); render(); });
   watchThread();
 }
 

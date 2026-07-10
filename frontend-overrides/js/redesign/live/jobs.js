@@ -214,7 +214,13 @@ export function overlayJobs(records) {
     const native = (rec.extra && rec.extra.native) || null;
     if (!native || !native.id) continue;
     const j = { ...native };
-    if (rec.state === 'stalled') { j.status = 'running'; j.stalled = j.stalled || 1; }
+    if (rec.state === 'stalled') {
+      j.status = 'running';
+      // Real staleness: registry records carry the file's last-update epoch
+      // (seconds); the old server route computed this at read time.
+      const upd = rec.extra && rec.extra.updated_epoch;
+      j.stalled = j.stalled || (upd ? Math.max(1, Math.round(Date.now() / 1000 - upd)) : 1);
+    }
     else if (rec.state === 'interrupted') { j.status = 'failed'; j.error = j.error || 'interrupted by a backend restart'; }
     else j.status = rec.state === 'done' ? 'done' : rec.state === 'failed' ? 'failed' : 'running';
     out.push(j);

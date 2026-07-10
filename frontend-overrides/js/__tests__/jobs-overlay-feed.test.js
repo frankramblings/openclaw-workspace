@@ -23,6 +23,16 @@ test('stalled keeps running status and injects stalled', () => {
   assert.ok(j.stalled);
 });
 
+test('stalled duration derives from updated_epoch', () => {
+  const nowS = Date.now() / 1000;
+  const [j] = overlayJobs([rec({
+    state: 'stalled',
+    extra: { native: { id: 'r566', label: 'render 566', status: 'running' }, updated_epoch: nowS - 120 },
+  })]);
+  assert.equal(j.status, 'running');
+  assert.ok(j.stalled >= 119 && j.stalled <= 122);
+});
+
 test('interrupted maps to failed with honest error', () => {
   const [j] = overlayJobs([rec({ state: 'interrupted' })]);
   assert.equal(j.status, 'failed');

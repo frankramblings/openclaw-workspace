@@ -18,8 +18,6 @@
 //      the chat store re-renders the msg during Gary's tool calls, our node
 //      gets nuked and re-injected within the same paint frame.
 
-const POLL_MS = 1000;
-
 const CHAT_ACTIVE_ID_LSKEY = 'redesign.chat.activeId';
 
 function activeChatId() {
@@ -97,6 +95,36 @@ export function taskRowHtml(task) {
       <span class="task-err"></span>
     </div>
   `;
+}
+
+// Map a registry record to the native payload this module renders. Only
+// taskfile + followup sources are in-chat rows (job-source = global overlay,
+// research = research tab, pending = the ⏳ pill in chat.js).
+export function nativeView(rec) {
+  if (!rec || (rec.source !== 'taskfile' && rec.source !== 'followup')) return null;
+  const statusFor = (state) => (state === 'running' || state === 'stalled') ? 'running'
+    : state === 'done' ? 'done' : 'failed';
+  if (rec.source === 'followup') {
+    return {
+      id: rec.id, label: rec.label || rec.id, kind: 'followup',
+      status: statusFor(rec.state), detail: rec.detail || '',
+      error: rec.state === 'interrupted' ? 'interrupted by a backend restart' : (rec.error || ''),
+      sessionKey: rec.session_key || '',
+      elapsed: rec.state === 'running' && rec.created ? (Date.now() - rec.created) / 1000 : null,
+    };
+  }
+  const native = (rec.extra && rec.extra.native) || null;
+  if (!native || !native.id) return null;
+  const out = { ...native, status: statusFor(rec.state) };
+  if (rec.state === 'interrupted') out.error = out.error || 'interrupted by a backend restart';
+  return out;
+}
+
+// Deterministic bubble anchoring when the record carries the ledger turn_id
+// and it matches the live turn; otherwise the legacy pin heuristic.
+export function anchorMode(rec, liveTurnId) {
+  return (rec && rec.turn_id != null && liveTurnId != null && rec.turn_id === liveTurnId)
+    ? 'turn' : 'pin';
 }
 
 function buildRow(task) {
@@ -262,38 +290,34 @@ function reap(activeIds) {
   }
 }
 
-let _polling = false;
+import { subscribeTasks } from './live/task-feed.js';
 
-async function poll() {
-  try {
-    const r  = await fetch('/api/tasks/active', { cache: 'no-store' });
-    if (!r.ok) return;
-    const data  = await r.json();
-    const all   = Array.isArray(data.tasks) ? data.tasks : [];
-    // Attribution filter: only tasks whose sessionKey matches this tab's
-    // active chat id. Skip everything else (belongs to a different thread).
-    const mine = all.filter(taskBelongsToThisChat);
-    const active = new Set();
-    for (const t of mine) {
-      if (!t.id) continue;
-      active.add(t.id);
-      renderOrUpdateRow(t);
-    }
-    reap(active);
-  } catch (_) { /* transient — next tick */ }
+function applyFeed(records) {
+  const mine = [];
+  for (const rec of records) {
+    const v = nativeView(rec);
+    if (v && taskBelongsToThisChat(v)) mine.push(v);
+  }
+  const active = new Set();
+  for (const t of mine) {
+    if (!t.id) continue;
+    active.add(t.id);
+    renderOrUpdateRow(t);
+  }
+  reap(active);
 }
 
-export function startTaskRowsPolling() {
-  if (_polling) return;
-  _polling = true;
-  poll();
-  setInterval(poll, POLL_MS);
+let _started = false;
+export function startTaskRows() {
+  if (_started) return;
+  _started = true;
+  subscribeTasks(applyFeed);
 }
 
 if (typeof window !== 'undefined') {
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startTaskRowsPolling);
+    document.addEventListener('DOMContentLoaded', startTaskRows);
   } else {
-    startTaskRowsPolling();
+    startTaskRows();
   }
 }

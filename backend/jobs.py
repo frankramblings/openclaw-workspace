@@ -25,6 +25,7 @@ from fastapi import APIRouter
 from fastapi.responses import (HTMLResponse, PlainTextResponse,
                                StreamingResponse)
 
+from . import task_registry
 from .vault_store import WORKSPACE
 
 _ID_RE = re.compile(r"^[A-Za-z0-9_]+$")   # job ids are safe tokens; reject the rest
@@ -33,41 +34,46 @@ router = APIRouter()
 
 JOBS_DIR = WORKSPACE / "tmp" / "jobs"
 
-POLL_SECS = 0.4           # registry poll interval for the SSE stream
-STALL_SECS = 30           # running jobs with no update in this long are "stalled"
 RETAIN_SECS = 60          # terminal jobs older than this are dropped from output
+                          # (tighter than the registry's own RETAIN_TERMINAL_S —
+                          # /api/jobs has always aged terminal rows out faster)
 
 # Internal bookkeeping fields we don't leak to the client.
 _PRIVATE = ("_updatedEpoch", "_pctExplicit")
 
 
-def _read_all() -> list[dict]:
-    """All current job records, cleaned + sorted (running first, newest first).
+def _native(rec: dict) -> dict:
+    """Reconstruct the bin/job native record from a registry entry: the
+    ingested payload verbatim, private fields stripped, `stalled` injected
+    when the registry derived it. This is the compat contract — the overlay
+    and /jobs/live were built against these exact fields."""
+    out = dict((rec.get("extra") or {}).get("native") or {})
+    for k in _PRIVATE:
+        out.pop(k, None)
+    if rec.get("state") == "stalled":
+        updated = (rec.get("extra") or {}).get("updated_epoch") or 0
+        out["stalled"] = int(time.time() - updated) if updated else 1
+    return out
 
-    Skips unparseable files and drops terminal records past the retain window so
-    the stream self-heals even if bin/job's sweep hasn't run.
+
+def _read_all() -> list[dict]:
+    """All current job records from the registry (source=job only), cleaned +
+    sorted running-first / newest-first — the same output contract the
+    directory-globbing implementation had. Re-applies the legacy RETAIN_SECS
+    terminal window on top of the registry's own (longer) RETAIN_TERMINAL_S,
+    using the registry record's own `updated` timestamp — not the native
+    payload's — since that's what the registry actually ages records by.
     """
-    if not JOBS_DIR.is_dir():
-        return []
-    now = time.time()
+    now_ms = time.time() * 1000
     recs: list[dict] = []
-    for p in JOBS_DIR.glob("*.json"):
-        try:
-            rec = json.loads(p.read_text())
-        except Exception:
-            continue  # partial write mid-replace or garbage — skip, never crash
-        if not isinstance(rec, dict) or "id" not in rec:
+    for rec in task_registry.list_tasks(source="job"):
+        native = _native(rec)
+        if not native.get("id"):
             continue
-        updated = rec.get("_updatedEpoch") or 0
-        status = rec.get("status")
-        if status in ("done", "failed") and now - updated > RETAIN_SECS:
+        if (native.get("status") in ("done", "failed")
+                and now_ms - rec["updated"] > RETAIN_SECS * 1000):
             continue
-        # derive a "stalled" hint for running jobs gone quiet (writer owns real state)
-        if status == "running" and updated and now - updated > STALL_SECS:
-            rec["stalled"] = int(now - updated)
-        for k in _PRIVATE:
-            rec.pop(k, None)
-        recs.append(rec)
+        recs.append(native)
 
     order = {"running": 0, "failed": 1, "done": 2}
     recs.sort(key=lambda r: (order.get(r.get("status"), 3),
@@ -92,26 +98,28 @@ async def jobs():
 @router.get("/api/jobs/stream")
 async def jobs_stream():
     async def gen():
-        last = None
-        # emit an immediate snapshot so the client renders without waiting a tick
-        snap = _read_all()
-        last = json.dumps(snap, separators=(",", ":"))
-        yield _sse({"jobs": snap})
-        idle = 0
-        while True:
-            await asyncio.sleep(POLL_SECS)
-            cur = _read_all()
-            key = json.dumps(cur, separators=(",", ":"))
-            if key != last:
-                last = key
-                idle = 0
-                yield _sse({"jobs": cur})
-            else:
-                idle += 1
-                # keepalive comment every ~15s so proxies don't drop an idle stream
-                if idle >= int(15 / POLL_SECS):
-                    idle = 0
+        queue = task_registry.subscribe()
+        try:
+            last = None
+            # emit an immediate snapshot so the client renders without waiting a tick
+            snap = _read_all()
+            last = json.dumps(snap, separators=(",", ":"))
+            yield _sse({"jobs": snap})
+            while True:
+                try:
+                    rec = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
+                    continue
+                if rec.get("source") != "job":
+                    continue
+                cur = _read_all()
+                key = json.dumps(cur, separators=(",", ":"))
+                if key != last:
+                    last = key
+                    yield _sse({"jobs": cur})
+        finally:
+            task_registry.unsubscribe(queue)
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",

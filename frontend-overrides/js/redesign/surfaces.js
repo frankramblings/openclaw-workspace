@@ -997,7 +997,22 @@ function settingsSurface(s) {
       case 'chips':
         return `<div class="set-chips"><span class="k">${esc(r.label)}</span>${map(r.chips, (ch) => `<span class="set-chip">${esc(ch)}</span>`)}<span class="set-add">+ add</span></div>`;
       case 'buttons':
-        return `<div class="set-buttons">${map(r.buttons, (b) => `<button class="set-btn${b.primary ? ' primary' : ''}${b.danger ? ' danger' : ''}"${b.act ? ` data-act="${b.act}"${b.arg != null ? ` data-arg="${esc(String(b.arg))}"` : ''}` : ''}>${esc(b.label)}</button>`)}</div>`;
+        // A button with no action is not wired to anything yet — render it
+        // disabled instead of fake-clickable.
+        return `<div class="set-buttons">${map(r.buttons, (b) => `<button class="set-btn${b.primary ? ' primary' : ''}${b.danger ? ' danger' : ''}"${b.act ? ` data-act="${b.act}"${b.arg != null ? ` data-arg="${esc(String(b.arg))}"` : ''}` : ' disabled title="Not wired up yet"'}>${esc(b.label)}</button>`)}</div>`;
+      case 'liveModels': {
+        // Real endpoints/models from the gateway (state.live.modelGroups —
+        // filled by loadModelOptions from GET /api/models).
+        const groups = s.live?.modelGroups || [];
+        if (!groups.length) return '<div class="set-text set-live-empty">Model list hasn’t loaded yet — it fills in from the gateway when chat boots.</div>';
+        return groups.map((g) => `<div class="set-endpoint"><span class="ico" style="background:var(--tealtint);color:var(--teal)">${esc(String(g.ep || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?')}</span><div style="min-width:0;flex:1"><div class="nm">${esc(g.ep)}</div><div class="det">${esc(g.models.map((m) => m.name).join(', '))}</div></div><span class="st" style="color:var(--green)"><span class="d" style="background:var(--green)"></span>Active</span></div>`).join('');
+      }
+      case 'liveDefault': {
+        const def = s.live?.defaultModel || '';
+        const hit = (s.live?.modelList || []).find((m) => m.id === def);
+        if (!hit) return '<div class="set-text set-live-empty">No default recorded yet — set one with the ★ next to any model in the model picker.</div>';
+        return `<div class="set-field"><span class="k">Default</span><div class="v" style="color:var(--fg);font-family:var(--sans)">${esc(hit.name)} · via ${esc(hit.ep)}</div></div><div class="set-text">Change it with the ★ next to any model in the model picker.</div>`;
+      }
       case 'provider': {
         const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         const cur = s.searchProvider || r.cur;

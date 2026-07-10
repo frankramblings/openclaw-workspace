@@ -43,28 +43,21 @@ const accents = () => ({ type: 'accent' });
 const card = (o) => o;
 
 export const PANELS = {
+  // Real gateway endpoints/models, rendered live from state.live.modelGroups
+  // (GET /api/models — the same source the model picker uses). There is no
+  // add/test/scan UI because the workspace has no backend for it: endpoints
+  // and API keys live in the gateway config.
   services: [
-    card({ title: 'Add Models', note: '(Endpoints)', icon: TAB.services[2], sub: 'Connect local models first, or add a cloud API.', rows: [
-      head('LOCAL', '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>'),
-      inp('Endpoint URL', '', 'http://localhost:11434/v1'), sel('Type', 'LLM'),
-      btns([{ label: 'Scan for Servers' }, { label: 'Ollama' }, { label: 'Test' }, { label: 'Add', primary: true }]),
-      head('API', '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'),
-      provider('DeepSeek', ['Anthropic', 'DeepSeek', 'OpenAI', 'OpenRouter', 'Ollama Cloud', 'Groq', 'Mistral', 'Together AI', 'Fireworks AI', 'Google Gemini', 'xAI Grok', 'Z.AI']),
-      inp('API Key', '', 'sk-…'), sel('Type', 'LLM'),
-      btns([{ label: 'Test' }, { label: 'Add', primary: true }]),
-    ] }),
-    card({ title: 'Added Models', note: '(Endpoints)', icon: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>', sub: "Manage the endpoints you've added.", rows: [
-      head('LOCAL'), ep('OL', 'Ollama', 'localhost:11434 · llama3.1, qwen2.5:7b', 'rgba(91,217,127,.14)', 'var(--green)'),
-      head('API'), ep('AN', 'Anthropic', 'claude-opus-4, claude-sonnet-4', 'rgba(232,194,104,.14)', 'var(--gold)'),
-      ep('DS', 'DeepSeek', 'deepseek-chat, deepseek-reasoner', 'rgba(123,182,255,.14)', 'var(--blue)'),
+    card({ title: 'Model Endpoints', icon: TAB.services[2], sub: 'Read-only — endpoints and API keys are configured in the gateway (openclaw.json), not here.', rows: [
+      { type: 'liveModels' },
     ] }),
   ],
   ai: [
     card({ title: 'Default Chat Model', icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', sub: 'The model used when creating a new chat session.', rows: [
-      sel('Endpoint', 'Anthropic'), sel('Model', 'claude-opus-4'), chips('Fallbacks', ['claude-sonnet-4']),
+      { type: 'liveDefault' },
     ] }),
     card({ title: 'Utility Model', note: '(Recommended: Local)', icon: WR, sub: 'Runs background tasks (compaction, cleanup, auto-naming, retrieving memories) on a small/local model. Leave blank to use the chat model.', rows: [
-      sel('Endpoint', 'Ollama (local)'), sel('Model', 'qwen2.5:7b'),
+      txt('Set in the gateway config (agent defaults) — not editable from this UI yet.'),
     ] }),
     card({ title: 'Vision', icon: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>', toggleKey: 'visionEnabled', sub: 'Analyze images with a vision-capable model.', rows: [sel('Model', 'Auto-detect', true)] }),
     card({ title: 'Research Model', icon: '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>', sub: 'Model used for Deep Research. Falls back to the default chat model if not set.', rows: [

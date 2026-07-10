@@ -63,6 +63,11 @@ async function persistSetting(realKey, value) {
 }
 
 export async function load(state) {
+  // Fill the read-only Model Endpoints / Default Chat Model cards (they render
+  // from state.live.modelGroups / defaultModel). Fire-and-forget; the chat
+  // module's loader guards against refetching and re-renders when it lands.
+  try { if (runtime.actions && runtime.actions.loadModelOptions) runtime.actions.loadModelOptions(); } catch (_) {}
+
   // Apply cached accent immediately (synchronous — no flash on reload).
   let hasCached = false;
   try {

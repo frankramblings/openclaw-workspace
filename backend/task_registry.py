@@ -40,6 +40,22 @@ _LOCK = threading.Lock()
 _TASKS: dict[str, dict] = {}
 _SUBSCRIBERS: set = set()
 
+# Guards the ledger's read-modify-write cycle (load → decide → save) so
+# concurrent upserts can't interleave and resurrect a cleared terminal entry.
+# Lock ordering is deadlock-free by construction: _LOCK and _LEDGER_LOCK are
+# NEVER held at the same time — upsert releases _LOCK before the volatile
+# block, and sweep_boot releases _LEDGER_LOCK before its upsert loop.
+_LEDGER_LOCK = threading.Lock()
+
+
+def _copy(rec: dict) -> dict:
+    """Outbound copy of a record. `dict(rec)` alone would share the nested
+    `extra` dict — a caller mutating it would corrupt registry internals
+    bypassing the lock."""
+    out = dict(rec)
+    out["extra"] = dict(rec.get("extra") or {})
+    return out
+
 
 def _ledger_file():
     return config.DATA_DIR / "tasks_volatile.json"
@@ -65,7 +81,7 @@ def _ledger_save(data: dict) -> None:
 def _fanout(rec: dict) -> None:
     for q in list(_SUBSCRIBERS):
         try:
-            q.put_nowait(dict(rec))
+            q.put_nowait(_copy(rec))
         except Exception:  # noqa: BLE001 - a dead subscriber can't break producers
             log.warning("task_registry: failed to wake a subscriber", exc_info=True)
 
@@ -92,7 +108,7 @@ def upsert(task_id: str, *, kind: str, source: str, label: str = "",
         else:
             if label:
                 rec["label"] = label
-            if session_key is not None:
+            if session_key:
                 rec["session_key"] = session_key
             if turn_id is not None:
                 rec["turn_id"] = turn_id
@@ -109,24 +125,31 @@ def upsert(task_id: str, *, kind: str, source: str, label: str = "",
             if extra:
                 rec["extra"].update(extra)
             rec["updated"] = now
-        out = dict(rec)
+        out = _copy(rec)
 
     # `volatile` marks the SOURCE as volatile — producers pass it on EVERY
     # upsert for such tasks (running and terminal), and the registry decides
     # write vs clear by state. Compare-before-save keeps the running path to
-    # ONE disk write per task, not one per progress tick.
+    # ONE disk write per task, not one per progress tick. The entry is built
+    # from the MERGED record, never the raw call parameters: producers pass
+    # session_key only on the first upsert, and recomputing from a later
+    # tick's None would both rewrite the ledger every tick and strand the
+    # task session-less after a crash. _LEDGER_LOCK serializes the whole
+    # read-modify-write so a concurrent terminal clear can't be undone by an
+    # interleaved running-tick save.
     if volatile:
-        data = _ledger_load()
-        if state in _TERMINAL:
-            if task_id in data["entries"]:
-                data["entries"].pop(task_id)
-                _ledger_save(data)
-        else:
-            entry = {"kind": kind, "label": out["label"],
-                     "session_key": session_key, "created": out["created"]}
-            if data["entries"].get(task_id) != entry:
-                data["entries"][task_id] = entry
-                _ledger_save(data)
+        with _LEDGER_LOCK:
+            data = _ledger_load()
+            if state in _TERMINAL:
+                if task_id in data["entries"]:
+                    data["entries"].pop(task_id)
+                    _ledger_save(data)
+            else:
+                entry = {"kind": out["kind"], "label": out["label"],
+                         "session_key": out["session_key"], "created": out["created"]}
+                if data["entries"].get(task_id) != entry:
+                    data["entries"][task_id] = entry
+                    _ledger_save(data)
 
     _fanout(out)
     return out
@@ -135,7 +158,7 @@ def upsert(task_id: str, *, kind: str, source: str, label: str = "",
 def get(task_id: str) -> dict | None:
     with _LOCK:
         rec = _TASKS.get(task_id)
-        return dict(rec) if rec else None
+        return _copy(rec) if rec else None
 
 
 def list_tasks(session_key: str | None = None,
@@ -155,7 +178,7 @@ def list_tasks(session_key: str | None = None,
                 continue
             if source and rec.get("source") != source:
                 continue
-            out.append(dict(rec))
+            out.append(_copy(rec))
     out.sort(key=lambda r: (0 if r["state"] == "running" else 1, -r["updated"]))
     return out
 
@@ -182,8 +205,18 @@ def unsubscribe(q: "asyncio.Queue") -> None:
 def sweep_boot() -> list[dict]:
     """Volatile-ledger leftovers = tasks whose engine died with the previous
     process. Surface each as an in-memory `interrupted` record (fanned out so
-    an already-connected stream sees it) and clear the ledger."""
-    data = _ledger_load()
+    an already-connected stream sees it) and clear the ledger.
+
+    Deadlock-freedom: _LEDGER_LOCK is held only around the initial load and
+    the final clear, NOT across the upsert loop — and the loop's upserts pass
+    volatile=False (state is terminal `interrupted`, and the sweep clears the
+    whole ledger itself), so upsert never re-enters _LEDGER_LOCK from here.
+    The two locks are therefore never held simultaneously on any path.
+    Boot-only caveat: a volatile upsert landing between the load and the
+    final clear would be wiped with the rest; sweep_boot runs once at
+    startup, before producers start."""
+    with _LEDGER_LOCK:
+        data = _ledger_load()
     entries = data["entries"]
     if not entries:
         return []
@@ -192,9 +225,11 @@ def sweep_boot() -> list[dict]:
         rec = upsert(tid, kind=meta.get("kind", "auto"), source=tid.split(":", 1)[0],
                      label=meta.get("label", ""), session_key=meta.get("session_key"),
                      state="interrupted",
-                     detail="interrupted by a backend restart")
+                     detail="interrupted by a backend restart",
+                     volatile=False)
         moved.append(rec)
-    _ledger_save({"entries": {}})
+    with _LEDGER_LOCK:
+        _ledger_save({"entries": {}})
     return moved
 
 

@@ -91,6 +91,30 @@ def test_volatile_running_ticks_write_ledger_once(tmp_path, monkeypatch):
     assert ledger.stat().st_mtime_ns == mtime1   # unchanged entry → no rewrite
 
 
+def test_ledger_keeps_session_key_across_ticks(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    task_registry.upsert("research:r5", kind="research", source="research",
+                         label="survey", session_key="agent:main:web-aaa",
+                         volatile=True)
+    ledger = tmp_path / "tasks_volatile.json"
+    mtime1 = ledger.stat().st_mtime_ns
+    # Second tick omits session_key (merge contract: None doesn't clobber).
+    task_registry.upsert("research:r5", kind="research", source="research",
+                         pct=50.0, volatile=True)
+    assert ledger.stat().st_mtime_ns == mtime1     # no spurious rewrite
+    task_registry.reset_for_tests()
+    moved = task_registry.sweep_boot()
+    assert moved[0]["session_key"] == "agent:main:web-aaa"
+
+
+def test_outbound_records_do_not_share_extra():
+    task_registry.upsert("job:iso", kind="job", source="job",
+                         extra={"native": {"id": "iso"}})
+    got = task_registry.get("job:iso")
+    got["extra"]["native"] = "corrupted"
+    assert task_registry.get("job:iso")["extra"]["native"] == {"id": "iso"}
+
+
 def test_remove_drops_silently():
     async def main():
         task_registry.upsert("job:gone", kind="job", source="job")

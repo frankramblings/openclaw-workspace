@@ -41,6 +41,13 @@ test('AI defaults shows the real default model', () => {
   assert.doesNotMatch(html, /qwen2\.5:7b/);
 });
 
+test('email section has no Writing Style mock (feature declined — Gary already knows Frank)', () => {
+  const html = renderCenter(st('email'));
+  assert.doesNotMatch(html, /Writing Style/);
+  assert.doesNotMatch(html, /Extract from Sent/);
+  assert.doesNotMatch(html, /I keep emails short and direct/);
+});
+
 test('settings buttons without an action render disabled, never fake-clickable', () => {
   for (const sec of ['ai', 'integrations', 'email', 'reminders', 'account']) {
     const html = renderCenter(st(sec));

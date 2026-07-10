@@ -12,7 +12,7 @@ export const TAB = {
   ai: ['AI Defaults', 'Models for chat, utility, vision, research', '<path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/>'],
   search: ['Search', 'Web search provider and fallbacks', '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'],
   integrations: ['Integrations', 'All external service connections', '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'],
-  email: ['Email', 'Accounts, tasks, and writing style', '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>'],
+  email: ['Email', 'Accounts and background tasks', '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>'],
   reminders: ['Reminders', 'How fired reminders reach you', '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>'],
   brain: ['Brain', 'Long-term memory and skills', '<path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/>'],
   scheduled: ['Scheduled', 'Recurring jobs', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'],
@@ -88,7 +88,9 @@ export const PANELS = {
   email: [
     card({ title: 'Email Accounts', icon: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>', rows: [txt('Add, edit, delete, and test accounts in Integrations.'), btns([{ label: 'Manage in Integrations' }])] }),
     card({ title: 'Email Tasks', icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M9 16l2 2 4-4"/>', rows: [txt('Manage email background tasks in Tasks.'), btns([{ label: 'Open Tasks' }])] }),
-    card({ title: 'Writing Style', icon: '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>', sub: 'AI-extracted from your sent emails. Used when AI drafts replies.', rows: [ta('I keep emails short and direct. No exclamation marks. I sign off with “— Frank”.'), btns([{ label: 'Extract from Sent (15 emails)' }, { label: 'Save', primary: true }])] }),
+    // (No Writing Style card: the backend feature exists — /api/email/style,
+    // email_himalaya.py — but Frank declined it 2026-07-10: the agent already
+    // knows his voice. The classic UI still carries the wired version.)
   ],
   reminders: [
     card({ title: "How you're reminded", icon: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', sub: 'Controls how fired note reminders are delivered.', rows: [sel('Channel', 'Browser notification')] }),

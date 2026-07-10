@@ -108,7 +108,7 @@ def update_blocks_for_turn(session_key: str, turn_id: int) -> list[dict]:
     return list(data.get("blocks", {}).get(_key(session_key, turn_id), []))
 
 
-from backend import event_store  # noqa: E402
+from backend import event_store, task_registry  # noqa: E402
 
 
 # --- HTTP surface ------------------------------------------------------------
@@ -260,6 +260,12 @@ def register_and_emit(session_key: str, turn_id: int, *,
     tok = register(session_key, turn_id, kind=kind, label=label,
                    source_ref=source_ref, deadline=deadline)
     _emit(session_key, {"type": "token.added", "turn_id": turn_id, "token": tok})
+    try:
+        task_registry.upsert(f"pending:{tok['id']}", kind="deferred", source="pending",
+                             label=label, session_key=session_key, state="running",
+                             detail=kind, extra={"turn_ref": turn_id})
+    except Exception:  # noqa: BLE001
+        log.warning("task_registry mirror failed for pending token %s", tok["id"], exc_info=True)
     return tok
 
 
@@ -288,4 +294,9 @@ def resolve_and_emit(session_key: str, turn_id: int, token_id: str,
         "payload": payload,
         "elapsed_ms": removed["elapsed_ms"],
     })
+    try:
+        task_registry.upsert(f"pending:{token_id}", kind="deferred", source="pending",
+                             state="done", detail=removed.get("kind", ""))
+    except Exception:  # noqa: BLE001
+        log.warning("task_registry mirror failed for pending token %s", token_id, exc_info=True)
     return removed

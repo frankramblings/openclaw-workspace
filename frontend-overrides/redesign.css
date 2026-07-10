@@ -13,8 +13,8 @@
    Parallel-entry prototype stylesheet. De-inlined from the design reference
    (design_handoff_openclaw_workspace) into reusable classes.
 
-   This is a self-contained shell served at /static/index-redesign.html — it does
-   NOT touch the live index.html. Tokens below mirror the handoff's :root; for
+   This is the live app shell, served at /static/index.html (and /) since
+   2026-07. Tokens below mirror the handoff's :root; for
    production integration they map onto the repo's Hermes vars
    (--bg/--panel/--border/--fg/--accent…) and the accent becomes theme-driven.
    ========================================================================== */
@@ -28,7 +28,7 @@
   --teal:#4fe3d1; --teal2:#2f8d83; --tealtint:rgba(79,227,209,.10);
   --gold:#e8c268; --green:#5bd97f; --red:#f0726a; --violet:#a99bf5; --blue:#7bb6ff;
   --ink:#0c1413;                 /* text/icon on teal fills */
-  --row-hover:#1d1f24; --nav-hover:#1e2025;
+  --row-hover:#1d1f24;
   --mono:'MonoLisa',ui-monospace,monospace;
   --sans:'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif;
   --prose:'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif;
@@ -108,7 +108,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .ocnav,.ocrow,.octab,.ocbtn,.ocfile,.occhip{
   transition:background .12s ease,color .12s ease,border-color .12s ease,filter .12s ease,box-shadow .12s ease;
 }
-.ocnav:hover{background:var(--nav-hover)!important}
+.ocnav:hover{background:var(--row-hover)!important}
 .ocrow:hover{background:var(--row-hover)!important}
 .ocfile:hover{background:var(--row-hover)!important}
 .octab:hover{filter:brightness(1.16)}
@@ -120,7 +120,10 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
    convention. Menu items with their own deliberate background-highlight
    :focus-visible style (.cm-item, .msg-tool, .msg-dl-item) are a different
    class family and are untouched by this rule. */
-.ocnav:focus-visible,.ocrow:focus-visible,.octab:focus-visible,.ocbtn:focus-visible,.ocfile:focus-visible,.occhip:focus-visible{
+.ocnav:focus-visible,.ocrow:focus-visible,.octab:focus-visible,.ocbtn:focus-visible,.ocfile:focus-visible,.occhip:focus-visible,
+.btn:focus-visible,.icon-btn:focus-visible,.pill-btn:focus-visible,.model-btn:focus-visible,.new-conv:focus-visible,
+.qchip:focus-visible,.mode-toggle button:focus-visible,.comp-tab:focus-visible,.cal-nav:focus-visible,
+.set-nav-item:focus-visible,.conv-row:focus-visible,.model-row:focus-visible,.slash-cmd:focus-visible,.set-btn:focus-visible{
   outline:2px solid var(--teal);
   outline-offset:2px;
 }
@@ -385,8 +388,6 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .model-btn .glyph{font-family:var(--mono);color:var(--teal)}
 .model-provider-logo{width:15px;height:15px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--mut)}
 .model-provider-logo svg{width:100%;height:100%;display:block}
-.m-model-chip{display:inline-flex;align-items:center;gap:6px}
-.m-model-chip .model-provider-logo{width:13px;height:13px}
 .model-btn-name{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* compact, endpoint-grouped model picker (design_handoff_model_selector) */
@@ -974,7 +975,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 
 /* Drag-and-drop image attach overlay (chat). Toggled by app.js; pointer-events
    none so the drop lands on the chat underneath and bubbles to the root handler. */
-#oc-drop-overlay { position: fixed; inset: 0; z-index: 9999; display: none; align-items: center; justify-content: center; background: rgba(8,9,11,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: none; }
+#oc-drop-overlay { position: fixed; inset: 0; z-index: 9998; /* below #oc-toast-host — no ambiguous tie */ display: none; align-items: center; justify-content: center; background: rgba(8,9,11,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: none; }
 #oc-drop-overlay .oc-drop-card { border: 2px dashed var(--teal, #4fe3d1); color: var(--fg, #e8eaed); background: var(--panel, #1e2025); border-radius: 16px; padding: 22px 30px; font-size: 19px; font-weight: 600; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
 
 

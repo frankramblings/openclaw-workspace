@@ -495,8 +495,8 @@ function emailSurface(s) {
 function composeOverlay(s) {
   const busy = !!s.emailBusy;
   return `
-  <div class="oc-compose-scrim" data-act="closeCompose" aria-hidden="true" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60"></div>
-  <div class="oc-compose" role="dialog" aria-modal="true" aria-label="${s.composeInReplyTo ? 'Reply' : 'New message'}" style="position:fixed;z-index:61;left:50%;top:50%;transform:translate(-50%,-50%);width:min(640px,92vw);max-height:86vh;display:flex;flex-direction:column;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden">
+  <div class="oc-compose-scrim" data-act="closeCompose" aria-hidden="true" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100"></div>
+  <div class="oc-compose" role="dialog" aria-modal="true" aria-label="${s.composeInReplyTo ? 'Reply' : 'New message'}" style="position:fixed;z-index:101;left:50%;top:50%;transform:translate(-50%,-50%);width:min(640px,92vw);max-height:86vh;display:flex;flex-direction:column;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden">
     <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)">
       <b style="flex:1">New message</b>
       <button class="btn btn-ghost" data-act="composeAiDraft"${busy ? ' disabled' : ''}>✦ AI draft</button>

@@ -238,7 +238,9 @@ body:has(.chat-window-dock-grip:active) .chat-window-dock-grip {
  * both axes so a runaway width/height can't scroll the shell. */
 html, body {
   overflow: hidden !important;
-  height: 100vh;
+  /* height comes from redesign.css (html,body{height:100%}) — don't redefine
+   * it here as 100vh; two competing values across files was a lint trap and
+   * 100vh misbehaves in mobile webviews. */
 }
 
 /* ── Center chat composer stays responsive when the center is squeezed ──── *

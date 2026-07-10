@@ -1,7 +1,8 @@
 // OpenClaw Workspace — Direction A redesign shell (parallel-entry prototype).
 // Vanilla JS, string-template rendering with event delegation + focus
 // preservation. Recreates the design reference's state model and interactions.
-// Served standalone at /static/index-redesign.html — does not touch index.html.
+// Served as THE app at /static/index.html (and /) since 2026-07; the classic
+// UI lives on at /static/index-classic.html until it sunsets.
 
 import { I } from './icons.js';
 import { esc, when } from './dom.js';

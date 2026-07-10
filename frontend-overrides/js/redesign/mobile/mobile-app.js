@@ -55,7 +55,15 @@ export function renderMobile(s) {
 
 // ---- mobile action handlers (merged into the shared action map) -----------
 export function mobileActions(state) {
-  const closeSheets = () => { state.companionSheetOpen = false; state.quickCaptureOpen = false; state.mConvSheetOpen = false; state.mModelSheetOpen = false; state.mDrawerOpen = false; };
+  // Clears EVERY overlay flag — including the email compose sheet, the inbox
+  // reader, and the long-press message sheet, which used to survive a tab
+  // switch and re-open on return.
+  const closeSheets = () => {
+    state.companionSheetOpen = false; state.quickCaptureOpen = false;
+    state.mConvSheetOpen = false; state.mModelSheetOpen = false; state.mDrawerOpen = false;
+    state.composeOpen = false; state.inboxReader = null;
+    if (state.live && state.live.chat) state.live.chat.mobileSheetMsgId = null;
+  };
   return {
     mGo: (tab) => { state.mTab = tab; state.mSub = null; state.mReader = false; state.keyboard = false; closeSheets(); },
     // Center "+" tap → start a fresh thread on the Chat tab (the expected mental
@@ -122,7 +130,7 @@ export function mobileActions(state) {
 
 // ---- touch gestures -------------------------------------------------------
 // Direct-DOM during drag (no re-render thrash); commit on release.
-export function wireMobileGestures({ root, state, commitArchive, refresh, render }) {
+export function wireMobileGestures({ root, state, commitArchive, refresh, render, onOverlayChange }) {
   // Swipe thresholds: right >+84 = primary, left <-84 = dismiss, left <-140 = snooze.
   // SWIPE_COMMIT retained as the minimum magnitude that triggers any action.
   const SWIPE_COMMIT = -84;   // (left) minimum commit threshold — any left intent
@@ -406,6 +414,8 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     // Swipe-open commits here too (bypasses openConvDrawer) — refresh on open so
     // a just-started thread is always in the list.
     if (open && runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions();
+    // No render() on this path (see comment above) — sync Back-button history here.
+    if (onOverlayChange) onOverlayChange();
   };
 
   root.addEventListener('touchstart', (e) => {

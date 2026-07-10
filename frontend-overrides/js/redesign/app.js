@@ -11,6 +11,7 @@ import { renderCenter, renderChatList, chatMsg, inboxToastHtml } from './surface
 import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
+import { derivedDepth, closeTopmost } from './mobile/mobile-history.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { maybeShowThreadsHint } from './mobile/threads-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
@@ -185,6 +186,38 @@ const SCROLL_SELECTORS = ['.chat-thread', '.m-scroll', '.m-files'];
 let _prevChatMounted = false;
 let _prevActiveId = null;
 
+// ---- mobile Back-button integration ----------------------------------------
+// One history entry per open layer (sheet / reader / sub-screen — see
+// mobile-history.js). Pushed as layers open (after each render, or straight
+// from the swipe-drawer commit which deliberately skips render()); consumed
+// with history.go() when layers are closed by taps so Back never needs a
+// double-press. ignorePops swallows the popstate that go() fires itself.
+let _uiDepth = 0;
+let _ignorePops = 0;
+function syncMobileHistory() {
+  if (!isMobile()) return;
+  const want = derivedDepth(state);
+  while (_uiDepth < want) {
+    _uiDepth++;
+    try { history.pushState({ ocUi: _uiDepth }, '', location.href); } catch (_) { _uiDepth--; break; }
+  }
+  if (_uiDepth > want) {
+    const n = _uiDepth - want;
+    _ignorePops += n;
+    _uiDepth = want;
+    try { history.go(-n); } catch (_) { _ignorePops -= n; }
+  }
+}
+window.addEventListener('popstate', (e) => {
+  if (_ignorePops > 0) { _ignorePops--; return; }
+  if (!isMobile()) return;
+  const to = (e.state && e.state.ocUi) || 0;
+  let guard = 8;
+  while (derivedDepth(state) > to && guard-- > 0) closeTopmost(state);
+  _uiDepth = Math.min(_uiDepth, to);
+  render();
+});
+
 function render() {
   // capture focus + caret before rebuild
   const act = document.activeElement;
@@ -288,6 +321,10 @@ function render() {
 
   // post-render hook (the live terminal overlay repositions itself here)
   if (runtime.afterRender) runtime.afterRender();
+
+  // Keep browser history in sync with open mobile layers so hardware Back
+  // closes the top sheet/reader/sub-screen instead of exiting the PWA.
+  syncMobileHistory();
 
   // Mechanic 1: re-assert focus into a just-opened modal on every render while
   // it's pending (see focusModalOnOpen, below — handles both this render call
@@ -1053,6 +1090,9 @@ wireMobileGestures({
   commitArchive: (id) => actions.dismiss(id),
   refresh: doRefresh,
   render,
+  // The swipe path opens/closes the conversation drawer without a render();
+  // sync history right there so Back still closes a swipe-opened drawer.
+  onOverlayChange: syncMobileHistory,
 });
 
 // re-render on breakpoint cross (desktop ⇆ mobile), then load the active surface

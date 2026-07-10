@@ -254,6 +254,11 @@ html.native .m-tabbar {
 /* ---- search row ----------------------------------------------------------- */
 .m-search { height: 36px; border-radius: 10px; border: 1px solid var(--bd); background: var(--bg); display: flex; align-items: center; padding: 0 11px; gap: 8px; margin-top: 12px; }
 .m-search .ph { font-size: 13.5px; color: var(--faint); }
+/* Model sheet: the default-star is hover-revealed on desktop (redesign.css
+   .model-row:hover) — touch has no hover, which left an INVISIBLE tap target
+   that hijacked part of the row. Always show it, with a real tap size. */
+.m-model-row .mstar { opacity: .45; padding: 8px; margin: -8px -4px -8px 0; }
+
 /* Real search input (email list). 16px so iOS doesn't zoom on focus. */
 .m-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--fg); font-family: inherit; font-size: 16px; }
 .m-search input::placeholder { color: var(--faint); font-size: 13.5px; }

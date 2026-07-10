@@ -689,7 +689,7 @@ function inboxSurface(s) {
         <span class="ttl">Inbox</span><span class="cnt">${visible.length} to triage</span>
         <div class="oc-spacer"></div>
         <button class="triage-btn" data-act="triageAll">✦ Triage with __AGENT_NAME__</button>
-        <button class="icon-btn ocbtn" data-act="toggleHistory" title="Recent actions" style="margin-left:6px;font-size:13px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:7px;color:${s.inboxHistoryOpen ? 'var(--teal)' : 'var(--faint)'};cursor:pointer">⏱ History</button>
+        <button class="icon-btn ocbtn" data-act="toggleHistory" title="Recent actions" style="margin-left:6px;flex:none;white-space:nowrap;font-size:13px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:7px;color:${s.inboxHistoryOpen ? 'var(--teal)' : 'var(--faint)'};cursor:pointer">⏱ History</button>
       </div>
       ${chipRowHtml(
         sourceCounts(items, { dismissed: s.dismissed }, s.live?.inbox?.sources),

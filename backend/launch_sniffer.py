@@ -14,13 +14,23 @@ _EXEC_TOOLS = {"bash", "shell", "exec", "local_shell", "run_shell_command",
                "command", "commands"}
 
 _BG_PATTERNS = (
-    re.compile(r"(?:^\s*|[;&|(]\s*|&&\s+)nohup\s"),
-    re.compile(r"(?:^\s*|[;&|(]\s*|&&\s+)setsid\s"),
-    re.compile(r"\bdisown\b"),
+    re.compile(r"(?:^\s*|[;&|(]\s*)nohup\s"),
+    re.compile(r"(?:^\s*|[;&|(]\s*)setsid\s"),
+    re.compile(r"(?:^\s*|[;&|(]\s*)disown\b"),
     re.compile(r"(?<![&|])&\s*$"),
     re.compile(r"\bscreen\s+-\w*d\w*m\w*\b"),
     re.compile(r"\btmux\s+new(?:-session)?\s+(?:\S+\s+)*-d(?:\s|$)"),
 )
+
+_QUOTED_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
+
+
+def _unquoted(command: str) -> str:
+    """Patterns run on the command with quoted spans removed — prose ABOUT
+    backgrounding ('use nohup…', 'Step 1; nohup…') can't fire them, while a
+    real launch's tokens live outside quotes. bash -c 'nohup x' stays a
+    documented miss (conservative by design)."""
+    return _QUOTED_RE.sub(" ", command)
 
 
 def is_exec_tool(name: str | None, *, item_is_command: bool = False) -> bool:
@@ -35,7 +45,8 @@ def is_exec_tool(name: str | None, *, item_is_command: bool = False) -> bool:
 def looks_background(command: str | None) -> bool:
     if not command or not isinstance(command, str):
         return False
-    return any(p.search(command) for p in _BG_PATTERNS)
+    text = _unquoted(command)
+    return any(p.search(text) for p in _BG_PATTERNS)
 
 
 def core_command(command: str) -> str:

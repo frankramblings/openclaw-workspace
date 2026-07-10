@@ -23,6 +23,8 @@ def _fresh():
     "screen -dmS render ./render.sh",
     "tmux new-session -d ./batch.sh",
     "tmux new -d 'python x.py'",
+    "./run.sh 'my file' &",          # quoted arg must not hide a real trailing &
+    "long_job; disown",
 ])
 def test_background_launches_detected(cmd):
     assert launch_sniffer.looks_background(cmd) is True
@@ -33,6 +35,12 @@ def test_background_launches_detected(cmd):
     "grep -rn 'cats & dogs' src/",          # & mid-string, not trailing
     "make && make test",                     # && is sequencing, not background
     "echo 'use nohup for long jobs'",        # quoted advice… tolerated FP? no:
+    "grep -rn disown scripts/",
+    "man disown",
+    "echo 'remember to disown background jobs when done'",
+    "echo 'Step 1; nohup step2 to finish'",
+    "echo '(nohup cmd &) backgrounds it'",
+    "say 'call me & nohup will handle it'",
 ])
 def test_foreground_commands_ignored(cmd):
     # NOTE: the echo case IS a false positive for the \bnohup\s pattern unless

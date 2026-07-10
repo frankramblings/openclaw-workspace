@@ -69,3 +69,31 @@ def test_terminal_job_past_60s_window_dropped(client):
     task_registry._TASKS["job:old"]["updated"] -= 61_000  # older than RETAIN_SECS (60s)
     body = client.get("/api/jobs").json()
     assert body["jobs"] == []
+
+
+def test_stream_self_heals_terminal_window(monkeypatch):
+    """A terminal job crossing the 60s RETAIN_SECS cutoff produces NO registry
+    event, so a purely event-driven stream would show its card forever on an
+    idle connection. The keepalive timeout tick must re-run _read_all and emit
+    the corrected list — the same self-heal the old 0.4s poll gave for free."""
+    import asyncio
+
+    async def main():
+        _seed("lonely", state="done", status="done")
+        monkeypatch.setattr(jobs_module, "_KEEPALIVE_S", 0.01)
+        gen = jobs_module._stream_gen()
+        try:
+            first = await gen.__anext__()
+            assert "lonely" in first           # snapshot: still inside the window
+            # Cross the window with no upsert — nothing wakes the subscriber.
+            task_registry._TASKS["job:lonely"]["updated"] -= 61_000
+            # The next data frame must come from the timeout tick, corrected.
+            while True:
+                frame = await asyncio.wait_for(gen.__anext__(), timeout=2)
+                if frame.startswith("data: "):
+                    break
+            assert "lonely" not in frame
+        finally:
+            await gen.aclose()
+
+    asyncio.run(main())

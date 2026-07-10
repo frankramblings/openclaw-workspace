@@ -8,7 +8,10 @@ writes, so it stays fully decoupled from producers.
 
   GET /api/jobs          -> {"jobs": [ …records… ]}  (running first, newest first)
   GET /api/jobs/stream   -> text/event-stream; snapshot on connect, then a framed
-                            record list whenever the on-disk set changes.
+                            record list whenever it changes. Source of truth is
+                            task_registry (fed by task_ingest's scan loop); the
+                            idle keepalive tick re-applies the 60s terminal
+                            window so finished cards age out without an event.
 
 Fail-soft everywhere: a malformed/partial file is skipped, never fatal.
 """
@@ -37,6 +40,8 @@ JOBS_DIR = WORKSPACE / "tmp" / "jobs"
 RETAIN_SECS = 60          # terminal jobs older than this are dropped from output
                           # (tighter than the registry's own RETAIN_TERMINAL_S —
                           # /api/jobs has always aged terminal rows out faster)
+
+_KEEPALIVE_S = 15.0       # idle SSE tick: keepalive comment + terminal-window re-check
 
 # Internal bookkeeping fields we don't leak to the client.
 _PRIVATE = ("_updatedEpoch", "_pctExplicit")
@@ -95,33 +100,42 @@ async def jobs():
     return {"jobs": _read_all()}
 
 
-@router.get("/api/jobs/stream")
-async def jobs_stream():
-    async def gen():
-        queue = task_registry.subscribe()
-        try:
-            last = None
-            # emit an immediate snapshot so the client renders without waiting a tick
-            snap = _read_all()
-            last = json.dumps(snap, separators=(",", ":"))
-            yield _sse({"jobs": snap})
-            while True:
-                try:
-                    rec = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
-                    continue
-                if rec.get("source") != "job":
-                    continue
+async def _stream_gen():
+    queue = task_registry.subscribe()
+    try:
+        # emit an immediate snapshot so the client renders without waiting a tick
+        snap = _read_all()
+        last = json.dumps(snap, separators=(",", ":"))
+        yield _sse({"jobs": snap})
+        while True:
+            try:
+                rec = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_S)
+            except asyncio.TimeoutError:
+                # This tick doubles as the self-heal pass for the time-based
+                # RETAIN_SECS window: a terminal job crossing the 60s cutoff
+                # produces no registry event, so re-check the list here.
                 cur = _read_all()
                 key = json.dumps(cur, separators=(",", ":"))
                 if key != last:
                     last = key
                     yield _sse({"jobs": cur})
-        finally:
-            task_registry.unsubscribe(queue)
+                else:
+                    yield ": keepalive\n\n"
+                continue
+            if rec.get("source") != "job":
+                continue
+            cur = _read_all()
+            key = json.dumps(cur, separators=(",", ":"))
+            if key != last:
+                last = key
+                yield _sse({"jobs": cur})
+    finally:
+        task_registry.unsubscribe(queue)
 
-    return StreamingResponse(gen(), media_type="text/event-stream",
+
+@router.get("/api/jobs/stream")
+async def jobs_stream():
+    return StreamingResponse(_stream_gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})
 

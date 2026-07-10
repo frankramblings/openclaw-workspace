@@ -121,7 +121,7 @@ function renderWorking(m, s) {
   <div class="act-wrap"><div class="act-spine">
     <div class="act-working">
       <span class="act-spinner">${fortress(14)}</span>
-      <span class="shimmer act-shim">Working…</span>
+      <span class="shimmer act-shim">${act.resync ? 'Re-syncing…' : 'Working…'}</span>
       ${act.elapsed ? `<span class="act-elapsed">${esc(act.elapsed)}</span>` : ''}
       <div class="oc-spacer"></div>
       <button class="act-stop ocbtn" data-act="stopRun" data-arg="${esc(m.id)}">${STOP_ICON}Stop</button>

@@ -670,6 +670,15 @@ function beginTurn(chat, modelLabel, sessionId) {
     // "Cannot read properties of null (reading 'asstMsg')" crash. Drop it.
     if (!turn) return;
 
+    // Every frame is proof of life — the hb-gap watchdog (reconcile) keys off
+    // this timestamp, so it must update for ALL frame types, not just hb.
+    turn.lastFrameMs = Date.now();
+    if (ev.type === 'turn_start') { turn.turnId = ev.turn_id; return; }
+    if (ev.type === 'hb') return;
+    // turn_end precedes [DONE]; remember the status so the done handler can
+    // label a Stop ("aborted") differently from a normal finish.
+    if (ev.type === 'turn_end') { turn.endStatus = ev.status || 'ok'; return; }
+
     if (ev.type === 'done') {
       flushStreamBuffer();
       if (turn.asstMsg) turn.asstMsg.streaming = false;
@@ -681,7 +690,9 @@ function beginTurn(chat, modelLabel, sessionId) {
         finalizeAll(a);
         a.status = 'done';
         a.elapsed = fmtElapsed(a.startMs);
-        a.worked = `Worked for ${a.elapsed} · ${a.steps.length} steps`;
+        a.worked = turn.endStatus === 'aborted'
+          ? `Stopped after ${a.elapsed} · ${a.steps.length} steps`
+          : `Worked for ${a.elapsed} · ${a.steps.length} steps`;
       }
       stopElapsed();
       const hadText = turn.asstMsg && String(turn.asstMsg.text || '').trim();

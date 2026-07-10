@@ -32,7 +32,8 @@ import logging
 import re
 import time
 
-from . import bridge, config, draft_mode, event_store, sessions_store, terminals, websearch
+from . import (bridge, config, draft_mode, event_store, sessions_store,
+               terminals, turn_state, websearch)
 from .attachments import _terminal_attachments
 
 # Log under "backend.app" (not __name__): these turn-engine warnings were emitted
@@ -258,34 +259,94 @@ async def _late_reply(session_key: str, brain_message: str,
 
 # --- The detached recorder (single writer to event_store) ----------------------
 
+# Proof-of-life cadence while a turn records. The frontend treats a gap of
+# ~2.5× this (25s) as "the pipe may be dead — reconcile".
+_HB_INTERVAL_S = 10.0
+
+
+async def _heartbeat(session_key: str, turn_id: int, start_ms: float) -> None:
+    """Append an `hb` frame every _HB_INTERVAL_S while the turn records.
+    Cancelled by record_turn's finally. Appending must never raise (same rule
+    as the recorder); CancelledError passes through suppress(Exception)."""
+    while True:
+        await asyncio.sleep(_HB_INTERVAL_S)
+        with contextlib.suppress(Exception):
+            event_store.append(session_key, bridge._sse(
+                {"type": "hb", "turn_id": turn_id,
+                 "elapsed_ms": max(0, int(time.time() * 1000 - start_ms))}))
+
+
 async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
     """The single writer. Drain `source` (the async generator of SSE frames for
-    one turn) into `event_store`, independent of any reader. Marks the turn
-    active on entry and inactive on exit, and ALWAYS lands a terminal `[DONE]`
-    frame so every tail closes cleanly — even on error or an explicit Stop
-    (CancelledError). Appending must never raise into the turn.
+    one turn) into `event_store`, independent of any reader. Brackets the turn
+    with explicit lifecycle frames — `turn_start` first, `turn_end` (status
+    ok|error|aborted) immediately BEFORE the terminal `[DONE]` — and keeps the
+    durable in-flight ledger (turn_state) in step so a process death mid-turn
+    is detectable on the next boot. Marks the turn active on entry and
+    inactive on exit, and ALWAYS lands a terminal `[DONE]` frame so every tail
+    closes cleanly — even on error or an explicit Stop (CancelledError).
+    Appending must never raise into the turn.
 
     `turn_tasks` is app's shared _TURN_TASKS registry (passed in so this module
     never imports app back); the finished turn pops itself off it."""
     event_store.begin_turn(session_key)
+    try:
+        turn_id = turn_state.turn_started(session_key)
+    except Exception:  # noqa: BLE001 - ledger I/O must never break the turn
+        turn_id = 0
+        _log.warning("turn_state.turn_started failed for session %s -- "
+                     "continuing with turn_id=0", session_key, exc_info=True)
+
+    def _append(payload: str) -> None:
+        try:
+            event_store.append(session_key, payload)
+        except Exception:  # noqa: BLE001 - event log issue can't break the turn
+            _log.warning("event_store.append failed mid-turn for session %s",
+                         session_key, exc_info=True)
+
+    end_emitted = False
+
+    def _append_turn_end(status: str) -> None:
+        nonlocal end_emitted
+        if end_emitted:
+            return
+        end_emitted = True
+        _append(bridge._sse({"type": "turn_end", "turn_id": turn_id,
+                             "status": status,
+                             "ts": int(time.time() * 1000)}))
+
+    _append(bridge._sse({"type": "turn_start", "turn_id": turn_id,
+                         "session_key": session_key,
+                         "ts": int(time.time() * 1000)}))
+    hb_task = asyncio.create_task(
+        _heartbeat(session_key, turn_id, time.time() * 1000))
     done_emitted = False
+    status = "ok"
     try:
         async for chunk in source:
-            try:
-                event_store.append(session_key, chunk)
-            except Exception:  # noqa: BLE001 - event log issue can't break the turn
-                _log.warning("event_store.append failed mid-turn for session %s",
-                             session_key, exc_info=True)
             if _is_done_frame(chunk):
+                # turn_end must precede [DONE] so a tail that closes on
+                # [DONE] still sees the explicit boundary + status.
+                _append_turn_end("ok")
                 done_emitted = True
+            _append(chunk)
+    except asyncio.CancelledError:
+        status = "aborted"
+        raise
+    except Exception:
+        status = "error"
+        raise
     finally:
+        hb_task.cancel()
         if not done_emitted:
-            try:
-                event_store.append(session_key, _DONE_SSE)
-            except Exception:  # noqa: BLE001
-                _log.warning("event_store.append failed writing [DONE] for session %s",
-                             session_key, exc_info=True)
+            _append_turn_end(status)
+            _append(_DONE_SSE)
         event_store.end_turn(session_key)
+        try:
+            turn_state.turn_ended(session_key)
+        except Exception:  # noqa: BLE001 - ledger I/O must never break the turn
+            _log.warning("turn_state.turn_ended failed for session %s -- "
+                         "continuing", session_key, exc_info=True)
         turn_tasks.pop(session_key, None)
 
 

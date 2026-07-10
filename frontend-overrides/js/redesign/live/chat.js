@@ -14,6 +14,7 @@ import { runtime } from './runtime.js';
 import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
+import { reconcileDecision } from './reconcile-decision.js';
 import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
   onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
@@ -409,7 +410,7 @@ export async function load(state) {
     chat.endpointId = activeSession?.endpoint_id || fallbackEndpointId || chat.endpointId || '';
     // Re-attach to an in-flight turn after a page refresh — the live answer
     // keeps streaming instead of vanishing until the turn fully finishes.
-    try { await resumeIfActive(chat, state, activeId); } catch (_) { /* non-fatal */ }
+    try { await reconcileTurn(chat, state, activeId); } catch (_) { /* non-fatal */ }
     // Populate resolved update_blocks (generated images etc.) that the frontend
     // missed while away — survives page refresh and session switch.
     try { await hydrateThread(activeId, chat.thread); } catch (_) { /* non-fatal */ }
@@ -707,7 +708,7 @@ function beginTurn(chat, modelLabel, sessionId) {
   // `sessionId` tags the turn with the thread it belongs to so the send-gate can
   // distinguish "THIS thread is busy" (queue) from "another thread is busy"
   // (send freely — that turn keeps streaming + recording server-side).
-  turn = { sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), got404: false };
+  turn = { sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), lastFrameMs: Date.now(), got404: false };
 
   const ensureAsst = () => {
     if (!turn.asstMsg) {
@@ -749,6 +750,15 @@ function beginTurn(chat, modelLabel, sessionId) {
     // "Cannot read properties of null (reading 'asstMsg')" crash. Drop it.
     if (!turn) return;
 
+    // Every frame is proof of life — the hb-gap watchdog (reconcile) keys off
+    // this timestamp, so it must update for ALL frame types, not just hb.
+    turn.lastFrameMs = Date.now();
+    if (ev.type === 'turn_start') { turn.turnId = ev.turn_id; return; }
+    if (ev.type === 'hb') return;
+    // turn_end precedes [DONE]; remember the status so the done handler can
+    // label a Stop ("aborted") differently from a normal finish.
+    if (ev.type === 'turn_end') { turn.endStatus = ev.status || 'ok'; return; }
+
     if (ev.type === 'done') {
       flushStreamBuffer();
       if (turn.asstMsg) turn.asstMsg.streaming = false;
@@ -760,7 +770,9 @@ function beginTurn(chat, modelLabel, sessionId) {
         finalizeAll(a);
         a.status = 'done';
         a.elapsed = fmtElapsed(a.startMs);
-        a.worked = `Worked for ${a.elapsed} · ${a.steps.length} steps`;
+        a.worked = turn.endStatus === 'aborted'
+          ? `Stopped after ${a.elapsed} · ${a.steps.length} steps`
+          : `Worked for ${a.elapsed} · ${a.steps.length} steps`;
       }
       stopElapsed();
       const hadText = turn.asstMsg && String(turn.asstMsg.text || '').trim();
@@ -1046,18 +1058,102 @@ function parseStoredSSE(raw) {
   return null;
 }
 
+// Tear down frozen local live state truthfully. `interrupted` = the backend's
+// durable ledger says the turn died with the process (restart) — annotate the
+// bubble instead of pretending it finished.
+function finalizeLocal(chat, interrupted) {
+  stopLive();
+  const a = turn && turn.activity;
+  if (a) {
+    finalizeAll(a);
+    a.status = 'done';
+    a.resync = false;
+    a.elapsed = fmtElapsed(a.startMs);
+    a.worked = interrupted
+      ? `Interrupted after ${a.elapsed} · ${a.steps.length} steps`
+      : `Worked for ${a.elapsed} · ${a.steps.length} steps`;
+  }
+  if (interrupted && turn && turn.asstMsg) {
+    turn.asstMsg.error = true;
+    turn.asstMsg.notice = 'This turn was interrupted by a backend restart — the reply may be incomplete.';
+  }
+  turn = null;
+  stopElapsed();
+  if (chat.chatStrip) { chat.chatStrip = stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }
+  flushRender();
+  // Rescue a queued message on the interrupted path, mirroring the 'error'
+  // handler: session state is uncertain, so recall to the composer rather
+  // than auto-firing into a possibly-broken session. (The stale flavor's
+  // flushQueued lives in reconcileTurn, AFTER its thread refetch settles —
+  // flushing here would race dispatchSend's optimistic bubbles against the
+  // refetch's chat.thread reassignment and leave the auto-sent turn invisible.)
+  if (interrupted && chat.queued) { actions.queueRecall(); }
+}
+
+// THE single authority for "is this turn alive?". Every caller that used to
+// carry its own partial logic (visibility restore, notifier tick, EventSource
+// death, hb-gap watchdog, thread open) routes through here. Exactly one
+// outcome per call: attach the live tail, finalize local state (stale or
+// interrupted), or nothing.
+let _reconcileBusy = false;
+async function reconcileTurn(chat, state, sessionId) {
+  if (!sessionId || _reconcileBusy) return false;
+  _reconcileBusy = true;
+  try {
+    let snap = null;
+    try {
+      snap = await apiGet(`/api/chat/turn?session=${encodeURIComponent(sessionId)}`);
+    } catch (_) { return false; /* backend unreachable — next trigger retries */ }
+    const decision = reconcileDecision({
+      active: !!(snap && snap.active),
+      lastTurnStatus: (snap && snap.last_turn && snap.last_turn.status) || null,
+      hasLocalLive: !!(turn || liveES),
+      localSessionMatches: !turn || turn.sessionId === sessionId,
+    });
+    if (decision === 'attach') return attachTurn(chat, state, sessionId, snap);
+    if (decision === 'finalize-interrupted') {
+      // Keep the annotated local bubble — the partial text + restart notice IS
+      // the honest record; the gateway transcript may have nothing better.
+      finalizeLocal(chat, true);
+    }
+    if (decision === 'finalize-stale') {
+      // The turn ended normally while we were detached: the real reply lives
+      // server-side. Finalize, then refetch the thread so we never leave a
+      // half-rendered answer (spec: "finalize with the real reply").
+      finalizeLocal(chat, false);
+      if (chat.activeId === sessionId) {
+        try {
+          const t = await fetchThread(sessionId, chat.model, chat.title);
+          chat.thread = t.thread;
+          chat.subtitle = t.subtitle || chat.subtitle;
+          flushRender();
+        } catch (_) { /* keep the finalized local state; next trigger retries */ }
+        // Auto-send the queued follow-up ('done'-handler precedent) only AFTER
+        // the refetch settles (success or catch): dispatchSend pushes the
+        // optimistic user bubble + beginTurn's asstMsg into chat.thread, and a
+        // still-pending refetch would replace the array wholesale, leaving the
+        // whole auto-sent turn invisible. Inside the activeId guard on purpose:
+        // dispatchSend targets chat.activeId (ensureSessionId), so flushing
+        // after a mid-reconcile thread switch would fire the message into the
+        // WRONG (newly selected) thread. Not stranded on mismatch:
+        // selectSession leaves chat.queued intact, the composer banner
+        // (recall/cancel) renders from it regardless of thread, and the normal
+        // turn-end flush paths still own it.
+        flushQueued(chat);
+      }
+    }
+    return false;
+  } finally { _reconcileBusy = false; }
+}
+
 // Re-attach to a turn that's still running server-side for `sessionId` (the
 // visible win: refresh / switch-away-and-back keeps streaming). Returns true if
-// it attached. Replays the turn's events to rebuild the in-flight answer, then
-// EventSource-tails the remainder from last_event_id until [DONE].
-async function resumeIfActive(chat, state, sessionId) {
-  if (!sessionId) return false;
-  let snap;
-  try {
-    snap = await apiGet(`/api/chat/turn?session=${encodeURIComponent(sessionId)}`);
-  } catch (_) { return false; }
-  if (!snap || !snap.active) return false;
-  // Guard against a thread-switch that raced this fetch.
+// it attached. Called only by `reconcileTurn` once it has already fetched the
+// snapshot and decided the turn is live — replays the turn's events to rebuild
+// the in-flight answer, then EventSource-tails the remainder from
+// last_event_id until [DONE].
+async function attachTurn(chat, state, sessionId, snap) {
+  // Guard against a thread-switch that raced the snapshot fetch.
   if (chat.activeId !== sessionId) return false;
 
   stopLive();
@@ -1088,7 +1184,20 @@ async function resumeIfActive(chat, state, sessionId) {
     let ev = null; try { ev = JSON.parse(e.data); } catch (_) {}
     if (ev) onEvent(ev);
   };
-  es.onerror = () => { /* EventSource auto-reconnects with Last-Event-ID */ };
+  es.onerror = () => {
+    if (liveES !== es) return;               // superseded by a newer attach
+    // CONNECTING: native auto-reconnect (with Last-Event-ID) is handling it.
+    // CLOSED: the browser gave up — only a fresh snapshot can tell us whether
+    // the turn is still running. Reconcile.
+    if (es.readyState === EventSource.CLOSED) {
+      liveES = null;
+      setTimeout(() => {
+        const st = runtime.state;
+        const c = st && st.live && st.live.chat;
+        if (c) reconcileTurn(c, st, sessionId);
+      }, 1000);
+    }
+  };
   return true;
 }
 
@@ -1098,9 +1207,9 @@ async function resumeIfActive(chat, state, sessionId) {
 // visible thread, a turn that *ends* while we're away leaves local `liveES` /
 // `turn` still set — so the UI shows a working state that never finalizes
 // until a manual refresh. On visibility restore, snapshot-replay the active
-// chat's server state: if there's still a turn, `resumeIfActive` closes the
-// stale ES and re-tails from the last cursor. If not, clean up local state
-// and clear the chat-strip so the UI unfreezes.
+// chat's server state: `reconcileTurn` closes a stale ES and re-tails from the
+// last cursor if there's still a turn, or finalizes local state (clearing the
+// chat-strip so the UI unfreezes) if not.
 let _visSyncWired = false;
 let _visSyncInFlight = false;
 async function _syncActiveOnVisible() {
@@ -1110,15 +1219,7 @@ async function _syncActiveOnVisible() {
   if (!chat || !chat.activeId) return;
   _visSyncInFlight = true;
   try {
-    const ok = await resumeIfActive(chat, state, chat.activeId);
-    if (!ok && (turn || liveES)) {
-      // Server says the turn is over but we still hold stale local state.
-      if (liveES) { try { liveES.close(); } catch (_) {} liveES = null; }
-      if (turn) { turn = null; }
-      stopElapsed();
-      if (chat.chatStrip) { stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }
-      flushRender();
-    }
+    await reconcileTurn(chat, state, chat.activeId);
   } catch (_) { /* non-fatal — next visibility flip retries */ }
   finally { _visSyncInFlight = false; }
 }
@@ -1133,6 +1234,35 @@ function wireVisibilityResume() {
   } catch (_) { /* environments without document/window: harmless */ }
 }
 wireVisibilityResume();
+
+// ---- heartbeat-gap watchdog -------------------------------------------------
+// The backend emits an hb frame every ~10s while a turn records, and every
+// frame refreshes turn.lastFrameMs. A live turn with no frame for 25s means
+// the pipe is probably dead (throttled tab, dropped SSE, killed backend):
+// show "Re-syncing…" and ask /api/chat/turn for the truth.
+const HB_GAP_MS = 25000;
+let _hbWatchTimer = null;
+function startHbWatchdog() {
+  if (_hbWatchTimer) return;
+  _hbWatchTimer = setInterval(() => {
+    if (!turn || !turn.lastFrameMs) return;   // warmup: no frame yet, no verdict
+    const gap = Date.now() - turn.lastFrameMs;
+    if (gap < HB_GAP_MS) {
+      if (turn.activity && turn.activity.resync) { turn.activity.resync = false; throttledRender(); }
+      return;
+    }
+    if (turn.activity && !turn.activity.resync) { turn.activity.resync = true; throttledRender(); }
+    const state = runtime.state;
+    const chat = state && state.live && state.live.chat;
+    if (chat && turn.sessionId) reconcileTurn(chat, state, turn.sessionId);
+  }, 5000);
+  // Node (tests import this module without a browser event loop to keep alive)
+  // returns a Timeout with .unref(); browsers return a bare number with no such
+  // method. Unref so importing this module never blocks a test process on a
+  // timer that's only ever meant to run in a live tab.
+  if (_hbWatchTimer && typeof _hbWatchTimer.unref === 'function') _hbWatchTimer.unref();
+}
+startHbWatchdog();
 
 // ---- cross-session turn notifier ------------------------------------------
 // Poll which sessions have a turn in flight. When one FINISHES while you're not
@@ -1190,12 +1320,12 @@ async function _notifyTick() {
   // promise firing) — attach the live tail so it streams in like any turn.
   // liveES/turn guards: skip when a tail is already attached or this client
   // is mid-send (its own POST is the stream). _notifyResuming closes the race
-  // where resumeIfActive's initial fetch outlives the poll interval (liveES/turn
+  // where reconcileTurn's initial fetch outlives the poll interval (liveES/turn
   // are only set after it) and a second tick would fire a concurrent attach.
   if (!liveES && !turn && chat.activeId && _notifyResuming !== chat.activeId
       && now.has(chat.activeId) && _isViewing(state, chat.activeId)) {
     _notifyResuming = chat.activeId;
-    resumeIfActive(chat, state, chat.activeId)
+    reconcileTurn(chat, state, chat.activeId)
       .catch(() => { /* non-fatal: next tick retries */ })
       .finally(() => { _notifyResuming = null; });
   }
@@ -1467,7 +1597,7 @@ export const actions = {
     } catch (_) { /* keep prior */ }
     // Re-attach to an in-flight turn for this thread, if one is still running
     // server-side (returning to a thread you left mid-answer).
-    try { await resumeIfActive(chat, state, id); } catch (_) { /* non-fatal */ }
+    try { await reconcileTurn(chat, state, id); } catch (_) { /* non-fatal */ }
     // Populate resolved update_blocks that the frontend missed while away.
     try { await hydrateThread(id, chat.thread); } catch (_) { /* non-fatal */ }
     const pct = await fetchUsage(id);
@@ -1481,7 +1611,7 @@ export const actions = {
     const chat = ensureChat(state);
     // Detach this client's live reader from whatever thread was streaming, same
     // as selectSession(). The prior turn keeps running + recording server-side
-    // (re-attached via resumeIfActive on return); clearing `turn` here means the
+    // (re-attached via reconcileTurn on return); clearing `turn` here means the
     // first message in this fresh thread sends immediately instead of queueing
     // behind the thread we just left.
     stopLive();

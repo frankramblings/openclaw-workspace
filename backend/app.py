@@ -26,7 +26,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup, monitor,
-               pending_tokens, sessions_store, terminals, websearch)
+               pending_tokens, sessions_store, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -156,6 +156,14 @@ async def _lifespan(_app: FastAPI):
     task = asyncio.create_task(monitor.run())
     # Non-blocking semantic-search index build (delayed; swallows failures).
     search_task = asyncio.create_task(_startup_reindex())
+    # Boot sweep: any turn still marked in-flight from the previous process is
+    # provably dead (the recorder task died with the interpreter) — move it to
+    # `interrupted` so /api/chat/turn can report an honest post-mortem instead
+    # of leaving the client frozen on "Working…" forever.
+    interrupted = turn_state.sweep_boot()
+    if interrupted:
+        _log.warning("boot: %d turn(s) died with the previous process: %s",
+                     len(interrupted), ", ".join(sorted(interrupted)))
     # Followup promises: deadline + crash-recovery backstop.
     followup_task = asyncio.create_task(followup.sweeper())
     # Filesystem watcher for the doc editor's live-refresh (broadcasts to

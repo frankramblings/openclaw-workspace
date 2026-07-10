@@ -92,11 +92,19 @@ def create_promise(session_id: str, session_key: str, label: str,
         data = _load()
         data.setdefault("promises", []).append(rec)
         _save(data)
-    # task_registry uses its own lock and never calls back into followup — no lock-ordering cycle.
-    task_registry.upsert(f"followup:{rec['id']}", kind="followup",
-                         source="followup", label=rec["label"],
-                         session_key=session_key, state="running",
-                         detail="waiting for completion ping")
+        # task_registry uses its own lock and never calls back into followup —
+        # no lock-ordering cycle, so mirroring inside _LOCK is safe. Guarded:
+        # followup is the flagship producer and a registry hiccup (mirror is
+        # in-memory only, but upsert also touches the volatile ledger file
+        # for some sources) must never take the promise store down with it.
+        try:
+            task_registry.upsert(f"followup:{rec['id']}", kind="followup",
+                                 source="followup", label=rec["label"],
+                                 session_key=session_key, state="running",
+                                 detail="waiting for completion ping")
+        except Exception:  # noqa: BLE001
+            _log.warning("task_registry mirror failed for promise %s", rec["id"],
+                        exc_info=True)
     return rec
 
 
@@ -129,10 +137,14 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
                 p["duration_s"] = round(float(duration_s), 1)
                 p["tail"] = (tail or "")[-_TAIL_CAP:]
                 _save(data)
-                task_registry.upsert(f"followup:{pid}", kind="followup",
-                                     source="followup", state="running",
-                                     detail=f"finished (exit {int(exit_code)}) — "
-                                            "follow-up turn pending")
+                try:
+                    task_registry.upsert(f"followup:{pid}", kind="followup",
+                                         source="followup", state="running",
+                                         detail=f"finished (exit {int(exit_code)}) — "
+                                                "follow-up turn pending")
+                except Exception:  # noqa: BLE001
+                    _log.warning("task_registry mirror failed for promise %s", pid,
+                                exc_info=True)
                 return True
     return False
 
@@ -155,10 +167,14 @@ def mark(pid: str, state: str, **fields) -> dict | None:
                 reg_state = "failed" if state == "failed" else "done"
                 detail = ("deadline passed — honest no-report turn fired"
                           if state == "overdue" else "")
-                task_registry.upsert(f"followup:{pid}", kind="followup",
-                                     source="followup", state=reg_state,
-                                     detail=detail,
-                                     error=str(fields.get("error") or ""))
+                try:
+                    task_registry.upsert(f"followup:{pid}", kind="followup",
+                                         source="followup", state=reg_state,
+                                         detail=detail,
+                                         error=str(fields.get("error") or ""))
+                except Exception:  # noqa: BLE001
+                    _log.warning("task_registry mirror failed for promise %s", pid,
+                                exc_info=True)
                 return p
     return None
 
@@ -179,6 +195,26 @@ def due_promises(now_ms: int) -> list[tuple[str, bool]]:
             elif p.get("deadline_ms") and now_ms >= p["deadline_ms"]:
                 out.append((p["id"], True))
     return out
+
+
+def reseed_registry() -> int:
+    """Re-mirror still-pending promises after a boot (the registry is
+    in-memory; promises are the flagship producer and must be visible
+    immediately, not on their next state change)."""
+    n = 0
+    for p in list_promises():
+        if p.get("state") != "pending":
+            continue
+        try:
+            task_registry.upsert(f"followup:{p['id']}", kind="followup",
+                                 source="followup", label=p.get("label", ""),
+                                 session_key=p.get("session_key"), state="running",
+                                 detail="waiting for completion ping")
+        except Exception:  # noqa: BLE001
+            _log.warning("followup registry reseed failed for %s", p.get("id"),
+                        exc_info=True)
+        n += 1
+    return n
 
 
 def _fmt_duration(seconds) -> str:
@@ -456,6 +492,10 @@ async def sweeper(_sleep=asyncio.sleep) -> None:
     across a restart (recorded-but-unfired, or already past deadline) fire
     without waiting for new traffic."""
     await _sleep(10.0)  # let the gateway monitor/warm socket settle first
+    try:
+        reseed_registry()  # in-memory registry forgot these across the restart
+    except Exception:  # noqa: BLE001 - the backstop must never die
+        _log.warning("followup registry reseed failed at boot", exc_info=True)
     while True:
         try:
             _sweep_once()

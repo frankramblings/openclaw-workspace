@@ -34,6 +34,13 @@ log = logging.getLogger(__name__)
 
 POLL_S = 0.5
 STALL_S = 30
+# Ignore taskfiles still "running" past this age — stale writers. Same
+# contract the old workspace_files._TASK_MAX_AGE_SEC guard enforced (24h):
+# a writer that crashed mid-run leaves its progress.json forever "running",
+# and without this guard task_ingest would mirror it as a permanent,
+# restart-surviving stalled/running row. Not applied to tmp/jobs — the old
+# jobs.py read path never dropped stale running jobs, so that stays as-is.
+RUNNING_MAX_AGE_S = 24 * 3600
 
 
 def _jobs_dir():
@@ -128,6 +135,9 @@ def scan_once() -> None:
                 continue
             if _stale_terminal(native, mtime, now):
                 continue
+            status = str(native.get("status") or "").lower()
+            if status == "running" and now - mtime > RUNNING_MAX_AGE_S:
+                continue
             tid = f"taskfile:{native['id']}"
             seen.add(tid)
             _upsert_native(tid, native, mtime, now,
@@ -141,7 +151,15 @@ def scan_once() -> None:
             task_registry.upsert(rec["id"], kind=rec["kind"], source=rec["source"],
                                  state="interrupted",
                                  detail="source file vanished")
-        else:
+        elif rec["state"] != "interrupted":
+            # done/failed: the producer's own sweep already deleted the file,
+            # nothing more to say — remove immediately. An "interrupted"
+            # record is skipped here: it was JUST marked honest-terminal on
+            # THIS reconciliation path (there's no producer sweep for it,
+            # since the file is already gone), so removing it on the very
+            # next scan would mean only already-connected clients ever saw
+            # the honesty signal. Let RETAIN_TERMINAL_S age it out instead,
+            # same as any other terminal record.
             task_registry.remove(rec["id"])
 
 

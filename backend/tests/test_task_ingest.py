@@ -60,6 +60,16 @@ def test_vanished_terminal_job_is_removed(tmp_path):
     assert task_registry.get("job:finished") is None
 
 
+def test_interrupted_record_lingers_after_vanish(tmp_path):
+    _write_job(tmp_path, "vanish")
+    task_ingest.scan_once()
+    (task_ingest._jobs_dir() / "vanish.json").unlink()
+    task_ingest.scan_once()          # marks interrupted
+    task_ingest.scan_once()          # must NOT remove it
+    rec = task_registry.get("job:vanish")
+    assert rec is not None and rec["state"] == "interrupted"
+
+
 def test_taskfile_progress_with_session_key(tmp_path):
     d = task_ingest._taskfiles_dir() / "t1"
     d.mkdir()
@@ -116,3 +126,16 @@ def test_stale_terminal_file_never_ingested(tmp_path):
                _updatedEpoch=_t.time() - task_registry.RETAIN_TERMINAL_S - 10)
     task_ingest.scan_once()
     assert task_registry.get("job:ancient") is None
+
+
+def test_stale_running_taskfile_ignored(tmp_path):
+    import json as _json
+    import os
+    d = task_ingest._taskfiles_dir() / "ghost"
+    d.mkdir()
+    pj = d / "progress.json"
+    pj.write_text(_json.dumps({"id": "ghost", "label": "ghost", "status": "running"}))
+    old = time.time() - task_ingest.RUNNING_MAX_AGE_S - 60
+    os.utime(pj, (old, old))
+    task_ingest.scan_once()
+    assert task_registry.get("taskfile:ghost") is None

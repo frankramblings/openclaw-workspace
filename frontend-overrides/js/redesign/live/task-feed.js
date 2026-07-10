@@ -96,11 +96,19 @@ function _connect() {
   };
 }
 
+// Exported so the fallback-vs-stream race is testable at the logic level:
+// _connect() sets _es synchronously before any fetch response could land, so
+// by the time this fires we know whether a stream reconnected first.
+export function shouldApplyFallback(streamAttached) { return !streamAttached; }
+
 function _reconnect() {
-  // One plain GET so a broken SSE still shows current state.
+  // One plain GET so a broken SSE still shows current state. Guarded: if the
+  // stream reconnects and delivers a fresher snapshot before this fetch
+  // resolves, applying this stale one would regress (e.g. a terminal task
+  // back to running) with nothing to correct it client-side.
   fetch(FALLBACK, { credentials: 'same-origin' })
     .then((r) => (r.ok ? r.json() : null))
-    .then((d) => d && _apply({ type: 'tasks.snapshot', tasks: d.tasks }))
+    .then((d) => { if (shouldApplyFallback(!!_es) && d) _apply({ type: 'tasks.snapshot', tasks: d.tasks }); })
     .catch(() => {});
   _backoff = nextBackoff(_backoff);
   const t = setTimeout(_connect, _backoff);

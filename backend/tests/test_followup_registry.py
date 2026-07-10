@@ -46,3 +46,22 @@ def test_mark_failed_carries_error():
     followup.mark(rec["id"], "failed", error="session missing or archived")
     t = task_registry.get(f"followup:{rec['id']}")
     assert t["state"] == "failed" and "session missing" in t["error"]
+
+
+def test_mirror_failure_never_breaks_promises(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(followup.task_registry, "upsert", boom)
+    rec = _mk()                                    # create survives
+    assert followup.record_completion(rec["id"], exit_code=0, duration_s=1.0, tail="")
+    assert followup.mark(rec["id"], "completed") is not None
+
+
+def test_reseed_registry_mirrors_pending_only():
+    a = _mk()
+    b = _mk()
+    followup.mark(b["id"], "failed", error="x")
+    task_registry.reset_for_tests()
+    assert followup.reseed_registry() == 1
+    assert task_registry.get(f"followup:{a['id']}")["state"] == "running"
+    assert task_registry.get(f"followup:{b['id']}") is None

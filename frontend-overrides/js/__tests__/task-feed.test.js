@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { reduceFeedEvent, nextBackoff, pruneTerminal } from '../redesign/live/task-feed.js';
+import { reduceFeedEvent, nextBackoff, pruneTerminal, shouldApplyFallback } from '../redesign/live/task-feed.js';
 
 const t = (id, state = 'running', extra = {}) => ({ id, state, updated: 1, ...extra });
 
@@ -44,4 +44,9 @@ test('pruneTerminal drops old terminal records, keeps running + fresh', () => {
 test('pruneTerminal returns the SAME map when nothing to drop', () => {
   const m = new Map([['b', { id: 'b', state: 'running', updated: 0 }]]);
   assert.equal(pruneTerminal(m, 100_000, 60_000), m);
+});
+
+test('fallback snapshot is discarded while a stream is attached', () => {
+  assert.equal(shouldApplyFallback(true), false);
+  assert.equal(shouldApplyFallback(false), true);
 });

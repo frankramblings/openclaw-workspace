@@ -26,7 +26,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup, monitor,
-               pending_tokens, sessions_store, terminals, turn_state, websearch)
+               pending_tokens, sessions_store, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -50,6 +50,7 @@ from .terminals import router as terminals_router
 from .resume_route import router as resume_router
 from .export_pdf import router as export_pdf_router
 from .strip_state import router as strip_state_router
+from .tasks_route import router as tasks_router
 from . import workspace_files
 # Attachment subsystem (Task 19): image/text extraction, HEIC→JPEG, persistence.
 # app.py keeps the to_thread call sites (they dispatch the blocking work here off
@@ -164,6 +165,10 @@ async def _lifespan(_app: FastAPI):
     if interrupted:
         _log.warning("boot: %d turn(s) died with the previous process: %s",
                      len(interrupted), ", ".join(sorted(interrupted)))
+    interrupted_tasks = task_registry.sweep_boot()
+    if interrupted_tasks:
+        _log.warning("boot: %d background task(s) died with the previous process",
+                     len(interrupted_tasks))
     # Followup promises: deadline + crash-recovery backstop.
     followup_task = asyncio.create_task(followup.sweeper())
     # Filesystem watcher for the doc editor's live-refresh (broadcasts to
@@ -252,6 +257,7 @@ app.include_router(terminals_router)
 app.include_router(resume_router)
 app.include_router(export_pdf_router)
 app.include_router(strip_state_router)
+app.include_router(tasks_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
 # server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop

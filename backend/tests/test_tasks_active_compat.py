@@ -43,3 +43,18 @@ def test_job_source_not_leaked(client):
     task_registry.upsert("job:j1", kind="job", source="job",
                          extra={"native": {"id": "j1", "status": "running"}})
     assert client.get("/api/tasks/active").json()["tasks"] == []
+
+
+def test_registry_session_key_backstops_missing_native_field(client):
+    # A later progress.json write dropped sessionKey; the registry's sticky
+    # session_key must still keep the record out of other sessions' queries.
+    native = {"id": "drift", "label": "drift", "status": "done", "pct": 100}
+    task_registry.upsert("taskfile:drift", kind="job", source="taskfile",
+                         session_key="agent:main:web-6b3ccecab880",
+                         extra={"native": native})
+    other = client.get("/api/tasks/active",
+                       params={"session_key": "agent:main:web-000000000000"}).json()
+    assert other["tasks"] == []
+    mine = client.get("/api/tasks/active",
+                      params={"session_key": "agent:main:web-6b3ccecab880"}).json()
+    assert [t["id"] for t in mine["tasks"]] == ["drift"]

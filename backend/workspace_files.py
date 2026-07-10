@@ -595,7 +595,12 @@ def tasks_active(session_key: str | None = None):
         native = dict((rec.get("extra") or {}).get("native") or {})
         if not native.get("id"):
             continue
-        if session_key and native.get("sessionKey") and native.get("sessionKey") != session_key:
+        # Filter on the native sessionKey, falling back to the registry's
+        # sticky session_key: upsert replaces extra["native"] wholesale each
+        # tick, so a later progress.json write that omits sessionKey (e.g. a
+        # terminal write) would otherwise leak the record to every session.
+        sk = native.get("sessionKey") or rec.get("session_key")
+        if session_key and sk and sk != session_key:
             continue
         out.append(native)
     out.sort(key=lambda d: d.get("updatedAt") or d.get("startedAt") or "", reverse=True)

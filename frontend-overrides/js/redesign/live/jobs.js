@@ -54,9 +54,12 @@ function fmtEta(s) {
   return `${h}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
-function esc(s) {
+// Exported for tests. Escapes quotes too — labels/details land in title="…"
+// attributes, and they originate from agent-written progress.json files.
+export function esc(s) {
   return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function kindIcon(kind) {

@@ -23,6 +23,22 @@ export function srcStyle(source) {
   return SRC_STYLE[String(source || '').toUpperCase()] || MUTED;
 }
 
+// Card age chip from the backend's ageHours. Fresh items say "now", not "0h".
+export function ageLabel(h) {
+  const n = Number(h) || 0;
+  if (n < 1) return 'now';
+  return n < 24 ? `${Math.round(n)}h` : `${Math.round(n / 24)}d`;
+}
+
+// True when a card body is an ingest source pointer (e.g.
+// `99_Ingest/Processed/gmail_important_latest.jsonl#L2`) rather than prose —
+// the renderers show those as a dim mono source line instead of body copy.
+export function bodyIsPath(body) {
+  const b = String(body || '').trim();
+  if (!b || /\s/.test(b)) return false;
+  return /^[\w.~-]+(\/[\w.~-]+)+(#L\d+(-L?\d+)?)?$/.test(b);
+}
+
 // --- entityView: pure view model for the `entities` source card -------------
 // Backend guesses a type (person/org/event/project/other) for a name found in
 // the workspace; the card confirms the guess or reclassifies to one of the

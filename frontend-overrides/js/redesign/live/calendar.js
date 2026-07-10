@@ -24,6 +24,7 @@
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
 import { reload } from './index.js';
+import { monthWindow } from './calendar-logic.js';
 
 const TZ = 'America/New_York';
 const DOTS = {
@@ -155,18 +156,11 @@ function eventDays(ev) {
 // ---- main load ------------------------------------------------------------
 
 export async function load(state /* , { force } = {} */) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // View month = real month + state.calMonthOffset (‹/Today/› in the desktop
+  // toolbar). today stays real so the today highlight and agenda don't drift.
+  const { today, first, gridStart, fetchStart, fetchEnd } =
+    monthWindow(new Date(), state.calMonthOffset);
   const todayKey = dayKey(today);
-
-  // Grid: Monday-start, 35 cells covering the current month.
-  const first = new Date(now.getFullYear(), now.getMonth(), 1);
-  const gridStart = addDays(first, -monIdx(first)); // back up to Monday
-  const gridEnd = addDays(gridStart, 34);           // 35 cells inclusive
-
-  // Fetch a buffer covering both the grid and the agenda window (today+6d).
-  const fetchStart = gridStart;
-  const fetchEnd = addDays(gridEnd, 1) > addDays(today, 8) ? addDays(gridEnd, 1) : addDays(today, 8);
 
   // calendars (best-effort: color/name lookup). Never fatal.
   let calColors = {};   // href -> hex
@@ -207,7 +201,7 @@ export async function load(state /* , { force } = {} */) {
     const k = dayKey(d);
     const slot = byDay.get(k);
     const cell = { date: d.getDate() };
-    if (d.getMonth() !== now.getMonth()) cell.dim = true;
+    if (d.getMonth() !== first.getMonth()) cell.dim = true;
     if (k === todayKey) cell.today = true;
     if (monIdx(d) === 6) cell.last = true; // Sunday column = no right border
 
@@ -244,7 +238,7 @@ export async function load(state /* , { force } = {} */) {
     cells.push(cell);
   }
 
-  const month = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+  const month = `${MONTHS[first.getMonth()]} ${first.getFullYear()}`;
 
   // ---- mobile week strip (current week, Monday-start) ----
   const weekStart = addDays(today, -monIdx(today));
@@ -306,7 +300,19 @@ export async function load(state /* , { force } = {} */) {
 // box. Robust/optional: any failure just clears the box and re-renders so the
 // UI never gets stuck. quick-parse returns a BARE event dict (NOT {ok,event}).
 
+// Month navigation (desktop toolbar ‹ / Today / ›). Offset lives in state so
+// load() can window the fetch; reload re-runs load with force.
+const shiftMonth = (delta) => {
+  const s = runtime.state;
+  if (!s) return;
+  s.calMonthOffset = delta === 0 ? 0 : (Number(s.calMonthOffset) || 0) + delta;
+  reload('calendar');
+};
+
 export const actions = {
+  calPrev: () => shiftMonth(-1),
+  calNext: () => shiftMonth(1),
+  calToday: () => shiftMonth(0),
   // Calendar header "+ New": focus the natural-language quick-add (the create path).
   newEvent: () => {
     try {

@@ -7,7 +7,7 @@ import { I } from './icons.js';
 import { esc, when } from './dom.js';
 import { AVATAR, filterSlashCommands } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
-import { renderCenter, renderChatList, chatMsg } from './surfaces.js';
+import { renderCenter, renderChatList, chatMsg, inboxToastHtml } from './surfaces.js';
 import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
@@ -168,6 +168,7 @@ function renderDesktop(s) {
       ${when(showCompanion, renderCompanion(s))}
       ${when(showReveal, renderReveal(s))}
     </div>
+    ${inboxToastHtml(s)}
   </div>`;
 }
 

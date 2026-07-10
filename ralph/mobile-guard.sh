@@ -6,7 +6,11 @@
 # falsely report "clean".
 set -u
 # Override WORKSPACE_HOST to point at your own workspace host (Tailscale MagicDNS name or local IP).
-BASE="https://${WORKSPACE_HOST:-YOUR-HOST.ts.net}:8443/static/index-redesign.html"
+# The redesign is /static/index.html since 2026-07 (index-redesign.html was
+# removed and 404s). Wall-clock --timeout, NOT --virtual-time-budget: the
+# always-open task-feed SSE keeps the page non-idle, so a virtual-time budget
+# either hangs forever (#chat) or fires before real data lands.
+BASE="https://${WORKSPACE_HOST:-YOUR-HOST.ts.net}:8443/static/index.html"
 SURFACES="${*:-chat inbox email more calendar notes settings research library}"
 PROF=/home/frank/ralph-shots/pg
 fail=0
@@ -14,8 +18,8 @@ for s in $SURFACES; do
   code=$(curl -sk -o /dev/null -w "%{http_code}" --max-time 12 "$BASE#$s")
   if [ "$code" != "200" ]; then echo "❌ $s: HTTP $code"; fail=1; continue; fi
   rm -rf "$PROF"
-  dom=$(chromium --headless --no-sandbox --ignore-certificate-errors --user-data-dir="$PROF" \
-        --virtual-time-budget=10000 --enable-logging=stderr --v=0 --dump-dom "$BASE#$s" 2>"/home/frank/ralph-shots/g-$s.log")
+  dom=$(timeout 40 chromium --headless --no-sandbox --ignore-certificate-errors --user-data-dir="$PROF" \
+        --timeout=15000 --enable-logging=stderr --v=0 --dump-dom "$BASE#$s" 2>"/home/frank/ralph-shots/g-$s.log")
   err=$(grep -iE "INFO:CONSOLE.*(error|uncaught|TypeError|ReferenceError|Cannot read|is not)" "/home/frank/ralph-shots/g-$s.log" | head -1)
   if echo "$dom" | grep -qiE "isn.t working|ERROR 50[0-9]|unable to handle"; then echo "❌ $s: server error page"; fail=1; continue; fi
   if ! echo "$dom" | grep -qE 'class="m-app"|class="oc-app"'; then echo "❌ $s: app shell not rendered"; fail=1; continue; fi

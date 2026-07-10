@@ -4,7 +4,7 @@
 
 import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
-import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText } from './live/inbox-logic.js';
+import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import {
   AVATAR, filterSlashCommands, RESEARCH_CONTROLS, RESEARCH_SCOPES,
@@ -80,6 +80,7 @@ function convListBody(s) {
     + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
     + (rowMenuOpen === r.id ? convMenu(r) : '')
     + `</div>`;
+  };
   const titleHtml = map(sorted, (g, gi) => `
     <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
     ${map(g.rows, convRow)}`);
@@ -641,10 +642,13 @@ function inboxSurface(s) {
       ).join('')}
       <button class="btn-sm ghost" data-act="closeSnooze" style="margin-left:auto">Cancel</button>
     </div>`);
+  // Ingest source pointers render as a dim mono line, not as body prose.
+  const bodyInner = (it) => bodyIsPath(it.body)
+    ? `<span class="body-src">${esc(it.body)}</span>` : esc(stripMd(it.body));
   const needsCard = (it) => `
     <div class="inbox-card">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
-      <div class="body"${bodyAttr(it)}>${esc(stripMd(it.body))}</div>
+      <div class="body"${bodyAttr(it)}>${bodyInner(it)}</div>
       ${when(it.source === 'obsidian' && it.rec && it.rec.due, `<div class="ai-pill">✦ task · due ${esc((it.rec || {}).due || '')}</div>`)}
       ${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}
       ${snoozeMenu(it)}
@@ -652,7 +656,7 @@ function inboxSurface(s) {
   const fyiCard = (it) => `
     <div class="inbox-card fyi">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
-      <div class="body"${bodyAttr(it)}>${esc(stripMd(it.body))}</div>
+      <div class="body"${bodyAttr(it)}>${bodyInner(it)}</div>
       <button class="ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
       ${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}
       ${snoozeMenu(it)}
@@ -666,7 +670,7 @@ function inboxSurface(s) {
     return `
     <div class="inbox-card entity-card">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">ENTITY</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· guessed: ${esc(v.guess)}</span><button class="inbox-x" data-act="notEntity" data-arg="${esc(it.id)}" title="Not an entity">${I.x()}</button></div>
-      <div class="body">${esc(stripMd(it.body))}</div>
+      <div class="body">${bodyInner(it)}</div>
       <div class="card-actions">
         <button class="btn-sm" data-act="confirm" data-arg="${esc(it.id)}">${esc(v.confirmLabel)}</button>
         ${v.chips.map((c) => `<button class="btn-sm ghost" data-act="reclassify" data-arg="${esc(it.id + ':' + c.type)}">${esc(c.label)}</button>`).join('')}
@@ -722,13 +726,21 @@ function inboxSurface(s) {
       </div>`)}
     ${when(!!s.inboxReader, inboxReaderOverlay(s))}
     ${when(!!s.inboxHistoryOpen, inboxHistoryDrawer(s))}
-    ${when(!!s.inboxToast, s.inboxToast ? `
+  </div>`;
+}
+
+// Undo/notice toast. Rendered by the desktop SHELL (app.js renderDesktop), not
+// by a surface — the error boundary reports through state.inboxToast, and a
+// surface-scoped render made errors invisible everywhere but Inbox. Mobile
+// renders its own copy at shell level (mobile-surfaces.js).
+export function inboxToastHtml(s) {
+  if (!s.inboxToast) return '';
+  return `
       <div class="inbox-toast" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:8px;padding:10px 14px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:80;white-space:nowrap">
         <span>${esc(s.inboxToast.msg)}</span>
         ${(s.inboxToast.undoTs || s.inboxToast.undoLocal || (s.inboxToast.undoBatch && s.inboxToast.undoBatch.length)) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
         <span data-act="dismissToast" style="cursor:pointer;color:var(--faint);margin-left:4px">✕</span>
-      </div>` : '')}
-  </div>`;
+      </div>`;
 }
 
 // ===========================================================================
@@ -760,12 +772,11 @@ function calendarSurface(s) {
   <div class="cal-col">
     <div class="cal-top">
       <div class="cal-toolbar">
-        <button class="cal-nav">‹</button>
-        <button class="btn btn-ghost">Today</button>
-        <button class="cal-nav">›</button>
+        <button class="cal-nav" data-act="calPrev" title="Previous month" aria-label="Previous month">‹</button>
+        <button class="btn btn-ghost" data-act="calToday">Today</button>
+        <button class="cal-nav" data-act="calNext" title="Next month" aria-label="Next month">›</button>
         <span class="cal-month">${esc(month)}</span>
         <div class="oc-spacer"></div>
-        <div class="cal-views"><span>Week</span><span class="active">Month</span><span>Agenda</span></div>
         <button class="btn btn-teal" data-act="newEvent">+ New</button>
       </div>
       <div class="cal-quick${has ? ' has' : ''}">
@@ -776,7 +787,9 @@ function calendarSurface(s) {
       ${when(has, `<div class="cal-parse"><span class="k">__AGENT_NAME__ parsed:</span><span class="ev"><span class="d"></span>${esc(q)}</span><span class="x">· Personal · 1 hr</span></div>`)}
     </div>
     <div class="cal-weekdays">${map(weekdays, (d) => `<div>${d}</div>`)}</div>
-    <div class="cal-grid">${map(cells, cell)}</div>
+    ${cells.length
+      ? `<div class="cal-grid">${map(cells, cell)}</div>`
+      : '<div class="cal-empty">Calendar hasn’t loaded — reload to retry.</div>'}
   </div>`;
 }
 
@@ -817,7 +830,6 @@ function researchSurface(s) {
           <span class="lbl">Defaults — click any to override:</span>
           ${ctlPills}
           <div class="oc-spacer"></div>
-          <button class="btn btn-ghost" data-act="startResearch">+ Queue</button>
           <button class="res-start" data-act="startResearch">${I.play()}Start</button>
         </div>
       </div>
@@ -825,22 +837,16 @@ function researchSurface(s) {
       ${when(running, `
       <div class="res-card running">
         <div class="row1"><span class="res-spin">${fortress(14)}</span><span class="running-ttl">${esc(s.researchProgress?.label || 'Researching…')}</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:28px" data-act="resetResearch">Stop</button></div>
-        <div class="res-steps">
-          <div class="res-step"><span style="color:var(--green)">✓</span><div class="done-txt">Planned the search — 4 sub-questions</div></div>
-          <div class="res-step"><span style="color:var(--green)">✓</span><div class="done-txt">Searched the web — <span class="mono" style="color:var(--faint)">12 results</span> across 4 queries</div></div>
-          <div class="res-step"><span style="color:var(--teal)">◐</span><div><div class="cur-txt">Reading &amp; cross-checking sources <span class="mono" style="color:var(--faint)">[3 / 8]</span></div><div class="domains">→ buzzsprout.com · transistor.fm · captivate.fm</div></div></div>
-          <div class="res-step muted"><span style="color:var(--faint)">○</span><div class="pend-txt">Synthesize findings &amp; build report</div></div>
-        </div>
       </div>`)}
 
       ${when(done, `
       <div class="res-card done">
-        <div class="row1"><span class="res-done-ico">✓</span><span class="t">Report ready</span><span class="meta">3 rounds · 8 sources · 2:14</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:30px" data-act="resetResearch">New research</button></div>
+        <div class="row1"><span class="res-done-ico">✓</span><span class="t">Report ready</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:30px" data-act="resetResearch">New research</button></div>
         <p class="res-summary">${s.live?.research?.summary || ''}</p>
         <div class="card-actions"><button class="btn-sm" data-act="resReport" data-arg="${esc(s.live?.research?.lastRid || '')}">↗ Visual Report</button><button class="btn-sm ghost" data-act="resDiscuss" data-arg="${esc(s.live?.research?.lastRid || '')}">Discuss in chat</button><button class="btn-sm ghost" data-act="go" data-arg="library">Save to Library</button></div>
       </div>`)}
 
-      <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past || []).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer">Library, Research →</span></div>
+      <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past || []).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer" data-act="go" data-arg="library">Library, Research →</span></div>
       ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}
     </div>
   </div>`;
@@ -893,7 +899,7 @@ function notesSurface(s) {
   <div class="split-h">
     <div class="oc-secondary notes-list">
       <div class="list-top">
-        <div class="list-top-head"><span class="ttl">Notes</span><span style="font-size:11px;color:var(--faint)">vault · 41</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newNote">+ New</button></div>
+        <div class="list-top-head"><span class="ttl">Notes</span><span style="font-size:11px;color:var(--faint)">${s.live?.notes?.docs ? `vault · ${s.live.notes.docs.length}` : ''}</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newNote">+ New</button></div>
         <div class="oc-search">${I.search()}<input data-model="notesFilter" data-focus="notesFilter" placeholder="Search notes…" value="${esc(s.notesFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
       </div>
       <div class="list-scroll">
@@ -907,7 +913,7 @@ function notesSurface(s) {
       </div>
     </div>
     <div class="note-editor">
-      <div class="note-ehead"><span class="path">${esc(doc.path)}</span><div class="oc-spacer"></div><span class="note-saved"><span class="d"></span>saved · v${doc.version}</span><span class="note-hist">History</span></div>
+      <div class="note-ehead"><span class="path">${esc(doc.path)}</span><div class="oc-spacer"></div><span class="note-saved"><span class="d"></span>saved · v${doc.version}</span></div>
       <div class="note-doc">
         <div class="col">
           <h1>${esc(doc.title)}</h1>

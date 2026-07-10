@@ -22,6 +22,8 @@
 :root {
   --bg:#15161a; --panel:#1b1c21; --panel2:#212329; --elev:#262931;
   --bd:#2d2f36; --bd2:#24262c;
+  /* aliases many rules already reference — defined so var() never falls back to inherit */
+  --border:#2d2f36; --chrome:#101115;
   --fg:#dfe2e8; --mut:#9498a2; --faint:#5f636d;
   --teal:#4fe3d1; --teal2:#2f8d83; --tealtint:rgba(79,227,209,.10);
   --gold:#e8c268; --green:#5bd97f; --red:#f0726a; --violet:#a99bf5; --blue:#7bb6ff;
@@ -177,7 +179,10 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .oc-toast-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 22%,transparent)}
 .oc-toast-msg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .oc-toast-go{flex:none;font-weight:600;color:var(--teal);font-size:12.5px}
-@media (max-width:768px){#oc-toast-host{left:12px;right:12px;bottom:76px}.oc-toast{max-width:none}}
+/* Mobile: clear the tab bar (+ home-indicator gutter) and stack BELOW sheets/
+   scrims (m-scrim 40, sheets 41+) — a transient toast must never paint over an
+   open modal sheet. */
+@media (max-width:768px){#oc-toast-host{left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:39}.oc-toast{max-width:none}}
 .oc-rail-fill{flex:1}
 .oc-user{display:flex;align-items:center;gap:11px;padding:6px 9px}
 .oc-rail.collapsed .oc-user{justify-content:center}
@@ -354,6 +359,8 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .composer-wrap{flex:none;padding:0 22px 18px;position:relative}
 .composer{border:1px solid var(--bd);background:var(--panel);border-radius:16px;padding:12px 14px 10px}
 .composer.slash{border-color:var(--teal2)}
+/* visible keyboard-focus state — the textarea inside is borderless/outline-less */
+.composer:focus-within{border-color:var(--teal2)}
 /* queued message banner (a send fired while a turn was still streaming) */
 .queued-msg{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:6px 8px 6px 11px;background:color-mix(in srgb,var(--gold,#e0b341) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--gold,#e0b341) 35%,transparent);border-radius:10px;cursor:pointer;font-size:14.5px;color:var(--mut)}
 .queued-msg:hover{background:color-mix(in srgb,var(--gold,#e0b341) 18%,var(--panel))}
@@ -426,7 +433,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 /* Fullscreen image viewer (image-viewer.js). */
 .rnd-imgview{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;
   background:rgba(12,12,14,.9);backdrop-filter:blur(4px)}
-.rnd-imgview-bar{display:flex;align-items:center;gap:12px;padding:10px 16px;color:#eee;
+.rnd-imgview-bar{display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;color:#eee;
   font-size:13px;line-height:1.4}
 .rnd-imgview-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}
 .rnd-imgview-actions{display:flex;align-items:center;gap:14px;flex:none}
@@ -510,6 +517,9 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 
 .reader{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
 .reader-empty{align-items:center;justify-content:center;color:var(--faint);font-size:13.5px}
+.cal-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:13.5px}
+/* Inbox card body that is an ingest source pointer, not prose. */
+.body-src{font-family:var(--mono);font-size:11.5px;color:var(--faint);word-break:break-all}
 .reader-head{padding:20px 28px 14px;border-bottom:1px solid var(--bd2)}
 .reader-head h1{margin:0 0 12px;font-size:21px;font-weight:600;color:var(--fg);line-height:1.25}
 .reader-from{display:flex;align-items:center;gap:11px;margin-bottom:12px}
@@ -568,7 +578,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .card-overflow{display:flex;gap:6px;flex-wrap:wrap;padding:6px 0 2px}
 .more-btn{opacity:.7}
 .triage-summary{display:flex;align-items:center;gap:8px;padding:9px 12px;margin:0 0 2px;background:var(--tealtint,rgba(69,211,199,.08));border:1px solid var(--teal2,rgba(69,211,199,.25));border-radius:9px;font-size:13px}
-.triage-summary .ts-label{color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.triage-summary .ts-label{color:var(--fg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .btn-sm{height:31px;padding:0 15px;border-radius:8px;font-size:13px;font-weight:600;font-family:var(--sans);cursor:pointer;border:1px solid var(--teal2);background:var(--tealtint);color:var(--teal)}
 .btn-sm.ghost{padding:0 13px;border:1px solid var(--bd);background:transparent;color:var(--mut);font-weight:400}
 .ic-btn{width:31px;height:31px;flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mut);font-size:16px;line-height:1;cursor:pointer;font-family:var(--sans)}

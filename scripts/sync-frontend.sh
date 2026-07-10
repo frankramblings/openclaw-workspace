@@ -440,7 +440,8 @@ if [[ -f "$SW" ]]; then
   # Excludes sw.js itself and source maps.
   PRECACHE_LIST=$(cd "$DEST" && {
       printf '%s\n' index.html manifest.json \
-        redesign.css chat-window-redesign.css js/redesign/mobile/mobile.css
+        redesign.css chat-window-redesign.css js/redesign/mobile/mobile.css \
+        css/task-rows.css css/chat-strip.css
       find js/redesign -type f -name '*.js'
       printf '%s\n' \
         js/chatWindow.js js/colorPicker.js js/dualDragInit.js js/markdown.js \

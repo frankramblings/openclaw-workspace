@@ -8,13 +8,8 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
-import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs, triageSummary } from './inbox-logic.js';
+import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs, triageSummary, ageLabel } from './inbox-logic.js';
 import { detailEndpoint } from './inbox-detail.js';
-
-const ageLabel = (h) => {
-  const n = Number(h) || 0;
-  return n < 24 ? `${Math.round(n)}h` : `${Math.round(n / 24)}d`;
-};
 
 // Pick a sensible primary CTA label from the backend's allowed actions list —
 // kept for the mobile mock fallback; desktop derives buttons from cardActions.

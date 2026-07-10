@@ -5,12 +5,12 @@ import { I, icon, fortress } from '../icons.js';
 import { esc, map, when, stripMd } from '../dom.js';
 import { AVATAR } from '../data.js';
 import { QUICK_CHIPS } from '../surfaces.js';
-import { WEEK_STRIP, AGENDA, MORE_CARDS } from './mobile-data.js';
+import { MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
 import { renderChatStrip } from '../chat-strip.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
-import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText } from '../live/inbox-logic.js';
+import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 
@@ -176,6 +176,9 @@ export function mInbox(s) {
   const fyi = visible.filter((m) => m.group === 'fyi');
 
   const mBodyAttr = (it) => detailEndpoint(it) ? ` data-act="openReader" data-arg="${esc(it.id)}" style="cursor:pointer"` : '';
+  // Ingest source pointers render as a dim mono line, not as body prose.
+  const mBodyInner = (it) => bodyIsPath(it.body)
+    ? `<span class="body-src">${esc(it.body)}</span>` : esc(stripMd(it.body));
   // swipeable card (NEEDS YOU); offset driven by s.swipe for the active id
   const swipeCard = (it) => {
     const off = (s.swipe && s.swipe.id === it.id) ? s.swipe.dx : 0;
@@ -192,7 +195,7 @@ export function mInbox(s) {
       </div>
       <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
         <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>
-        <div class="body"${mBodyAttr(it)}>${esc(stripMd(it.body))}</div>
+        <div class="body"${mBodyAttr(it)}>${mBodyInner(it)}</div>
         <div class="actions">${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}</div>
       </div>
     </div>`;
@@ -200,7 +203,7 @@ export function mInbox(s) {
   const fyiCard = (it) => `
     <div class="m-card fyi">
       <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span></div>
-      <div class="body"${mBodyAttr(it)}>${esc(stripMd(it.body))}</div>
+      <div class="body"${mBodyAttr(it)}>${mBodyInner(it)}</div>
       <button class="m-ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
       <div class="actions">${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}</div>
     </div>`;
@@ -296,21 +299,29 @@ export function mInbox(s) {
 export function mEmailList(s) {
   const emails = s.live?.email?.emails || [];
   const emailUnread = emails.filter((e) => e.unread).length;
+  // Same filter as the desktop list (surfaces.js emailSurface): subject,
+  // sender, and source, case-insensitive. Keep original indexes for mOpenReader.
+  const q = (s.emailQuery || '').trim().toLowerCase();
+  const shown = emails.map((e, i) => ({ e, i }))
+    .filter(({ e }) => !q || `${e.subj || ''} ${e.from || ''} ${e.src || ''}`.toLowerCase().includes(q));
+  const emptyMsg = emails.length === 0
+    ? 'No mail here yet.'
+    : `No matches for “${esc(s.emailQuery || '')}”.`;
   return `
   <div class="m-head">
     <div class="m-head-row"><span class="m-title">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="m-spacer"></div><button class="m-icon-btn" data-act="composeNew" aria-label="New message">${I.plus(16)}</button></div>
-    <div class="m-search">${I.search()}<span class="ph">Search · INBOX</span></div>
+    <div class="m-search">${I.search()}<input data-model="emailQuery" data-focus="emailQuery" placeholder="Search · INBOX" value="${esc(s.emailQuery || '')}" autocomplete="off"></div>
   </div>
   <div class="m-scroll m-mail-list" data-ptr="1">
     ${mPtr(s, 'Checking mail…')}
-    ${map(emails, (e, i) => {
+    ${shown.length ? map(shown, ({ e, i }) => {
       const snippet = (e.body && e.body[0]) ? e.body[0] : '';
       return `<div class="m-mail${s.mEmailOpened && i === s.selEmail ? ' active' : ''}" data-act="mOpenReader" data-arg="${i}">
         <div class="top"><span class="m-src" style="color:${e.srcColor};background:${e.srcBg}">${esc(e.src)}</span>${when(e.unread, '<span class="udot"></span>')}<span class="time">${esc(e.time)}</span></div>
         <div class="subj${e.unread ? ' bold' : ''}">${esc(e.subj)}</div>
         <div class="snip">${esc(e.from)}${snippet ? ` · ${esc(snippet)}` : ''}</div>
       </div>`;
-    })}
+    }) : `<div class="m-mail-empty">${emptyMsg}</div>`}
   </div>`;
 }
 
@@ -318,7 +329,7 @@ export function mEmailList(s) {
 export function mEmailReader(s) {
   const emails = s.live?.email?.emails || [];
   const m = s.live?.email?.current ?? emails[s.selEmail] ?? {};
-  const attach = (m.attach || [])[0];
+  const attach = m.attach || [];
   const replyTo = (m.from || '').split(' ')[0];
   return `
   <div class="m-head" style="display:flex;align-items:center;gap:6px;padding-left:12px;padding-right:12px">
@@ -331,7 +342,7 @@ export function mEmailReader(s) {
     <div class="m-ai-row"><button class="m-ai-btn teal" data-act="composeAiDraft">✦ AI reply</button><button class="m-ai-btn violet" data-act="summarizeEmail">✦ Summarize</button></div>
     ${when(s.emailSummary, `<div class="m-email-summary"><div class="hd"><span class="t">✦ Summary</span><button class="x" data-act="clearEmailSummary" aria-label="Dismiss summary">✕</button></div><div class="bd">${esc(s.emailSummary)}</div></div>`)}
     ${map(m.body || [], (p) => `<p>${esc(p)}</p>`)}
-    ${when(!!attach, `<div class="m-attach"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(attach ? attach.name : '')}</div><div class="sz">${esc(attach ? attach.size : '')}</div></div></div>`)}
+    ${map(attach, (a) => `<div class="m-attach"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(a.name)}</div><div class="sz">${esc(a.size)}</div></div></div>`)}
   </div>
   <div class="m-reply-bar"><div class="box" data-act="composeReply" data-arg="reply"><span class="ph">Reply to ${esc(replyTo)}…</span><button class="m-draft" data-act="composeAiDraft">✦ Draft</button><button class="m-send" data-act="composeReply" data-arg="reply" style="width:32px;height:32px">${I.send(15)}</button></div></div>`;
 }
@@ -344,28 +355,47 @@ export function mCalendar(s) {
   const group = (g, i) => `
     <div class="m-agenda-grp${i > 0 ? ' next' : ''}"><span class="lbl ${i === 0 ? 'today' : 'dim'}">${esc(g.label)}</span>${g.tag ? `<span class="tag" style="color:${g.tagColor}">${esc(g.tag)}</span>` : ''}<div class="rule"></div></div>
     ${map(g.events, event)}`;
-  const week = s.live?.calendar?.week ?? WEEK_STRIP;
-  const agenda = s.live?.calendar?.agenda ?? AGENDA;
-  const monthLabel = (s.live?.calendar?.month ?? 'June 2026').split(' ')[0];
+  // Live data only — a failed/pending calendar load shows an empty state, never
+  // the mock sample week. Month + year both derive from the live month label.
+  const week = s.live?.calendar?.week || [];
+  const agenda = s.live?.calendar?.agenda || [];
+  const [monthLabel, yearLabel] = String(s.live?.calendar?.month || '').split(' ');
   return `
   <div class="m-head">
-    <div class="m-head-row"><button class="m-back" data-act="mBackToHub">${ic.back()}</button><span class="m-title">${esc(monthLabel)}</span><span class="m-title-sub">2026</span><div class="m-spacer"></div><div class="m-seg"><span class="active">Agenda</span></div></div>
+    <div class="m-head-row"><button class="m-back" data-act="mBackToHub">${ic.back()}</button><span class="m-title">${esc(monthLabel || 'Calendar')}</span><span class="m-title-sub">${esc(yearLabel || '')}</span><div class="m-spacer"></div><div class="m-seg"><span class="active">Agenda</span></div></div>
     <div class="m-week">
       ${map(week, (w) => `<div class="col"><span class="dl${w.today ? ' today' : ''}">${w.d}</span><span class="dn${w.today ? ' today' : ''}">${w.date}</span></div>`)}
     </div>
   </div>
-  <div class="m-scroll m-agenda" data-ptr="1">${mPtr(s, 'Refreshing…')}${map(agenda, group)}</div>
+  <div class="m-scroll m-agenda" data-ptr="1">${mPtr(s, 'Refreshing…')}${agenda.length ? map(agenda, group) : '<div class="m-agenda-empty">No events in the next 7 days.</div>'}</div>
   <div class="m-quickadd"><div class="box"><span class="star">✦</span><input data-model="quick" data-focus="mquick" placeholder="&quot;feed Krypto 1pm tmrw&quot;" value="${esc(s.quick || '')}"/><button class="add" data-act="clearQuick">${I.plus(15)}</button></div></div>`;
 }
 
 // ---- More hub -------------------------------------------------------------
+// Card counts come from live state — no count renders until its surface's data
+// has actually loaded (MORE_CARDS carries only id/name/icon).
+function moreCount(s, id) {
+  switch (id) {
+    case 'calendar': {
+      const ag = s.live?.calendar?.agenda;
+      if (!ag) return '';
+      const n = String(ag[0]?.label || '').startsWith('TODAY') ? (ag[0].events || []).length : 0;
+      return `${n} event${n === 1 ? '' : 's'} today`;
+    }
+    case 'research': { const p = s.live?.research?.past; return p ? `${p.length} report${p.length === 1 ? '' : 's'}` : ''; }
+    case 'library': { const a = s.live?.library?.items; return a ? `${a.length} artifact${a.length === 1 ? '' : 's'}` : ''; }
+    case 'notes': { const d = s.live?.notes?.docs; return d ? `${d.length} in vault` : ''; }
+    case 'settings': return '14 sections';
+    default: return '';
+  }
+}
 export function mMore(s) {
   return `
   <div class="m-head"><span class="m-title">More</span></div>
   <div class="m-scroll m-more">
     <div class="m-gary-card"><div class="av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div style="flex:1"><div class="nm">__AGENT_NAME__</div><div class="st"><span class="dot"></span>online · gateway healthy</div></div></div>
     <div class="m-grid">
-      ${map(MORE_CARDS, (c) => `<div class="m-grid-card" data-act="mOpenSub" data-arg="${c.id}"><div class="ico" style="background:${c.iconBg};color:${c.iconColor}">${icon(c.icon, { size: 18, sw: 1.7 })}</div><div class="nm">${esc(c.name)}</div><div class="ct">${esc(c.count)}</div></div>`)}
+      ${map(MORE_CARDS, (c) => `<div class="m-grid-card" data-act="mOpenSub" data-arg="${c.id}"><div class="ico" style="background:${c.iconBg};color:${c.iconColor}">${icon(c.icon, { size: 18, sw: 1.7 })}</div><div class="nm">${esc(c.name)}</div><div class="ct">${esc(moreCount(s, c.id))}</div></div>`)}
     </div>
     <a class="m-source-link" href="${esc(s.sourceUrl || 'https://github.com/frankramblings/openclaw-workspace')}" target="_blank" rel="noopener noreferrer">${I.code(14)}<span>View source · AGPL-3.0</span></a>
   </div>`;

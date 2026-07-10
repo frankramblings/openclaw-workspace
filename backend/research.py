@@ -33,7 +33,7 @@ from fastapi import APIRouter
 from fastapi.responses import (HTMLResponse, JSONResponse, Response,
                                StreamingResponse)
 
-from . import bridge, config, sessions_store
+from . import bridge, config, sessions_store, task_registry
 from .fsutil import atomic_write_text, file_lock
 from .research_render import render_html
 from .vault_store import (WORKSPACE, dump_frontmatter, ensure_dir, new_id,
@@ -99,6 +99,15 @@ def _publish(job: Job, **fields) -> None:
     job.progress = ev
     for q in list(job.subscribers):
         q.put_nowait(ev)
+    task_registry.upsert(
+        f"research:{job.id}", kind="research", source="research",
+        label=(job.query or "")[:120],
+        state="running" if job.status == "running" else
+              ("done" if job.status == "done" else "failed"),
+        pct=ev.get("pct"), detail=str(ev.get("phase") or ""),
+        error=str(ev.get("error") or ("cancelled" if job.status == "cancelled" else "")),
+        volatile=True,   # research engines die with the process — always ledgered
+    )
 
 
 def _finish(job: Job, status: str, error: str | None = None) -> None:

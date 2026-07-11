@@ -16,15 +16,15 @@ from . import task_registry, turn_state
 log = logging.getLogger(__name__)
 
 _PROMISE_RES = (
-    re.compile(r"\bI['’‘`]?ll let you know\b", re.I),
-    re.compile(r"\bI['’‘`]?ll ping you\b", re.I),
-    re.compile(r"\bI['’‘`]?ll (?:report|post|check|circle) back\b", re.I),
-    re.compile(r"\bI['’‘`]?ll (?:notify|update) you\b", re.I),
-    re.compile(r"\bI['’‘`]?ll post (?:the |a )?\w+ when\b", re.I),
-    re.compile(r"\bI['’‘`]?ll follow up\b", re.I),
-    re.compile(r"\bkeep you posted\b", re.I),
-    re.compile(r"\b(?:when|once) it(?:['’‘`]?s| is) (?:done|finished|complete)[^.?!]{0,40}\bI['’‘`]?ll\b", re.I),
-    re.compile(r"\bI['’‘`]?ll\b[^.?!]{0,40}\b(?:when|once) it(?:['’‘`]?s| is) (?:done|finished|complete)\b", re.I),
+    re.compile(r"\bI(?:['’‘`]?ll| will) let you know\b", re.I),
+    re.compile(r"\bI(?:['’‘`]?ll| will) ping you\b", re.I),
+    re.compile(r"\bI(?:['’‘`]?ll| will) (?:report|post|check|circle) back\b", re.I),
+    re.compile(r"\bI(?:['’‘`]?ll| will) (?:notify|update) you\b", re.I),
+    re.compile(r"\bI(?:['’‘`]?ll| will) post (?:the |a )?\w+ when\b", re.I),
+    re.compile(r"\bI(?:['’‘`]?ll| will) follow up\b", re.I),
+    re.compile(r"\b(?:I(?:['’‘`]?ll| will) )?keep you posted\b", re.I),
+    re.compile(r"\b(?:when|once) it(?:['’‘`]?s| is) (?:done|finished|complete)[^.?!]{0,40}\bI(?:['’‘`]?ll| will)\b", re.I),
+    re.compile(r"\bI(?:['’‘`]?ll| will)\b[^.?!]{0,40}\b(?:when|once) it(?:['’‘`]?s| is) (?:done|finished|complete)\b", re.I),
 )
 
 

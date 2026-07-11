@@ -14,17 +14,23 @@ def _fresh():
 
 
 @pytest.mark.parametrize("text,expected", [
-    ("Kicked it off — I'll let you know when it's done.", True),
-    ("I'll ping you once the render finishes.", True),
-    ("Running now. I'll report back with the results.", True),
-    ("I'll post the link when it lands.", True),
-    ("once it's finished I'll update you", True),
-    ("I'll keep you posted.", True),
+    ("Kicked it off — I’ll let you know when it’s done.", True),
+    ("I’ll ping you once the render finishes.", True),
+    ("Running now. I’ll report back with the results.", True),
+    ("I’ll post the link when it lands.", True),
+    ("once it’s finished I’ll update you", True),
+    ("I’ll keep you posted.", True),
     ("I’ll let you know when it’s done.", True),      # typographic apostrophe
     ("Once it’s finished I’ll update you", True),
-    ("Done! Here's the file you asked for.", False),
+    ("I will let you know when it’s done.", True),        # uncontracted
+    ("I will report back once the render lands.", True),
+    ("I will ping you when it finishes.", True),
+    ("I will keep you posted.", True),
+    ("Done! Here’s the file you asked for.", False),
     ("You should let me know if it breaks.", False),
     ("The render finished — no follow-up needed.", False),
+    ("Will you let me know when it’s done?", False),      # question TO the user
+    ("You will let me know if it breaks, right?", False),
     ("", False),
     (None, False),
 ])

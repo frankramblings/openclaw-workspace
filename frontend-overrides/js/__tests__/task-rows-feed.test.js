@@ -68,6 +68,26 @@ test('auto followups keep their own kind', () => {
   assert.equal(v._recTurnId, 9);
 });
 
+test('running followup rows leave elapsed to the ticker', () => {
+  const v = nativeView({
+    id: 'followup:r1', kind: 'followup', source: 'followup', label: 'x',
+    session_key: 'agent:main:web-aaa', turn_id: null, state: 'running',
+    pct: null, eta: null, detail: '', error: '', created: 1000, updated: 2000,
+    extra: {},
+  });
+  assert.equal(v.elapsed, null);
+});
+
+test('terminal followup rows show server-stamped duration', () => {
+  const v = nativeView({
+    id: 'followup:d1', kind: 'followup', source: 'followup', label: 'x',
+    session_key: 'agent:main:web-aaa', turn_id: null, state: 'done',
+    pct: null, eta: null, detail: '', error: '', created: 1000, updated: 91000,
+    extra: {},
+  });
+  assert.equal(v.elapsed, 90);
+});
+
 test('tickElapsed derives live seconds for running followup/auto views', () => {
   const v = { kind: 'followup', status: 'running', _createdMs: 100_000 };
   assert.equal(tickElapsed(v, 190_000), 90);

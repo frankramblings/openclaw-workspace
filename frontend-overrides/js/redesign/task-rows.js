@@ -113,14 +113,20 @@ export function nativeView(rec) {
       status: statusFor(rec.state), detail: rec.detail || '',
       error: rec.state === 'interrupted' ? 'interrupted by a backend restart' : (rec.error || ''),
       sessionKey: rec.session_key || '',
-      elapsed: rec.state === 'running' && rec.created ? (Date.now() - rec.created) / 1000 : null,
+      // Running rows: elapsed is ticker-owned (tickElapsed) — a second
+      // per-event formula here raced it and could flash "--:--" on negative
+      // clock skew. Terminal rows keep a server-stamped created→updated
+      // duration (skew-free) so the done row still shows how long it took.
+      elapsed: rec.state === 'running' || !rec.created
+        ? null
+        : (rec.updated && rec.created ? Math.max(0, (rec.updated - rec.created) / 1000) : null),
       _recTurnId: rec.turn_id ?? null,
-      _createdMs: rec.created ?? null,
+      _createdMs: rec.created || null,
     };
   }
   const native = (rec.extra && rec.extra.native) || null;
   if (!native || !native.id) return null;
-  const out = { ...native, status: statusFor(rec.state), _recTurnId: rec.turn_id ?? null, _createdMs: rec.created ?? null };
+  const out = { ...native, status: statusFor(rec.state), _recTurnId: rec.turn_id ?? null, _createdMs: rec.created || null };
   out.sessionKey = out.sessionKey || rec.session_key || '';
   if (rec.state === 'interrupted') out.error = out.error || 'interrupted by a backend restart';
   return out;

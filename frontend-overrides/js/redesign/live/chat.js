@@ -15,7 +15,7 @@ import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
 import { reconcileDecision } from './reconcile-decision.js';
-import { promiseWarningText } from './promise-warning.js';
+import { promiseWarningText, latestAsstAtOrBefore } from './promise-warning.js';
 import { setLiveTurn } from './turn-ref.js';
 import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
@@ -360,6 +360,25 @@ async function hydrateThread(sessionId, thread) {
   }
 }
 
+// Re-attach persisted empty-promise warnings after a reload (the live
+// promise_warning frame only reaches clients attached to the stream).
+async function hydrateWarnings(sessionId, thread) {
+  if (!sessionId || !Array.isArray(thread)) return;
+  let res;
+  try {
+    res = await apiGet(`/api/promise/warnings?session=${encodeURIComponent(sessionId)}`);
+  } catch (_) { return; }
+  const warnings = (res && Array.isArray(res.warnings)) ? res.warnings : [];
+  if (!warnings.length) return;
+  const asstMsgs = thread.filter((m) => m.role === 'assistant' && m._ts != null);
+  for (const w of warnings) {
+    const best = latestAsstAtOrBefore(asstMsgs, w.ts);
+    if (best && !best.warnNotice && !best.error) {
+      best.warnNotice = promiseWarningText(w.phrase || '');
+    }
+  }
+}
+
 // ---- load -----------------------------------------------------------------
 
 export async function load(state) {
@@ -418,6 +437,7 @@ export async function load(state) {
     // Populate resolved update_blocks (generated images etc.) that the frontend
     // missed while away — survives page refresh and session switch.
     try { await hydrateThread(activeId, chat.thread); } catch (_) { /* non-fatal */ }
+    try { await hydrateWarnings(activeId, chat.thread); } catch (_) { /* non-fatal */ }
     const pct = await fetchUsage(activeId);
     if (pct != null) chat.usagePct = pct;
   } else {
@@ -1621,6 +1641,7 @@ export const actions = {
     try { await reconcileTurn(chat, state, id); } catch (_) { /* non-fatal */ }
     // Populate resolved update_blocks that the frontend missed while away.
     try { await hydrateThread(id, chat.thread); } catch (_) { /* non-fatal */ }
+    try { await hydrateWarnings(id, chat.thread); } catch (_) { /* non-fatal */ }
     const pct = await fetchUsage(id);
     if (pct != null) chat.usagePct = pct;
     runtime.render();

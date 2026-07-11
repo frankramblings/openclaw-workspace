@@ -62,3 +62,55 @@ def check_turn(session_key: str, final_text: str) -> str | None:
     except Exception:  # noqa: BLE001 - the guard must never break the turn
         log.warning("promise_guard.check_turn failed", exc_info=True)
         return None
+
+
+# --- persisted warnings (the amber card must survive a reload) ---------------
+import threading  # noqa: E402
+import time  # noqa: E402
+
+from fastapi import APIRouter  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+
+from . import config, fsutil  # noqa: E402
+
+SCHEMA_VERSION = 1
+WARNINGS_CAP = 20
+_STORE_LOCK = threading.Lock()
+
+router = APIRouter()
+
+
+def _store_file():
+    return config.DATA_DIR / "promise_warnings.json"
+
+
+def record_warning(session_key: str, turn_id, phrase: str) -> None:
+    """Persist an emitted warning so a reloaded thread can re-render its card.
+    Guarded: recording can never break the turn that emitted the frame."""
+    try:
+        with _STORE_LOCK:
+            data = fsutil.load_json_guarded(_store_file(), {}, logger=log)
+            if not isinstance(data, dict):
+                data = {}
+            sessions = data.setdefault("sessions", {})
+            entries = sessions.setdefault(session_key, [])
+            entries.append({"turn_id": turn_id, "phrase": phrase,
+                            "ts": int(time.time() * 1000)})
+            sessions[session_key] = entries[-WARNINGS_CAP:]
+            data["schema_version"] = SCHEMA_VERSION
+            config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+            fsutil.atomic_write_json(_store_file(), data)
+    except Exception:  # noqa: BLE001
+        log.warning("promise_guard.record_warning failed", exc_info=True)
+
+
+@router.get("/api/promise/warnings")
+async def promise_warnings(session: str = ""):
+    from .pending_tokens import _resolve_session_key
+    sk = _resolve_session_key(session.strip()) if session.strip() else None
+    if sk is None:
+        return JSONResponse({"warnings": []})
+    with _STORE_LOCK:
+        data = fsutil.load_json_guarded(_store_file(), {}, logger=log)
+    entries = (data.get("sessions", {}) if isinstance(data, dict) else {}).get(sk, [])
+    return JSONResponse({"warnings": entries})

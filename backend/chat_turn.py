@@ -518,6 +518,10 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                 if phrase:
                     yield bridge._sse({"type": "promise_warning",
                                        "phrase": phrase[:80]})
+                    promise_guard.record_warning(
+                        session_key,
+                        (turn_state.inflight_for(session_key) or {}).get("turn_id"),
+                        phrase[:80])
             except Exception:  # noqa: BLE001 - guard never breaks the turn
                 _log.warning("promise_guard emission failed", exc_info=True)
         # Final turn metrics: the vendor SPA renders a footer time from a

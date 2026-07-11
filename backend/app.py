@@ -26,8 +26,8 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup, launch_sniffer,
-               monitor, pending_tokens, sessions_store, task_ingest, task_registry,
-               terminals, turn_state, websearch)
+               monitor, pending_tokens, promise_guard, sessions_store, task_ingest,
+               task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -257,6 +257,7 @@ app.include_router(notes_router)
 app.include_router(documents_router)
 app.include_router(followup.router)
 app.include_router(pending_tokens.router)
+app.include_router(promise_guard.router)
 app.include_router(uploads_router)
 app.include_router(research_router)
 app.include_router(emoji_router)

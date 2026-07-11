@@ -183,11 +183,45 @@ def test_cancel_all_stops_watchers(monkeypatch):
     async def main():
         launch_sniffer.on_tool_start(SK, "Bash", "nohup ./render.sh &")
         await asyncio.sleep(0.02)
-        n = launch_sniffer.cancel_all()
+        n = len(launch_sniffer.cancel_all())
         await asyncio.sleep(0.02)
         return n
 
     assert asyncio.run(main()) == 1
+    assert launch_sniffer._ACTIVE == set()
+
+
+def test_rearm_watch_dedupes_against_active(monkeypatch):
+    import asyncio
+    pings = []
+    monkeypatch.setattr(launch_sniffer.followup, "record_completion",
+                        lambda pid, **kw: pings.append(pid) or True)
+    monkeypatch.setattr(launch_sniffer, "_find_pid", _async_return(4242))
+    monkeypatch.setattr(launch_sniffer, "_pid_alive", lambda pid, core: False)
+
+    async def main():
+        launch_sniffer.rearm_watch("p1", "sleep 99", session_key=SK)
+        launch_sniffer.rearm_watch("p2", "sleep 99", session_key=SK)  # dup: skipped
+        await asyncio.sleep(0.1)
+
+    asyncio.run(main())
+    assert pings == ["p1"]
+    assert launch_sniffer._ACTIVE == set()
+
+
+def test_cancel_all_returns_tasks(monkeypatch):
+    import asyncio
+    _capture_promises(monkeypatch)
+    monkeypatch.setattr(launch_sniffer, "GRACE_S", 5.0)
+
+    async def main():
+        launch_sniffer.on_tool_start(SK, "Bash", "nohup ./render.sh &")
+        await asyncio.sleep(0.02)
+        tasks = launch_sniffer.cancel_all()
+        assert isinstance(tasks, list) and len(tasks) == 1
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(main())
     assert launch_sniffer._ACTIVE == set()
 
 

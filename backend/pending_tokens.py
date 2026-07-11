@@ -122,7 +122,7 @@ from backend import followup as _followup  # noqa: E402  - for _authorized
 router = APIRouter()
 
 
-def _resolve_session_key(session: str) -> str | None:
+def resolve_session_key(session: str) -> str | None:
     """Accept session_key (contains ':') or session_id (12-hex); returns session_key or None."""
     if ":" in session:
         return session
@@ -137,6 +137,11 @@ def _resolve_session_key(session: str) -> str | None:
     return None
 
 
+# Back-compat: this used to be the only (private) name. Kept as an alias so
+# any caller that imported the private name directly keeps working.
+_resolve_session_key = resolve_session_key
+
+
 @router.post("/api/pending/register")
 async def http_register(request: Request,
                         session: str = Form(...),
@@ -146,7 +151,7 @@ async def http_register(request: Request,
                         source_ref: str = Form(...)):
     if not _followup._authorized(request):
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
-    sk = _resolve_session_key(session.strip())
+    sk = resolve_session_key(session.strip())
     if sk is None:
         return JSONResponse(status_code=404, content={"error": "unknown session"})
     tok = register_and_emit(sk, turn_id, kind=kind, label=label, source_ref=source_ref)
@@ -158,7 +163,7 @@ async def http_resolve(request: Request, body: dict = Body(...)):
     if not _followup._authorized(request):
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     session = body.get("session", "")
-    sk = _resolve_session_key(session.strip())
+    sk = resolve_session_key(session.strip())
     if sk is None:
         return JSONResponse(status_code=404, content={"error": "unknown session"})
     removed = resolve_and_emit(
@@ -181,7 +186,7 @@ async def http_hydrate(session: str = "", turn_ids: str = ""):
     """
     if not session.strip():
         return {}
-    sk = _resolve_session_key(session.strip())
+    sk = resolve_session_key(session.strip())
     # Unknown session → empty result (non-fatal for the frontend hydration path)
     if sk is None:
         return {}
@@ -231,7 +236,7 @@ async def http_current_turn(session: str = ""):
     originating turn_id at spawn time to register a pending token correctly.
     Returns {"turn_id": int|null, "active": bool}.
     """
-    sk = _resolve_session_key(session.strip()) if session.strip() else None
+    sk = resolve_session_key(session.strip()) if session.strip() else None
     if sk is None:
         return JSONResponse(status_code=404, content={"error": "unknown session"})
     info = event_store.current_turn(sk)

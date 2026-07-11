@@ -69,3 +69,8 @@ def test_token_enforced_when_configured(monkeypatch, tmp_path):
                      },
                      headers={"X-Workspace-Token": "sekret"})
     assert r2.status_code == 200
+
+
+def test_resolve_session_key_is_public():
+    from backend.pending_tokens import resolve_session_key, _resolve_session_key
+    assert resolve_session_key is _resolve_session_key

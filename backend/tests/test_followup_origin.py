@@ -52,7 +52,7 @@ def test_reseed_rearms_auto_watchers(monkeypatch):
     task_registry.reset_for_tests()
     calls = []
     monkeypatch.setattr(launch_sniffer, "rearm_watch",
-                        lambda pid, label: calls.append((pid, label)))
+                        lambda pid, label, session_key=None: calls.append((pid, label)))
     followup.reseed_registry()
     assert calls == [(rec["id"], "sleep 99")]
 
@@ -69,7 +69,7 @@ def test_reseed_does_not_rearm_pinged_or_non_auto(monkeypatch):
     task_registry.reset_for_tests()
     calls = []
     monkeypatch.setattr(launch_sniffer, "rearm_watch",
-                        lambda pid, label: calls.append((pid, label)))
+                        lambda pid, label, session_key=None: calls.append((pid, label)))
     followup.reseed_registry()
     assert calls == []
 

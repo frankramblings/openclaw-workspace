@@ -121,8 +121,8 @@ def drop_session(session_key: str) -> None:
 
 @router.get("/api/promise/warnings")
 async def promise_warnings(session: str = ""):
-    from .pending_tokens import _resolve_session_key
-    sk = _resolve_session_key(session.strip()) if session.strip() else None
+    from .pending_tokens import resolve_session_key
+    sk = resolve_session_key(session.strip()) if session.strip() else None
     if sk is None:
         return JSONResponse({"warnings": []})
     with _STORE_LOCK:

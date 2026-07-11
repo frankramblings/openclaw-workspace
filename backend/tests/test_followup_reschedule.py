@@ -56,6 +56,14 @@ def test_overdue_busy_cap_keeps_honest_message():
     assert "never reported back" in p["error"]
 
 
+def test_overdue_mark_honors_caller_error():
+    rec = followup.create_promise(SID, SK, "render", 1)
+    import time as _t; _t.sleep(1.1)
+    followup.mark(rec["id"], "overdue", error="custom reason")
+    from backend import task_registry
+    assert task_registry.get(f"followup:{rec['id']}")["error"] == "custom reason"
+
+
 def test_deadline_zero_surfaces_stalled_once():
     rec = followup.create_promise(SID, SK, "forever", 0)
     # Age the promise past the surfacing threshold.

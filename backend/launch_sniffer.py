@@ -130,13 +130,16 @@ def _dec_grace(session_key: str) -> None:
         _GRACE_PENDING.pop(session_key, None)
 
 
-def cancel_all() -> int:
+def cancel_all() -> list[asyncio.Task]:
     """Cancel every live sniffer task (app shutdown). The persisted promises
-    and their deadline backstops survive; only the in-process watchers die."""
+    and their deadline backstops survive; only the in-process watchers die.
+    Returns the cancelled tasks so the caller can await them to completion
+    instead of leaving them to uvicorn's force-close window (destroyed
+    mid-cancellation, logged as noise)."""
     tasks = list(_TASKS)
     for t in tasks:
         t.cancel()
-    return len(tasks)
+    return tasks
 
 
 def grace_pending(session_key: str) -> bool:
@@ -152,6 +155,15 @@ def on_tool_start(session_key: str | None, tool_name: str | None,
     """Bridge hook. Synchronous, MUST never raise (the relay calls it inside
     its own guard, but defense in depth). Returns True iff a grace-watch was
     scheduled."""
+    # Local flags for the outer except below: if anything raises AFTER one of
+    # these commits (however unlikely — e.g. _TASKS.add/add_done_callback),
+    # the outer handler must still release what was already registered.
+    # Without this, an exception in that near-unreachable window would leak
+    # the _ACTIVE key and/or the grace count forever (nothing else ever
+    # clears them). registered_key mirrors what's currently held in _ACTIVE;
+    # bumped mirrors whether _GRACE_PENDING was incremented.
+    registered_key = None
+    bumped = False
     try:
         if not session_key or not command:
             return False
@@ -170,6 +182,7 @@ def on_tool_start(session_key: str | None, tool_name: str | None,
         if key in _ACTIVE:
             return False
         _ACTIVE.add(key)
+        registered_key = key
         launch_ms = int(time.time() * 1000)
         turn_id = None
         try:
@@ -183,17 +196,24 @@ def on_tool_start(session_key: str | None, tool_name: str | None,
         # see it's watching." Rolled back below if scheduling fails (no
         # running loop) — nothing will ever decrement it otherwise.
         _GRACE_PENDING[session_key] = _GRACE_PENDING.get(session_key, 0) + 1
+        bumped = True
         try:
             task = asyncio.get_running_loop().create_task(
                 _run(session_key, session_id, core, launch_ms, turn_id))
         except RuntimeError:
             _dec_grace(session_key)
+            bumped = False
             _ACTIVE.discard(key)
+            registered_key = None
             return False           # no loop (tests/CLI) — skip silently
         _TASKS.add(task)
         task.add_done_callback(_TASKS.discard)
         return True
     except Exception:  # noqa: BLE001 - the sniffer must never break the relay
+        if bumped:
+            _dec_grace(session_key)
+        if registered_key is not None:
+            _ACTIVE.discard(registered_key)
         log.warning("launch_sniffer.on_tool_start failed", exc_info=True)
         return False
 
@@ -240,7 +260,7 @@ async def _run(session_key: str, session_id: str, core: str,
         _ACTIVE.discard(key)
 
 
-def rearm_watch(promise_id: str, label: str) -> bool:
+def rearm_watch(promise_id: str, label: str, session_key: str | None = None) -> bool:
     """Re-arm the process watcher for an auto promise that survived a
     restart. Asyncio tasks don't persist across process boundaries, so a
     still-pending auto promise from before the restart has no watcher until
@@ -248,7 +268,21 @@ def rearm_watch(promise_id: str, label: str) -> bool:
     verbatim as the promise's label), so there's no re-parsing of
     backgrounding tokens — just resume the watch half of _run. Fire-and-forget
     like on_tool_start: a no-op when no loop is running (the promise's own
-    deadline backstop is still the safety net either way)."""
+    deadline backstop is still the safety net either way).
+
+    When `session_key` is provided (reseed_registry's caller has it on the
+    promise record), this dedupes against `_ACTIVE` exactly like on_tool_start:
+    a boot that reseeds the same still-pending promise twice (or a promise
+    whose launch is ALSO about to be freshly sniffed) shouldn't run two
+    watchers for the same (session_key, core). Without a session_key (no
+    caller context), dedup is skipped — same as before this parameter existed.
+    """
+    key = (session_key, core_command(label)) if session_key else None
+    if key is not None:
+        if key in _ACTIVE:
+            return False
+        _ACTIVE.add(key)           # registered before scheduling, like _run
+
     async def _guarded() -> None:
         # Same contract as _run: a fire-and-forget task, so an unhandled
         # exception here would surface as an "exception never retrieved"
@@ -258,10 +292,17 @@ def rearm_watch(promise_id: str, label: str) -> bool:
         except Exception:  # noqa: BLE001
             log.warning("launch_sniffer rearm_watch failed for promise %s",
                         promise_id, exc_info=True)
+        finally:
+            # Outer finally, same pattern as _run: releases only when the
+            # whole watch ends, not right after scheduling.
+            if key is not None:
+                _ACTIVE.discard(key)
 
     try:
         task = asyncio.get_running_loop().create_task(_guarded())
     except RuntimeError:
+        if key is not None:
+            _ACTIVE.discard(key)
         return False               # no loop (tests/CLI) — skip silently
     _TASKS.add(task)
     task.add_done_callback(_TASKS.discard)

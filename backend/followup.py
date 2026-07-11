@@ -205,7 +205,10 @@ def mark(pid: str, state: str, **fields) -> dict | None:
                     reg_error = str(fields.get("error") or "")
                 elif state == "overdue":
                     reg_state, detail = "failed", ""
-                    reg_error = "task never reported back by the deadline"
+                    # Caller-supplied error (e.g. a busy-cap failure) takes
+                    # precedence over the default honest message.
+                    reg_error = str(fields.get("error") or
+                                    "task never reported back by the deadline")
                 else:
                     reg_state, detail, reg_error = "done", "", ""
                 try:
@@ -275,7 +278,8 @@ def reseed_registry() -> int:
                         exc_info=True)
         if p.get("origin") == "auto" and not p.get("pinged"):
             try:
-                launch_sniffer.rearm_watch(p["id"], p.get("label", ""))
+                launch_sniffer.rearm_watch(p["id"], p.get("label", ""),
+                                           session_key=p.get("session_key"))
             except Exception:  # noqa: BLE001
                 _log.warning("launch_sniffer re-arm failed for %s", p.get("id"),
                             exc_info=True)

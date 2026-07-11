@@ -197,24 +197,29 @@ async def _lifespan(_app: FastAPI):
         search_task.cancel()
         followup_task.cancel()
         ingest_task.cancel()
-        try:
-            launch_sniffer.cancel_all()
-        except Exception:  # noqa: BLE001 - shutdown best-effort
-            _log.warning("launch_sniffer.cancel_all failed", exc_info=True)
         for t in (task, search_task, followup_task, ingest_task):
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         # Own every other task we've spun up over the app's life so nothing is
         # orphaned to uvicorn's 2s force-close window: the workspace-watch
         # filesystem watcher, per-turn SSE recorders (_TURN_TASKS — one per
-        # in-flight chat turn, detached from any reader), and fire-and-forget
+        # in-flight chat turn, detached from any reader), fire-and-forget
         # background work (_BG_TASKS — memory auto-extract, gateway-side
-        # session delete, on-demand reindex). Snapshot to lists first: these
-        # collections mutate themselves via done-callbacks/pop as tasks finish,
-        # which would raise "set changed size during iteration" if we iterated
-        # them live while cancelling.
+        # session delete, on-demand reindex), and the sniffer's live grace/watch
+        # tasks (launch_sniffer.cancel_all() — already cancelled by the call
+        # below; gathered into `remaining` too so shutdown actually awaits
+        # them instead of leaving "Task was destroyed but it is pending"
+        # noise). Snapshot to lists first: these collections mutate themselves
+        # via done-callbacks/pop as tasks finish, which would raise "set
+        # changed size during iteration" if we iterated them live while
+        # cancelling.
         await workspace_watch.stop()
-        remaining = list(_TURN_TASKS.values()) + list(_BG_TASKS)
+        sniffer_tasks: list[asyncio.Task] = []
+        try:
+            sniffer_tasks = launch_sniffer.cancel_all()
+        except Exception:  # noqa: BLE001 - shutdown best-effort
+            _log.warning("launch_sniffer.cancel_all failed", exc_info=True)
+        remaining = list(_TURN_TASKS.values()) + list(_BG_TASKS) + sniffer_tasks
         for t in remaining:
             t.cancel()
         if remaining:

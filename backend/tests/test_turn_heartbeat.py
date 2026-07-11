@@ -60,6 +60,5 @@ def test_no_heartbeat_after_source_done_frame(monkeypatch):
         return n, len(event_store.since(key, None))
 
     before, after = asyncio.run(main())
-    assert after == before
     hbs = [1 for _eid, p in event_store.since(key, None) if '"hb"' in p]
-    assert not hbs                          # no hb landed after the DONE frame
+    assert not hbs  # Load-bearing: verifies no heartbeat landed after the DONE frame

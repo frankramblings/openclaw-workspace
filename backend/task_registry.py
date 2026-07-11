@@ -81,7 +81,9 @@ def _ledger_save(data: dict) -> None:
 
 
 def _fanout(rec: dict) -> None:
-    for q in list(_SUBSCRIBERS):
+    with _LOCK:
+        subs = list(_SUBSCRIBERS)
+    for q in subs:
         try:
             q.put_nowait(_copy(rec))
         except asyncio.QueueFull:

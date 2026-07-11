@@ -65,3 +65,19 @@ def test_reseed_registry_mirrors_pending_only():
     assert followup.reseed_registry() == 1
     assert task_registry.get(f"followup:{a['id']}")["state"] == "running"
     assert task_registry.get(f"followup:{b['id']}") is None
+
+
+def test_mark_overdue_mirrors_failed_with_honest_error():
+    rec = _mk()
+    followup.mark(rec["id"], "overdue")
+    t = task_registry.get(f"followup:{rec['id']}")
+    assert t["state"] == "failed"
+    assert "never reported back" in t["error"]
+
+
+def test_completion_mirror_recreated_with_origin_kind():
+    rec = followup.create_promise("abc123def456", "agent:main:web-abc123def456",
+                                  "nohup x", 14400, origin="auto")
+    task_registry.reset_for_tests()          # simulate restart, pre-reseed
+    followup.record_completion(rec["id"], exit_code=-1, duration_s=5.0, tail="")
+    assert task_registry.get(f"followup:{rec['id']}")["kind"] == "auto"

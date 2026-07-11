@@ -72,3 +72,14 @@ def test_reseed_does_not_rearm_pinged_or_non_auto(monkeypatch):
                         lambda pid, label: calls.append((pid, label)))
     followup.reseed_registry()
     assert calls == []
+
+
+def test_reseed_count_excludes_failed_upserts(monkeypatch):
+    followup.create_promise(SID, SK, "a", 3600)
+    followup.create_promise(SID, SK, "b", 3600)
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(followup.task_registry, "upsert", boom)
+    assert followup.reseed_registry() == 0

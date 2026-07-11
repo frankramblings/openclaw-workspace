@@ -142,7 +142,9 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
                 p["tail"] = (tail or "")[-_TAIL_CAP:]
                 _save(data)
                 try:
-                    task_registry.upsert(f"followup:{pid}", kind="followup",
+                    task_registry.upsert(f"followup:{pid}",
+                                         kind=("auto" if p.get("origin") == "auto"
+                                               else "followup"),
                                          source="followup", state="running",
                                          detail=f"finished (exit {int(exit_code)}) — "
                                                 "follow-up turn pending")
@@ -198,14 +200,20 @@ def mark(pid: str, state: str, **fields) -> dict | None:
                 for k, v in fields.items():
                     p[k] = v
                 _save(data)
-                reg_state = "failed" if state == "failed" else "done"
-                detail = ("deadline passed — honest no-report turn fired"
-                          if state == "overdue" else "")
+                if state == "failed":
+                    reg_state, detail = "failed", ""
+                    reg_error = str(fields.get("error") or "")
+                elif state == "overdue":
+                    reg_state, detail = "failed", ""
+                    reg_error = "task never reported back by the deadline"
+                else:
+                    reg_state, detail, reg_error = "done", "", ""
                 try:
-                    task_registry.upsert(f"followup:{pid}", kind="followup",
+                    task_registry.upsert(f"followup:{pid}",
+                                         kind=("auto" if p.get("origin") == "auto"
+                                               else "followup"),
                                          source="followup", state=reg_state,
-                                         detail=detail,
-                                         error=str(fields.get("error") or ""))
+                                         detail=detail, error=reg_error)
                 except Exception:  # noqa: BLE001
                     _log.warning("task_registry mirror failed for promise %s", pid,
                                 exc_info=True)
@@ -261,6 +269,7 @@ def reseed_registry() -> int:
                                  session_key=p.get("session_key"),
                                  turn_id=p.get("turn_id"), state="running",
                                  detail="waiting for completion ping")
+            n += 1
         except Exception:  # noqa: BLE001
             _log.warning("followup registry reseed failed for %s", p.get("id"),
                         exc_info=True)
@@ -270,7 +279,6 @@ def reseed_registry() -> int:
             except Exception:  # noqa: BLE001
                 _log.warning("launch_sniffer re-arm failed for %s", p.get("id"),
                             exc_info=True)
-        n += 1
     return n
 
 

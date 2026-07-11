@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { nativeView, anchorMode } from '../redesign/task-rows.js';
+import { nativeView, anchorMode, tickElapsed } from '../redesign/task-rows.js';
 
 const reg = (over = {}) => ({
   id: 'taskfile:t1', kind: 'job', source: 'taskfile', label: 'publish',
@@ -66,4 +66,16 @@ test('auto followups keep their own kind', () => {
   });
   assert.equal(v.kind, 'auto');
   assert.equal(v._recTurnId, 9);
+});
+
+test('tickElapsed derives live seconds for running followup/auto views', () => {
+  const v = { kind: 'followup', status: 'running', _createdMs: 100_000 };
+  assert.equal(tickElapsed(v, 190_000), 90);
+  assert.equal(tickElapsed({ ...v, kind: 'auto' }, 190_000), 90);
+});
+
+test('tickElapsed is null for terminal, producer-timed, or unstamped views', () => {
+  assert.equal(tickElapsed({ kind: 'followup', status: 'done', _createdMs: 1 }, 2), null);
+  assert.equal(tickElapsed({ kind: 'render', status: 'running', _createdMs: 1 }, 2), null);
+  assert.equal(tickElapsed({ kind: 'auto', status: 'running', _createdMs: null }, 2), null);
 });

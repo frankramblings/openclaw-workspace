@@ -115,14 +115,27 @@ export function nativeView(rec) {
       sessionKey: rec.session_key || '',
       elapsed: rec.state === 'running' && rec.created ? (Date.now() - rec.created) / 1000 : null,
       _recTurnId: rec.turn_id ?? null,
+      _createdMs: rec.created ?? null,
     };
   }
   const native = (rec.extra && rec.extra.native) || null;
   if (!native || !native.id) return null;
-  const out = { ...native, status: statusFor(rec.state), _recTurnId: rec.turn_id ?? null };
+  const out = { ...native, status: statusFor(rec.state), _recTurnId: rec.turn_id ?? null, _createdMs: rec.created ?? null };
   out.sessionKey = out.sessionKey || rec.session_key || '';
   if (rec.state === 'interrupted') out.error = out.error || 'interrupted by a backend restart';
   return out;
+}
+
+// Live elapsed for rows whose clock is client-derived (followup/auto — their
+// registry record only pushes events on STATE changes, so without this tick
+// the "elapsed" read froze at whatever the last event computed; live-fire
+// 2026-07-10 showed a permanent "elapsed 0:00"). Producer-timed kinds
+// (taskfile natives carrying their own elapsed) stay authoritative.
+export function tickElapsed(view, nowMs) {
+  if (!view || view.status !== 'running') return null;
+  if (view.kind !== 'followup' && view.kind !== 'auto') return null;
+  if (view._createdMs == null) return null;
+  return Math.max(0, (nowMs - view._createdMs) / 1000);
 }
 
 // Deterministic bubble anchoring when the record carries the ledger turn_id
@@ -289,6 +302,7 @@ function renderOrUpdateRow(task) {
     // off, etc.), do nothing — the row waits with its bubble.
   }
   paint(state.refs, state.row, task);
+  state.view = task;
 }
 
 function reap(activeIds) {
@@ -323,11 +337,26 @@ function applyFeed(records) {
   reap(active);
 }
 
+let _elapsedTimer = null;
+function startElapsedTicker() {
+  if (_elapsedTimer) return;
+  _elapsedTimer = setInterval(() => {
+    for (const [, state] of _tasks) {
+      const secs = tickElapsed(state.view, Date.now());
+      if (secs == null || !state.refs) continue;
+      const text = `elapsed ${hms(secs)}`;
+      if (state.refs.elapsed.textContent !== text) state.refs.elapsed.textContent = text;
+    }
+  }, 1000);
+  if (_elapsedTimer && typeof _elapsedTimer.unref === 'function') _elapsedTimer.unref();
+}
+
 let _started = false;
 export function startTaskRows() {
   if (_started) return;
   _started = true;
   subscribeTasks(applyFeed);
+  startElapsedTicker();
 }
 
 if (typeof window !== 'undefined') {

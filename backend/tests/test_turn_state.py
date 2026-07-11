@@ -57,3 +57,26 @@ def test_corrupt_store_is_quarantined_not_fatal(tmp_path, monkeypatch):
     assert turn_state.turn_started("agent:main:web-hhh") == 1
     assert list(tmp_path.glob("turns_inflight.json.corrupt-*")), \
         "corrupt store must be renamed aside, not overwritten"
+
+
+def test_drop_session_clears_both_maps():
+    key = "agent:main:web-drop1"
+    turn_state.turn_started(key)
+    turn_state.sweep_boot()
+    assert turn_state.interrupted_for(key) is not None
+    turn_state.drop_session(key)
+    assert turn_state.interrupted_for(key) is None
+    assert turn_state.inflight_for(key) is None
+
+
+def test_newer_schema_warns_once(tmp_path, monkeypatch, caplog):
+    import json
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(turn_state, "_warned_schema_version", False)
+    (tmp_path / "turns_inflight.json").write_text(json.dumps(
+        {"schema_version": 99, "next_turn_id": 1, "inflight": {}, "interrupted": {}}))
+    import logging
+    with caplog.at_level(logging.WARNING):
+        turn_state.inflight_for("x")
+        turn_state.inflight_for("x")
+    assert sum("newer than this app" in r.message for r in caplog.records) == 1

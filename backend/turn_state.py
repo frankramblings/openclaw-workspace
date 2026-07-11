@@ -32,6 +32,11 @@ log = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 _LOCK = threading.Lock()
 
+# Once-per-process gate for the newer-schema warning below, same idiom as
+# followup._load's: _load() reloads from disk on every call, so without this
+# flag the warning would re-fire on every load instead of once per process.
+_warned_schema_version = False
+
 
 def _store_file():
     return config.DATA_DIR / "turns_inflight.json"
@@ -42,13 +47,21 @@ def _now_ms() -> int:
 
 
 def _load() -> dict:
-    data = fsutil.load_json_guarded(_store_file(), {}, logger=log)
-    if not isinstance(data, dict):
-        data = {}
+    global _warned_schema_version
+    raw = fsutil.load_json_guarded(_store_file(), {}, logger=log)
+    if not isinstance(raw, dict):
+        raw = {}
+    version = raw.get("schema_version")
+    if (isinstance(version, int) and version > SCHEMA_VERSION
+            and not _warned_schema_version):
+        _warned_schema_version = True
+        log.warning("turns_inflight.json schema_version %s is newer than this "
+                    "app knows how to read (%s) -- an older app version, or a "
+                    "downgrade; some fields may be ignored", version, SCHEMA_VERSION)
     return {
-        "next_turn_id": int(data.get("next_turn_id") or 1),
-        "inflight": dict(data.get("inflight") or {}),
-        "interrupted": dict(data.get("interrupted") or {}),
+        "next_turn_id": int(raw.get("next_turn_id") or 1),
+        "inflight": dict(raw.get("inflight") or {}),
+        "interrupted": dict(raw.get("interrupted") or {}),
     }
 
 
@@ -87,6 +100,23 @@ def inflight_for(session_key: str) -> dict | None:
 def interrupted_for(session_key: str) -> dict | None:
     with _LOCK:
         return _load()["interrupted"].get(session_key)
+
+
+def drop_session(session_key: str) -> None:
+    """Forget a deleted chat's ledger entries (both maps). Mirrors
+    event_store.drop_session — a deleted session must leave no residue that
+    could resurface as an interrupted marker."""
+    with _LOCK:
+        data = _load()
+        changed = False
+        if session_key in data["inflight"]:
+            data["inflight"].pop(session_key)
+            changed = True
+        if session_key in data["interrupted"]:
+            data["interrupted"].pop(session_key)
+            changed = True
+        if changed:
+            _save(data)
 
 
 def sweep_boot() -> dict:

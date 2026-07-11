@@ -42,3 +42,24 @@ def test_no_heartbeat_after_turn_ends(monkeypatch):
 
     before, after = asyncio.run(main())
     assert after == before
+
+
+def test_no_heartbeat_after_source_done_frame(monkeypatch):
+    import asyncio
+    key = "test:hb:done-window"
+    monkeypatch.setattr(chat_turn, "_HB_INTERVAL_S", 0.01)
+
+    async def main():
+        async def source():
+            yield chat_turn._DONE_SSE
+            await asyncio.sleep(0.05)      # source lingers after its own [DONE]
+
+        await chat_turn.record_turn(key, source(), turn_tasks={})
+        n = len(event_store.since(key, None))
+        await asyncio.sleep(0.05)
+        return n, len(event_store.since(key, None))
+
+    before, after = asyncio.run(main())
+    assert after == before
+    hbs = [1 for _eid, p in event_store.since(key, None) if '"hb"' in p]
+    assert not hbs                          # no hb landed after the DONE frame

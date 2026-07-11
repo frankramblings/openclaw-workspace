@@ -778,6 +778,8 @@ function beginTurn(chat, modelLabel, sessionId) {
         finalizeAll(a);
         a.status = 'done';
         a.elapsed = fmtElapsed(a.startMs);
+        // endStatus was stored by the turn_end frame handler above — read it
+        // before any teardown reorders this block.
         a.worked = turn.endStatus === 'aborted'
           ? `Stopped after ${a.elapsed} · ${a.steps.length} steps`
           : `Worked for ${a.elapsed} · ${a.steps.length} steps`;

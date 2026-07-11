@@ -327,6 +327,10 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
             if _is_done_frame(chunk):
                 # turn_end must precede [DONE] so a tail that closes on
                 # [DONE] still sees the explicit boundary + status.
+                # stop heartbeats the moment the turn's own [DONE] lands — the
+                # finally's cancel would leave a 1-tick window for a stray hb
+                # after DONE.
+                hb_task.cancel()
                 _append_turn_end("ok")
                 done_emitted = True
             _append(chunk)

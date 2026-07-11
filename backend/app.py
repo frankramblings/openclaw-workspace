@@ -733,6 +733,7 @@ async def delete_session(session_id: str):
     ok = sessions_store.delete(session_id)
     if ok and rec and rec.get("sessionKey"):
         event_store.drop_session(rec["sessionKey"])  # free the in-memory event log
+        turn_state.drop_session(rec["sessionKey"])  # no stale interrupted/inflight residue
         _spawn(_delete_gateway_session(rec["sessionKey"]))
     return {"ok": ok}
 

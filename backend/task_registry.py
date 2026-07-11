@@ -17,9 +17,10 @@ records {id, kind, label, session_key, created} in .data/tasks_volatile.json.
 On boot, sweep_boot() turns leftovers into honest `interrupted` records —
 same pattern as turn_state.sweep_boot for turns.
 
-Threading: producers call upsert from the event loop and (rarely) worker
-threads; a threading.Lock guards the maps and subscriber wakes never raise
-into the caller (same defensive contract as event_store.append).
+Threading: a threading.Lock guards the maps, and subscriber wakes never raise
+into the caller (same defensive contract as event_store.append). Producers
+must call upsert from the event-loop thread — `asyncio.Queue` wakeups are
+not thread-safe, and all current producers already comply.
 """
 from __future__ import annotations
 
@@ -34,6 +35,7 @@ log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 RETAIN_TERMINAL_S = 300           # terminal tasks age out of list_tasks()
+SUBSCRIBER_QUEUE_MAX = 512        # bound a stalled/half-open SSE client's queue
 _TERMINAL = ("done", "failed", "interrupted")
 
 _LOCK = threading.Lock()
@@ -82,6 +84,13 @@ def _fanout(rec: dict) -> None:
     for q in list(_SUBSCRIBERS):
         try:
             q.put_nowait(_copy(rec))
+        except asyncio.QueueFull:
+            # A stalled/half-open consumer: drop it rather than accumulate
+            # unbounded copies. Its reconnect resnapshots from /api/tasks.
+            with _LOCK:
+                _SUBSCRIBERS.discard(q)
+            log.warning("task_registry: dropped a stalled subscriber "
+                        "(queue full at %d)", SUBSCRIBER_QUEUE_MAX)
         except Exception:  # noqa: BLE001 - a dead subscriber can't break producers
             log.warning("task_registry: failed to wake a subscriber", exc_info=True)
 
@@ -205,7 +214,7 @@ def remove(task_id: str) -> None:
 
 
 def subscribe() -> "asyncio.Queue":
-    q: asyncio.Queue = asyncio.Queue()
+    q: asyncio.Queue = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_MAX)
     with _LOCK:
         _SUBSCRIBERS.add(q)
     return q

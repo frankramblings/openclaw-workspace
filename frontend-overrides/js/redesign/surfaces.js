@@ -12,7 +12,7 @@ import {
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
 import { renderActivity } from './chat-activity.js';
-import './task-rows.js'; // side-effect: starts polling /api/tasks/active and injecting live rows
+import './task-rows.js'; // side-effect: boots the feed subscription and injects live rows
 import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';

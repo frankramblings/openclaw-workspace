@@ -126,3 +126,27 @@ def test_remove_drops_silently():
         finally:
             task_registry.unsubscribe(q)
     asyncio.run(main())
+
+
+def test_stalled_subscriber_is_dropped_not_unbounded():
+    async def main():
+        q = task_registry.subscribe()
+        try:
+            for i in range(task_registry.SUBSCRIBER_QUEUE_MAX + 10):
+                task_registry.upsert(f"job:flood{i}", kind="job", source="job")
+            assert q.qsize() == task_registry.SUBSCRIBER_QUEUE_MAX
+            # The overflowing subscriber was dropped — later upserts don't reach it…
+            task_registry.upsert("job:after", kind="job", source="job")
+            assert q.qsize() == task_registry.SUBSCRIBER_QUEUE_MAX
+            # …and a healthy subscriber still receives events.
+            q2 = task_registry.subscribe()
+            try:
+                task_registry.upsert("job:healthy", kind="job", source="job")
+                assert q2.qsize() == 1
+            finally:
+                task_registry.unsubscribe(q2)
+        finally:
+            task_registry.unsubscribe(q)
+
+    import asyncio
+    asyncio.run(main())

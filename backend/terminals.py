@@ -1066,6 +1066,8 @@ async def terminal_mcp_read(request: Request):
 
 @router.post("/api/terminal/mcp/write")
 async def terminal_mcp_write(request: Request):
+    """Raw keystrokes — deliberately NOT hooked into the launch sniffer;
+    Gary submits commands via /run (see `_sniff_terminal_command`)."""
     body = await _read_json_body(request)
     session_key = resolve_terminal_token(str(body.get("token", "")))
     client_host = request.client.host if request.client else None

@@ -29,7 +29,10 @@ def _unquoted(command: str) -> str:
     """Patterns run on the command with quoted spans removed — prose ABOUT
     backgrounding ('use nohup…', 'Step 1; nohup…') can't fire them, while a
     real launch's tokens live outside quotes. bash -c 'nohup x' stays a
-    documented miss (conservative by design)."""
+    documented miss (conservative by design). Quote pairing is per-line since
+    detection went line-scoped: a quoted multi-line block containing a
+    backgrounding idiom on its own line can false-fire — accepted, within the
+    module's FP tolerance (worst case: one honest deadline turn)."""
     return _QUOTED_RE.sub(" ", command)
 
 

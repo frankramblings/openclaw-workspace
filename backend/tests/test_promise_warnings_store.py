@@ -41,3 +41,9 @@ def test_record_never_raises(monkeypatch):
     monkeypatch.setattr(promise_guard.fsutil, "atomic_write_json",
                         lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
     promise_guard.record_warning(SK, 1, "x")   # must not raise
+
+
+def test_drop_session_clears_warnings(client):
+    promise_guard.record_warning(SK, 1, "x")
+    promise_guard.drop_session(SK)
+    assert client.get("/api/promise/warnings", params={"session": SK}).json() == {"warnings": []}

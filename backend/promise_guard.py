@@ -104,6 +104,21 @@ def record_warning(session_key: str, turn_id, phrase: str) -> None:
         log.warning("promise_guard.record_warning failed", exc_info=True)
 
 
+def drop_session(session_key: str) -> None:
+    """Forget a deleted chat's warnings — mirrors turn_state.drop_session."""
+    try:
+        with _STORE_LOCK:
+            data = fsutil.load_json_guarded(_store_file(), {}, logger=log)
+            sessions = data.get("sessions", {}) if isinstance(data, dict) else {}
+            if session_key in sessions:
+                sessions.pop(session_key)
+                data["sessions"] = sessions
+                data["schema_version"] = SCHEMA_VERSION
+                fsutil.atomic_write_json(_store_file(), data)
+    except Exception:  # noqa: BLE001
+        log.warning("promise_guard.drop_session failed", exc_info=True)
+
+
 @router.get("/api/promise/warnings")
 async def promise_warnings(session: str = ""):
     from .pending_tokens import _resolve_session_key

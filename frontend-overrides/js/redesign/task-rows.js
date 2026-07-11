@@ -242,7 +242,7 @@ let _globalObs = null;
 
 function reinjectAll() {
   for (const [, state] of _tasks) {
-    if (!state.domMsgId) continue;         // never pinned yet — poll will handle
+    if (!state.domMsgId) continue;         // never pinned yet — the next feed event retries injection
     const msgEl = findMsgEl(state);
     if (!msgEl) continue;                  // pinned bubble not currently in DOM
     if (!msgEl.contains(state.row) || !document.body.contains(state.row)) {

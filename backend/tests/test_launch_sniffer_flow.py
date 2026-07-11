@@ -160,6 +160,37 @@ def test_watcher_stops_at_deadline(monkeypatch):
     assert len(created) == 1          # promise exists; watcher gave up quietly
 
 
+def test_duplicate_launch_sniffed_once(monkeypatch):
+    import asyncio
+    created = _capture_promises(monkeypatch)
+    monkeypatch.setattr(launch_sniffer, "_find_pid", _async_return(None))
+
+    async def main():
+        assert launch_sniffer.on_tool_start(SK, "Bash", "nohup ./render.sh &") is True
+        assert launch_sniffer.on_tool_start(SK, "Bash", "nohup ./render.sh &") is False
+        await asyncio.sleep(0.15)
+
+    asyncio.run(main())
+    assert len(created) == 1
+    assert launch_sniffer._ACTIVE == set()      # entry released after _run ends
+
+
+def test_cancel_all_stops_watchers(monkeypatch):
+    import asyncio
+    _capture_promises(monkeypatch)
+    monkeypatch.setattr(launch_sniffer, "GRACE_S", 5.0)   # long grace: task stays live
+
+    async def main():
+        launch_sniffer.on_tool_start(SK, "Bash", "nohup ./render.sh &")
+        await asyncio.sleep(0.02)
+        n = launch_sniffer.cancel_all()
+        await asyncio.sleep(0.02)
+        return n
+
+    assert asyncio.run(main()) == 1
+    assert launch_sniffer._ACTIVE == set()
+
+
 def _async_return(value):
     async def _inner(*a, **k):
         return value

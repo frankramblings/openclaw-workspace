@@ -25,9 +25,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
-               config_check, doctor, draft_mode, event_store, followup, monitor,
-               pending_tokens, sessions_store, task_ingest, task_registry, terminals,
-               turn_state, websearch)
+               config_check, doctor, draft_mode, event_store, followup, launch_sniffer,
+               monitor, pending_tokens, sessions_store, task_ingest, task_registry,
+               terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -197,6 +197,10 @@ async def _lifespan(_app: FastAPI):
         search_task.cancel()
         followup_task.cancel()
         ingest_task.cancel()
+        try:
+            launch_sniffer.cancel_all()
+        except Exception:  # noqa: BLE001 - shutdown best-effort
+            _log.warning("launch_sniffer.cancel_all failed", exc_info=True)
         for t in (task, search_task, followup_task, ingest_task):
             with contextlib.suppress(asyncio.CancelledError):
                 await t

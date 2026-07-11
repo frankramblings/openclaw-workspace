@@ -76,6 +76,22 @@ def test_core_command_strips_tokens():
     assert len(launch_sniffer.core_command("setsid " + "x" * 300)) <= 80
 
 
+def test_multiline_blob_detects_background_line():
+    blob = "echo one\nnohup sleep 300 &\necho two"
+    assert launch_sniffer.looks_background(blob) is True
+    assert launch_sniffer.background_line(blob) == "nohup sleep 300 &"
+    assert launch_sniffer.core_command(blob) == "sleep 300"
+
+
+def test_multiline_all_foreground_is_ignored():
+    assert launch_sniffer.background_line("echo one\necho two") is None
+
+
+def test_find_pid_rejects_empty_pattern():
+    import asyncio
+    assert asyncio.run(launch_sniffer._find_pid(">out.log")) is None
+
+
 def test_has_session_registration_since():
     sk = "agent:main:web-abc123def456"
     assert task_registry.has_session_registration_since(sk, 0) is False

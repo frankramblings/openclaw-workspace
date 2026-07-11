@@ -42,18 +42,30 @@ def is_exec_tool(name: str | None, *, item_is_command: bool = False) -> bool:
     return (name or "").strip().lower() in _EXEC_TOOLS
 
 
-def looks_background(command: str | None) -> bool:
+def background_line(command: str | None) -> str | None:
+    """First line of the command blob that is a background launch, or None.
+    Detection and pattern-derivation are LINE-scoped: terminal payloads are
+    often multi-command blobs, and the pgrep pattern must come from the
+    launching line only — not swallow unrelated adjacent lines."""
     if not command or not isinstance(command, str):
-        return False
-    text = _unquoted(command)
-    return any(p.search(text) for p in _BG_PATTERNS)
+        return None
+    for line in command.splitlines():
+        text = _unquoted(line)
+        if any(p.search(text) for p in _BG_PATTERNS):
+            return line.strip()
+    return None
+
+
+def looks_background(command: str | None) -> bool:
+    return background_line(command) is not None
 
 
 def core_command(command: str) -> str:
     """The command with backgrounding tokens stripped — the human-readable
     promise label AND the pgrep -f pattern. 80 chars keeps labels sane."""
+    line = background_line(command) or command.strip()
     core = re.sub(r"(?:^\s*|(?<=[;&|(]\s)|(?<=&&\s))(?:nohup|setsid)\s+", "",
-                  command.strip())
+                  line)
     core = re.sub(r"(?<![&|])&\s*$", "", core)
     core = re.sub(r"\bdisown\b", "", core)
     core = re.sub(r"\s+", " ", core).strip()
@@ -102,6 +114,27 @@ _TASKS: set = set()
 # right after the sleep.
 _GRACE_PENDING: dict[str, int] = {}
 
+# (session_key, core) pairs with a live grace/watch task — dedupes a repeat
+# sniff of the same launch while the first one is still pending/watched.
+_ACTIVE: set = set()
+
+
+def _dec_grace(session_key: str) -> None:
+    n = _GRACE_PENDING.get(session_key, 0) - 1
+    if n > 0:
+        _GRACE_PENDING[session_key] = n
+    else:
+        _GRACE_PENDING.pop(session_key, None)
+
+
+def cancel_all() -> int:
+    """Cancel every live sniffer task (app shutdown). The persisted promises
+    and their deadline backstops survive; only the in-process watchers die."""
+    tasks = list(_TASKS)
+    for t in tasks:
+        t.cancel()
+    return len(tasks)
+
 
 def grace_pending(session_key: str) -> bool:
     """True while at least one sniffed launch for this session is inside its
@@ -126,6 +159,14 @@ def on_tool_start(session_key: str | None, tool_name: str | None,
         session_id = _session_id_for(session_key)
         if not session_id:
             return False           # not a web chat — Signal etc. are out of scope
+        # Dedupe: a repeat sniff of the same (session_key, core) while the
+        # first one is still pending/watched is a no-op — one grace/watch per
+        # distinct launch, not one per tool_start frame.
+        core = core_command(command)
+        key = (session_key, core)
+        if key in _ACTIVE:
+            return False
+        _ACTIVE.add(key)
         launch_ms = int(time.time() * 1000)
         turn_id = None
         try:
@@ -141,13 +182,10 @@ def on_tool_start(session_key: str | None, tool_name: str | None,
         _GRACE_PENDING[session_key] = _GRACE_PENDING.get(session_key, 0) + 1
         try:
             task = asyncio.get_running_loop().create_task(
-                _run(session_key, session_id, command, launch_ms, turn_id))
+                _run(session_key, session_id, core, launch_ms, turn_id))
         except RuntimeError:
-            n = _GRACE_PENDING.get(session_key, 0) - 1
-            if n > 0:
-                _GRACE_PENDING[session_key] = n
-            else:
-                _GRACE_PENDING.pop(session_key, None)
+            _dec_grace(session_key)
+            _ACTIVE.discard(key)
             return False           # no loop (tests/CLI) — skip silently
         _TASKS.add(task)
         task.add_done_callback(_TASKS.discard)
@@ -157,7 +195,7 @@ def on_tool_start(session_key: str | None, tool_name: str | None,
         return False
 
 
-async def _run(session_key: str, session_id: str, command: str,
+async def _run(session_key: str, session_id: str, core: str,
                launch_ms: int, turn_id) -> None:
     """Grace → register → watch. Every stage is best-effort; the promise's
     deadline backstop is the safety net for anything that dies here.
@@ -171,27 +209,32 @@ async def _run(session_key: str, session_id: str, command: str,
     auto-registration that pings. So the sleep-through-create_promise span is
     wrapped in its own try/finally, with the decrement in the finally — that
     fires exactly once, on every exit path (return or exception).
+
+    The `_ACTIVE` entry is a SEPARATE, OUTER finally: it must survive past the
+    registration decision, for as long as the watch (if any) keeps running —
+    otherwise a duplicate launch sniffed mid-watch would race a second grace
+    window for the same command. So `_ACTIVE` releases only when this whole
+    coroutine ends (return or exception), strictly after — not nested inside
+    — the grace-decrement finally above.
     """
+    key = (session_key, core)
     try:
         try:
             await asyncio.sleep(GRACE_S)
             if task_registry.has_session_registration_since(session_key, launch_ms):
                 return             # Gary (or the wrapper) did the right thing
-            core = core_command(command)
             rec = followup.create_promise(session_id, session_key, core,
                                           AUTO_DEADLINE_S, origin="auto",
                                           turn_id=turn_id)
         finally:
-            n = _GRACE_PENDING.get(session_key, 0) - 1
-            if n > 0:
-                _GRACE_PENDING[session_key] = n
-            else:
-                _GRACE_PENDING.pop(session_key, None)
+            _dec_grace(session_key)
         await _watch_and_complete(rec["id"], core)
         # The 30s followup sweeper fires the turn (recorded-but-unfired path).
     except Exception:  # noqa: BLE001
         log.warning("launch_sniffer watch failed for session %s", session_key,
                     exc_info=True)
+    finally:
+        _ACTIVE.discard(key)
 
 
 def rearm_watch(promise_id: str, label: str) -> bool:
@@ -203,9 +246,18 @@ def rearm_watch(promise_id: str, label: str) -> bool:
     backgrounding tokens — just resume the watch half of _run. Fire-and-forget
     like on_tool_start: a no-op when no loop is running (the promise's own
     deadline backstop is still the safety net either way)."""
+    async def _guarded() -> None:
+        # Same contract as _run: a fire-and-forget task, so an unhandled
+        # exception here would surface as an "exception never retrieved"
+        # asyncio error instead of the log line the rest of the sniffer uses.
+        try:
+            await _watch_and_complete(promise_id, label)
+        except Exception:  # noqa: BLE001
+            log.warning("launch_sniffer rearm_watch failed for promise %s",
+                        promise_id, exc_info=True)
+
     try:
-        task = asyncio.get_running_loop().create_task(
-            _watch_and_complete(promise_id, label))
+        task = asyncio.get_running_loop().create_task(_guarded())
     except RuntimeError:
         return False               # no loop (tests/CLI) — skip silently
     _TASKS.add(task)
@@ -247,8 +299,11 @@ async def _find_pid(core: str):
     # truncates at the first redirection/control operator first — those
     # tokens never show up in the child's argv, so leaving them in the
     # pattern just makes real launches (`cmd > log 2>&1 &`) unmatchable.
-    pattern = re.escape(watch_pattern(core))
-    for _ in range(PID_TRIES):
+    base = watch_pattern(core)
+    if not base:
+        return None            # empty pgrep -f pattern matches every process
+    pattern = re.escape(base)
+    for attempt in range(PID_TRIES):
         try:
             proc = await asyncio.create_subprocess_exec(
                 "pgrep", "-f", "-n", "--", pattern,
@@ -260,7 +315,8 @@ async def _find_pid(core: str):
         except Exception:  # noqa: BLE001
             log.warning("pgrep failed for %r", pattern, exc_info=True)
             return None
-        await asyncio.sleep(PID_RETRY_S)
+        if attempt < PID_TRIES - 1:
+            await asyncio.sleep(PID_RETRY_S)
     return None
 
 

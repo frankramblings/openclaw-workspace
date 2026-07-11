@@ -86,7 +86,9 @@ def _fanout(rec: dict) -> None:
             q.put_nowait(_copy(rec))
         except asyncio.QueueFull:
             # A stalled/half-open consumer: drop it rather than accumulate
-            # unbounded copies. Its reconnect resnapshots from /api/tasks.
+            # unbounded copies. This bounds memory AND ends the stream — the
+            # generator sees is_subscribed() go False on its next keepalive
+            # tick and returns, so the client reconnects and resnapshots.
             with _LOCK:
                 _SUBSCRIBERS.discard(q)
             log.warning("task_registry: dropped a stalled subscriber "
@@ -223,6 +225,15 @@ def subscribe() -> "asyncio.Queue":
 def unsubscribe(q: "asyncio.Queue") -> None:
     with _LOCK:
         _SUBSCRIBERS.discard(q)
+
+
+def is_subscribed(q: "asyncio.Queue") -> bool:
+    """False once _fanout dropped this subscriber (QueueFull). Stream
+    generators use this to END their response instead of keepalive-ing a
+    consumer that will never receive another update — the client's
+    EventSource then reconnects and resnapshots."""
+    with _LOCK:
+        return q in _SUBSCRIBERS
 
 
 def sweep_boot() -> list[dict]:

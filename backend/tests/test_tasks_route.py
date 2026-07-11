@@ -52,3 +52,21 @@ def test_stream_snapshot_then_delta():
         await gen.aclose()
 
     asyncio.run(main())
+
+
+def test_stream_ends_after_drop(monkeypatch):
+    monkeypatch.setattr(tasks_route, "_KEEPALIVE_S", 0.01)
+
+    async def main():
+        gen = tasks_route._stream_gen()
+        first = await gen.__anext__()
+        assert '"type":"tasks.snapshot"' in first
+        # Find this generator's queue and drop it the way _fanout would.
+        q = next(iter(task_registry._SUBSCRIBERS))
+        task_registry._SUBSCRIBERS.discard(q)
+        with pytest.raises(StopAsyncIteration):
+            # Drain a few frames: the gen must END (not keepalive forever).
+            for _ in range(5):
+                await asyncio.wait_for(gen.__anext__(), timeout=1)
+
+    asyncio.run(main())

@@ -111,6 +111,8 @@ async def _stream_gen():
             try:
                 rec = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_S)
             except asyncio.TimeoutError:
+                if not task_registry.is_subscribed(queue):
+                    return          # dropped (QueueFull): end the stream; client resnapshots
                 # This tick doubles as the self-heal pass for the time-based
                 # RETAIN_SECS window: a terminal job crossing the 60s cutoff
                 # produces no registry event, so re-check the list here.

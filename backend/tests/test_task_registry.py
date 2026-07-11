@@ -128,6 +128,19 @@ def test_remove_drops_silently():
     asyncio.run(main())
 
 
+def test_is_subscribed_flips_on_drop():
+    async def main():
+        q = task_registry.subscribe()
+        try:
+            assert task_registry.is_subscribed(q) is True
+            for i in range(task_registry.SUBSCRIBER_QUEUE_MAX + 5):
+                task_registry.upsert(f"job:f{i}", kind="job", source="job")
+            assert task_registry.is_subscribed(q) is False
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
 def test_stalled_subscriber_is_dropped_not_unbounded():
     async def main():
         q = task_registry.subscribe()

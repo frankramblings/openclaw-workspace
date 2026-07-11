@@ -39,6 +39,8 @@ async def _stream_gen():
             try:
                 rec = await asyncio.wait_for(queue.get(), timeout=_KEEPALIVE_S)
             except asyncio.TimeoutError:
+                if not task_registry.is_subscribed(queue):
+                    return          # dropped (QueueFull): end the stream; client resnapshots
                 yield ": keepalive\n\n"
                 continue
             yield _sse({"type": "task.update", "task": rec})

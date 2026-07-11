@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { nativeView, anchorMode, tickElapsed } from '../redesign/task-rows.js';
+import { nativeView, anchorMode, tickElapsed, tickerOwnsElapsed } from '../redesign/task-rows.js';
 
 const reg = (over = {}) => ({
   id: 'taskfile:t1', kind: 'job', source: 'taskfile', label: 'publish',
@@ -98,4 +98,12 @@ test('tickElapsed is null for terminal, producer-timed, or unstamped views', () 
   assert.equal(tickElapsed({ kind: 'followup', status: 'done', _createdMs: 1 }, 2), null);
   assert.equal(tickElapsed({ kind: 'render', status: 'running', _createdMs: 1 }, 2), null);
   assert.equal(tickElapsed({ kind: 'auto', status: 'running', _createdMs: null }, 2), null);
+});
+
+test('tickerOwnsElapsed true only for mid-run ticker-owned views', () => {
+  const running = { kind: 'auto', status: 'running', _createdMs: 1000, elapsed: null };
+  assert.equal(tickerOwnsElapsed(running, 2000), true);
+  assert.equal(tickerOwnsElapsed({ ...running, elapsed: 5 }, 2000), false);       // producer/terminal value present
+  assert.equal(tickerOwnsElapsed({ ...running, kind: 'render' }, 2000), false);   // producer-timed kind
+  assert.equal(tickerOwnsElapsed({ ...running, status: 'done' }, 2000), false);
 });

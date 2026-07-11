@@ -144,6 +144,16 @@ export function tickElapsed(view, nowMs) {
   return Math.max(0, (nowMs - view._createdMs) / 1000);
 }
 
+// True when the ticker — not this feed event's `task.elapsed` — owns the
+// displayed elapsed value: no producer/terminal value present, but the
+// ticker's own formula would return one. paint() uses this to skip writing
+// refs.elapsed on a mid-run feed event (task.elapsed is null there by
+// design, see nativeView above) so the ticker's live value isn't blanked
+// for the ≤1s until the next tick repaints it.
+export function tickerOwnsElapsed(task, nowMs) {
+  return task.elapsed == null && tickElapsed(task, nowMs) != null;
+}
+
 // Deterministic bubble anchoring when the record carries the ledger turn_id
 // and it matches the live turn; otherwise the legacy pin heuristic.
 export function anchorMode(rec, liveTurnId) {
@@ -202,8 +212,14 @@ function paint(refs, row, task) {
     ? `eta ${hms(task.eta)}` : '';
   if (refs.eta.textContent !== etaText) refs.eta.textContent = etaText;
 
-  const elapsedText = task.elapsed != null ? `elapsed ${hms(task.elapsed)}` : '';
-  if (refs.elapsed.textContent !== elapsedText) refs.elapsed.textContent = elapsedText;
+  // Mid-run ticker-owned view: task.elapsed is null by design (see nativeView)
+  // and the 1s ticker is already writing refs.elapsed directly — leave it
+  // alone here so a feed event doesn't blank it for the ≤1s until the next
+  // tick repaints it.
+  if (!tickerOwnsElapsed(task, Date.now())) {
+    const elapsedText = task.elapsed != null ? `elapsed ${hms(task.elapsed)}` : '';
+    if (refs.elapsed.textContent !== elapsedText) refs.elapsed.textContent = elapsedText;
+  }
 
   const errText = task.status === 'failed' ? (task.error || 'failed') : '';
   if (refs.err.textContent !== errText) refs.err.textContent = errText;
@@ -242,7 +258,7 @@ let _globalObs = null;
 
 function reinjectAll() {
   for (const [, state] of _tasks) {
-    if (!state.domMsgId) continue;         // never pinned yet — the next feed event retries injection
+    if (!state.domMsgId) continue;         // never pinned yet — the 1s ticker retries renderOrUpdateRow
     const msgEl = findMsgEl(state);
     if (!msgEl) continue;                  // pinned bubble not currently in DOM
     if (!msgEl.contains(state.row) || !document.body.contains(state.row)) {
@@ -293,7 +309,10 @@ function renderOrUpdateRow(task) {
     // Heuristic fallback: "newest asst bubble" (findMsgEl uses domMsgId when
     // set, so this also resolves the deterministic pin above by its exact id).
     const msgEl = findMsgEl(state);
-    if (!msgEl) return;                    // no bubble yet — wait
+    if (!msgEl) {                          // no bubble yet — the 1s ticker retries
+      state.view = task;
+      return;
+    }
     if (!state.domMsgId) state.domMsgId = msgEl.getAttribute('data-msg-id');
     const { spine } = findOrMakeSpine(msgEl);
     spine.appendChild(state.row);
@@ -348,6 +367,12 @@ function startElapsedTicker() {
   if (_elapsedTimer) return;
   _elapsedTimer = setInterval(() => {
     for (const [, state] of _tasks) {
+      // A row whose bubble wasn't in the DOM at first sight (see the
+      // no-bubble branch in renderOrUpdateRow) parked its view here without
+      // pinning. Retry every tick instead of waiting on the next feed event
+      // — the row then appears within ~1s of its bubble showing up.
+      if (!state.domMsgId && state.view) renderOrUpdateRow(state.view);
+
       const secs = tickElapsed(state.view, Date.now());
       if (secs == null || !state.refs) continue;
       const text = `elapsed ${hms(secs)}`;

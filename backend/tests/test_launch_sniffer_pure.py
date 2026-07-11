@@ -76,6 +76,22 @@ def test_core_command_strips_tokens():
     assert len(launch_sniffer.core_command("setsid " + "x" * 300)) <= 80
 
 
+def test_core_command_is_idempotent():
+    # Dedupe keys are built from core_command at BOTH ends: on a fresh sniff
+    # (from the raw command) and on a reseed-rearm (from the stored label,
+    # which is itself a core_command output). Stacked prefixes like
+    # "nohup setsid ..." must therefore strip fully in one call, or the two
+    # keys diverge and the dedupe silently stops working.
+    core = launch_sniffer.core_command("nohup setsid ./foo.sh &")
+    assert core == "./foo.sh"
+    assert launch_sniffer.core_command(core) == core
+    # Same contract for the "& disown" idiom: the & only becomes trailing once
+    # disown is stripped, so the strips must run in that order.
+    core2 = launch_sniffer.core_command("long_job --input data.csv & disown")
+    assert core2 == "long_job --input data.csv"
+    assert launch_sniffer.core_command(core2) == core2
+
+
 def test_multiline_blob_detects_background_line():
     blob = "echo one\nnohup sleep 300 &\necho two"
     assert launch_sniffer.looks_background(blob) is True

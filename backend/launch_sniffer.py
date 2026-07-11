@@ -65,12 +65,26 @@ def looks_background(command: str | None) -> bool:
 
 def core_command(command: str) -> str:
     """The command with backgrounding tokens stripped — the human-readable
-    promise label AND the pgrep -f pattern. 80 chars keeps labels sane."""
+    promise label AND the pgrep -f pattern. 80 chars keeps labels sane.
+
+    IDEMPOTENT for the leading-prefix strip: core_command(core_command(x)) ==
+    core_command(x). The _ACTIVE dedupe key is built from this at both ends —
+    a fresh sniff (raw command) and a reseed-rearm (the stored label, itself a
+    core_command output) — so a stacked "nohup setsid ./x" must strip fully in
+    one call or the two keys diverge and the dedupe silently stops working.
+    Only the ANCHORED leading-token strip loops; the mid-string (after ;&|( or
+    &&) variants stay single-pass as before."""
     line = background_line(command) or command.strip()
-    core = re.sub(r"(?:^\s*|(?<=[;&|(]\s)|(?<=&&\s))(?:nohup|setsid)\s+", "",
-                  line)
+    prev = None
+    while prev != line:
+        prev = line
+        line = re.sub(r"(?:^\s*)(?:nohup|setsid)\s+", "", line)
+    core = re.sub(r"(?:(?<=[;&|(]\s)|(?<=&&\s))(?:nohup|setsid)\s+", "", line)
+    # disown BEFORE the trailing-& strip: in "cmd & disown" the & only becomes
+    # trailing once disown is gone — the old order left it, breaking the same
+    # idempotence contract as the stacked-prefix case above.
+    core = re.sub(r"\bdisown\b", "", core).rstrip()
     core = re.sub(r"(?<![&|])&\s*$", "", core)
-    core = re.sub(r"\bdisown\b", "", core)
     core = re.sub(r"\s+", " ", core).strip()
     return core[:80]
 

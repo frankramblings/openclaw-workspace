@@ -57,6 +57,22 @@ def test_reseed_rearms_auto_watchers(monkeypatch):
     assert calls == [(rec["id"], "sleep 99")]
 
 
+def test_reseed_threads_session_key_to_rearm(monkeypatch):
+    # rearm_watch's _ACTIVE dedupe only engages when it gets a session_key —
+    # reseed_registry must thread the promise record's own session_key through,
+    # or every reseeded watcher silently opts out of dedup.
+    from backend import launch_sniffer
+
+    rec = followup.create_promise(SID, SK, "sleep 99", 14400, origin="auto")
+    task_registry.reset_for_tests()
+    calls = []
+    monkeypatch.setattr(launch_sniffer, "rearm_watch",
+                        lambda pid, label, session_key=None:
+                            calls.append((pid, label, session_key)))
+    followup.reseed_registry()
+    assert calls == [(rec["id"], "sleep 99", SK)]
+
+
 def test_reseed_does_not_rearm_pinged_or_non_auto(monkeypatch):
     # Pinged auto promises are already in the sweeper's recorded-but-unfired
     # path (due_promises fires them directly); non-auto (real followup)

@@ -16,7 +16,7 @@ uvicorn backend.app:app --reload --port 8800
 You need a running OpenClaw gateway for chat to work; the pure-mapper tests run
 without one.
 
-Frontend JS tests: `node --test frontend-overrides/js/__tests__/*.test.js`.
+Frontend JS tests: `node --test frontend-overrides/js/__tests__/*.test.js scripts/test/*.mjs`.
 
 ## Dependencies
 

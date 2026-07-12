@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: 22
       - name: Run JS tests
-        run: node --test frontend-overrides/js/__tests__/*.test.js
+        run: node --test frontend-overrides/js/__tests__/*.test.js scripts/test/*.mjs
 
   lint:
     runs-on: ubuntu-latest

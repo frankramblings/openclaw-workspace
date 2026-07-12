@@ -1149,7 +1149,9 @@ async function submitFromComposer(text, attachSnap) {
 // Task 8) an explicit Save & Send mid-edit. Clears pendingSend + the
 // optimistic flags before handing off to fireSend, so msgTools' canEdit
 // predicate flips false (the Edit button disappears) the instant this runs.
-function flushPending(sessionId) {
+// Exported (Task 3.5) so mobile edit-flow.js's Cancel can re-arm a real
+// network flush via its injectable `io` hook.
+export function flushPending(sessionId) {
   const state = runtime.state;
   if (!state) return;
   const chat = ensureChat(state);

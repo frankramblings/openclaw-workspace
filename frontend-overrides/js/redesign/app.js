@@ -17,6 +17,7 @@ import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { maybeShowThreadsHint } from './mobile/threads-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
 import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
+import { flushPending } from './live/chat.js';
 import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
 import '../deeplink.js';  // ?action=new|search|inbox|photo|voice (self-inits on load)
 import { loadSurface } from './live/index.js';
@@ -398,7 +399,10 @@ const actions = {
     state.live.chat.mobileSheetMsgId = null;
   },
   editPendingOnMobile: (msgId) => editPendingOnMobile(state, msgId, { clearTimeout: (id) => clearTimeout(id) }),
-  cancelMobileEdit: () => cancelMobileEdit(state),
+  // io wired (Task 3.5 follow-up): without it the re-armed timer had no
+  // flush to call, so the restored bubble looked like it was sending again
+  // but the network POST never actually fired.
+  cancelMobileEdit: () => cancelMobileEdit(state, { setTimeout: (fn, ms) => setTimeout(fn, ms), flush: flushPending }),
 
   // companion
   compTab: (tab) => { state.compTab = tab; state.compSplit = false; state.compHidden = false; },

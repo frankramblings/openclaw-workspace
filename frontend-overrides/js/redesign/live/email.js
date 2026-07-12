@@ -50,18 +50,36 @@ function initialsOf(name) {
   return parts[0].slice(0, 2).toUpperCase();
 }
 
-// Best-effort '04:12 PM' from either ISO ('2026-06-22T23:07+00:00') or RFC2822
-// ('Mon, 22 Jun 2026 23:07:58 +0000'). Falls back to the raw string.
-function shortTime(date) {
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function sameCalendarDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// Date-aware short label from either ISO ('2026-06-22T23:07+00:00') or
+// RFC2822 ('Mon, 22 Jun 2026 23:07:58 +0000'):
+//   today          → '04:12 PM' (best-effort time-of-day, as before)
+//   earlier, same year → 'Jun 28' (no year — it's implied)
+//   a different year   → '6/28/25' (numeric, 2-digit year)
+// Falls back to the raw string on an unparseable date. `now` is injectable
+// for tests; defaults to the real current time.
+export function shortTime(date, now = new Date()) {
   if (!date) return '';
   const d = new Date(date);
   if (isNaN(d.getTime())) return String(date);
-  let h = d.getHours();
-  const m = d.getMinutes();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12;
-  if (h === 0) h = 12;
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+  const n = now instanceof Date ? now : new Date(now);
+  if (sameCalendarDay(d, n)) {
+    let h = d.getHours();
+    const m = d.getMinutes();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+  }
+  if (d.getFullYear() === n.getFullYear()) {
+    return `${MONTH_ABBR[d.getMonth()]} ${d.getDate()}`;
+  }
+  return `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear() % 100).padStart(2, '0')}`;
 }
 
 function fmtBytes(n) {
@@ -173,6 +191,25 @@ export async function load(state) {
   state.live.email = { emails, current };
 }
 
+// Best-effort mark-read: fires the backend flag flip and swallows any
+// failure — read state is a nicety, not something worth surfacing an error
+// for. Callers optimistically flip `unread` themselves and must NOT revert
+// it on this failing; a stale unread dot is a much smaller sin than an
+// email that silently goes back to looking unread.
+async function markRead(uid) {
+  try {
+    await apiJson(`/api/email/mark-read/${encodeURIComponent(uid)}?folder=${encodeURIComponent(FOLDER)}`, null);
+  } catch (_) { /* silent — see banner above */ }
+}
+
+// Monotonic per-open counter guarding against stale responses: rapid A→B
+// selection clicks both fetch, but only the response for the MOST RECENT
+// open may replace the reader body — an older request resolving late must
+// never clobber a newer selection's content out from under its own (already
+// current) highlight. Desktop (selEmail) and mobile (mOpenReader) share this
+// single guard since both route through openAt and the same state.live.email.
+let openToken = 0;
+
 async function openAt(i) {
   const s = runtime.state;
   if (!s) return;
@@ -182,10 +219,22 @@ async function openAt(i) {
   const item = emails[idx];
   if (!item) { runtime.render(); return; }
   runtime.render(); // optimistic: selection + (stale/mock) current
+  const token = ++openToken;
   try {
     const current = await readCurrent(item.uid);
-    s.live = s.live || {};
-    s.live.email = { emails, current };
+    // The read genuinely happened server-side regardless of whether a newer
+    // open has since superseded this one for reader-body purposes below — so
+    // mark it read and clear the row's unread dot unconditionally. Both
+    // mutate `item` in place (the shared list row), so this stays visible
+    // even when the guard below skips the reader-body assignment.
+    if (item.unread) {
+      item.unread = false;
+      markRead(item.uid); // fire-and-forget
+    }
+    if (token === openToken) {
+      s.live = s.live || {};
+      s.live.email = { emails, current };
+    } // else: superseded by a newer open — don't render A's body under B's highlight
   } catch (_) { /* keep prior current; render still shows the list selection */ }
   runtime.render();
 }

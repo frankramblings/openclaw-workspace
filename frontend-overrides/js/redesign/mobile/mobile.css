@@ -772,7 +772,9 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
    same invisible-pad ≥44pt technique as the other small dismiss glyphs above
    (.m-q-x etc.) since the toast pill itself stays compact. */
 .m-toast-x { position: relative; flex: none; min-width: 0; background: none; border: none; color: var(--faint); font-size: 15px; line-height: 1; cursor: pointer; padding: 0; }
-.m-toast-x::after { content: ''; position: absolute; inset: -14px; }
+/* Pad must stay under the 10px flex gap to the Undo button — a 14px reach
+   painted OVER Undo's right edge (positioned el wins the stacking order). */
+.m-toast-x::after { content: ''; position: absolute; inset: -9px; }
 
 .m-msg-sheet-backdrop {
   position: fixed;

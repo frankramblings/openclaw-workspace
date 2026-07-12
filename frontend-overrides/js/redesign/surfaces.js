@@ -516,7 +516,7 @@ function emailSurface(s) {
       <div class="reader-body">
         <div class="col">
           ${map(m.body || [], (p) => `<p>${esc(p)}</p>`)}
-          ${when(attach.length > 0, `<div class="attach-row">${map(attach, (att) => `<div class="attach ocbtn"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(att.name)}</div><div class="sz">${esc(att.size)}</div></div></div>`)}</div>`)}
+          ${when(attach.length > 0, `<div class="attach-row">${map(attach, (att) => `<div class="attach" title="attachment download not yet available" style="cursor:default"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(att.name)}</div><div class="sz">${esc(att.size)}</div></div></div>`)}</div>`)}
         </div>
       </div>
       <div class="reply-bar">

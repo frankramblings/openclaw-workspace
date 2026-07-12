@@ -341,8 +341,18 @@ window.addEventListener('resize', () => _reclampAllThrottled(false));
 function _watchSidebar() {
   const sidebar = document.getElementById('sidebar');
   if (!sidebar) {
-    // Sidebar may not be in the DOM yet during early init.
-    requestAnimationFrame(_watchSidebar);
+    // Sidebar may not be in the DOM yet during early init — and on the
+    // redesign shell (which shares this module via the dualDragInit chain but
+    // has no #sidebar) it NEVER appears, so a self-requeueing rAF would spin
+    // for the page's lifetime. Under headless Chromium's virtual-time pumping
+    // that spin starves every timer on the page. Watch for the node instead.
+    const waiter = new MutationObserver(() => {
+      if (document.getElementById('sidebar')) {
+        waiter.disconnect();
+        _watchSidebar();
+      }
+    });
+    waiter.observe(document.documentElement, { childList: true, subtree: true });
     return;
   }
   const mo = new MutationObserver(() => _reclampAllThrottled(true));

@@ -31,11 +31,13 @@ from . import (branch_context, bridge, capabilities, chat_search, chat_turn, con
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
+from .auth_password import router as auth_password_router
 from .calendar import router as calendar_router
 from .cron import router as cron_router
 from .documents import router as documents_router
 from .email_himalaya import router as email_router
 from .emoji_proxy import router as emoji_router
+from .export_route import router as export_router
 from .inbox import router as inbox_router
 from .jobs import router as jobs_router
 from .memory import router as memory_router
@@ -254,6 +256,8 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(inbox_router)
 app.include_router(jobs_router)
 app.include_router(memory_router)
+app.include_router(auth_password_router)
+app.include_router(export_router)
 app.include_router(skills_router)
 app.include_router(cron_router)
 app.include_router(email_router)
@@ -936,12 +940,12 @@ async def search_reindex(force: bool = False):
 # body). See the Task 19 report (.superpowers/sdd) for the full path table.
 # Registered BEFORE the 404 catch-all so these specific paths still win. Remove a
 # stub once its caller is gone.
-#   redesign (live): /api/export (Settings → Data Backup → Export)
 #   classic (/classic only): fonts/custom, signatures, contacts/search,
 #     sessions/archived, chat/stream_status/{id}, model-endpoints/probe-local,
 #     document/{id}/export-pdf, document/{id}/render-pages,
 #     email/attachment/{uid}/{index}
-@app.get("/api/export")
+# (redesign (live) /api/export — Settings → Data Backup → Export — is now a
+# real route; see export_route.py.)
 @app.get("/api/fonts/custom")
 @app.get("/api/signatures")
 @app.get("/api/contacts/search")

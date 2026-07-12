@@ -18,7 +18,7 @@ import assert from 'node:assert';
 // api.js reads `location.origin` at module-load time.
 globalThis.location = { origin: 'http://localhost' };
 
-const { apiJson, ApiError } = await import('../redesign/live/api.js');
+const { apiJson, apiDelete, ApiError } = await import('../redesign/live/api.js');
 
 function fakeRes({ ok, status, json, text, contentType = 'application/json' }) {
   return {
@@ -100,6 +100,35 @@ test('ApiError.body carries the parsed error payload so callers can branch on it
     await assert.rejects(
       () => apiJson('/api/auth/change-password', {}),
       (e) => e instanceof ApiError && e.status === 400 && e.body && e.body.detail === 'current password is wrong',
+    );
+  } finally {
+    delete globalThis.fetch;
+  }
+});
+
+// ---- apiDelete throw behavior (Task 1.6) -------------------------------------
+// apiDelete used to always resolve (even on a failed DELETE), the same bug
+// apiJson had before Task 1.2. Now it throws ApiError on !res.ok too, same
+// contract as apiJson.
+
+test('apiDelete resolves with parsed JSON on a 2xx response', async () => {
+  globalThis.fetch = mock.fn(async () => fakeRes({ ok: true, status: 200, json: { ok: true } }));
+  try {
+    const r = await apiDelete('/api/x/1');
+    assert.deepStrictEqual(r, { ok: true });
+  } finally {
+    delete globalThis.fetch;
+  }
+});
+
+test('apiDelete throws ApiError on a non-2xx response instead of silently resolving', async () => {
+  globalThis.fetch = mock.fn(async () => fakeRes({
+    ok: false, status: 404, json: { detail: 'not found' },
+  }));
+  try {
+    await assert.rejects(
+      () => apiDelete('/api/x/1'),
+      (e) => e instanceof ApiError && e.status === 404 && e.body && e.body.detail === 'not found',
     );
   } finally {
     delete globalThis.fetch;
@@ -261,4 +290,36 @@ test('changePassword surfaces the backend detail message on failure', async () =
   const messages = globalThis.window.alert.mock.calls.map((c) => c.arguments[0]);
   assert.deepStrictEqual(messages, ['current password is wrong']);
   assert.equal(st.pwCurrent, 'old', 'fields must not clear on a failed change');
+});
+
+test('exportData downloads the blob only on a 2xx and alerts on a server error (no error-page-as-.zip)', async () => {
+  globalThis.window.alert.mock.resetCalls();
+  globalThis.fetch = mock.fn(async () => fakeRes({
+    ok: false, status: 502, contentType: 'text/html', text: '<html>Bad Gateway</html>',
+  }));
+  const origCreate = globalThis.document && globalThis.document.createElement;
+  // jsdom-free environment: stub just enough of `document` for the download
+  // path to be reachable without exercising it (the res.ok check returns
+  // before touching document at all on failure, which is exactly what this
+  // test pins).
+  globalThis.document = globalThis.document || { createElement: () => ({}), body: { appendChild() {}, } };
+  try {
+    await settingsMod.actions.exportData();
+  } finally {
+    delete globalThis.fetch;
+    if (origCreate) globalThis.document.createElement = origCreate;
+  }
+  const messages = globalThis.window.alert.mock.calls.map((c) => c.arguments[0]);
+  assert.deepStrictEqual(messages, ['Export failed — the server returned an error.']);
+});
+
+// ---- dead actions removed (Task 1.6) -----------------------------------------
+// Import Data, Danger-Zone wipes, and Add User POSTed to routes that never
+// existed (404s silently swallowed). Pin that the actions are actually gone,
+// not just unreachable from the UI.
+
+test('wipe/addUser/importData actions no longer exist on the settings module', () => {
+  assert.equal(settingsMod.actions.wipe, undefined);
+  assert.equal(settingsMod.actions.addUser, undefined);
+  assert.equal(settingsMod.actions.importData, undefined);
 });

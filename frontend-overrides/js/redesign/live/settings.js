@@ -18,7 +18,7 @@
 // visibly drives the app.
 
 import { runtime } from './runtime.js';
-import { apiGet, apiJson, apiDelete, ApiError } from './api.js';
+import { apiGet, apiJson, ApiError } from './api.js';
 import { updateTermTheme } from './terminal.js';
 
 const ACCENT_KEY = 'oc-accent';
@@ -145,17 +145,6 @@ export const actions = {
     try { window.location.assign('/'); } catch (_) { try { location.reload(); } catch (_) {} }
   },
 
-  // Danger Zone → Wipe <kind>. Confirm first; DELETE /api/admin/wipe/{kind}.
-  // kind ∈ chats|memory|skills|notes|tasks|documents|gallery|calendar.
-  wipe: async (kind) => {
-    if (!kind) return;
-    let ok = false;
-    try { ok = window.confirm(`Wipe all ${kind}? This is irreversible.`); } catch (_) { ok = false; }
-    if (!ok) return;
-    try { await apiDelete(`/api/admin/wipe/${kind}`); } catch (_) {}
-    try { runtime.render(); } catch (_) {}
-  },
-
   // Account → Change Password. Fields bound via data-model (pwCurrent/pwNew/pwConfirm).
   changePassword: async () => {
     const st = runtime.state;
@@ -176,58 +165,23 @@ export const actions = {
     }
   },
 
-  // Users → Add User. Fields bound via data-model; admin from the newAdmin toggle.
-  addUser: async () => {
-    const st = runtime.state;
-    if (!st) return;
-    const username = (st.newUsername || '').trim();
-    const password = (st.newPassword || '').trim();
-    const is_admin = !!(st.ui && st.ui.newAdmin);
-    if (!username || password.length < 8) { try { window.alert('Username and an 8-character password are required.'); } catch (_) {} return; }
-    try {
-      await apiJson('/api/auth/users', { username, password, is_admin }, 'POST');
-      st.newUsername = ''; st.newPassword = '';
-      runtime.render();
-      try { window.alert('User added.'); } catch (_) {}
-    } catch (e) {
-      const msg = apiErrorMessage(e, 'Could not add user.');
-      try { window.alert(msg); } catch (_) {}
-    }
-  },
-
-  // Data Backup → Export: GET /api/export, download the JSON blob.
+  // Data Backup → Export: GET /api/export (a real zip — see export_route.py),
+  // download the blob. res.ok-checked: a 502/error page must not be handed
+  // to the browser disguised as a .zip download.
   exportData: async () => {
     try {
       const res = await fetch(`${location.origin}/api/export`, { credentials: 'same-origin' });
+      if (!res.ok) { try { window.alert('Export failed — the server returned an error.'); } catch (_) {} return; }
       const blob = await res.blob();
       const cd = res.headers.get('content-disposition') || '';
       const m = cd.match(/filename=([^;]+)/);
-      const name = m ? m[1].trim().replace(/['"]/g, '') : 'openclaw_backup.json';
+      const name = m ? m[1].trim().replace(/['"]/g, '') : 'openclaw-backup.zip';
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
     } catch (_) { try { window.alert('Export failed.'); } catch (_) {} }
-  },
-
-  // Data Backup → Import: pick a JSON file → POST /api/import (parsed body).
-  importData: () => {
-    try {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = 'application/json,.json';
-      input.onchange = async () => {
-        const f = input.files && input.files[0];
-        if (!f) return;
-        try {
-          const data = JSON.parse(await f.text());
-          await apiJson('/api/import', data);
-          try { window.alert('Import complete. Reload to see your restored data.'); } catch (_) {}
-        } catch (_) { try { window.alert('Import failed — not a valid backup file.'); } catch (_) {} }
-      };
-      input.click();
-    } catch (_) {}
   },
 
   // Search → provider selector. Persists search_provider (the writable search

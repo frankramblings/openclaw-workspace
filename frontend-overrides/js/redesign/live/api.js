@@ -64,9 +64,13 @@ export async function apiForm(path, fields, { method = 'POST', headers = {} } = 
   return parse(res);
 }
 
-/** DELETE convenience. */
-export function apiDelete(path) {
-  return fetch(BASE + path, { method: 'DELETE', credentials: 'same-origin' }).then(parse);
+/** DELETE convenience. Throws ApiError on any !res.ok — same contract as
+ * apiJson (see its banner): a failed delete must not read as a success. */
+export async function apiDelete(path) {
+  const res = await fetch(BASE + path, { method: 'DELETE', credentials: 'same-origin' });
+  const parsed = await parse(res);
+  if (!res.ok) throw new ApiError(res.status, parsed, path, 'DELETE');
+  return parsed;
 }
 
 /**

@@ -20,8 +20,8 @@ export const TAB = {
   shortcuts: ['Shortcuts', 'Keyboard shortcuts', '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>'],
   account: ['Account', 'Profile, password, and 2FA', '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'],
   tools: ['Agent Tools', 'Enable or disable agent tools', WR],
-  users: ['Users', 'Accounts and registration', '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'],
-  system: ['System', 'Backup and danger zone', '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'],
+  users: ['Users', 'Accounts are managed on the host', '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'],
+  system: ['System', 'Backup', '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'],
 };
 
 // ---- row builders ---------------------------------------------------------
@@ -37,7 +37,6 @@ const ep = (glyph, name, detail, iconBg, iconColor) => ({ type: 'endpoint', glyp
 const tgrow = (key, label, desc) => ({ type: 'toggleRow', key, label, desc });
 const vis = (items) => ({ type: 'vis', items });
 const shortcut = (action, keys) => ({ type: 'shortcut', action, keys });
-const danger = (label, desc, kind) => ({ type: 'danger', label, desc, kind });
 const user = (av, name, role) => ({ type: 'user', av, name, role });
 const accents = () => ({ type: 'accent' });
 const card = (o) => o;
@@ -129,23 +128,18 @@ export const PANELS = {
       tgrow('t-image', 'Image Generation', 'Generate and edit images'),
     ] }),
   ],
+  // No accounts UI: this is a single-user deployment with no registration,
+  // no user list, and no backend to add one (see app.py's /api/auth/status
+  // "single-user/no-auth" comment). A prior version of this card rendered a
+  // hardcoded fake "mitra" user and a signup toggle that did nothing — an
+  // honest read-only note replaces all of it.
   users: [
-    card({ title: 'Registration', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', rows: [tgrow('signup', 'Open signup', 'Allow anyone to create an account from the login page')] }),
-    card({ title: 'Users', icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>', rows: [user('F', 'frank', 'Admin · owner'), user('M', 'mitra', 'Member')] }),
-    card({ title: 'Add User', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', rows: [inp('Username', '', 'Username (email)', 'newUsername', 'text'), inp('Password', '', 'Password (min 8)', 'newPassword', 'password'), tgrow('newAdmin', 'Admin', 'Grant full admin access'), btns([{ label: 'Add User', primary: true, act: 'addUser' }])] }),
+    card({ title: 'Users', icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>', rows: [
+      txt('Single-user deployment — accounts are managed on the host.'),
+    ] }),
   ],
   system: [
-    card({ title: 'Data Backup', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>', sub: 'Export or import your user data (memories, presets, settings, skills, preferences) as a JSON file.', rows: [btns([{ label: 'Export Data', act: 'exportData' }, { label: 'Import Data', act: 'importData' }])] }),
-    card({ title: 'Danger Zone', danger: true, icon: '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', sub: 'Irreversible. Each wipe targets one category — pick exactly what you want gone.', rows: [
-      danger('Wipe all chats', 'Every session, message, and chat history.', 'chats'),
-      danger('Wipe all memory', 'Clears memory.json, the Memory table, and the vector store.', 'memory'),
-      danger('Wipe all skills', 'Drops data/skills/ (all SKILL.md files).', 'skills'),
-      danger('Wipe all notes', 'Every note, todo, and checklist.', 'notes'),
-      danger('Wipe all tasks', 'Every scheduled task and its run history.', 'tasks'),
-      danger('Wipe all documents', 'Every document and version.', 'documents'),
-      danger('Wipe all gallery', 'Every image record and the upload directory.', 'gallery'),
-      danger('Wipe all calendar', 'Every event and every calendar.', 'calendar'),
-    ] }),
+    card({ title: 'Data Backup', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>', sub: 'Export your user data (sessions, notes, documents, memory) as a zip file.', rows: [btns([{ label: 'Export Data', act: 'exportData' }])] }),
   ],
 };
 
@@ -165,5 +159,4 @@ export const DEFAULT_UI = {
   'cb-web': true, 'cb-doc': true, 'cb-shell': true, 'cb-more': true, 'cb-mode': true, 'cb-attach': true, 'cb-research': true, 'cb-chars': true,
   visionEnabled: true, teacherEnabled: false, reminderLlm: false,
   't-web': true, 't-shell': true, 't-files': true, 't-cal': true, 't-email': true, 't-memory': true, 't-image': false,
-  signup: false, newAdmin: false,
 };

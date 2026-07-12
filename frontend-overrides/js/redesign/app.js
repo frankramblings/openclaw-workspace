@@ -111,12 +111,15 @@ let _convFilterRenderTimer = null;  // mobile: coalesce conv-search re-renders
 // still sees the typed text even though the DOM never rebuilds mid-type.
 // Matched on `field` (data-model), not `fk` (data-focus), because "quick" has
 // two focus keys (desktop "quick" / mobile "mquick") behind one model field.
-const PLAIN_SHEET_FIELDS = new Set(['captureDraft', 'composeTo', 'composeSubject', 'composeBody', 'quick']);
+// NOTE: 'quick' must stay in the DEBOUNCED set, not here — the desktop
+// calendar renders its "↵ Add" button conditionally on state.quick, so a
+// full render skip would freeze the button out of the DOM while typing.
+const PLAIN_SHEET_FIELDS = new Set(['captureDraft', 'composeTo', 'composeSubject', 'composeBody']);
 // These three DO have a results list that must eventually catch up with what
 // was typed, so instead of skipping forever they get one coalesced render
 // after a short typing pause — the same idea as convFilter's own (mobile-
 // only) debounce below, generalized here and applied on every platform.
-const DEBOUNCED_SEARCH_FIELDS = new Set(['emailQuery', 'libQuery', 'notesFilter']);
+const DEBOUNCED_SEARCH_FIELDS = new Set(['emailQuery', 'libQuery', 'notesFilter', 'quick']);
 const _searchDebounceTimers = {};
 const root = document.getElementById('oc-root');
 const mq = window.matchMedia('(max-width: 768px)');

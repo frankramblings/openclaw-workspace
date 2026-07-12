@@ -785,6 +785,12 @@ export function inboxToastHtml(s) {
 function calendarSurface(s) {
   const q = (s.quick || '').trim();
   const has = q.length > 0;
+  const hlUid = s.calHighlightUid;
+  // Temporary highlight for the event a quick-add just created (keyed by its
+  // real uid — live/calendar.js clears it a few seconds after the create
+  // resolves). No CSS file changes needed: reuses the `pulse` keyframe that
+  // already ships in redesign.css for other momentary-attention cases.
+  const hlStyle = 'animation:pulse 1.4s ease-in-out 2;box-shadow:0 0 0 2px var(--teal) inset;border-radius:4px';
   const cell = (c) => {
     const cls = ['cal-cell'];
     if (c.last) cls.push('last');
@@ -794,10 +800,18 @@ function calendarSurface(s) {
       : `<div class="cal-date${c.dim ? ' dim' : ''}">${c.date}</div>`;
     const bars = (c.bars || []).map((b) => {
       const t = CAL_BAR_TONE[b.tone];
-      return `<div class="bar" style="background:${t.bg};color:${t.color}">${b.label ? esc(b.label) : '&nbsp;'}</div>`;
+      const hl = !!(b.uid && b.uid === hlUid);
+      const style = `background:${t.bg};color:${t.color}${hl ? `;${hlStyle}` : ''}`;
+      return `<div class="bar${hl ? ' hl' : ''}" style="${style}">${b.label ? esc(b.label) : '&nbsp;'}</div>`;
     }).join('');
-    const events = (c.events || []).map((e) =>
-      `<div class="ev"${e.faded ? ' style="opacity:.5"' : ''}><span class="evdot" style="background:${e.dot}"></span>${esc(e.label)}</div>`).join('');
+    const events = (c.events || []).map((e) => {
+      const hl = !!(e.uid && e.uid === hlUid);
+      const styles = [];
+      if (e.faded) styles.push('opacity:.5');
+      if (hl) styles.push(hlStyle);
+      const styleAttr = styles.length ? ` style="${styles.join(';')}"` : '';
+      return `<div class="ev${hl ? ' hl' : ''}"${styleAttr}><span class="evdot" style="background:${e.dot}"></span>${esc(e.label)}</div>`;
+    }).join('');
     const more = c.more ? `<div class="cal-more">${esc(c.more)}</div>` : '';
     return `<div class="${cls.join(' ')}">${dateHtml}${bars}${events}${more}</div>`;
   };
@@ -820,7 +834,6 @@ function calendarSurface(s) {
         <input data-model="quick" data-focus="quick" placeholder="Quick add — try “lunch with Sam tue 1pm” or “feed Krypto 1pm tmrw”" value="${esc(s.quick || '')}"/>
         ${when(has, '<button class="cal-add" data-act="clearQuick">↵ Add</button>')}
       </div>
-      ${when(has, `<div class="cal-parse"><span class="k">__AGENT_NAME__ parsed:</span><span class="ev"><span class="d"></span>${esc(q)}</span><span class="x">· Personal · 1 hr</span></div>`)}
     </div>
     <div class="cal-weekdays">${map(weekdays, (d) => `<div>${d}</div>`)}</div>
     ${cells.length

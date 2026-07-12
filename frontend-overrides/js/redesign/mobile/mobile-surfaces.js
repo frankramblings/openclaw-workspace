@@ -375,9 +375,18 @@ export function mEmailReader(s) {
 
 // ---- calendar agenda (under More) -----------------------------------------
 export function mCalendar(s) {
-  const event = (e) => `
+  // Temporary highlight for the event a quick-add just created (keyed by its
+  // real uid — live/calendar.js clears it a few seconds after the create
+  // resolves). Reuses the `pulse` keyframe redesign.css already ships
+  // (loaded on every page alongside mobile.css) instead of adding new CSS.
+  const hlUid = s.calHighlightUid;
+  const event = (e) => {
+    const hl = !!(e.uid && e.uid === hlUid);
+    const style = `border-left-color:${e.tone}${hl ? ';animation:pulse 1.4s ease-in-out 2;box-shadow:0 0 0 2px var(--teal) inset' : ''}`;
+    return `
     <div class="m-ev"><span class="time ${e.time === 'all-day' ? 'dim' : 'lit'}">${esc(e.time)}</span>
-      <div class="det" style="border-left-color:${e.tone}"><div class="t">${esc(e.title)}</div>${e.sub ? `<div class="s">${esc(e.sub)}</div>` : ''}</div></div>`;
+      <div class="det${hl ? ' hl' : ''}" style="${style}"><div class="t">${esc(e.title)}</div>${e.sub ? `<div class="s">${esc(e.sub)}</div>` : ''}</div></div>`;
+  };
   const group = (g, i) => `
     <div class="m-agenda-grp${i > 0 ? ' next' : ''}"><span class="lbl ${i === 0 ? 'today' : 'dim'}">${esc(g.label)}</span>${g.tag ? `<span class="tag" style="color:${g.tagColor}">${esc(g.tag)}</span>` : ''}<div class="rule"></div></div>
     ${map(g.events, event)}`;

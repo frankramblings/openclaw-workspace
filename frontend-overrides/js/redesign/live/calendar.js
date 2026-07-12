@@ -212,7 +212,7 @@ export async function load(state /* , { force } = {} */) {
       const bars = [];
       for (const ev of slot.bars) {
         total++;
-        if (used < cap) { bars.push({ label: ev.summary || '', tone: toneOf(ev, calColors) }); used++; }
+        if (used < cap) { bars.push({ label: ev.summary || '', tone: toneOf(ev, calColors), uid: ev.uid }); used++; }
       }
       if (bars.length) cell.bars = bars;
 
@@ -222,7 +222,7 @@ export async function load(state /* , { force } = {} */) {
         if (used < cap) {
           const time = hhmm(t.when);
           const label = t.ev.summary ? `${time} ${t.ev.summary}` : time;
-          const e = { label, dot: colorVar(t.ev, calColors) };
+          const e = { label, dot: colorVar(t.ev, calColors), uid: t.ev.uid };
           if (cell.dim) e.faded = true;
           evs.push(e);
           used++;
@@ -276,6 +276,7 @@ export async function load(state /* , { force } = {} */) {
         time: 'all-day',
         tone: colorVar(ev, calColors),
         title: ev.summary || '(busy)',
+        uid: ev.uid,
         ...(sub ? { sub } : {}),
       });
     }
@@ -285,6 +286,7 @@ export async function load(state /* , { force } = {} */) {
         time: agendaTime(t.when),
         tone: colorVar(t.ev, calColors),
         title: t.ev.summary || '(busy)',
+        uid: t.ev.uid,
         ...(sub ? { sub } : {}),
       });
     }
@@ -294,10 +296,14 @@ export async function load(state /* , { force } = {} */) {
   state.live.calendar = { cells, month, week, agenda };
 }
 
-// ---- optional quick-add action --------------------------------------------
-// Override the mock's clearQuick to actually create an event from the quick-add
-// box. Robust/optional: any failure just clears the box and re-renders so the
-// UI never gets stuck. quick-parse returns a BARE event dict (NOT {ok,event}).
+// ---- quick-add action -------------------------------------------------------
+// Override the mock's clearQuick to actually create an event from the
+// quick-add box (desktop's "↵ Add" and mobile's "+" both dispatch this same
+// action — see surfaces.js's calendarSurface and mobile-surfaces.js's
+// mCalendar). Honesty contract: a parse/create failure keeps the typed text
+// in the box (never silently discards what the user wrote) and raises a
+// toast; only a real success clears the input. quick-parse returns a BARE
+// event dict (NOT {ok,event}).
 
 // Month navigation (desktop toolbar ‹ / Today / ›). Offset lives in state so
 // load() can window the fetch; reload re-runs load with force.
@@ -307,6 +313,39 @@ const shiftMonth = (delta) => {
   s.calMonthOffset = delta === 0 ? 0 : (Number(s.calMonthOffset) || 0) + delta;
   reload('calendar');
 };
+
+// Reuses the same state.inboxToast + render() convention the inbox
+// undo/retry toasts already use (rendered by surfaces.js's inboxToastHtml /
+// mobile-surfaces.js's inline toast — both shells read the same state key).
+function quickAddFailed(state, text) {
+  if (!state) return;
+  // Keep what was typed — clearing it on a failed parse/create silently
+  // discards the user's input with no way to recover it.
+  state.quick = text;
+  state.inboxToast = { msg: "Couldn't add that — retry", undoTs: null };
+  runtime.render();
+}
+
+// Briefly marks the just-created event so the grid/agenda can highlight it
+// once the reload below brings it into state.live.calendar (see the `uid`
+// fields load() now attaches to cells/bars/agenda events, and the `hl` class
+// surfaces.js / mobile-surfaces.js apply when e.uid === state.calHighlightUid).
+let highlightTimer = null;
+function highlightCreated(uid) {
+  clearTimeout(highlightTimer);
+  highlightTimer = null;
+  const state = runtime.state;
+  if (!state) return;
+  state.calHighlightUid = uid || null;
+  if (!uid) return;
+  highlightTimer = setTimeout(() => {
+    if (runtime.state && runtime.state.calHighlightUid === uid) {
+      runtime.state.calHighlightUid = null;
+      runtime.render();
+    }
+  }, 5000);
+  if (highlightTimer && typeof highlightTimer.unref === 'function') highlightTimer.unref(); // node tests
+}
 
 export const actions = {
   calPrev: () => shiftMonth(-1),
@@ -324,20 +363,36 @@ export const actions = {
 
   clearQuick: async () => {
     const state = runtime.state;
-    const text = (state?.quick || '').trim();
-    if (!text) { if (state) state.quick = ''; runtime.render(); return; }
+    if (!state) return;
+    const text = (state.quick || '').trim();
+    if (!text) { state.quick = ''; runtime.render(); return; }
+
+    let parsed;
     try {
-      const parsed = await apiJson('/api/calendar/quick-parse', { text, tz: TZ });
-      // bare event dict; bail soft if the parser was unavailable / shapeless.
-      if (parsed && !parsed.error && (parsed.dtstart || parsed.summary)) {
-        await apiJson('/api/calendar/events', parsed);
-      }
+      parsed = await apiJson('/api/calendar/quick-parse', { text, tz: TZ });
     } catch (_) {
-      // swallow — clearing + reload below keeps the UI consistent.
-    } finally {
-      if (state) state.quick = '';
-      runtime.render();
-      try { reload('calendar'); } catch (_) {}
+      quickAddFailed(state, text);
+      return;
     }
+    // bare event dict; a parser error or shapeless response is a failure too —
+    // not a silent no-op.
+    if (!parsed || parsed.error || (!parsed.dtstart && !parsed.summary)) {
+      quickAddFailed(state, text);
+      return;
+    }
+
+    let created;
+    try {
+      created = await apiJson('/api/calendar/events', parsed);
+    } catch (_) {
+      quickAddFailed(state, text);
+      return;
+    }
+
+    state.quick = '';
+    state.inboxToast = { msg: `Added "${created?.summary || parsed.summary || text}"`, undoTs: null };
+    highlightCreated(created?.uid);
+    runtime.render();
+    try { reload('calendar'); } catch (_) {}
   },
 };

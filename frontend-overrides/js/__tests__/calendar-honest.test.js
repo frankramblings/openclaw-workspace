@@ -25,6 +25,50 @@ test('desktop calendar shows an empty state instead of a void grid', () => {
   assert.doesNotMatch(html, /class="cal-grid"/);
 });
 
+// ---------------------------------------------------------------------------
+// Task 2.4: the quick-add box used to show a hardcoded "__AGENT_NAME__
+// parsed: <raw text> · Personal · 1 hr" line the instant you typed anything —
+// a fake parse result invented client-side, not the server's actual answer.
+// Nothing speculative should render before the server responds.
+// ---------------------------------------------------------------------------
+test('desktop calendar: the fake "parsed: … Personal · 1 hr" preview is gone', () => {
+  const html = renderCenter({ surface: 'calendar', quick: 'lunch with Sam tue 1pm', live: { calendar: { cells: [{ date: 1 }], month: 'July 2026' } } });
+  assert.doesNotMatch(html, /parsed:/);
+  assert.doesNotMatch(html, /Personal · 1 hr/);
+  assert.doesNotMatch(html, /cal-parse/);
+});
+
+// ---------------------------------------------------------------------------
+// Task 2.4: a successful quick-add briefly highlights the created event
+// (keyed by its real uid) in the grid — never a speculative pre-response
+// highlight, and never highlighting an unrelated event.
+// ---------------------------------------------------------------------------
+test('desktop calendar: highlights the cell event matching calHighlightUid', () => {
+  const html = renderCenter({
+    surface: 'calendar', quick: '',
+    calHighlightUid: 'evt-42',
+    live: { calendar: { month: 'July 2026', cells: [{ date: 5, events: [{ label: '2:00 Standup', dot: 'red', uid: 'evt-42' }] }] } },
+  });
+  assert.match(html, /class="ev hl"/);
+});
+
+test('desktop calendar: does not highlight events that are not the just-created one', () => {
+  const html = renderCenter({
+    surface: 'calendar', quick: '',
+    calHighlightUid: 'evt-other',
+    live: { calendar: { month: 'July 2026', cells: [{ date: 5, events: [{ label: '2:00 Standup', dot: 'red', uid: 'evt-42' }] }] } },
+  });
+  assert.doesNotMatch(html, /class="ev hl"/);
+});
+
+test('desktop calendar: no highlight class at all when nothing was just created', () => {
+  const html = renderCenter({
+    surface: 'calendar', quick: '',
+    live: { calendar: { month: 'July 2026', cells: [{ date: 5, events: [{ label: '2:00 Standup', dot: 'red', uid: 'evt-42' }] }] } },
+  });
+  assert.doesNotMatch(html, / hl"/);
+});
+
 test('monthWindow shifts the view month but keeps today real', () => {
   const real = new Date(2026, 6, 10); // Jul 10 2026
   const w0 = monthWindow(real, 0);
@@ -64,4 +108,20 @@ test('mobile calendar never falls back to mock June events', () => {
 test('mobile calendar shows an empty state when the agenda has no events', () => {
   const html = mCalendar({ live: { calendar: { month: 'July 2026', week: [], agenda: [] } } });
   assert.match(html, /m-agenda-empty/);
+});
+
+test('mobile calendar: highlights the agenda event matching calHighlightUid', () => {
+  const html = mCalendar({
+    calHighlightUid: 'evt-42',
+    live: { calendar: { month: 'July 2026', week: [], agenda: [{ label: 'TODAY', events: [{ time: '2:00', tone: 'red', title: 'Standup', uid: 'evt-42' }] }] } },
+  });
+  assert.match(html, /class="det hl"/);
+});
+
+test('mobile calendar: does not highlight an unrelated agenda event', () => {
+  const html = mCalendar({
+    calHighlightUid: 'evt-other',
+    live: { calendar: { month: 'July 2026', week: [], agenda: [{ label: 'TODAY', events: [{ time: '2:00', tone: 'red', title: 'Standup', uid: 'evt-42' }] }] } },
+  });
+  assert.doesNotMatch(html, /class="det hl"/);
 });

@@ -41,15 +41,11 @@ export function filterSlashCommands(draft) {
   return SLASH_COMMANDS.filter((c) => q === '' || c.name.slice(1).startsWith(q));
 }
 
-// ---- adaptive agent dock content (per non-chat surface) -------------------
-export const DOCK = {
-  email:    { sub: 'on this thread', msg: "Three Cannes agreements are live — Tameka and Jayde signed, Brendan's still in revision.", c1: 'Draft a status reply', c2: 'Open all 3' },
-  inbox:    { sub: 'triage assistant', msg: '3 items need you — two Slack threads from Cierra and a calendar invite. The rest I can archive.', c1: '✦ Archive the FYI batch', c2: 'Draft replies' },
-  calendar: { sub: 'Fri, Jun 19', msg: "You're clear today. Monday is dense — want me to hold 9–10 AM for prep?", c1: 'Hold 9–10 AM', c2: 'Show Monday' },
-  research: { sub: 'research agent', msg: 'Queue a question and I run multi-round web research, cite sources, and build a report.', c1: 'Resume last run', c2: 'Open Library' },
-  library:  { sub: 'librarian', msg: '24 artifacts saved. I can turn any research run into a visual report, or bundle these into a doc.', c1: 'Make a visual report', c2: 'Clean up duplicates' },
-  notes:    { sub: 'on this note', msg: 'This is your live "OpenClaw Redesign" doc. Want me to fold in the latest decisions from chat?', c1: 'Summarize changes', c2: 'Append from chat' },
-};
+// (Removed: the "adaptive agent dock" mock content the companion's non-chat
+// pane used to show per surface — hardcoded fake status lines like "Three
+// Cannes agreements are live…" and "24 artifacts saved" with dead c1/c2
+// chips that dispatched no action. companion.js's garyPane() now renders an
+// honest quiet state instead — see that file.)
 
 // ---- research controls ----------------------------------------------------
 export const RESEARCH_CONTROLS = [

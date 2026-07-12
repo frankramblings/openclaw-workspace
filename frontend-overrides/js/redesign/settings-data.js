@@ -8,7 +8,7 @@ const WR = '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77
 
 // id -> [title, description, iconPathBody]
 export const TAB = {
-  services: ['Add Models', 'Connect endpoints — local or cloud', '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/>'],
+  services: ['Models', 'Endpoints — local or cloud', '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/>'],
   ai: ['AI Defaults', 'Models for chat, utility, vision, research', '<path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/>'],
   search: ['Search', 'Web search provider and fallbacks', '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'],
   integrations: ['Integrations', 'All external service connections', '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'],
@@ -106,7 +106,11 @@ export const PANELS = {
     card({ title: 'Chat Bar', icon: '<line x1="17" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="17" y1="18" x2="3" y2="18"/>', rows: [vis([['cb-more', 'More Tools'], ['cb-mode', 'Agent / Chat'], ['cb-attach', 'Attach Files']])] }),
   ],
   shortcuts: [
-    card({ title: 'Keyboard Shortcuts', icon: TAB.shortcuts[2], sub: 'Click a shortcut to rebind. Press Escape to cancel.', rows: [
+    // sub used to promise "Click a shortcut to rebind. Press Escape to
+    // cancel." — rebinding was never wired to anything. Every row below is a
+    // real, working global shortcut (see app.js's keydown listeners); the sub
+    // just says so instead of advertising a feature that doesn't exist.
+    card({ title: 'Keyboard Shortcuts', icon: TAB.shortcuts[2], sub: 'Global shortcuts — not yet customizable.', rows: [
       shortcut('New chat', ['⌘', '⇧', 'O']), shortcut('Search / command palette', ['⌘', 'K']), shortcut('Toggle sidebar', ['⌘', '\\']),
       shortcut('Send message', ['⌘', '↵']), shortcut('New line', ['⇧', '↵']), shortcut('Open settings', ['⌘', ',']),
       shortcut('Incognito mode', ['⌘', '⇧', 'I']), shortcut('Focus composer', ['/']),

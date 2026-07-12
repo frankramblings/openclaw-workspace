@@ -48,6 +48,24 @@ test('email section has no Writing Style mock (feature declined — Gary already
   assert.doesNotMatch(html, /I keep emails short and direct/);
 });
 
+test('the "Add Models" tab is gone — services is honestly read-only, so it is just "Models"', () => {
+  const html = renderCenter(st('services'));
+  assert.doesNotMatch(html, />Add Models</);
+  assert.match(html, />Models</);
+});
+
+test('shortcuts card drops the "click to rebind" promise — rebinding is not wired to anything', () => {
+  const html = renderCenter(st('shortcuts'));
+  assert.doesNotMatch(html, /Click a shortcut to rebind/);
+  assert.doesNotMatch(html, /Press Escape to cancel/);
+});
+
+test('shortcuts card still lists the real global bindings', () => {
+  const html = renderCenter(st('shortcuts'));
+  assert.match(html, /Toggle sidebar/);
+  assert.match(html, /Open settings/);
+});
+
 test('settings buttons without an action render disabled, never fake-clickable', () => {
   for (const sec of ['ai', 'integrations', 'email', 'reminders', 'account']) {
     const html = renderCenter(st(sec));

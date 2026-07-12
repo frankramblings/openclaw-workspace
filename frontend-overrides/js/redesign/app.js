@@ -181,7 +181,7 @@ function renderRail() {
   return `
   <div class="oc-rail${collapsed ? ' collapsed' : ''}">
     <div class="oc-rail-head">
-      <div class="oc-avatar oc-avatar-28" data-act="toggleRail" title="Toggle sidebar"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+      <div class="oc-avatar oc-avatar-28" data-act="toggleRail" title="Toggle sidebar"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div>
       <span class="oc-rail-name">__AGENT_NAME__</span>
       <span class="oc-online${state.isOnline ? '' : ' offline'}"><span class="dot"></span>${state.isOnline ? 'online' : 'offline'}</span>
       <div class="oc-spacer"></div>
@@ -1125,15 +1125,29 @@ root.addEventListener('scroll', (e) => {
 
 // Global keyboard shortcuts (the Settings → Shortcuts card advertises these):
 //   ⌘K / Ctrl-K → focus the active surface's search/filter input
+//   ⌘\ / Ctrl-\ → toggle the sidebar
+//   ⌘, / Ctrl-, → open Settings
 //   "/"         → focus the chat composer (when not already typing in a field)
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     // Dismiss the nearest/most-local layer first: a small anchored dropdown
     // (if one happens to be open) before a true modal/sheet underneath it.
-    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen) {
+    // Mirrors the outside-click handler's menu coverage above (root click
+    // listener) — msgMenuOpen/wsRootMenuOpen close the same way a stray click
+    // already does; Escape just used to skip them.
+    if (state.chatMenuOpen || state.modelMenuOpen || state.wsRootMenuOpen
+        || state.live?.chat?.rowMenuOpen || state.live?.chat?.msgMenuOpen) {
       state.chatMenuOpen = false;
       state.modelMenuOpen = false;
-      if (state.live?.chat) state.live.chat.rowMenuOpen = null;
+      state.wsRootMenuOpen = false;
+      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; }
+      render();
+      return;
+    }
+    // Inbox card ⋯ overflow / snooze popovers — same outside-click parity.
+    if (state.inboxSnoozeFor || state.inboxMoreFor) {
+      state.inboxSnoozeFor = null;
+      state.inboxMoreFor = null;
       render();
       return;
     }
@@ -1183,6 +1197,22 @@ document.addEventListener('keydown', (e) => {
     if (topmostModal()) return;
     e.preventDefault();
     if (actions.newChat) { actions.newChat(); render(); }
+    return;
+  }
+  // ⌘\ / Ctrl-\ → toggle the sidebar (same action the rail's own collapse
+  // button/brand-tile click dispatches — see toggleRail in the actions map
+  // and its two triggers in renderRail(), above).
+  if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+    if (topmostModal()) return; // a modal owns the keyboard while it's open
+    e.preventDefault();
+    if (actions.toggleRail) { actions.toggleRail(); render(); }
+    return;
+  }
+  // ⌘, / Ctrl-, → open Settings (the same nav the rail's Settings item drives).
+  if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+    if (topmostModal()) return;
+    e.preventDefault();
+    if (actions.go) { actions.go('settings'); render(); }
     return;
   }
   if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {

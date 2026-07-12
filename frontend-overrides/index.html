@@ -20,6 +20,15 @@
   <meta name="apple-mobile-web-app-title" content="__AGENT_NAME__" />
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=gary4" />
 
+  <!-- Preload the agent avatar: data.js's AVATAR constant renders fresh
+       <img src=AVATAR> tags on every innerHTML re-render (brand tile,
+       companion tabs, welcome/message avatars) — without a warm cache hit
+       each swap flashed teal (the .gav/.gicon background) before the bitmap
+       painted. AVATAR is origin-relative (`/static/redesign-assets/…`) unless
+       a deploy sets window.__WS_BASE__ for a subpath host — not knowable at
+       parse time, so this covers the common (root) case; a subpath deploy
+       just loses the preload's head start, not correctness. -->
+  <link rel="preload" as="image" href="/static/redesign-assets/gary-outline.png" />
   <link rel="stylesheet" href="/static/redesign.css" />
   <link rel="stylesheet" href="/static/chat-window-redesign.css" />
   <link rel="stylesheet" href="/static/js/redesign/mobile/mobile.css" />

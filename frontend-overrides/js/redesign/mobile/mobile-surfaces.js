@@ -168,7 +168,7 @@ export function mChat(s) {
       <button class="m-icon-btn m-hide-kb m-nav-btn" data-act="openConvSheet" title="Chats" aria-label="Chats">${icon('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>', { size: 18, sw: 1.9 })}</button>
       <button class="m-gary-id" data-act="openConvSheet" title="Switch conversation">
         <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span></div>
-        <div class="m-conv-sub"><span class="dot"></span>__AGENT_NAME__ · online</div>
+        <div class="m-conv-sub"><span class="dot" style="background:${healthDotColor(currentHealth())}"></span>__AGENT_NAME__ · ${esc(currentHealth())}</div>
       </button>
       <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="m-model-name">${esc(modelLabel || '…')}</span></button>
     </div>
@@ -416,10 +416,11 @@ function moreCount(s, id) {
   }
 }
 export function mMore(s) {
+  const health = currentHealth();
   return `
   <div class="m-head"><span class="m-title">More</span></div>
   <div class="m-scroll m-more">
-    <div class="m-gary-card"><div class="av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div style="flex:1"><div class="nm">__AGENT_NAME__</div><div class="st"><span class="dot"></span>online · gateway healthy</div></div></div>
+    <div class="m-gary-card"><div class="av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div style="flex:1"><div class="nm">__AGENT_NAME__</div><div class="st"><span class="dot" style="background:${healthDotColor(health)}"></span>${esc(health)}</div></div></div>
     <div class="m-grid">
       ${map(MORE_CARDS, (c) => `<div class="m-grid-card" data-act="mOpenSub" data-arg="${c.id}"><div class="ico" style="background:${c.iconBg};color:${c.iconColor}">${icon(c.icon, { size: 18, sw: 1.7 })}</div><div class="nm">${esc(c.name)}</div><div class="ct">${esc(moreCount(s, c.id))}</div></div>`)}
     </div>

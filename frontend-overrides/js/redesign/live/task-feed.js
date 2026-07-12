@@ -124,6 +124,19 @@ function _startPruneTimer() {
   if (_pruneTimer && typeof _pruneTimer.unref === 'function') _pruneTimer.unref();
 }
 
+// Connection tri-state for health-status callers (see live/health.js).
+// Deliberately coarse: 'connected' once the stream socket is open, and
+// 'reconnecting' any time it isn't but subscribeTasks() has booted (covers
+// both the CONNECTING readyState and the gap between a dropped stream and
+// its next _connect() attempt — _es is null there, mid-backoff).
+// 'idle' before the first boot: no window/EventSource yet (e.g. node:test),
+// so there's no evidence of a problem — currentHealth() treats it as online.
+export function connectionState() {
+  if (!_booted) return 'idle';
+  if (_es && _es.readyState === 1) return 'connected'; // 1 = EventSource.OPEN
+  return 'reconnecting';
+}
+
 export function subscribeTasks(cb) {
   _subs.add(cb);
   if (!_booted && typeof window !== 'undefined' && typeof EventSource !== 'undefined') {

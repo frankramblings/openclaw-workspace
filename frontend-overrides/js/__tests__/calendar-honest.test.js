@@ -97,6 +97,16 @@ test('desktop calendar toolbar controls are wired', () => {
   assert.match(html, /data-act="calNext"/);
 });
 
+test('desktop calendar toolbar shows the current month label between the nav buttons', () => {
+  const html = renderCenter(calState({ calendar: { cells: [{ date: 1 }], month: 'July 2026' } }));
+  const prev = html.indexOf('data-act="calPrev"');
+  const month = html.indexOf('class="cal-month"');
+  const next = html.indexOf('data-act="calNext"');
+  assert.ok(prev > -1 && month > -1 && next > -1, 'all three are present');
+  assert.ok(prev < month && month < next, 'the month label sits between ‹ and ›');
+  assert.match(html, /class="cal-month">July 2026</);
+});
+
 test('desktop calendar drops the dead Week/Agenda view switcher', () => {
   const html = renderCenter(calState({ calendar: { cells: [{ date: 1 }], month: 'July 2026' } }));
   assert.doesNotMatch(html, />Week</);

@@ -102,6 +102,11 @@ function convListBody(s) {
     ? [{ label: 'A–Z', rows: groups2.flatMap((g) => g.rows || []).slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' })) }]
     : groups2;
   const rowMenuOpen = s.live?.chat?.rowMenuOpen;
+  // M6: a message queued in a session you've since switched away from (see
+  // live/chat.js's session-keyed chat.queuedList) is otherwise invisible until
+  // you happen to reopen that thread. A small dot on its row says "something's
+  // waiting here" — read-only off state.live.chat.queuedList, never written.
+  const queuedSids = new Set((s.live?.chat?.queuedList || []).map((q) => q.sid));
   const convRow = (r) => {
     const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
     const badgeInner = r.term ? '∿' : (rowLogo || 'G');
@@ -110,7 +115,8 @@ function convListBody(s) {
     + `<span class="${badgeClass}">${badgeInner}</span>`
     + `<span class="conv-title">${esc(r.title)}</span>`
     + (r.notify ? `<span class="conv-dot notify" title="Reply finished"></span>`
-        : r.working ? `<span class="conv-spin working" title="Working…">${fortress(15)}</span>` : '')
+        : r.working ? `<span class="conv-spin working" title="Working…">${fortress(15)}</span>`
+        : (!r.active && queuedSids.has(r.id)) ? `<span class="conv-dot queued" title="Message queued — sends when the reply finishes"></span>` : '')
     + (r.important ? `<span class="conv-fav" aria-hidden="true">${I.star(13, true)}</span>` : '')
     + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
     + (rowMenuOpen === r.id ? convMenu(r) : '')
@@ -297,7 +303,7 @@ export function chatMsg(m, s) {
     const title = tokens.map((t) => `${t.kind} · ${t.label}`).join('\n');
     return `<span class="turn-pending-pill" title="${esc(title)}"><span class="turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
 }
 
 
@@ -368,7 +374,7 @@ function chatWelcome() {
     `<button class="qchip occhip" data-act="fillComposer" data-arg="${esc(c.prompt)}">${esc(c.label)}</button>`
   ).join('');
   return `<div class="chat-welcome">
-    <div class="cw-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
+    <div class="cw-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div>
     <div class="cw-name">__AGENT_NAME__</div>
     <div class="cw-hint">Type a message below &nbsp;·&nbsp; <kbd>/</kbd> for commands</div>
     <div class="cw-chips">${chips}</div>
@@ -698,7 +704,7 @@ function inboxSurface(s) {
     <div class="inbox-card fyi">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
       <div class="body"${bodyAttr(it)}>${bodyInner(it)}</div>
-      <button class="ai-pill" data-act="applyRec" data-arg="${it.id}">✦ ${esc(it.suggest)}</button>
+      <button class="ai-pill" data-act="applyRec" data-arg="${esc(it.id)}">✦ ${esc(it.suggest)}</button>
       ${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}
       ${snoozeMenu(it)}
     </div>`;
@@ -829,10 +835,10 @@ function calendarSurface(s) {
   <div class="cal-col">
     <div class="cal-top">
       <div class="cal-toolbar">
-        <button class="cal-nav" data-act="calPrev" title="Previous month" aria-label="Previous month">‹</button>
         <button class="btn btn-ghost" data-act="calToday">Today</button>
-        <button class="cal-nav" data-act="calNext" title="Next month" aria-label="Next month">›</button>
+        <button class="cal-nav" data-act="calPrev" title="Previous month" aria-label="Previous month">‹</button>
         <span class="cal-month">${esc(month)}</span>
+        <button class="cal-nav" data-act="calNext" title="Next month" aria-label="Next month">›</button>
         <div class="oc-spacer"></div>
         <button class="btn btn-teal" data-act="newEvent">+ New</button>
       </div>
@@ -1108,8 +1114,6 @@ function settingsSurface(s) {
         return `<div class="set-shortcut"><span class="act">${esc(r.action)}</span>${map(r.keys, (k) => `<span class="set-key">${esc(k)}</span>`)}</div>`;
       case 'user':
         return `<div class="set-user"><span class="av">${esc(r.av)}</span><div style="flex:1"><div class="nm">${esc(r.name)}</div><div class="rl">${esc(r.role)}</div></div><span class="edit">Edit</span></div>`;
-      case 'danger':
-        return `<div class="set-danger"><div style="flex:1"><div class="lbl">${esc(r.label)}</div><div class="dsc">${esc(r.desc)}</div></div><button class="set-btn danger" style="height:30px"${r.kind ? ` data-act="wipe" data-arg="${esc(r.kind)}"` : ''}>Wipe</button></div>`;
       case 'text':
         return `<div class="set-text">${esc(r.text)}</div>`;
       case 'accent': {
@@ -1156,22 +1160,6 @@ function settingsSurface(s) {
       <div class="set-head"><span class="t">${esc(TAB[sec][0])}</span><span class="d">${esc(TAB[sec][1])}</span></div>
       <div class="set-scroll"><div class="col">${cards}</div></div>
     </div>
-  </div>`;
-}
-
-// ===========================================================================
-// WELCOME / PLACEHOLDER
-// ===========================================================================
-function welcomeSurface() {
-  const chips = QUICK_CHIPS.map((c) =>
-    `<button class="qchip occhip" data-act="fillComposer" data-arg="${esc(c.prompt)}">${esc(c.label)}</button>`
-  ).join('');
-  return `<div class="welcome-surface">
-    <div class="ws-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
-    <div class="ws-name">__AGENT_NAME__</div>
-    <div class="ws-tagline">Your AI workspace</div>
-    <button class="ws-new ocbtn" data-act="newChat" title="New conversation (⌘⇧O / Ctrl+Shift+O)">Start a new chat</button>
-    <div class="ws-chips">${chips}</div>
   </div>`;
 }
 

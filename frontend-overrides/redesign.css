@@ -176,6 +176,8 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 
 .conv-dot{flex:none;width:7px;height:7px;border-radius:50%}
 .conv-dot.notify{background:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 20%,transparent);animation:pulse 1.6s ease-in-out infinite}
+/* M6: a queued (not-yet-sent) message waiting in a non-active session's row. */
+.conv-dot.queued{background:var(--gold);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 20%,transparent)}
 .conv-spin.working{flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--teal)}
 .conv-spin.working .fl-svg{display:block}
 /* In-app turn-finished toast (appended to <body>, outside the render root). */
@@ -427,6 +429,19 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .slash-cmd .glyph{width:18px;text-align:center;font-size:15px}
 .slash-cmd .name{font-family:var(--mono);font-size:14px;color:var(--fg)}
 .slash-cmd .desc{font-size:13px;color:var(--faint)}
+
+/* 769–1100px: with the companion pane open the center column can narrow
+   enough that .composer-row's +/attach/context-meter/incognito/model/mode/
+   Send no longer fit on one line — they clipped off the right edge instead
+   of reflowing. Let the row wrap there instead, with a tighter cap on the
+   model name so it doesn't push the wrap point wider than it needs to be.
+   Outside this band there's either enough room (desktop, companion closed or
+   viewport wide) or the mobile shell takes over (≤768px) — .composer-row/
+   .model-btn-name are untouched. */
+@media (min-width:769px) and (max-width:1100px){
+  .composer-row{flex-wrap:wrap;row-gap:6px}
+  .model-btn-name{max-width:120px}
+}
 
 /* =============================================================================
    CHAT ACTIVITY TRAIL (Cowork-style thinking + tool steps; live working state)

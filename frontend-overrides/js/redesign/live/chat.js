@@ -17,6 +17,7 @@ import { AVATAR } from '../data.js';
 import { reconcileDecision } from './reconcile-decision.js';
 import { promiseWarningText, latestAsstAtOrBefore } from './promise-warning.js';
 import { setLiveTurn } from './turn-ref.js';
+import { buildSuggestContext, activitySummary } from './suggest-core.js';
 import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
   onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
@@ -623,8 +624,48 @@ function startElapsed() {
       const el = document.querySelector('.act-elapsed');
       if (el) el.textContent = turn.activity.elapsed;
       else runtime.render();
+      // Mid-turn ghost suggestion ("While you wait, …"): once per turn, ≥30s
+      // in, only while the user is looking at the busy thread.
+      if (!turn.suggestAsked && Date.now() - turn.activity.startMs >= MIDTURN_SUGGEST_MS) {
+        turn.suggestAsked = true;
+        const chat = ensureChat(runtime.state);
+        if (chat.activeId === turn.sessionId) fetchSuggestion(chat, 'midturn', turn.activity);
+      }
     } else stopElapsed();
   }, 500);
+}
+
+// ---- composer ghost suggestions (Claude-Code-style) ------------------------
+// One cheap-model call per moment: 'midturn' ≥30s into a running turn,
+// 'followup' right after a clean turn end. Fire-and-forget: every failure or
+// staleness path degrades to "no ghost text", never an error state.
+const MIDTURN_SUGGEST_MS = 30_000;
+let suggestInFlight = false;
+
+async function fetchSuggestion(chat, mode, activity) {
+  if (suggestInFlight || !chat || chat.queued) return;
+  if ((runtime.state?.draft || '').trim()) return;
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+  const sessionId = chat.activeId;
+  const t = turn; // staleness token — the turn slot must be unchanged on landing
+  const context = buildSuggestContext(
+    chat.thread, mode === 'midturn' ? activitySummary(activity) : '');
+  if (!context) return;
+  suggestInFlight = true;
+  let text = '';
+  try {
+    const res = await apiJson('/api/chat/suggest',
+      { session_key: sessionId || '', mode, context });
+    text = res && typeof res.text === 'string' ? res.text.trim() : '';
+  } catch (_) { text = ''; }
+  finally { suggestInFlight = false; }
+  if (!text || text.length > 120) return;
+  const cur = ensureChat(runtime.state);
+  if (cur !== chat || cur.activeId !== sessionId) return; // switched threads
+  if (turn !== t) return;                    // turn ended or a new one started
+  if ((runtime.state?.draft || '').trim()) return;   // user typed meanwhile
+  chat.suggest = { text, mode };
+  runtime.render();
 }
 
 function finalizeStep(st) {
@@ -729,6 +770,7 @@ function stopLive() {
 // ensureActivity }. `onEvent` is fed the same {delta|type|...} objects whether
 // they came live or from replay, so a rebuilt turn looks identical to a live one.
 function beginTurn(chat, modelLabel, sessionId) {
+  chat.suggest = null; // any turn start invalidates the ghost suggestion
   // `sessionId` tags the turn with the thread it belongs to so the send-gate can
   // distinguish "THIS thread is busy" (queue) from "another thread is busy"
   // (send freely — that turn keeps streaming + recording server-side).
@@ -815,9 +857,15 @@ function beginTurn(chat, modelLabel, sessionId) {
       flushRender();
       if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); turn = null; return; }
       refreshSidebarUsage(runtime.state);
+      // Follow-up ghost suggestion — only after a CLEAN finish with nothing
+      // queued (flushQueued fires a queued message into a new turn, which
+      // would immediately invalidate the suggestion anyway).
+      const endedOk = turn.endStatus !== 'aborted';
+      const hadQueued = !!chat.queued;
       setLiveTurn(null);
       turn = null;
       flushQueued(chat);
+      if (endedOk && !hadQueued) fetchSuggestion(chat, 'followup', null);
       return;
     }
     if (ev.type === 'error') {
@@ -1580,6 +1628,7 @@ export const actions = {
     turn = null;
     _pendingByTurnId.clear();
     chat.rowMenuOpen = null;
+    chat.suggest = null;
     saveStripForCurrent(chat);
     chat.activeId = id;
     chat.chatStrip = loadStripForKey(chat, id);
@@ -1670,6 +1719,7 @@ export const actions = {
     chat.activeId = null;
     chat.chatStrip = stripOnSessionSwitch();
     chat.editingId = null;
+    chat.suggest = null;
     storeActiveId(null);
     chat.thread = [];
     chat.title = 'New chat';
@@ -1699,6 +1749,7 @@ export const actions = {
     const attachSnap = state.pendingAttach ? [...state.pendingAttach] : [];
     if (!text && !attachSnap.length) return;
     const chat = ensureChat(state);
+    chat.suggest = null; // sending (or queueing) consumes any ghost suggestion
 
     // A turn is already streaming FOR THIS THREAD → queue this message instead of
     // starting a second turn against the same thread. It shows as a pending

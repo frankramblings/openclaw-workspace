@@ -19,6 +19,16 @@ let term = null, fit = null, overlay = null, screen = null;
 let ws = null, currentKey = null;
 let lastRect = null, fitTO = null;
 let currentMount = null, ro = null, roTO = null;
+// Capped-backoff auto-reconnect: onclose used to be a noop, so a PTY WS that
+// dropped (sleep/backgrounding, a network blip, a backend restart) left the
+// terminal dead until something forced a fresh connect(key) — e.g. switching
+// chat sessions and back. reconnectTimer/reconnectDelay drive the retry;
+// `reconnecting` gates the one status line so it doesn't repeat every attempt.
+let reconnectTimer = null;
+let reconnectDelay = 0;
+let reconnecting = false;
+const RECONNECT_MIN_MS = 1000;
+const RECONNECT_MAX_MS = 15000;
 
 function injectCss(href) {
   if (document.querySelector(`link[data-xt="${href}"]`)) return;
@@ -94,15 +104,48 @@ async function buildTerm() {
   term.onData((d) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input', data: d })); });
 }
 
+function stopReconnect() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  reconnectDelay = RECONNECT_MIN_MS;
+}
+
+// The terminal pane is actually on screen — mirrors onRender's own visibility
+// check. Reconnect attempts are gated on this so a closed/backgrounded pane
+// doesn't tick a retry loop forever for a session nobody's looking at; the
+// `!ws` branch in onRender reconnects fresh (backoff reset) the moment the
+// pane is shown again instead.
+function isVisible() {
+  return !!(overlay && overlay.style.display !== 'none');
+}
+
+// Fresh, deliberate connect: a session switch or the terminal's first mount.
+// Fully supersedes any in-flight reconnect attempt for whatever key it had.
 function connect(key) {
+  stopReconnect();
+  reconnecting = false;
   if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; }
   currentKey = key;
+  openSocket(key);
+}
+
+// The server replays the session's full scrollback on every new connection
+// (see backend/terminals.py terminal_stream: "Replay scrollback so a reopened
+// panel is continuous"). term.reset() before opening — for BOTH a deliberate
+// connect() and an automatic backoff retry — so that replay repopulates a
+// clean screen instead of appending a second copy after whatever was already
+// on screen from before the drop.
+function openSocket(key) {
   if (term) term.reset();
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   try {
     ws = new WebSocket(`${proto}://${location.host}/api/terminal/${encodeURIComponent(key)}/stream`);
-  } catch (e) { return; }
-  ws.onopen = () => doFit();
+  } catch (e) { ws = null; armReconnect(key); return; }
+  ws.onopen = () => {
+    if (reconnecting && term) term.write('\r\n\x1b[2m[reconnected]\x1b[0m\r\n');
+    reconnecting = false;
+    reconnectDelay = RECONNECT_MIN_MS;
+    doFit();
+  };
   ws.onmessage = (ev) => {
     if (!term) return;
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
@@ -111,8 +154,32 @@ function connect(key) {
       term.write(`\r\n\x1b[2m[process exited${m.code != null ? ' (' + m.code + ')' : ''}] — reopen the terminal to start a new shell\x1b[0m\r\n`);
     }
   };
-  ws.onclose = () => {};
+  ws.onclose = () => {
+    if (ws == null) return; // already superseded by an explicit connect()/teardown
+    ws = null;
+    armReconnect(key);
+  };
   ws.onerror = () => {};
+}
+
+// Schedule one capped-backoff reconnect attempt (1s, doubling to a 15s
+// ceiling) for `key` — but only while its pane is actually visible. hide()
+// cancels any pending attempt outright: a closed terminal doesn't need a
+// live socket, and onRender's `!ws` check reconnects fresh (backoff reset)
+// the instant the pane is shown again, so nothing is lost by not retrying
+// while hidden — this is the "no zombie reconnect loop" guard.
+function armReconnect(key) {
+  if (!isVisible()) return;
+  reconnecting = true;
+  if (term) term.write('\r\n\x1b[2m[connection lost — reconnecting…]\x1b[0m\r\n');
+  clearTimeout(reconnectTimer);
+  const delay = reconnectDelay || RECONNECT_MIN_MS;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (key !== currentKey || !isVisible()) return; // superseded, or hidden meanwhile
+    openSocket(key);
+  }, delay);
+  reconnectDelay = Math.min(delay * 2, RECONNECT_MAX_MS);
 }
 
 function doFit() {
@@ -131,6 +198,11 @@ function hide() {
   currentMount = null;
   if (ro) { ro.disconnect(); ro = null; }
   clearTimeout(roTO);
+  // Teardown-on-unmount: a pane that isn't shown doesn't need a live retry
+  // loop ticking away in the background (no zombie reconnect timer). The
+  // socket itself is left alone — onRender's `!ws` check below reconnects
+  // fresh, with the backoff reset, the moment the pane is shown again.
+  stopReconnect();
 }
 
 // Called after every app render (and on window resize).
@@ -162,7 +234,17 @@ async function onRender() {
   }
 
   const key = (runtime.state && runtime.state.live && runtime.state.live.chat && runtime.state.live.chat.activeId) || 'global';
-  if (!ws || key !== currentKey) connect(key);
+  if (key !== currentKey) {
+    connect(key);           // session switch: fresh connect, backoff reset
+  } else if (!ws && !reconnectTimer) {
+    // Dead socket with no retry already pending — either the very first
+    // mount, or hide() cancelled the backoff while this pane was closed.
+    // Reconnect now instead of waiting on a timer nobody armed. When a
+    // backoff IS already ticking (a drop while visible), onRender runs many
+    // times a second and must NOT hammer connect() on every tick — the
+    // scheduled armReconnect() retry owns the next attempt.
+    connect(key);
+  }
 
   if (moved) { clearTimeout(fitTO); fitTO = setTimeout(doFit, 50); }
 }

@@ -86,6 +86,15 @@ function bareModelName(display) {
   return s.replace(/\s+via\s+.*$/i, '').replace(/\s*\([^)]*\)\s*$/, '').trim() || s;
 }
 
+// Monotonic per-message suffix. Date.now() alone collides when two messages
+// are minted within the same millisecond (a queued message auto-firing right
+// behind a fresh beginTurn, or two optimistic bubbles from rapid sends) — a
+// silent id collision means the OLDER message stops being independently
+// addressable (thread.find(id===…) style lookups, DOM patch targeting, and
+// _pendingByTurnId all key off this string). Exported pure for tests.
+let _msgSeq = 0;
+export function uniqId(prefix) { return `${prefix}${Date.now()}-${++_msgSeq}`; }
+
 function fmtTime(ts) {
   if (ts == null) return '';
   const d = new Date(typeof ts === 'number' ? ts : Number(ts) || Date.parse(ts));
@@ -420,15 +429,22 @@ export async function load(state) {
   if (activeId) {
     try {
       const t = await fetchThread(activeId, fallbackModel, activeSession?.name);
+      // A session switch (e.g. reloadSessions() racing a manual click) may
+      // have moved chat.activeId on while this awaited — a stale resolve
+      // must not overwrite the thread the user is now looking at.
+      if (chat.activeId !== activeId) return;
       chat.thread = t.thread;
       chat.title = t.title || chat.title;
       chat.subtitle = t.subtitle;
       chat.model = t.model || fallbackModel;
       runtime.wantChatBottom = true;   // land on the latest message after refresh
     } catch (_) {
-      chat.thread = chat.thread || [];
-      chat.model = chat.model || fallbackModel;
+      if (chat.activeId === activeId) {
+        chat.thread = chat.thread || [];
+        chat.model = chat.model || fallbackModel;
+      }
     }
+    if (chat.activeId !== activeId) return;
     // Endpoint half of the model identity — the session record carries it, else
     // fall back to the default-chat endpoint. Needed so the picker's active
     // check lands on the right (endpoint·model) row, not every same-named copy.
@@ -436,12 +452,15 @@ export async function load(state) {
     // Re-attach to an in-flight turn after a page refresh — the live answer
     // keeps streaming instead of vanishing until the turn fully finishes.
     try { await reconcileTurn(chat, state, activeId); } catch (_) { /* non-fatal */ }
+    if (chat.activeId !== activeId) return;
     // Populate resolved update_blocks (generated images etc.) that the frontend
     // missed while away — survives page refresh and session switch.
     try { await hydrateThread(activeId, chat.thread); } catch (_) { /* non-fatal */ }
+    if (chat.activeId !== activeId) return;
     try { await hydrateWarnings(activeId, chat.thread); } catch (_) { /* non-fatal */ }
+    if (chat.activeId !== activeId) return;
     const pct = await fetchUsage(activeId);
-    if (pct != null) chat.usagePct = pct;
+    if (pct != null && chat.activeId === activeId) chat.usagePct = pct;
   } else {
     chat.thread = [];
     chat.model = fallbackModel;
@@ -461,7 +480,7 @@ let renderTimer = null;      // throttle handle for stream deltas
 let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
 let _notifyResuming = null;  // session id with a notifier-driven resume in flight
-let _stripPersistTimer = null;
+const _stripPersistTimers = new Map(); // sessionId → pending persist timer
 
 // ---- per-turn identity (epoch) ---------------------------------------------
 // Every beginTurn() claims a fresh epoch; each closure it builds captures it.
@@ -510,9 +529,13 @@ function syncQueuedView(chat) {
 // server in sync without needing a separate clear call on every completion.
 function persistStripToServer(sessionId, strip) {
   if (!sessionId) return;
-  if (_stripPersistTimer) clearTimeout(_stripPersistTimer);
-  _stripPersistTimer = setTimeout(async () => {
-    _stripPersistTimer = null;
+  // Keyed per session, not one shared handle: a strip patch for session B
+  // arriving within 500ms of session A's must not cancel A's pending
+  // persist — they're unrelated writes to unrelated server-side records.
+  const prior = _stripPersistTimers.get(sessionId);
+  if (prior) clearTimeout(prior);
+  const timer = setTimeout(async () => {
+    _stripPersistTimers.delete(sessionId);
     const tasks = (strip && strip.todos && strip.todos.items) ? strip.todos.items : [];
     try {
       const fd = new FormData();
@@ -521,6 +544,7 @@ function persistStripToServer(sessionId, strip) {
       await fetch('/api/strip/state', { method: 'POST', credentials: 'same-origin', body: fd });
     } catch (_) { /* non-fatal */ }
   }, 500);
+  _stripPersistTimers.set(sessionId, timer);
 }
 
 // Pending-work token state: maps backend turn_id (int) → message object.
@@ -836,7 +860,7 @@ function beginTurn(chat, modelLabel, sessionId) {
   // `epoch` is this turn's identity: closures below capture it and no-op once
   // superseded (see _turnEpoch above).
   const epoch = ++_turnEpoch;
-  turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), lastFrameMs: Date.now(), got404: false };
+  turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: uniqId('live-'), lastFrameMs: Date.now(), got404: false };
   // A fresh turn for this session supersedes any stop-dedupe record: the
   // stopped bubble now belongs to an OLDER, finished exchange and must stay.
   // (attachTurn consumes the record BEFORE calling beginTurn, so the failed-
@@ -942,7 +966,19 @@ function beginTurn(chat, modelLabel, sessionId) {
     if (ev.type === 'error') {
       flushStreamBuffer();
       if (turn.asstMsg) turn.asstMsg.streaming = false;
-      if (ev.status === 404) { turn.got404 = true; return; }
+      if (ev.status === 404) {
+        // postStream's ONLY path that never follows up with a 'done' event is
+        // exactly this one (an HTTP-level failure on the POST itself — see
+        // live/api.js postStream: `!res.ok` fires this error then returns,
+        // full stop; every other path — including a mid-stream error frame —
+        // still lands a trailing 'done', since record_turn always appends one).
+        // Waiting for a 'done' that will never arrive here dead-ended until
+        // the 25s hb watchdog reconciled it. Finalize NOW via the 'done' path
+        // (it already special-cases turn.got404) instead of waiting on it.
+        turn.got404 = true;
+        onEvent({ type: 'done' });
+        return;
+      }
       const m = ensureAsst();
       m.error = true;
       m.notice = ev.status
@@ -1020,6 +1056,12 @@ function beginTurn(chat, modelLabel, sessionId) {
       if (st) {
         if (typeof ev.output === 'string' && ev.output) {
           for (const line of ev.output.split('\n')) st.lines.push({ t: line, c: lineColor(line) });
+          // Cap at the same 200-line ceiling the history path uses
+          // (historySteps, above) — a chatty long-running tool (build log,
+          // verbose test run) must not grow this step's lines/DOM/render cost
+          // unbounded. Head-trim: drop the OLDEST lines so what's visible is
+          // always the most recent output, same as a scrollback buffer.
+          if (st.lines.length > 200) st.lines.splice(0, st.lines.length - 200);
         }
         if (ev.exit_code != null) {
           if (ev.exit_code !== 0) { st.meta = `exit ${ev.exit_code}`; st.metaColor = 'var(--red)'; }
@@ -1114,7 +1156,7 @@ async function dispatchSend(text, attachSnap) {
   if (!sessionId) return;
 
   if (!Array.isArray(chat.thread)) chat.thread = [];
-  chat.thread.push({ id: 'live-u-' + Date.now(), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
+  chat.thread.push({ id: uniqId('live-u-'), role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [] });
   chat.chatStrip = stripOnUserSend(chat.chatStrip);
   clearBranchPrefixIfStarted(state, chat);
   runtime.wantChatBottom = true;   // jump to your just-sent message + the reply
@@ -1151,7 +1193,7 @@ async function submitFromComposer(text, attachSnap) {
   const sessionId = await ensureSessionId(chat);
   if (!sessionId) return false;
 
-  const messageId = 'live-u-' + Date.now();
+  const messageId = uniqId('live-u-');
   const deadline = Date.now() + BUFFER_MS;
   if (!Array.isArray(chat.thread)) chat.thread = [];
   chat.thread.push({
@@ -1584,6 +1626,13 @@ startHbWatchdog();
 // open that thread. Also marks still-running sessions with a 'working' dot.
 let _notifyTimer = null;
 let _prevActive = new Set();
+// Set when a poll fails (network blip, backend restart mid-request) — the
+// NEXT successful poll just reconnected after an unknown-length gap, so the
+// diff against _prevActive can't be trusted as "these sessions finished
+// while you watched"; it may just mean we missed however many ticks the
+// outage spanned. Guards the finished-toast heuristic below, same as the
+// mass-collapse guard it sits next to.
+let _feedWasDown = false;
 
 function _isViewing(state, id) {
   return !!(state && state.surface === 'chat'
@@ -1607,20 +1656,36 @@ async function _notifyTick() {
   const state = runtime.state;
   if (!state) return;
   let data;
-  try { data = await apiGet('/api/chat/active_sessions'); } catch (_) { return; }
+  try { data = await apiGet('/api/chat/active_sessions'); }
+  catch (_) { _feedWasDown = true; return; }
   const now = new Set((data && data.active) || []);
   const chat = ensureChat(state);
   chat.notified = chat.notified || new Set();
   let changed = false;
 
+  const justReconnected = _feedWasDown;
+  _feedWasDown = false;
+  const dropped = [..._prevActive].filter((id) => !now.has(id));
+  // A backend restart clears the whole active-session ledger at once — every
+  // in-flight turn "finishes" in the very same tick, which looks identical to
+  // N separate legitimate completions but isn't (their replies never actually
+  // landed; finalizeLocal's interrupted-turn path is what honestly annotates
+  // those bubbles). A just-reconnected poll is the same shape of problem: we
+  // don't know how many ticks the gap spanned, so the drop can't be trusted
+  // either. Skip the finished-toast heuristic in both cases — the working-dot
+  // refresh below still reflects `now` correctly either way.
+  const suppressFinishedToasts = justReconnected || dropped.length > 1;
+
   // A session that WAS running and now isn't — and that you aren't looking at —
   // just finished while you were elsewhere: notify.
-  for (const id of _prevActive) {
-    if (!now.has(id) && !_isViewing(state, id) && !chat.notified.has(id)) {
-      chat.notified.add(id);
-      changed = true;
-      try { if (navigator.vibrate) navigator.vibrate(30); } catch (_) { /* no haptics */ }
-      notifyTurnDone(chat, id);   // in-app toast + OS notification (if permitted)
+  if (!suppressFinishedToasts) {
+    for (const id of dropped) {
+      if (!_isViewing(state, id) && !chat.notified.has(id)) {
+        chat.notified.add(id);
+        changed = true;
+        try { if (navigator.vibrate) navigator.vibrate(30); } catch (_) { /* no haptics */ }
+        notifyTurnDone(chat, id);   // in-app toast + OS notification (if permitted)
+      }
     }
   }
   // Re-render if the running set changed too (working dots).
@@ -1907,6 +1972,12 @@ export const actions = {
 
     try {
       const t = await fetchThread(id, chat.model, name);
+      // Superseded by a NEWER selectSession/newChat while this awaited: the
+      // fresher call already owns chat.thread/title — writing here would
+      // silently paint THIS (now stale) session's messages back under
+      // whatever the user switched to. Bail; the fresher call's own render
+      // is authoritative.
+      if (chat.activeId !== id) return;
       chat.thread = t.thread;
       if (t.title) chat.title = t.title;
       chat.subtitle = t.subtitle;
@@ -1915,10 +1986,17 @@ export const actions = {
       // already sent its first message) shouldn't still show carried bubbles.
       clearBranchPrefixIfStarted(state, chat);
       runtime.wantChatBottom = true;   // land on the latest message once loaded
-    } catch (_) { /* keep prior */ }
+    } catch (_) {
+      // A GENUINE failure (not a race — chat.activeId is still `id`) leaves
+      // the PREVIOUS session's thread on screen under this NEW activeId, with
+      // nothing else marking it wrong. Toast so it's not silent.
+      if (chat.activeId === id) toast('Couldn’t load that conversation — check your connection and try again.');
+    }
+    if (chat.activeId !== id) return;   // superseded during the fetch above
     // Re-attach to an in-flight turn for this thread, if one is still running
     // server-side (returning to a thread you left mid-answer).
     try { await reconcileTurn(chat, state, id); } catch (_) { /* non-fatal */ }
+    if (chat.activeId !== id) return;
     // A message queued for THIS thread whose turn already finished while we
     // were away (reconcile decided 'none' — no local live state to finalize)
     // would otherwise sit stranded in the banner forever. Fire it now; the
@@ -1926,9 +2004,11 @@ export const actions = {
     flushQueuedFor(chat, id);
     // Populate resolved update_blocks that the frontend missed while away.
     try { await hydrateThread(id, chat.thread); } catch (_) { /* non-fatal */ }
+    if (chat.activeId !== id) return;
     try { await hydrateWarnings(id, chat.thread); } catch (_) { /* non-fatal */ }
+    if (chat.activeId !== id) return;
     const pct = await fetchUsage(id);
-    if (pct != null) chat.usagePct = pct;
+    if (pct != null && chat.activeId === id) chat.usagePct = pct;
     runtime.render();
   },
 

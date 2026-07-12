@@ -10,10 +10,15 @@ export function promiseWarningText(phrase) {
 
 // The hydrate anchor rule (same as hydrateThread's update-block matching):
 // latest assistant message whose _ts ≤ the event's timestamp; falls back to
-// the last assistant message. Exported pure for tests and shared use.
+// the OLDEST assistant message when nothing qualifies (ts missing, or the
+// event predates every timestamped message). NOT the newest: an anchor that's
+// wrong-but-early just reads as "this is an old promise", while wrong-but-
+// newest reads as "the LATEST reply broke its promise" — actively misleading
+// when that reply had nothing to do with it. Exported pure for tests and
+// shared use.
 export function latestAsstAtOrBefore(asstMsgs, tsMs) {
   if (!Array.isArray(asstMsgs) || !asstMsgs.length) return null;
-  let best = asstMsgs[asstMsgs.length - 1];
+  let best = asstMsgs[0];
   if (Number.isFinite(tsMs)) {
     for (const m of asstMsgs) {
       if (m._ts <= tsMs) best = m;

@@ -238,20 +238,22 @@ export function cardButtonsHtml(item, esc, opts) {
 
 // --- snoozeUntilMs: maps a snooze preset to an absolute epoch-ms value ------
 // Pure helper — takes nowMs so it's deterministic/testable.
-// Presets: later = +4h; tomorrow = next calendar day 09:00 UTC;
-//          nextweek = +7 calendar days 09:00 UTC.
+// Presets: later = +4h; tomorrow = next calendar day 09:00 LOCAL;
+//          nextweek = +7 calendar days 09:00 LOCAL.
 export function snoozeUntilMs(preset, nowMs) {
   const p = String(preset || '').toLowerCase();
   if (p === 'later') return nowMs + 4 * 3600000;
   const d = new Date(nowMs);
-  const y = d.getUTCFullYear(), m = d.getUTCMonth();
+  const y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
   if (p === 'tomorrow') {
-    const day = d.getUTCDate() + 1;
-    return Date.UTC(y, m, day, 9, 0, 0);
+    // Tomorrow at 09:00 LOCAL time
+    const tomorrow = new Date(y, m, day + 1, 9, 0, 0);
+    return tomorrow.getTime();
   }
   if (p === 'nextweek') {
-    const day = d.getUTCDate() + 7;
-    return Date.UTC(y, m, day, 9, 0, 0);
+    // 7 days from now at 09:00 LOCAL time
+    const nextweek = new Date(y, m, day + 7, 9, 0, 0);
+    return nextweek.getTime();
   }
   return nowMs + 4 * 3600000; // fallback to later
 }
@@ -270,17 +272,34 @@ export function swipeIntent(dx, width) { // eslint-disable-line no-unused-vars
 // --- dueChipToISO: maps Add-to-Asana date chips to ISO YYYY-MM-DD ----------
 // Pure helper — takes nowMs so it's deterministic/testable regardless of TZ.
 // Chips: today | tomorrow | fri | nextweek | none (anything else → null).
-function _iso(ms) { return new Date(ms).toISOString().slice(0, 10); }
-const DAY = 86400000;
+// Dates are in LOCAL time (not UTC).
+function _isoLocal(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 export function dueChipToISO(chip, nowMs) {
   const c = String(chip || '').toLowerCase();
   const d = new Date(nowMs);
-  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  const dow = d.getDay(); // 0=Sun..6=Sat (LOCAL time)
   if (c === 'none') return null;
-  if (c === 'today') return _iso(nowMs);
-  if (c === 'tomorrow') return _iso(nowMs + DAY);
-  if (c === 'fri') { let add = (5 - dow + 7) % 7; if (add === 0) add = 7; return _iso(nowMs + add * DAY); }
-  if (c === 'nextweek') { const add = ((1 - dow + 7) % 7) || 7; return _iso(nowMs + add * DAY); }
+  if (c === 'today') return _isoLocal(d);
+  if (c === 'tomorrow') {
+    const tomorrow = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    return _isoLocal(tomorrow);
+  }
+  if (c === 'fri') {
+    let add = (5 - dow + 7) % 7;
+    if (add === 0) add = 7;
+    const fri = new Date(d.getFullYear(), d.getMonth(), d.getDate() + add);
+    return _isoLocal(fri);
+  }
+  if (c === 'nextweek') {
+    const add = ((1 - dow + 7) % 7) || 7;
+    const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + add);
+    return _isoLocal(next);
+  }
   return null;
 }
 

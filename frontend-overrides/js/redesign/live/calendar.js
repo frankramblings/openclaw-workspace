@@ -158,7 +158,7 @@ function eventDays(ev) {
 export async function load(state /* , { force } = {} */) {
   // View month = real month + state.calMonthOffset (‹/Today/› in the desktop
   // toolbar). today stays real so the today highlight and agenda don't drift.
-  const { today, first, gridStart, fetchStart, fetchEnd } =
+  const { today, first, gridStart, gridEnd, fetchStart, fetchEnd } =
     monthWindow(new Date(), state.calMonthOffset);
   const todayKey = dayKey(today);
 
@@ -196,8 +196,7 @@ export async function load(state /* , { force } = {} */) {
 
   // ---- desktop cells ----
   const cells = [];
-  for (let i = 0; i < 35; i++) {
-    const d = addDays(gridStart, i);
+  for (let d = new Date(gridStart); d <= gridEnd; d = addDays(d, 1)) {
     const k = dayKey(d);
     const slot = byDay.get(k);
     const cell = { date: d.getDate() };

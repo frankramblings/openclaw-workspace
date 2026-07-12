@@ -468,6 +468,20 @@ export async function load(state) {
       }
     }
     if (chat.activeId !== activeId) return;
+    // Mobile pull-to-refresh (doRefresh → load(force)) during a HEALTHY stream
+    // gets here with a live turn already running: fetchThread just replaced
+    // chat.thread wholesale from server history, which doesn't yet contain the
+    // in-flight reply (reconcileTurn below correctly no-ops for a healthy local
+    // turn — decision 'none' — so it won't rebuild it either). Without this,
+    // turn.asstMsg keeps accumulating text but is no longer IN chat.thread, so
+    // every pump frame's patchMessage lookup misses and silently falls back to
+    // a full innerHTML render until the turn ends. Re-append the SAME object
+    // (preserves its .streaming flag) — append matches live-turn semantics,
+    // since beginTurn always pushes new turns at the end of chat.thread.
+    if (turn && turn.sessionId === activeId && turn.asstMsg
+        && !chat.thread.some((m) => m.id === turn.asstMsg.id)) {
+      chat.thread.push(turn.asstMsg);
+    }
     // Endpoint half of the model identity — the session record carries it, else
     // fall back to the default-chat endpoint. Needed so the picker's active
     // check lands on the right (endpoint·model) row, not every same-named copy.

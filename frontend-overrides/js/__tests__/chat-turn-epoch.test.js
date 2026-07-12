@@ -815,3 +815,92 @@ test('shouldSuppressFinishedToasts: a just-reconnected poll suppresses regardles
   assert.equal(chatMod.shouldSuppressFinishedToasts(1, true), true);
   assert.equal(chatMod.shouldSuppressFinishedToasts(2, true), true);
 });
+
+// ---------------------------------------------------------------------------
+// Rider (Final-review fix round, Important 1): load() during a HEALTHY stream
+// (mobile pull-to-refresh → doRefresh → load(force)) replaces chat.thread
+// wholesale via fetchThread. reconcileTurn correctly no-ops (decision 'none'
+// — a healthy local turn must never be re-attached over, see
+// reconcile-decision.js), but without re-injecting turn.asstMsg the live
+// bubble falls out of chat.thread: the reply keeps streaming into
+// turn.asstMsg, yet every pump frame's patchMessage lookup (keyed off
+// chat.thread) misses and silently falls back to a full innerHTML re-render
+// on every frame until the turn ends.
+// ---------------------------------------------------------------------------
+
+test('load() mid-stream re-injects the live turn bubble so pump frames keep patching it', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const streamCalls = [];
+  const streams = [];
+  wireLiveFetch(streamCalls, streams, {
+    // A healthy, still-active server-side turn — reconcileTurn must decide
+    // 'none' (see reconcile-decision.js), not re-attach over the live local turn.
+    '/api/chat/turn': () => ({ active: true }),
+    // Empty history: the live reply hasn't been persisted server-side yet — this
+    // IS the wholesale replace that drops the live bubble without the fix below.
+    '/api/history/sess-1': () => ({ history: [] }),
+  });
+  runtime.render = () => {};
+  const state = freshState('sess-1');
+  runtime.state = state;
+  // patchMessage isn't wired in this DOM-less harness (app.js sets the real
+  // one at boot) — stub the exact part under test: whether the message is
+  // still findable in state.live.chat.thread, which is what the real
+  // implementation's DOM lookup is keyed off (see app.js's runtime.patchMessage).
+  const patchLog = [];
+  runtime.patchMessage = (msgId) => {
+    const found = (state.live.chat.thread || []).some((m) => m.id === msgId);
+    patchLog.push(found);
+    return found;
+  };
+  const origRAF = globalThis.requestAnimationFrame;
+  // Defer to a microtask rather than calling fn() inline: drainStreamBuffer's
+  // `turn.pumpRAF = requestAnimationFrame(drainStreamBuffer)` assigns AFTER its
+  // RHS evaluates, so a synchronous callback re-enters and clears pumpRAF to 0
+  // BEFORE the outer assignment runs — which then clobbers it back to a stale
+  // truthy id and starves every subsequent pump. Microtask-deferring keeps the
+  // assignment ordering intact, same as real (async) requestAnimationFrame.
+  globalThis.requestAnimationFrame = (fn) => { queueMicrotask(fn); return 1; };
+  try {
+    const chat = state.live.chat;
+
+    state.draft = 'first';
+    await actions.send();
+    mock.timers.tick(700);           // turn live for sess-1
+    await drainMicrotasks();
+    assert.equal(streamCalls.length, 1);
+
+    streams[0].push('data: {"delta":"Hello"}\n\n');
+    await drainMicrotasks();
+
+    const bubble = chat.thread.find((m) => m.role === 'assistant');
+    assert.ok(bubble, 'live assistant bubble mounted');
+    assert.equal(bubble.text, 'Hello', 'first delta streamed in');
+    assert.equal(bubble.streaming, true);
+    assert.ok(patchLog.some(Boolean), 'pre-load() pump frames patch the mounted bubble');
+
+    // Mobile PTR mid-stream: load(state) replaces chat.thread wholesale while
+    // the turn is still healthy and streaming.
+    await chatMod.load(state);
+
+    assert.ok(chat.thread.some((m) => m.id === bubble.id),
+      'the live bubble survives the wholesale thread replace');
+    assert.strictEqual(chat.thread.find((m) => m.id === bubble.id), bubble,
+      'same object — streaming flag/accumulated text carry over untouched');
+
+    patchLog.length = 0;
+    streams[0].push('data: {"delta":" world"}\n\n');
+    await drainMicrotasks();
+
+    assert.equal(bubble.text, 'Hello world', 'the rest of the reply keeps streaming into the SAME bubble');
+    assert.ok(patchLog.length > 0 && patchLog.every(Boolean),
+      'every post-load() pump frame still finds the bubble in chat.thread (no invisible-streaming fallback)');
+  } finally {
+    globalThis.requestAnimationFrame = origRAF;
+    delete runtime.patchMessage;
+    actions.stopRun();
+    await drainMicrotasks();
+    mock.timers.reset();
+    delete globalThis.fetch;
+  }
+});

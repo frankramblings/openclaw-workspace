@@ -339,6 +339,10 @@ function offsetMonthLabel(offset) {
 // resolved), so rolling back to it left the toolbar pointing at a "phantom"
 // month with no data behind it. Rolling back to committedOffset instead always
 // lands on a month the grid is actually showing.
+// Residual (accepted): a sweep/retry reload preempting an in-flight nav marks
+// the nav `stale`, so committedOffset skips a step even if that nav landed —
+// a LATER failed nav can then roll back one generation too far. Self-heals:
+// the next successful nav re-commits committedOffset to where the grid is.
 let committedOffset = 0;
 
 const shiftMonth = (delta) => {

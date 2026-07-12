@@ -44,6 +44,8 @@ let watchWsReady = null; // Promise for the current connect attempt
 let watchedPath = null;  // abs path currently subscribed for the open doc
 let dirty = false;     // buffer has unsaved changes since last load/save
 let suppressChange = false; // silence 'change' events fired by our own setMarkdown
+let generation = 0;    // bumped by resetBufferIdentity — invalidates in-flight
+                        // saves so their response can't mutate a since-switched-to buffer
 
 // 'md' | 'wysiwyg' | 'preview' — tracked separately from Toast UI internals
 let editorMode = 'md';
@@ -112,6 +114,7 @@ export function saveTarget(d) {
  */
 export function resetBufferIdentity(d) {
   if (!d) return d;
+  generation++; // any save captured against the old generation is now stale
   d.id = null;
   d.wsPath = null; d.wsRootKey = null; d.wsMtimeNs = null; d.wsAbsPath = null;
   d.readOnly = false;
@@ -123,6 +126,19 @@ export function resetBufferIdentity(d) {
 /** beforeunload guard: warn while there's unsaved work that would be lost. */
 export function shouldWarnBeforeUnload(d, isDirty) {
   return !!(d && d.open && (isDirty || d.saveFailed));
+}
+
+/**
+ * Generation guard for an in-flight saveDoc() call: capture `makeSaveGuard(generation)`
+ * before the network await(s), then after each await ask `guard.isStale(generation)`.
+ * openDoc/openWorkspaceFile/closeDoc all funnel through resetBufferIdentity(), which
+ * bumps the module generation counter on every buffer switch — so a stale guard means
+ * the save's response no longer belongs to the buffer that's now open, and saveDoc must
+ * skip every remaining state mutation (wsMtimeNs/status/dirty/hideError()/etc.) rather
+ * than apply an old buffer's save result to a new one.
+ */
+export function makeSaveGuard(gen) {
+  return { isStale: (nowGen) => nowGen !== gen };
 }
 
 // ---- shared workspace-watch WebSocket (silent reload on disk changes) -------
@@ -465,15 +481,54 @@ let dirtyTO = null;
 function markDirty() {
   if (suppressChange) return; // our own reload/openDoc setMarkdown — not a user edit
   const d = docState();
-  // No valid save target (read-only, failed-to-load, or nothing open) — never
-  // arm autosave. In particular this is what stops a blank/failed-load
-  // buffer from autosaving near-empty content over the real file.
-  if (d && saveTarget(d).kind === 'none') return;
+  // No valid save target (nothing open, read-only, failed-to-load — or no
+  // docState at all yet, e.g. runtime not fully initialized) — never arm
+  // autosave. saveTarget(null) already returns {kind:'none'}, so this one
+  // check covers the null-d case too; don't gate it behind `d &&` or a null
+  // docState falls through and arms a timer with nothing valid to save.
+  if (saveTarget(d).kind === 'none') return;
   dirty = true;
-  if (d) d.status = 'Unsaved';
+  d.status = 'Unsaved';
   if (statusEl) statusEl.textContent = 'Unsaved';
   clearTimeout(dirtyTO);
   dirtyTO = setTimeout(() => { if (runtime.actions && runtime.actions.saveDoc) runtime.actions.saveDoc(); }, 2500);
+}
+
+// Flush a pending autosave-debounced edit on the currently open buffer, then
+// cancel the debounce timer, before openDoc/openWorkspaceFile switch away
+// from it. Without this, an edit younger than the ~2.5s debounce is silently
+// dropped on switch, and the leftover timer fires after the switch with a
+// spurious PUT against the NEW buffer.
+//
+// Returns true when it's safe for the caller to proceed with the switch
+// (nothing dirty to flush, or the flush succeeded). Returns false when the
+// flush failed or hit a conflict: the failure/conflict UI is already up
+// (same contract as closeDoc's own save-before-teardown handling) and the
+// caller must abort — do NOT proceed to resetBufferIdentity and blow away
+// the still-unsaved buffer.
+async function flushPendingEditBeforeSwitch(retrySwitch, discardAndSwitch) {
+  // Cancel first, before any await below, so the leftover timer can never
+  // race a second concurrent saveDoc() call while we're here flushing.
+  clearTimeout(dirtyTO);
+  const d = docState();
+  if (!(d && d.open && dirty && editor && saveTarget(d).kind !== 'none')) return true;
+  let result = 'failed';
+  try { result = await actions.saveDoc(); } catch (_) { result = 'failed'; }
+  if (result === 'conflict') {
+    // saveDoc already put up the conflictBanner (Reload disk / Keep mine) —
+    // switching now would silently discard the unresolved edit.
+    runtime.render();
+    return false;
+  }
+  if (result === 'failed') {
+    showError('Could not save your changes before switching documents.', [
+      { label: 'Retry save', primary: true, onClick: retrySwitch },
+      { label: 'Discard & switch', onClick: discardAndSwitch },
+    ]);
+    runtime.render();
+    return false;
+  }
+  return true;
 }
 
 function readSavedWidth() {
@@ -568,6 +623,18 @@ export const actions = {
     if (!d) return;
     try {
       await ensureEditor();
+
+      // Flush + cancel any pending autosave debounce on the buffer we're
+      // about to switch away from — see flushPendingEditBeforeSwitch(). Must
+      // happen before resetBufferIdentity below (and before fetching the new
+      // doc): on a failed flush we abort entirely and keep the CURRENT
+      // buffer open with the failed-save banner, not proceed to open `id`.
+      const proceed = await flushPendingEditBeforeSwitch(
+        () => actions.openDoc(id),
+        () => { dirty = false; d.saveFailed = false; return actions.openDoc(id); },
+      );
+      if (!proceed) return;
+
       let doc = null;
       let loadFailed = false;
       try { doc = await apiGet(`/api/document/${id}`); } catch (_) { loadFailed = true; }
@@ -589,7 +656,9 @@ export const actions = {
       if (titleEl) titleEl.readOnly = false; // stuck `true` from a prior workspace-file open
 
       if (loadFailed) {
-        d.title = 'Untitled document';
+        // A failed GET tells us nothing about the real title — "Untitled
+        // document" would wrongly claim the doc genuinely has none.
+        d.title = 'Document';
         d.status = 'Load failed';
         if (titleEl) titleEl.value = d.title;
         if (statusEl) statusEl.textContent = d.status;
@@ -643,6 +712,18 @@ export const actions = {
     if (!d) return;
     try {
       await ensureEditor();
+
+      // Flush + cancel any pending autosave debounce on the buffer we're
+      // about to switch away from — see flushPendingEditBeforeSwitch(). Must
+      // happen before resetBufferIdentity below (and before fetching the new
+      // file): on a failed flush we abort entirely and keep the CURRENT
+      // buffer open with the failed-save banner, not proceed to open `path`.
+      const proceed = await flushPendingEditBeforeSwitch(
+        () => actions.openWorkspaceFile(path, rk),
+        () => { dirty = false; d.saveFailed = false; return actions.openWorkspaceFile(path, rk); },
+      );
+      if (!proceed) return;
+
       let content = '';
       let mtimeNs = null;
       let absPath = null;
@@ -711,8 +792,12 @@ export const actions = {
 
   // Save the current doc (also used by autosave + close). Returns a status
   // code: 'ok' (saved), 'skip' (nothing to do — read-only/failed-load/
-  // nothing open), 'conflict' (409 — conflictBanner is now showing), or
-  // 'failed' (network/HTTP error — caller should surface it, e.g. closeDoc).
+  // nothing open), 'conflict' (409 — conflictBanner is now showing),
+  // 'failed' (network/HTTP error — caller should surface it, e.g. closeDoc),
+  // or 'stale' (the buffer was switched away from — via resetBufferIdentity,
+  // which bumps `generation` — while this save was in flight; every mutation
+  // below was skipped on purpose so an old buffer's save result can't land
+  // on the new buffer that's open now).
   saveDoc: async () => {
     const d = docState();
     if (!d || !editor) return 'skip';
@@ -728,6 +813,11 @@ export const actions = {
     const content = (() => { try { return editor.getMarkdown(); } catch (_) { return ''; } })();
     const title = (titleEl && titleEl.value) || d.title || 'Untitled document';
     if (statusEl) statusEl.textContent = 'Saving…';
+    // Captured BEFORE the network await(s): if openDoc/openWorkspaceFile/
+    // closeDoc switch buffers while this save is in flight (resetBufferIdentity
+    // bumps `generation`), every mutation below is guarded so it can't land on
+    // the buffer that's open by the time the response comes back.
+    const guard = makeSaveGuard(generation);
     try {
       if (target.kind === 'ws') {
         const body = { path: target.path, content };
@@ -737,18 +827,23 @@ export const actions = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
+        if (guard.isStale(generation)) return 'stale';
         if (res.status === 409) {
           // Someone else won the race. Fetch the winning content and let the
           // user pick (Reload disk / Keep mine).
           try {
             const qs = `path=${encodeURIComponent(target.path)}&root_key=${encodeURIComponent(target.rootKey)}`;
             const r2 = await fetch('/api/workspace/file?' + qs, { credentials: 'same-origin' });
+            if (guard.isStale(generation)) return 'stale';
             if (r2.ok) {
-              d._incoming = await r2.text();
+              const text = await r2.text();
+              if (guard.isStale(generation)) return 'stale';
+              d._incoming = text;
               const hdr = r2.headers.get('X-Mtime-Ns');
               d._incomingMtimeNs = hdr ? parseInt(hdr, 10) : null;
             }
           } catch (_) {}
+          if (guard.isStale(generation)) return 'stale';
           if (statusEl) statusEl.textContent = 'Conflict';
           d.saveFailed = true;
           showConflict();
@@ -756,6 +851,7 @@ export const actions = {
         }
         if (res.ok) {
           const j = await res.json().catch(() => ({}));
+          if (guard.isStale(generation)) return 'stale';
           if (j && j.mtime_ns) d.wsMtimeNs = j.mtime_ns;
         } else {
           // Non-ok, non-409 (e.g. a 500/502/503 restart blip — this branch
@@ -777,6 +873,7 @@ export const actions = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content, title }),
         });
+        if (guard.isStale(generation)) return 'stale';
         if (!res.ok) {
           if (statusEl) statusEl.textContent = 'Save failed';
           d.saveFailed = true;
@@ -794,6 +891,7 @@ export const actions = {
       hideError();
       return 'ok';
     } catch (_) {
+      if (guard.isStale(generation)) return 'stale';
       if (statusEl) statusEl.textContent = 'Save failed';
       d.saveFailed = true;
       return 'failed';

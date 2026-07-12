@@ -32,7 +32,7 @@ globalThis.document = {
 globalThis.window = { addEventListener() {}, innerWidth: 1200, toastui: null };
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
-const { saveTarget, resetBufferIdentity, shouldWarnBeforeUnload } = await import('../redesign/live/document-editor.js');
+const { saveTarget, resetBufferIdentity, shouldWarnBeforeUnload, makeSaveGuard } = await import('../redesign/live/document-editor.js');
 
 function baseDoc(overrides) {
   return Object.assign({
@@ -130,3 +130,31 @@ test('shouldWarnBeforeUnload: silent when clean and no failed save', () => {
 test('shouldWarnBeforeUnload: silent when the editor is not open at all', () => {
   assert.strictEqual(shouldWarnBeforeUnload(baseDoc({ open: false, saveFailed: true }), true), false);
 });
+
+// ---- makeSaveGuard / isStale ----------------------------------------------
+//
+// saveDoc captures a guard before its network await(s) and asks it whether
+// the buffer generation moved on by the time the response lands. A "stale"
+// guard means openDoc/openWorkspaceFile/closeDoc reset the buffer identity
+// (and bumped the module generation counter) while this save was in flight,
+// so its post-await mutations (wsMtimeNs/status/hideError()/etc.) must be
+// skipped rather than applied to whatever buffer is now open.
+
+test('makeSaveGuard: not stale when the generation is unchanged by the time it is checked', () => {
+  const guard = makeSaveGuard(3);
+  assert.strictEqual(guard.isStale(3), false);
+});
+
+test('makeSaveGuard: stale once the generation has moved past the captured value', () => {
+  const guard = makeSaveGuard(3);
+  assert.strictEqual(guard.isStale(4), true);
+});
+
+test('makeSaveGuard: repeated isStale checks are pure (no internal mutation)', () => {
+  const guard = makeSaveGuard(5);
+  assert.strictEqual(guard.isStale(5), false);
+  assert.strictEqual(guard.isStale(5), false, 'checking twice must not itself change staleness');
+  assert.strictEqual(guard.isStale(6), true);
+  assert.strictEqual(guard.isStale(5), false, 'a later stale check against a newer gen must not retroactively poison an earlier-gen check');
+});
+

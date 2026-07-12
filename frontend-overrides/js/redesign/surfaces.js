@@ -12,6 +12,7 @@ import {
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
 import { renderActivity } from './chat-activity.js';
+import { suggestGhost } from './suggest-ghost.js';
 import './task-rows.js'; // side-effect: boots the feed subscription and injects live rows
 import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
@@ -404,7 +405,8 @@ export function chatSurface(s) {
     ${when(s.modelMenuOpen, modelPopover(s))}
     <div class="composer${slashOpen ? ' slash' : ''}">
       ${when(s.live?.chat?.queued, `<div class="queued-msg" data-act="queueRecall" title="Click to edit"><span class="q-ico">⏳</span><span class="q-txt">Queued — sends when the reply finishes${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 90))}` : ' · (image)'}</span><button class="q-x ocbtn" data-act="queueCancel" title="Cancel">✕</button></div>`)}
-      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message __AGENT_NAME__…   ( type / for commands )">
+      ${suggestGhost(s.live?.chat?.suggest, d)}
+      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="${suggestGhost(s.live?.chat?.suggest, d) ? ' ' : 'Message __AGENT_NAME__…   ( type / for commands )'}">
 ${esc(d)}</textarea>
       ${when(s.pendingAttach && s.pendingAttach.length, `
       <div class="attach-pending">

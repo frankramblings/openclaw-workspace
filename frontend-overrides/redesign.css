@@ -379,6 +379,12 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .queued-msg .q-x:hover{background:color-mix(in srgb,var(--fg) 10%,transparent);color:var(--fg)}
 .composer textarea{width:100%;background:transparent;border:none;resize:none;font-size:15px;line-height:1.5;padding:2px 2px 12px;min-height:24px}
 .composer-row{display:flex;align-items:center;gap:7px}
+/* Ghost prompt suggestion — overlays the empty textarea's first line.
+   pointer-events:none on desktop: clicks fall through to focus the box (Tab
+   accepts). Offsets = .composer padding (12px 14px) + textarea padding (2px). */
+.composer{position:relative}
+.composer .ghost-suggest{position:absolute;left:16px;right:16px;top:14px;z-index:2;color:var(--faint);font-family:var(--prose);font-size:16.5px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.composer .ghost-suggest .tabhint{display:inline-block;margin-left:10px;font:600 10px/1 ui-monospace,SFMono-Regular,monospace;color:var(--mut);border:1px solid var(--bd);border-radius:4px;padding:2px 5px;vertical-align:2px}
 .icon-btn{width:32px;height:32px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer}
 .ctx-meter{display:flex;align-items:center;gap:7px;margin-left:4px}
 .ctx-meter .track{width:54px;height:4px;border-radius:3px;background:#2a2d34;overflow:hidden}

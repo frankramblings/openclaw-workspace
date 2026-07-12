@@ -360,6 +360,19 @@ const actions = {
   toggleSlash: () => { state.forceSlash = !state.forceSlash; state.slashDismissed = false; },
   pickSlash: (name) => { state.draft = name + ' '; state.forceSlash = false; state.slashDismissed = false; state.slashSel = null; },
   fillComposer: (prompt) => { state.draft = prompt || ''; state.forceSlash = false; },
+  // Composer ghost suggestion: accept fills the draft (Tab / tap), dismiss
+  // drops it (Esc). Typing merely hides it — see syncGhostVisibility.
+  acceptSuggest: () => {
+    const sug = state.live?.chat?.suggest;
+    if (!sug || !sug.text) return;
+    state.draft = sug.text;
+    state.live.chat.suggest = null;
+    requestAnimationFrame(() => {
+      const ta = root.querySelector('[data-focus="draft"], [data-focus="mdraft"]');
+      if (ta) { ta.focus(); autoGrowComposer(ta); }
+    });
+  },
+  dismissSuggest: () => { if (state.live?.chat) state.live.chat.suggest = null; },
   setMode: (mode) => { state.chatMode = mode; },
   // Incognito / "Nobody" mode (ported from Odysseus): when on, send() appends
   // incognito=true so the backend doesn't persist the turn.
@@ -734,6 +747,15 @@ function autoGrowComposer(t) {
   t.style.height = Math.min(t.scrollHeight, cap) + 'px';
 }
 
+// Ghost suggestion visibility on keystrokes: the draft/mdraft input paths
+// skip re-renders, so toggle the overlay directly. Emptying the box brings
+// the ghost back (the suggestion stays in state until dismissed/accepted).
+function syncGhostVisibility(t) {
+  const wrap = t.closest('.composer, .m-composer');
+  const ghost = wrap && wrap.querySelector('.ghost-suggest');
+  if (ghost) ghost.style.display = (t.value || '').trim() ? 'none' : '';
+}
+
 root.addEventListener('input', (e) => {
   // Color picker input: data-act-color fires setAccent on every change
   const cp = e.target.closest('[data-act-color]');
@@ -774,7 +796,7 @@ root.addEventListener('input', (e) => {
 
   const fk = t.getAttribute('data-focus');
   // Auto-grow the chat composer to fit content (nothing else sets its height).
-  if (fk === 'draft' || fk === 'mdraft') autoGrowComposer(t);
+  if (fk === 'draft' || fk === 'mdraft') { autoGrowComposer(t); syncGhostVisibility(t); }
 
   // The mobile composer must NOT re-render on every keystroke. render() rebuilds
   // root.innerHTML wholesale, and doing that mid-type on a touch keyboard drops
@@ -837,7 +859,7 @@ root.addEventListener('compositionend', (e) => {
   if (field !== 'draft' && field !== 'mdraft') return;
   state[field] = t.value;
   const fk = t.getAttribute('data-focus');
-  if (fk === 'draft' || fk === 'mdraft') autoGrowComposer(t);
+  if (fk === 'draft' || fk === 'mdraft') { autoGrowComposer(t); syncGhostVisibility(t); }
   if (fk === 'mdraft') return; // mobile never re-renders the composer (see input handler)
   const before = root.querySelector('.chat-thread');
   const savedTop = before ? before.scrollTop : null;
@@ -978,6 +1000,24 @@ root.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       state.slashDismissed = true;
+      render();
+      return;
+    }
+  }
+
+  // Ghost-suggestion keys: Tab accepts, Esc dismisses — only while the ghost
+  // is actually showing (suggestion present + composer empty).
+  const sug = state.live?.chat?.suggest;
+  if (sug && sug.text && !(t.value || '').trim()) {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      actions.acceptSuggest();
+      render();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      actions.dismissSuggest();
       render();
       return;
     }

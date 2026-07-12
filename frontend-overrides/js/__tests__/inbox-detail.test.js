@@ -19,21 +19,22 @@ test('detailEndpoint: camelCase slack item yields correct endpoint', () => {
   assert.match(result.url, /thread_ts=1234567890/);
 });
 
-test('detailEndpoint: snake_case legacy slack item still works', () => {
+test('detailEndpoint: meta.channel (display name) is NEVER used as the id → null', () => {
   const item = {
     id: 'msg456',
     source: 'slack',
     meta: {
+      // meta.channel is always a display name (backend/inbox/sources/slack.py),
+      // never a real Slack conversation id — there is no legacy snake_case
+      // channel_id key backing it, unlike threadTs/thread_ts. Falling back to
+      // it would send a name to conversations.replies, which requires a real
+      // channel id, and the fetch would fail server-side on any handle_map miss.
       channel: 'random',
       thread_ts: '1111111111.111111',
     }
   };
   const result = detailEndpoint(item);
-  // Legacy format: should fall back to snake_case but pass 'random' as channel_id
-  // This is the bug - it passes channel name instead of ID, but tests show expected behavior
-  assert.ok(result, 'endpoint should not be null');
-  assert.equal(result.kind, 'slack');
-  assert.match(result.url, /thread_ts=1111111111/);
+  assert.equal(result, null);
 });
 
 test('detailEndpoint: missing channelId/channel → null', () => {

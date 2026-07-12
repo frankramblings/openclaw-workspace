@@ -28,6 +28,7 @@ let els = null;                  // { root, badge, list }
 let jobs = [];                   // latest native-shaped job list from the feed
 let emptySince = 0;
 let pollTimer = null;
+let fadeTimer = null;            // single re-render scheduled at the empty-panel TTL boundary
 
 // ---- formatting -----------------------------------------------------------
 
@@ -183,6 +184,17 @@ function jobHtml(j, mine) {
   </div>`;
 }
 
+// Pure decision for the "empty panel" auto-collapse timer — DOM-free so it's
+// unit-testable without a document (see __tests__/jobs-fade-timer.test.js).
+// render() is the only caller: it owns emptySince/fadeTimer and applies the
+// side effects (hiding the panel, scheduling/clearing the timeout).
+export function fadeDecision({ emptySince, now, hasTimer, ttlMs = FADE_AFTER_MS }) {
+  const since = emptySince || now;
+  const elapsed = now - since;
+  if (elapsed >= ttlMs) return { emptySince: since, hide: true, scheduleMs: null };
+  return { emptySince: since, hide: false, scheduleMs: hasTimer ? null : (ttlMs - elapsed) };
+}
+
 function render() {
   const { root, badge, list } = ensureDom();
   const running = jobs.filter((j) => j.status === 'running');
@@ -190,12 +202,27 @@ function render() {
 
   if (has) {
     emptySince = 0;
+    if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
     root.classList.add('show');
     root.classList.remove('fade-hide');
   } else if (root.classList.contains('show')) {
-    // schedule a hide once truly empty for a moment
-    if (!emptySince) emptySince = Date.now();
-    if (Date.now() - emptySince >= FADE_AFTER_MS) root.classList.remove('show');
+    // Once the job list empties out, nothing necessarily calls render() again
+    // (subscribeTasks only re-fires on a real feed change, and the registry's
+    // own prune timer only notifies when pruning actually changes the map —
+    // it goes silent once there's nothing left to prune). Without this, the
+    // last terminal job disappearing leaves an empty "Jobs" pill on screen
+    // forever. Schedule ONE re-render right at the TTL boundary so the fade
+    // always finishes; guarded via fadeTimer so overlapping renders during
+    // the wait can't stack a second timer.
+    const d = fadeDecision({ emptySince, now: Date.now(), hasTimer: !!fadeTimer });
+    emptySince = d.emptySince;
+    if (d.hide) {
+      root.classList.remove('show');
+      if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
+    } else if (d.scheduleMs != null) {
+      fadeTimer = setTimeout(() => { fadeTimer = null; render(); }, d.scheduleMs);
+      if (fadeTimer && typeof fadeTimer.unref === 'function') fadeTimer.unref(); // node tests: don't hold the loop
+    }
   }
 
   const n = running.length;

@@ -1744,6 +1744,12 @@ function buildTranscriptHtml(title, thread, meta) {
 
 let _convSearchTimer = null;
 let _convSearchSeq = 0;
+// GET /api/models in-flight guard for loadModelOptions: the mobile sheet
+// re-fires the loader on every open (and on its tap-to-retry row), and two
+// concurrent GETs would interleave their catalog rebuilds. One at a time —
+// a tap while a load is in flight is a no-op; the pending load's own
+// success/failure render covers it.
+let _modelsInFlight = false;
 
 export const actions = {
   // Semantic search across ALL conversations by message CONTENT (not just the
@@ -2037,10 +2043,18 @@ export const actions = {
 
   // Shared model-picker loader. Desktop uses a popover; mobile uses a sheet,
   // but both need the same endpoint-grouped catalog and current default.
+  // Failure is MODULE truth, not a per-surface heuristic: a failed GET sets
+  // state.live.modelsFailed (the mobile sheet renders its tap-to-retry row
+  // from it — mobile/mobile-sheets.js), a new attempt clears it so the sheet
+  // flips back to "Loading models…", and a success — however late — sets the
+  // catalog and re-renders, so every surface recovers on its own.
   loadModelOptions: async () => {
     const state = runtime.state;
     if (!state) return;
-    if (!(state.live && state.live.modelGroups)) {
+    if (!(state.live && state.live.modelGroups) && !_modelsInFlight) {
+      _modelsInFlight = true;
+      state.live = state.live || {};
+      if (state.live.modelsFailed) { state.live.modelsFailed = false; runtime.render(); }
       try {
         const data = await apiGet('/api/models');
         const items = (data && data.items) || [];
@@ -2062,11 +2076,16 @@ export const actions = {
           const tag = disp.some((d) => /\(chat only\)/i.test(String(d))) ? 'chat only' : '';
           groups.push({ ep, endpointId: epId, hasTag: !!tag, tag, models });
         }
-        state.live = state.live || {};
         state.live.modelGroups = groups;
         state.live.modelList = flat;
+        state.live.modelsFailed = false;
         runtime.render();
-      } catch (_) { /* leave the menu empty; soft-fail */ }
+      } catch (_) {
+        state.live.modelsFailed = true;   // surfaces render a retry state
+        runtime.render();
+      } finally {
+        _modelsInFlight = false;
+      }
     }
     // Reflect the current default-for-new-chats (as a composite id) so the ★ lands
     // on exactly one row.

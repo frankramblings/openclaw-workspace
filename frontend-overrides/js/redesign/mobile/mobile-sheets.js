@@ -6,7 +6,6 @@ import { esc, map, when, stripMd } from '../dom.js';
 import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, CAPTURE_PARSE, RECENT_CAPTURES } from './mobile-data.js';
 import { providerLogo } from '../provider-logo.js';
-import { runtime } from '../live/runtime.js';
 
 // compact file tree (shared FS data) for the companion sheet's Files tab
 function fileTree(s) {
@@ -152,55 +151,29 @@ export function renderConvDrawer(s) {
   </div>`;
 }
 
-// live/chat.js's loadModelOptions() soft-fails GET /api/models — its catch
-// leaves state.live.modelGroups unset and never flags the failure or
-// re-renders (that file is out of scope for this fix). Left alone, this
-// sheet would show "Loading models…" forever on a failed fetch, with a retry
-// only on re-open. This tracks a load-attempt window purely in this module
-// and flips to a tap-to-retry state once it runs out, scheduling a single
-// re-render at the timeout boundary (mirrors live/jobs.js's fadeDecision
-// pattern) so the sheet updates on its own even with no further feed events.
-const MODEL_LOAD_TIMEOUT_MS = 6000; // GET /api/models normally resolves well under this
-
-let modelLoadAttemptAt = 0;  // wall-clock start of the current load-attempt window
-let modelLoadTimer = null;   // single re-render scheduled at the timeout boundary
-
-// Pure decision — DOM/runtime-free so it's unit-testable. renderModelSheet is
-// the only caller: it owns modelLoadAttemptAt/modelLoadTimer and applies the
-// side effects (scheduling/clearing the timeout, calling runtime.render()).
-export function modelLoadDecision({ attemptAt, now, hasTimer, timeoutMs = MODEL_LOAD_TIMEOUT_MS }) {
-  const since = attemptAt || now;
-  const elapsed = now - since;
-  if (elapsed >= timeoutMs) return { attemptAt: since, timedOut: true, scheduleMs: null };
-  return { attemptAt: since, timedOut: false, scheduleMs: hasTimer ? null : (timeoutMs - elapsed) };
-}
-
+// The model sheet's empty state renders live/chat.js loadModelOptions()'s
+// truth: that loader guards concurrent GETs and records a failed GET
+// /api/models in state.live.modelsFailed (cleared when a new attempt starts,
+// and on success — however late — with its own runtime.render()). So: no
+// catalog + no failure flag = a load is in flight ("Loading models…"); no
+// catalog + modelsFailed = tap-to-retry. No local timers or attempt windows
+// — this module used to keep a 6s heuristic here because the loader was
+// silent about failure; it no longer is.
 export function renderModelSheet(s) {
   const chat = s.live?.chat || {};
   const groups = s.live?.modelGroups || [];
   const curId = (chat.endpointId || '') + '·' + (chat.model || '');
   const defId = s.live?.defaultModel || '';
   if (!groups.length) {
-    const d = modelLoadDecision({ attemptAt: modelLoadAttemptAt, now: Date.now(), hasTimer: !!modelLoadTimer });
-    modelLoadAttemptAt = d.attemptAt;
-    if (d.timedOut) {
-      if (modelLoadTimer) { clearTimeout(modelLoadTimer); modelLoadTimer = null; }
-    } else if (d.scheduleMs != null) {
-      modelLoadTimer = setTimeout(() => { modelLoadTimer = null; try { runtime.render(); } catch (_) {} }, d.scheduleMs);
-      if (modelLoadTimer && typeof modelLoadTimer.unref === 'function') modelLoadTimer.unref(); // node tests: don't hold the loop
-    }
     // openModelSheet (mobile-app.js) re-fires loadModelOptions on every open —
     // it only skips fetching once state.live.modelGroups is set — so reusing
-    // it as the retry data-act genuinely retries, no new action needed.
-    const body = d.timedOut
+    // it as the retry data-act genuinely retries, no new action needed. A tap
+    // while the load is still in flight no-ops inside the loader.
+    const body = s.live?.modelsFailed
       ? `<div class="m-model-retry ocrow" data-act="openModelSheet" role="button" tabindex="0" style="padding:20px;color:var(--faint);font-size:13px;cursor:pointer">Couldn't load models — tap to retry</div>`
       : `<div style="padding:20px;color:var(--faint);font-size:13px">Loading models…</div>`;
     return `<div class="m-scrim" data-act="closeModelSheet" aria-hidden="true"></div><div class="m-sheet model-sheet" role="dialog" aria-modal="true" aria-label="Model"><div class="m-grab"><div class="h"></div></div><div class="m-cap-head"><span class="t">Model</span><div class="m-spacer"></div><button class="cancel" data-act="closeModelSheet">Close</button></div>${body}</div>`;
   }
-  // A catalog is present — clear retry tracking so a future load window (were
-  // modelGroups ever cleared again) starts its own fresh "Loading…" period.
-  modelLoadAttemptAt = 0;
-  if (modelLoadTimer) { clearTimeout(modelLoadTimer); modelLoadTimer = null; }
   const row = (m) => {
     const active = m.id === curId;
     const isDef = m.id === defId;

@@ -51,6 +51,7 @@ from .terminals import router as terminals_router
 from .resume_route import router as resume_router
 from .export_pdf import router as export_pdf_router
 from .strip_state import router as strip_state_router
+from .suggest import router as suggest_router
 from .tasks_route import router as tasks_router
 from . import workspace_files
 # Attachment subsystem (Task 19): image/text extraction, HEIC→JPEG, persistence.
@@ -272,6 +273,7 @@ app.include_router(terminals_router)
 app.include_router(resume_router)
 app.include_router(export_pdf_router)
 app.include_router(strip_state_router)
+app.include_router(suggest_router)
 app.include_router(tasks_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run

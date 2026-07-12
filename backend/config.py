@@ -190,6 +190,10 @@ STALL_CAP_S = _env_float("WORKSPACE_STALL_CAP", 240.0)
 # Chat auto-titles run on a cheap model so they never race the user's real
 # turn through codex on the big one.
 TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL", "openai/gpt-5.4-mini")
+# Composer ghost-text suggestions run on a cheap model, same rationale as
+# titles. NOT openai/*: those return empty through this gateway.
+SUGGEST_MODEL = os.environ.get("WORKSPACE_SUGGEST_MODEL",
+                               "anthropic/claude-sonnet-4-6")
 
 
 # --- Branding (the agent's name + theme accent) ------------------------------

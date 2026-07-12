@@ -15,14 +15,22 @@ export function monIdx(d) { return (d.getDay() + 6) % 7; }
 // The rendered window for a given real "now" and a view offset in months.
 // `today` stays anchored to the real date (today highlight + agenda); `first`
 // is the 1st of the viewed month. The fetch range always covers both the
-// 35-cell grid AND the agenda window (today..today+8) so browsing other
-// months never empties the mobile agenda.
+// grid AND the agenda window (today..today+8) so browsing other months
+// never empties the mobile agenda. Grid size is dynamic: ceil((leadingBlanks +
+// daysInMonth)/7)*7 cells to ensure all month days fit in complete weeks.
 export function monthWindow(real, offset) {
   const off = Math.trunc(Number(offset) || 0);
   const today = new Date(real.getFullYear(), real.getMonth(), real.getDate());
   const first = new Date(real.getFullYear(), real.getMonth() + off, 1);
   const gridStart = addDays(first, -monIdx(first)); // back up to Monday
-  const gridEnd = addDays(gridStart, 34);           // 35 cells inclusive
+
+  // Calculate dynamic grid size: leading blanks + days in month, rounded to complete weeks
+  const leadingBlanks = monIdx(first);
+  const nextMonth = new Date(real.getFullYear(), real.getMonth() + off + 1, 1);
+  const daysInMonth = (nextMonth - first) / (1000 * 60 * 60 * 24);
+  const totalCells = Math.ceil((leadingBlanks + daysInMonth) / 7) * 7;
+  const gridEnd = addDays(gridStart, totalCells - 1); // totalCells inclusive
+
   const agendaEnd = addDays(today, 8);
   const fetchStart = gridStart < today ? gridStart : today;
   const gridPastEnd = addDays(gridEnd, 1);

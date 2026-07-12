@@ -7,6 +7,8 @@
 // Pure parts (reduceFeedEvent, nextBackoff, pruneTerminal) are exported for
 // node:test.
 
+import { runtime } from './runtime.js';
+
 const STREAM = '/api/tasks/stream';
 const FALLBACK = '/api/tasks';
 
@@ -75,12 +77,36 @@ function _apply(ev) {
   if (next !== _map) { _map = next; _notify(); }
 }
 
+// Fix round 1, finding 6 (task-w2a-report.md): connectionState() has always
+// been correct the instant it's *read*, but nothing ever prompted a render
+// when the tri-state actually CHANGED — health.js's "reconnecting…" copy
+// (live/health.js, wired into the mobile chat header + More card since Task
+// 2.2) only ever painted by coincidence, whenever some unrelated render
+// happened to land afterwards. _notifyConnectionState() renders exactly once
+// per real transition (idle/connected/reconnecting → a different one of
+// those), never once per event — _lastConnState dedupes so a message on an
+// already-open stream, or a redundant onerror, is a no-op here.
+let _lastConnState = 'idle'; // mirrors connectionState()'s own pre-boot default
+function _notifyConnectionState() {
+  const cur = connectionState();
+  if (cur === _lastConnState) return;
+  _lastConnState = cur;
+  try { runtime.render(); } catch (_) { /* no live app instance (e.g. under node:test) */ }
+}
+
 function _connect() {
   let es;
   try {
     es = new EventSource(STREAM, { withCredentials: true });
   } catch (_) { _reconnect(); return; }
   _es = es;
+  // Covers a stub/polyfill whose readyState is already OPEN synchronously;
+  // real browsers transition via the onopen handler below instead.
+  _notifyConnectionState();
+  es.onopen = () => {
+    if (_es !== es) return;
+    _notifyConnectionState();
+  };
   es.onmessage = (e) => {
     if (_es !== es) return;
     _backoff = 0;
@@ -92,6 +118,7 @@ function _connect() {
     if (_es !== es) return;
     try { es.close(); } catch (_) {}
     _es = null;
+    _notifyConnectionState();
     _reconnect();
   };
 }

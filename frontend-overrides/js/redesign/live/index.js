@@ -26,6 +26,13 @@ const fetchedOnce = new Set();  // surfaces whose load() has run at least once
 export async function loadSurface(name, { state, actions, render, force = false } = {}) {
   const file = MODULES[name];
   if (!file) return;
+  // Register the shared Retry action once, the first time any surface is
+  // loaded — NOT per-module — so a surface's error partial can always retry
+  // itself even if its own live module's import never got that far (see
+  // retrySurface/loadErrorBlock in surfaces.js + mobile-surfaces.js).
+  if (actions && !actions.retrySurface) {
+    actions.retrySurface = (surfaceName) => reload(surfaceName);
+  }
   let mod;
   try {
     mod = await import(`./${file}.js`);
@@ -41,6 +48,13 @@ export async function loadSurface(name, { state, actions, render, force = false 
     fetchedOnce.add(name);
     try {
       await mod.load(state, { force });
+      // Success clears any previously-recorded failure for this surface —
+      // otherwise a fixed/retried load would keep showing the error partial
+      // forever (state.loadError only ever got SET below, never cleared).
+      if (state.loadError && name in state.loadError) {
+        const { [name]: _drop, ...rest } = state.loadError;
+        state.loadError = rest;
+      }
       render();
     } catch (e) {
       // leave mock in place; record for optional surfacing

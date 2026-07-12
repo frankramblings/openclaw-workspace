@@ -154,12 +154,20 @@ async function readCurrent(uid) {
 export async function load(state) {
   const res = await apiGet(`/api/email/list?folder=${encodeURIComponent(FOLDER)}&limit=50`);
   const emails = (res?.emails || []).map(toListItem);
-  if (!emails.length) throw new Error('email/list returned no rows');
+  // A legitimately-empty INBOX is a valid, successful result — it must NOT
+  // throw (a throw here becomes a false "couldn't load Email" via
+  // live/index.js's loadError, when really the fetch worked fine and there's
+  // just nothing there; render already has an honest "No email/mail" empty
+  // state for this — see surfaces.js emailSurface / mobile-surfaces.js
+  // mEmailList).
 
   // Prefetch the first message so the reader isn't empty on load. If this
-  // fails, leave current undefined — render falls back to emails[sel].
+  // fails, leave current undefined — render falls back to emails[sel]. Skip
+  // entirely when the list is empty — there's no uid to read.
   let current;
-  try { current = await readCurrent(emails[0].uid); } catch (_) { current = undefined; }
+  if (emails.length) {
+    try { current = await readCurrent(emails[0].uid); } catch (_) { current = undefined; }
+  }
 
   state.live = state.live || {};
   state.live.email = { emails, current };

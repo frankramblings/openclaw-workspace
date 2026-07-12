@@ -19,6 +19,29 @@ import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
 
 // ===========================================================================
+// SHARED — load-failure partial
+// ===========================================================================
+// Task 2.1: failure state ≠ empty state. Every data surface (inbox, email,
+// calendar, notes, library, research) checks state.loadError[key] BEFORE
+// deciding what "no content" means — a fetch that threw is not the same as a
+// fetch that legitimately came back empty, and showing celebratory/neutral
+// empty copy for the former was actively misleading. Retry clears the
+// surface's fetchedOnce flag and re-runs its loader (see live/index.js's
+// retrySurface action / reload()). surfaceLabel doubles as the retry key —
+// lowercased, it already matches live/index.js's MODULES keys ('Inbox' →
+// 'inbox', 'Email' → 'email', …). Mobile has its own mLoadErrorBlock in
+// mobile-surfaces.js (kept separate — its empty-state visual language is
+// compact/centered where desktop's is a wide flex block; sharing one class
+// across both would fight one shell or the other).
+export function loadErrorBlock(surfaceLabel) {
+  const key = String(surfaceLabel || '').toLowerCase();
+  return `<div class="load-error-block cal-empty" style="flex-direction:column;gap:10px;padding:40px 20px;text-align:center">
+    <div>Couldn't load ${esc(surfaceLabel)}.</div>
+    <button class="btn-sm" data-act="retrySurface" data-arg="${esc(key)}">Retry</button>
+  </div>`;
+}
+
+// ===========================================================================
 // CHAT
 // ===========================================================================
 export function renderChatList(s) {
@@ -457,7 +480,7 @@ function emailSurface(s) {
         }).join('')}
       </div>
     </div>
-    ${(s.live?.email?.current || emails.length) ? `<div class="reader">
+    ${s.loadError?.email ? loadErrorBlock('Email') : (s.live?.email?.current || emails.length) ? `<div class="reader">
       <div class="reader-head">
         <h1>${esc(m.subj)}</h1>
         <div class="reader-from">
@@ -723,7 +746,9 @@ function inboxSurface(s) {
     <div class="inbox-scroll">
       ${when(needs.length > 0, `<div class="grp-label"><span class="lbl needs">NEEDS YOU</span><span class="n">${needs.length}</span><div class="sect-divider"></div></div>${map(needs, inboxCard)}`)}
       ${when(fyi.length > 0, `<div class="grp-label fyi"><span class="lbl fyilbl">AI-SUGGESTED · FYI</span><span class="n">${fyi.length}</span><div class="sect-divider"></div></div>${map(fyi, inboxCard)}`)}
-      ${when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed. Nothing left to triage.</div></div>`)}
+      ${s.loadError?.inbox
+        ? loadErrorBlock('Inbox')
+        : when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed. Nothing left to triage.</div></div>`)}
     </div>
     ${when(!!s.inboxEditFor, `
       <div class="inbox-edit-sheet">
@@ -800,7 +825,7 @@ function calendarSurface(s) {
     <div class="cal-weekdays">${map(weekdays, (d) => `<div>${d}</div>`)}</div>
     ${cells.length
       ? `<div class="cal-grid">${map(cells, cell)}</div>`
-      : '<div class="cal-empty">Calendar hasn’t loaded — reload to retry.</div>'}
+      : `<div class="cal-empty" style="flex-direction:column;gap:10px">Calendar hasn’t loaded.<button class="btn-sm" data-act="retrySurface" data-arg="calendar">Retry</button></div>`}
   </div>`;
 }
 
@@ -857,8 +882,9 @@ function researchSurface(s) {
         <div class="card-actions"><button class="btn-sm" data-act="resReport" data-arg="${esc(s.live?.research?.lastRid || '')}">↗ Visual Report</button><button class="btn-sm ghost" data-act="resDiscuss" data-arg="${esc(s.live?.research?.lastRid || '')}">Discuss in chat</button><button class="btn-sm ghost" data-act="go" data-arg="library">Save to Library</button></div>
       </div>`)}
 
+      ${s.loadError?.research ? loadErrorBlock('Research') : `
       <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past || []).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer" data-act="go" data-arg="library">Library, Research →</span></div>
-      ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}
+      ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}`}
     </div>
   </div>`;
 }
@@ -878,7 +904,7 @@ function librarySurface(s) {
       ${map(LIB_FILTERS, ([id, label]) => `<span class="lib-filter${lf === id ? ' active' : ''}" data-act="libFilter" data-arg="${id}">${esc(label)}</span>`)}
     </div>
     <div class="lib-grid">
-      ${map(items, (a) => {
+      ${s.loadError?.library ? loadErrorBlock('Library') : map(items, (a) => {
         const k = KIND_STYLE[a.kind];
         const openable = a.id && (a.cat === 'doc' || a.cat === 'code');
         return `<div class="lib-card"${openable ? ` data-act="openDoc" data-arg="${esc(a.id)}" style="cursor:pointer"` : ''}>
@@ -897,6 +923,9 @@ function librarySurface(s) {
 // NOTES
 // ===========================================================================
 function notesSurface(s) {
+  if (s.loadError?.notes) {
+    return `<div class="split-h">${loadErrorBlock('Notes')}</div>`;
+  }
   const docs0 = s.live?.notes?.docs || [];
   const sel = Math.max(0, Math.min(s.selDoc, docs0.length - 1));
   const doc = docs0[sel] || { title: '', meta: '', path: '', version: 0, blocks: [] };

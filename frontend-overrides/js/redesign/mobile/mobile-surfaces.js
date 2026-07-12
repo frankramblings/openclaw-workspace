@@ -14,6 +14,22 @@ import { suggestGhost } from '../suggest-ghost.js';
 import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
+import { currentHealth, healthDotColor } from '../live/health.js';
+
+// Task 2.1: mobile counterpart to surfaces.js's loadErrorBlock — same
+// "Couldn't load X, Retry" contract (data-act="retrySurface" clears the
+// surface's fetchedOnce flag and re-runs its loader; see live/index.js). Kept
+// as a separate implementation rather than importing the desktop one: its
+// empty-state visual language (compact, centered, faint) is native to this
+// file's existing m-mail-empty/m-agenda-empty pattern, not desktop's wide
+// flex .cal-empty block.
+function mLoadErrorBlock(surfaceLabel) {
+  const key = String(surfaceLabel || '').toLowerCase();
+  return `<div class="load-error-block" style="padding:34px 16px;text-align:center;color:var(--faint);font-size:13.5px;display:flex;flex-direction:column;align-items:center;gap:10px">
+    <span>Couldn't load ${esc(surfaceLabel)}.</span>
+    <button class="btn-sm" data-act="retrySurface" data-arg="${esc(key)}">Retry</button>
+  </div>`;
+}
 
 const ic = {
   mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
@@ -292,7 +308,9 @@ export function mInbox(s) {
     ${mPtr(s, 'Checking for new…')}
     ${when(needs.length > 0, `<div class="m-grp needs">NEEDS YOU · ${needs.length}</div>${map(needs, swipeCard)}`)}
     ${when(fyi.length > 0, `<div class="m-grp fyi">AI-SUGGESTED · FYI · ${fyi.length}</div>${map(fyi, fyiCard)}`)}
-    ${when(visible.length === 0, `<div class="inbox-zero" style="padding:60px 0"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed.</div></div>`)}
+    ${s.loadError?.inbox
+      ? mLoadErrorBlock('Inbox')
+      : when(visible.length === 0, `<div class="inbox-zero" style="padding:60px 0"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed.</div></div>`)}
   </div>
   ${inboxReaderSheet}
   ${s.inboxToast ? `
@@ -322,7 +340,7 @@ export function mEmailList(s) {
   </div>
   <div class="m-scroll m-mail-list" data-ptr="1">
     ${mPtr(s, 'Checking mail…')}
-    ${shown.length ? map(shown, ({ e, i }) => {
+    ${s.loadError?.email ? mLoadErrorBlock('Email') : shown.length ? map(shown, ({ e, i }) => {
       const snippet = (e.body && e.body[0]) ? e.body[0] : '';
       return `<div class="m-mail${s.mEmailOpened && i === s.selEmail ? ' active' : ''}" data-act="mOpenReader" data-arg="${i}">
         <div class="top"><span class="m-src" style="color:${e.srcColor};background:${e.srcBg}">${esc(e.src)}</span>${when(e.unread, '<span class="udot"></span>')}<span class="time">${esc(e.time)}</span></div>
@@ -375,7 +393,7 @@ export function mCalendar(s) {
       ${map(week, (w) => `<div class="col"><span class="dl${w.today ? ' today' : ''}">${w.d}</span><span class="dn${w.today ? ' today' : ''}">${w.date}</span></div>`)}
     </div>
   </div>
-  <div class="m-scroll m-agenda" data-ptr="1">${mPtr(s, 'Refreshing…')}${agenda.length ? map(agenda, group) : '<div class="m-agenda-empty">No events in the next 7 days.</div>'}</div>
+  <div class="m-scroll m-agenda" data-ptr="1">${mPtr(s, 'Refreshing…')}${s.loadError?.calendar ? mLoadErrorBlock('Calendar') : (agenda.length ? map(agenda, group) : '<div class="m-agenda-empty">No events in the next 7 days.</div>')}</div>
   <div class="m-quickadd"><div class="box"><span class="star">✦</span><input data-model="quick" data-focus="mquick" placeholder="&quot;feed Krypto 1pm tmrw&quot;" value="${esc(s.quick || '')}"/><button class="add" data-act="clearQuick">${I.plus(15)}</button></div></div>`;
 }
 

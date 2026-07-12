@@ -1,3 +1,7 @@
+// Pin the zone: date fixtures below are authored against UTC wall-clock.
+// (Local-time semantics get their own coverage in __tests__/inbox-logic-tz.test.js.)
+process.env.TZ = 'UTC';
+
 import assert from 'node:assert/strict';
 import {
   srcStyle,

@@ -58,7 +58,7 @@ test('Feb 2024 Thursday-start month uses exactly 35 cells', () => {
   assert.equal(cellCount, 35, `Feb 2024 grid should have exactly 35 cells, got ${cellCount}`);
 });
 
-test('Feb 2032 Monday-start month uses correct grid size', () => {
+test('Feb 2032 Sunday-start month uses correct grid size', () => {
   // Feb 2032: 29 days (leap year), starts on Sunday (monIdx=6)
   const real = new Date(2032, 0, 15);
   const w = monthWindow(real, 1); // February 2032

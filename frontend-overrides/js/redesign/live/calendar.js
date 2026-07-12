@@ -7,7 +7,7 @@
 // Shape produced:
 //   state.live.calendar = {
 //     cells:   [{ date, dim?, today?, last?, bars?:[{label,tone}],
-//                 events?:[{label,dot,faded?}], more? }]  (35, Mon-start),
+//                 events?:[{label,dot,faded?}], more? }]  (35 or 42 cells, Mon-start),
 //     month:   'June 2026',
 //     week:    [{ d:'M'|'T'|..., date, today? }]          (current week, Mon-start),
 //     agenda:  [{ label, tag?, tagColor?, events:[{time,tone,title,sub?}] }]

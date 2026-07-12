@@ -1067,6 +1067,14 @@ if config.FRONTEND_DIR.exists():
     async def index():
         return _spa_html("index.html")
 
+    @app.get("/home")
+    async def gary_home():
+        return _spa_html("newtab.html")
+
+    @app.get("/newtab")
+    async def gary_newtab():
+        return _spa_html("newtab.html")
+
     @app.get("/classic")
     async def index_classic():
         # Task 18 step 1 (parity gate, instrumentation only — retirement is

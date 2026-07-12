@@ -6,19 +6,67 @@
   "scope": "/",
   "id": "/",
   "shortcuts": [
-    { "name": "Chat", "url": "/#chat", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Inbox", "url": "/#inbox", "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192" }] }
+    {
+      "name": "Chat",
+      "url": "/#chat",
+      "icons": [
+        {
+          "src": "/static/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Inbox",
+      "url": "/#inbox",
+      "icons": [
+        {
+          "src": "/static/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ],
   "display": "standalone",
   "orientation": "any",
   "background_color": "#15161a",
   "theme_color": "#15161a",
   "icons": [
-    { "src": "/static/favicon-16x16.png", "sizes": "16x16", "type": "image/png" },
-    { "src": "/static/favicon-32x32.png", "sizes": "32x32", "type": "image/png" },
-    { "src": "/static/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
-    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/static/maskable-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-  ]
+    {
+      "src": "/static/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/maskable-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  }
 }

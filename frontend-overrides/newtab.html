@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover">
+<title>Gary</title>
+<link rel="icon" type="image/svg+xml" href="https://naboo.bicolor-triceratops.ts.net:8443/static/favicon.svg?v=gary1">
+<style>
+  @font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: normal;
+    src: url('https://naboo.bicolor-triceratops.ts.net:8443/static/fonts/HankenGrotesk-latin.woff2') format('woff2'); font-display: swap; }
+  @font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: normal;
+    src: url('https://naboo.bicolor-triceratops.ts.net:8443/static/fonts/MonoLisa-normal.woff2') format('woff2'); font-display: swap; }
+  :root {
+    --bg:#15161a; --panel:#1b1c21; --panel2:#212329; --elev:#262931;
+    --bd:#2d2f36; --bd2:#24262c;
+    --fg:#dfe2e8; --mut:#9498a2; --faint:#5f636d;
+    --teal:#4fe3d1; --teal2:#2f8d83; --tealtint:rgba(79,227,209,.10);
+    --blue:#7bb6ff; --bluetint:rgba(123,182,255,.10);
+    --accent:var(--blue);
+    --sans:'Hanken Grotesk',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+    --mono:'MonoLisa',ui-monospace,monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'liga','calt','ss15','ss16','ss13','ss14','onum';
+  }
+  .wrap {
+    min-height: 100dvh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 24px; gap: 22px;
+  }
+  .brand { display: flex; flex-direction: column; align-items: center; gap: 14px; user-select: none; }
+  .brand .avatar {
+    width: 88px; height: 88px; border-radius: 22px; overflow: hidden;
+    background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 12px 40px color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+  .brand .avatar img { width: 82%; height: 82%; object-fit: contain; }
+  .brand .name {
+    font-size: 27.5px; font-weight: 700; color: var(--fg); line-height: 1;
+    letter-spacing: -0.01em;
+  }
+  .brand .tag {
+    font-size: 13.5px; color: var(--mut); font-weight: 400;
+  }
+  form { width: min(680px, 100%); position: relative; margin-top: 4px; }
+  .oc-search {
+    height: 46px; border-radius: 10px; border: 1px solid var(--bd);
+    background: var(--panel); display: flex; align-items: center;
+    padding: 0 14px; gap: 10px;
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+  .oc-search:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--bd));
+    background: var(--panel2);
+  }
+  .oc-search svg { flex: none; color: var(--faint); width: 18px; height: 18px; }
+  .oc-search input {
+    flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+    color: var(--fg); font-family: var(--sans); font-size: 15px;
+    caret-color: var(--accent);
+  }
+  .oc-search input::placeholder { color: var(--faint); }
+  .oc-search .kbd {
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    border: 1px solid var(--bd); border-radius: 5px; padding: 2px 6px;
+    background: var(--bg);
+  }
+  .actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .occhip {
+    height: 32px; padding: 0 14px; border-radius: 16px;
+    border: 1px solid var(--bd); background: var(--panel);
+    color: var(--mut); font-family: var(--sans); font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: color 120ms ease, border-color 120ms ease;
+  }
+  .occhip:hover { border-color: var(--teal2); color: var(--fg); }
+  .new-conv {
+    height: 38px; padding: 0 20px; border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--bd));
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
+    font-family: var(--sans); font-size: 14.5px; font-weight: 600;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .new-conv:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .hint {
+    color: var(--faint); font-size: 12px;
+    font-family: var(--sans); margin-top: -4px;
+  }
+  .hint kbd {
+    font-family: var(--mono); font-size: 11px;
+    background: var(--elev); border: 1px solid var(--bd);
+    border-radius: 4px; padding: 1px 5px; color: var(--mut);
+  }
+  .footer {
+    position: fixed; bottom: 14px; left: 0; right: 0; text-align: center;
+    color: var(--faint); font-size: 11.5px; font-family: var(--mono);
+  }
+  .footer a { color: var(--faint); text-decoration: none; margin: 0 10px; }
+  .footer a:hover { color: var(--mut); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <div class="avatar">
+        <img src="https://naboo.bicolor-triceratops.ts.net:8443/static/redesign-assets/gary-outline.png" alt="">
+      </div>
+      <div class="name">Gary</div>
+      <div class="tag">Type below · <kbd style="font-family:var(--mono);font-size:11px;background:var(--elev);border:1px solid var(--bd);border-radius:4px;padding:1px 5px;color:var(--mut)">/</kbd> for commands</div>
+    </div>
+    <form id="f" autocomplete="off">
+      <label class="oc-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input name="q" id="q" autofocus placeholder="Ask Gary anything, or search your chats…" autocorrect="off" spellcheck="false">
+        <span class="kbd">⏎</span>
+      </label>
+    </form>
+    <div class="hint">
+      <kbd>Enter</kbd> new chat &nbsp;·&nbsp;
+      <kbd>⌘</kbd><kbd>Enter</kbd> search
+    </div>
+    <div class="actions">
+      <button type="button" id="btn-new" class="new-conv"><span style="font-size:15px;line-height:1">+</span> New conversation</button>
+      <button type="button" id="btn-search" class="occhip">Search chats</button>
+      <button type="button" id="btn-inbox" class="occhip">Inbox</button>
+      <button type="button" id="btn-open" class="occhip">Open workspace</button>
+    </div>
+  </div>
+  <div class="footer">
+    <a data-origin-href="/">Open workspace</a>
+    <a data-origin-href="/?action=inbox">Inbox</a>
+    <a data-origin-href="/landing">About</a>
+  </div>
+<script>
+(function () {
+  var ORIGIN = (location.port === '8443' || location.origin.indexOf(':8443') > -1)
+    ? '' : 'https://naboo.bicolor-triceratops.ts.net:8443';
+  var q = document.getElementById('q');
+  function go(url) { window.location.href = url; }
+  function newChat() {
+    var v = (q.value || '').trim();
+    go(ORIGIN + '/?action=new' + (v ? '&q=' + encodeURIComponent(v) : ''));
+  }
+  function search() {
+    var v = (q.value || '').trim();
+    go(ORIGIN + '/?action=search' + (v ? '&q=' + encodeURIComponent(v) : ''));
+  }
+  document.getElementById('f').addEventListener('submit', function (e) {
+    e.preventDefault(); newChat();
+  });
+  q.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); search(); }
+  });
+  document.getElementById('btn-new').addEventListener('click', newChat);
+  document.getElementById('btn-search').addEventListener('click', search);
+  document.getElementById('btn-inbox').addEventListener('click', function () { go(ORIGIN + '/?action=inbox'); });
+  document.getElementById('btn-open').addEventListener('click', function () { go(ORIGIN + '/'); });
+  document.querySelectorAll('a[data-origin-href]').forEach(function (a) {
+    a.href = ORIGIN + a.getAttribute('data-origin-href');
+  });
+})();
+</script>
+</body>
+</html>

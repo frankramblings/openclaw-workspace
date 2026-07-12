@@ -108,7 +108,7 @@ export const PANELS = {
   ],
   shortcuts: [
     card({ title: 'Keyboard Shortcuts', icon: TAB.shortcuts[2], sub: 'Click a shortcut to rebind. Press Escape to cancel.', rows: [
-      shortcut('New chat', ['⌘', 'N']), shortcut('Search / command palette', ['⌘', 'K']), shortcut('Toggle sidebar', ['⌘', '\\']),
+      shortcut('New chat', ['⌘', '⇧', 'O']), shortcut('Search / command palette', ['⌘', 'K']), shortcut('Toggle sidebar', ['⌘', '\\']),
       shortcut('Send message', ['⌘', '↵']), shortcut('New line', ['⇧', '↵']), shortcut('Open settings', ['⌘', ',']),
       shortcut('Incognito mode', ['⌘', '⇧', 'I']), shortcut('Focus composer', ['/']),
     ] }),

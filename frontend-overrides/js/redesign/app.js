@@ -18,6 +18,7 @@ import { maybeShowThreadsHint } from './mobile/threads-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
 import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
 import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
+import '../deeplink.js';  // ?action=new|search|inbox|photo|voice (self-inits on load)
 import { loadSurface } from './live/index.js';
 import { runtime } from './live/runtime.js';
 import { wireResizableSidebars } from './resize-sidebars.js';
@@ -346,7 +347,14 @@ const actions = {
   go: (surface) => { state.surface = surface; state.resOpenCtl = null; },
   // Open an image fullscreen (inline shared images carry data-act="imgView").
   imgView: (src) => { openImageOverlay(src); },
-  newChat: () => { state.surface = 'chat'; state.draft = ''; },
+  newChat: () => {
+    state.surface = 'chat';
+    state.draft = '';
+    requestAnimationFrame(() => {
+      const ta = root.querySelector('[data-focus="draft"]');
+      if (ta) ta.focus();
+    });
+  },
 
   // chat composer
   toggleSlash: () => { state.forceSlash = !state.forceSlash; state.slashDismissed = false; },
@@ -1050,6 +1058,13 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'i' || e.key === 'I')) {
     e.preventDefault();
     if (actions.toggleIncognito) { actions.toggleIncognito(); render(); }
+    return;
+  }
+  // ⌘⇧O / Ctrl-Shift-O → new conversation (⌘N is browser-reserved)
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'o' || e.key === 'O')) {
+    if (topmostModal()) return;
+    e.preventDefault();
+    if (actions.newChat) { actions.newChat(); render(); }
     return;
   }
   if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {

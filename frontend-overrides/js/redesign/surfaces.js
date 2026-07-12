@@ -24,7 +24,7 @@ export function renderChatList(s) {
   return `
   <div class="oc-secondary chat-list">
     <div class="chat-list-top">
-      <button class="new-conv" data-act="newChat"><span class="plus">+</span> New conversation</button>
+      <button class="new-conv" data-act="newChat" title="New conversation (⌘⇧O / Ctrl+Shift+O)"><span class="plus">+</span> New conversation</button>
       <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
       <div style="display:flex;justify-content:flex-end;margin-top:6px"><button data-act="cycleSessionSort" title="Sort order" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer">${s.convSort === 'alpha' ? 'A–Z' : 'Recent'} ⇅</button></div>
     </div>
@@ -1099,7 +1099,7 @@ function welcomeSurface() {
     <div class="ws-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>
     <div class="ws-name">__AGENT_NAME__</div>
     <div class="ws-tagline">Your AI workspace</div>
-    <button class="ws-new ocbtn" data-act="newChat">Start a new chat</button>
+    <button class="ws-new ocbtn" data-act="newChat" title="New conversation (⌘⇧O / Ctrl+Shift+O)">Start a new chat</button>
     <div class="ws-chips">${chips}</div>
   </div>`;
 }

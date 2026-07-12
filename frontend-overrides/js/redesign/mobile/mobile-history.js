@@ -5,14 +5,15 @@
 // closes the top-most sheet / reader / sub-screen instead of exiting the PWA.
 //
 // Layers are closed ONE AT A TIME, top → bottom, in this priority order:
-//   1. the long-press message-tools sheet (live.chat.mobileSheetMsgId)
-//   2. the quick-capture sheet
-//   3. the compose sheet
-//   4. a reader (email reader / inbox reader overlay)
-//   5. the model picker sheet
-//   6. the companion sheet
-//   7. the conversation drawer
-//   8. a pushed "More" sub-screen (calendar/research/library/notes/settings)
+//   1. the inbox snooze sheet (inboxSnoozeFor)
+//   2. the long-press message-tools sheet (live.chat.mobileSheetMsgId)
+//   3. the quick-capture sheet
+//   4. the compose sheet
+//   5. a reader (email reader / inbox reader overlay)
+//   6. the model picker sheet
+//   7. the companion sheet
+//   8. the conversation drawer
+//   9. a pushed "More" sub-screen (calendar/research/library/notes/settings)
 // The original design bucketed every sheet flag together as a single layer,
 // so closeTopmost cleared ALL of them in one call whenever more than one
 // happened to be set — reachable via the edge-swipe conversation drawer,
@@ -28,10 +29,16 @@
 
 const hasMsgSheet = (s) => !!(s.live && s.live.chat && s.live.chat.mobileSheetMsgId);
 const hasReader = (s) => !!(s.mReader || s.inboxReader);
+const hasSnoozeSheet = (s) => !!s.inboxSnoozeFor;
 
 // Ordered top → bottom. `has` tests whether the layer is open; `close` clears
 // it. closeTopmost() closes exactly the first matching entry per call.
 const LAYERS = [
+  // The inbox snooze bottom sheet (⏰ tap / left-swipe → live/inbox.js's
+  // `snooze` action, shared with desktop's inline popover) — the newest,
+  // most transient overlay, so it closes first, same reasoning as the
+  // message-tools sheet below it.
+  { has: hasSnoozeSheet, close: (s) => { s.inboxSnoozeFor = null; } },
   { has: hasMsgSheet, close: (s) => { s.live.chat.mobileSheetMsgId = null; } },
   { has: (s) => !!s.quickCaptureOpen, close: (s) => { s.quickCaptureOpen = false; } },
   { has: (s) => !!s.composeOpen, close: (s) => { s.composeOpen = false; } },
@@ -65,7 +72,7 @@ export function closeTopmost(s) {
 export function edgeSwipeBlocked(s) {
   return !!(
     s.quickCaptureOpen || s.composeOpen || s.keyboard
-    || hasReader(s) || hasMsgSheet(s)
+    || hasReader(s) || hasMsgSheet(s) || hasSnoozeSheet(s)
     || s.mDrawerOpen || s.mModelSheetOpen || s.companionSheetOpen
   );
 }

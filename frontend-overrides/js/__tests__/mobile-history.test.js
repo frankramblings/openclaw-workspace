@@ -175,6 +175,44 @@ test('edgeSwipeBlocked blocks while the keyboard is up', () => {
   assert.equal(edgeSwipeBlocked({ keyboard: true }), true);
 });
 
+// ---- inbox snooze sheet layer (task 3.1) -----------------------------------
+// Mobile's snooze bottom sheet shares `inboxSnoozeFor` with desktop's inline
+// popover (live/inbox.js's `snooze` action) — registered here as its own
+// top-priority layer so one Back closes just the sheet, not everything under
+// it, same discipline as every other overlay on this ladder.
+
+test('inboxSnoozeFor is its own layer', () => {
+  assert.equal(derivedDepth({ mTab: 'inbox', inboxSnoozeFor: '42' }), 1);
+});
+
+test('closeTopmost closes the snooze sheet first, ahead of every other layer', () => {
+  const s = {
+    mTab: 'more',
+    mSub: 'notes',
+    mReader: true,
+    mModelSheetOpen: true,
+    companionSheetOpen: true,
+    mDrawerOpen: true,
+    composeOpen: true,
+    quickCaptureOpen: true,
+    inboxSnoozeFor: '42',
+    live: { chat: { mobileSheetMsgId: 'm1' } },
+  };
+  assert.equal(derivedDepth(s), 9);
+
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.inboxSnoozeFor, null, 'snooze sheet closes first');
+  assert.equal(s.live.chat.mobileSheetMsgId, 'm1', 'msg-sheet survives the same call');
+  assert.equal(s.quickCaptureOpen, true);
+
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.live.chat.mobileSheetMsgId, null, 'msg-sheet closes next');
+});
+
+test('edgeSwipeBlocked blocks over the open snooze sheet', () => {
+  assert.equal(edgeSwipeBlocked({ inboxSnoozeFor: '42' }), true);
+});
+
 // ---- computeMobileLatch ----------------------------------------------------
 
 test('computeMobileLatch: touch + coarse pointer is mobile through a phone landscape rotation', () => {

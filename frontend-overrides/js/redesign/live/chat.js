@@ -197,6 +197,7 @@ function ensureChat(state) {
     try { state.live.chat.chatStrip.collapsed = stripReadCollapsed(window.localStorage); } catch (_) {}
   }
   if (!state.live.chat.chatStripByKey) state.live.chat.chatStripByKey = {};
+  if (!Array.isArray(state.live.chat.queuedList)) state.live.chat.queuedList = [];
   return state.live.chat;
 }
 
@@ -462,6 +463,47 @@ let turn = null;             // per-send activity state (see send())
 let _notifyResuming = null;  // session id with a notifier-driven resume in flight
 let _stripPersistTimer = null;
 
+// ---- per-turn identity (epoch) ---------------------------------------------
+// Every beginTurn() claims a fresh epoch; each closure it builds captures it.
+// A closure whose epoch no longer matches the module `turn` slot is a STALE
+// source — e.g. an aborted POST reader whose trailing AbortError is delivered
+// as a microtask, or a superseded EventSource — and must no-op. Without this,
+// stopLive() + beginTurn() in one synchronous frame (fireSend, attachTurn) let
+// the OLD reader's queued error land on the fresh turn: a false "connection
+// dropped" bubble plus a full teardown of a perfectly healthy turn, which then
+// drops all its real frames.
+let _turnEpoch = 0;
+// Pure guard, exported for __tests__/chat-turn-epoch.test.js. Requires a real
+// epoch on both sides — undefined === undefined must NOT count as current.
+export function isCurrentTurn(t, epoch) { return !!(t && epoch != null && t.epoch === epoch); }
+
+// ---- session-keyed queued messages -----------------------------------------
+// chat.queuedList = [{sid, text, attachSnap}, ...] is the truth: messages the
+// user sent while a turn was streaming in their thread, in submission order,
+// KEYED to the thread they were typed into (a message queued in A must never
+// fire into B). chat.queued stays a derived single-slot view — the first
+// entry for the ACTIVE session — because surfaces.js renders the composer
+// banner (recall/cancel) straight from it. Pure helpers exported for tests.
+export function queueHead(list, sid) {
+  return (Array.isArray(list) ? list : []).find((q) => q && q.sid === sid) || null;
+}
+export function queueTake(list, sid) {
+  const src = Array.isArray(list) ? list : [];
+  let taken = null;
+  const rest = [];
+  for (const q of src) {
+    if (!taken && q && q.sid === sid) { taken = q; continue; }
+    rest.push(q);
+  }
+  return { taken, rest };
+}
+export function queueDropSession(list, sid) {
+  return (Array.isArray(list) ? list : []).filter((q) => !(q && q.sid === sid));
+}
+function syncQueuedView(chat) {
+  chat.queued = queueHead(chat.queuedList, chat.activeId);
+}
+
 // Debounced (500ms) write of the strip's todo items to the server so they
 // survive a full PWA reload. sessionId is chat.activeId (the 12-hex session
 // id). Sends an empty array when todos have been cleared — that keeps the
@@ -486,12 +528,14 @@ function persistStripToServer(sessionId, strip) {
 // `turn = null` can still find and patch their originating message.
 const _pendingByTurnId = new Map();
 
-function _handlePendingFrame(ev, chat) {
+function _handlePendingFrame(ev, chat, liveIsMine) {
   const turnId = ev.turn_id;
   if (turnId == null) return;
   if (ev.type === 'token.added') {
     let msg = _pendingByTurnId.get(turnId);
-    if (!msg && turn && turn.asstMsg) {
+    // Only a source that still OWNS the live turn may claim turn.asstMsg —
+    // a superseded reader's token must not bind to the successor's bubble.
+    if (!msg && liveIsMine && turn && turn.asstMsg) {
       // First token.added for this turn: associate with the live message.
       msg = turn.asstMsg;
       _pendingByTurnId.set(turnId, msg);
@@ -774,7 +818,10 @@ function beginTurn(chat, modelLabel, sessionId) {
   // `sessionId` tags the turn with the thread it belongs to so the send-gate can
   // distinguish "THIS thread is busy" (queue) from "another thread is busy"
   // (send freely — that turn keeps streaming + recording server-side).
-  turn = { sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), lastFrameMs: Date.now(), got404: false };
+  // `epoch` is this turn's identity: closures below capture it and no-op once
+  // superseded (see _turnEpoch above).
+  const epoch = ++_turnEpoch;
+  turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), lastFrameMs: Date.now(), got404: false };
 
   const ensureAsst = () => {
     if (!turn.asstMsg) {
@@ -805,16 +852,19 @@ function beginTurn(chat, modelLabel, sessionId) {
   const onEvent = (ev) => {
     if (!ev) return;
     // Pending-work frames can arrive before, during, or AFTER the live turn
-    // (image_generate resolves asynchronously). Handle them before the guard.
+    // (image_generate resolves asynchronously). Handle them before the guard —
+    // but tell the handler whether THIS source still owns the live turn, so a
+    // stale source can't associate its token with a successor turn's bubble.
     if (ev.type === 'token.added' || ev.type === 'token.resolved') {
-      _handlePendingFrame(ev, chat);
+      _handlePendingFrame(ev, chat, isCurrentTurn(turn, epoch));
       return;
     }
-    // Guard against stray frames arriving after the turn was torn down
-    // (turn = null on 'done'/'error'/404). A late delta or a trailing event
-    // from a resumed EventSource tail would otherwise deref null → the
-    // "Cannot read properties of null (reading 'asstMsg')" crash. Drop it.
-    if (!turn) return;
+    // Per-turn identity guard. Covers BOTH stray frames after teardown
+    // (turn = null on 'done'/'error'/404 → the old null-deref crash) AND
+    // frames from a superseded source landing after a NEW turn already exists
+    // (the aborted POST reader's trailing AbortError would otherwise put a
+    // false "connection dropped" bubble on the fresh turn and tear it down).
+    if (!isCurrentTurn(turn, epoch)) return;
 
     // Every frame is proof of life — the hb-gap watchdog (reconcile) keys off
     // this timestamp, so it must update for ALL frame types, not just hb.
@@ -858,13 +908,14 @@ function beginTurn(chat, modelLabel, sessionId) {
       if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); turn = null; return; }
       refreshSidebarUsage(runtime.state);
       // Follow-up ghost suggestion — only after a CLEAN finish with nothing
-      // queued (flushQueued fires a queued message into a new turn, which
+      // queued (flushQueuedFor fires a queued message into a new turn, which
       // would immediately invalidate the suggestion anyway).
       const endedOk = turn.endStatus !== 'aborted';
-      const hadQueued = !!chat.queued;
+      const doneSid = turn.sessionId;
+      const hadQueued = !!queueHead(chat.queuedList, doneSid);
       setLiveTurn(null);
       turn = null;
-      flushQueued(chat);
+      flushQueuedFor(chat, doneSid);
       if (endedOk && !hadQueued) fetchSuggestion(chat, 'followup', null);
       return;
     }
@@ -1022,7 +1073,7 @@ async function ensureSessionId(chat) {
 }
 
 // The unbuffered send: optimistic user bubble + immediate POST /api/chat_stream.
-// Used by the queued-message auto-send (flushQueued), which already had its own
+// Used by the queued-message auto-send (flushQueuedFor), which already had its own
 // review pass in the composer before it got queued. Assumes the caller already
 // cleared the draft/pendingAttach.
 async function dispatchSend(text, attachSnap) {
@@ -1055,20 +1106,23 @@ const BUFFER_MS = 700;
 
 // Buffered composer submit: append the optimistic bubble now (with
 // `_optimistic`/`_deadline` so it renders the countdown ring + the Edit
-// affordance), and defer the real network fire for BUFFER_MS.
+// affordance), and defer the real network fire for BUFFER_MS. Returns false
+// ONLY when the session couldn't be created (offline first send in a new
+// chat) so the caller can restore the draft — every other early exit means
+// "nothing to send" and returns true.
 async function submitFromComposer(text, attachSnap) {
   const state = runtime.state;
-  if (!state) return;
+  if (!state) return true;
   const chat = ensureChat(state);
   const attachIds = (attachSnap || []).map((a) => a.id);
-  if (!text && !attachIds.length) return;
+  if (!text && !attachIds.length) return true;
 
   // A message is already buffered → flush it now, in submission order, before
   // this new one claims its own buffer window.
   if (chat.pendingSend) flushPending(chat.pendingSend.sessionId);
 
   const sessionId = await ensureSessionId(chat);
-  if (!sessionId) return;
+  if (!sessionId) return false;
 
   const messageId = 'live-u-' + Date.now();
   const deadline = Date.now() + BUFFER_MS;
@@ -1088,6 +1142,7 @@ async function submitFromComposer(text, attachSnap) {
   // flush below.
   runtime.render();
   chat.pendingSend.timerId = setTimeout(() => flushPending(sessionId), BUFFER_MS);
+  return true;
 }
 
 // Fires a buffered send early — timer expiry, a second send arriving, or (in
@@ -1102,10 +1157,26 @@ function flushPending(sessionId) {
   if (!p) return;
   if (p.timerId) clearTimeout(p.timerId);
   chat.pendingSend = null;
+  const sid = sessionId || p.sessionId;
+  // Busy gate: a turn is already live for this thread (e.g. the PREVIOUS send
+  // flushed at the top of this same buffer window). Firing a second POST now
+  // would be rejected server-side (busy_stream) — after fireSend had already
+  // aborted the live turn's reader, wrecking both turns. Divert to the
+  // session queue instead: the optimistic bubble comes out of the thread (the
+  // queued banner represents it now) and it auto-sends when the live turn
+  // finishes (flushQueuedFor).
+  if (turn && turn.sessionId === sid) {
+    const idx = (chat.thread || []).findIndex((m) => m.id === p.messageId);
+    if (idx >= 0) chat.thread.splice(idx, 1);
+    chat.queuedList = [...(chat.queuedList || []), { sid, text: p.text, attachSnap: p.attachSnap }];
+    syncQueuedView(chat);
+    runtime.render();
+    return;
+  }
   const msg = (chat.thread || []).find((m) => m.id === p.messageId);
   if (msg) { msg.text = p.text; delete msg._optimistic; delete msg._deadline; }
   runtime.render();
-  fireSend(sessionId || p.sessionId, p.text, p.attachSnap);
+  fireSend(sid, p.text, p.attachSnap);
 }
 
 // A buffered send that's still sitting in its 700ms window when the tab
@@ -1124,14 +1195,23 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
   });
 }
 
-// When a turn ends, fire any message the user queued while it was streaming.
-// Deferred a microtask so the current turn teardown (turn = null) settles before
+// When a turn ends, fire the next message the user queued FOR THAT SESSION
+// while it was streaming. Session-keyed: an entry queued in thread A never
+// fires into thread B — it only dispatches when its own thread is the active
+// one (dispatchSend posts into chat.activeId) and no turn is live for it.
+// One entry per call: if more are queued, each subsequent turn-end flushes the
+// next, so they never race each other into a busy_stream rejection. Deferred
+// a microtask so the current turn teardown (turn = null) settles before
 // dispatchSend opens the next one.
-function flushQueued(chat) {
-  if (!chat || !chat.queued) return;
-  const q = chat.queued;
-  chat.queued = null;
-  Promise.resolve().then(() => dispatchSend(q.text, q.attachSnap));
+function flushQueuedFor(chat, sid) {
+  if (!chat || !sid) return;
+  if (chat.activeId !== sid) return;          // only fire into its own, visible thread
+  if (turn && turn.sessionId === sid) return; // a turn already owns this thread
+  const { taken, rest } = queueTake(chat.queuedList, sid);
+  if (!taken) return;
+  chat.queuedList = rest;
+  syncQueuedView(chat);
+  Promise.resolve().then(() => dispatchSend(taken.text, taken.attachSnap));
 }
 
 // Parse one stored SSE payload (the raw string event_store kept, e.g.
@@ -1173,7 +1253,7 @@ function finalizeLocal(chat, interrupted) {
   // Rescue a queued message on the interrupted path, mirroring the 'error'
   // handler: session state is uncertain, so recall to the composer rather
   // than auto-firing into a possibly-broken session. (The stale flavor's
-  // flushQueued lives in reconcileTurn, AFTER its thread refetch settles —
+  // flushQueuedFor lives in reconcileTurn, AFTER its thread refetch settles —
   // flushing here would race dispatchSend's optimistic bubbles against the
   // refetch's chat.thread reassignment and leave the auto-sent turn invisible.)
   if (interrupted && chat.queued) { actions.queueRecall(); }
@@ -1198,6 +1278,12 @@ async function reconcileTurn(chat, state, sessionId) {
       lastTurnStatus: (snap && snap.last_turn && snap.last_turn.status) || null,
       hasLocalLive: !!(turn || liveES),
       localSessionMatches: !turn || turn.sessionId === sessionId,
+      // Healthy = a live SOURCE is still attached (POST reader or ES tail) AND
+      // frames arrived within the hb-gap window. A healthy local turn must NOT
+      // be re-attached over (duplicate bubble); a dead pipe must (hb watchdog,
+      // CLOSED EventSource — both null their source or age lastFrameMs out).
+      localFresh: !!(turn && (streamCtrl || liveES) && turn.lastFrameMs
+        && (Date.now() - turn.lastFrameMs) < HB_GAP_MS),
     });
     if (decision === 'attach') return attachTurn(chat, state, sessionId, snap);
     if (decision === 'finalize-interrupted') {
@@ -1221,14 +1307,12 @@ async function reconcileTurn(chat, state, sessionId) {
         // the refetch settles (success or catch): dispatchSend pushes the
         // optimistic user bubble + beginTurn's asstMsg into chat.thread, and a
         // still-pending refetch would replace the array wholesale, leaving the
-        // whole auto-sent turn invisible. Inside the activeId guard on purpose:
-        // dispatchSend targets chat.activeId (ensureSessionId), so flushing
-        // after a mid-reconcile thread switch would fire the message into the
-        // WRONG (newly selected) thread. Not stranded on mismatch:
-        // selectSession leaves chat.queued intact, the composer banner
-        // (recall/cancel) renders from it regardless of thread, and the normal
-        // turn-end flush paths still own it.
-        flushQueued(chat);
+        // whole auto-sent turn invisible. Session-keyed: only entries queued
+        // FOR this session fire, and flushQueuedFor re-checks activeId itself,
+        // so a mid-reconcile thread switch can't fire the message into the
+        // wrong thread. Not stranded on mismatch: selectSession keeps
+        // chat.queuedList intact and re-flushes on return to this thread.
+        flushQueuedFor(chat, sessionId);
       }
     }
     return false;
@@ -1247,6 +1331,18 @@ async function attachTurn(chat, state, sessionId, snap) {
 
   stopLive();
   stopElapsed();
+  // Superseding a stale local turn for this SAME session: its partial
+  // assistant bubble would sit above the replayed rebuild as a duplicate
+  // (stuck with streaming:true). The replay below reconstructs the turn from
+  // its start, so drop the superseded bubble — and any pending-token mappings
+  // that point at it, so replayed token.added frames re-bind to the fresh one.
+  if (turn && turn.sessionId === sessionId && turn.asstMsg) {
+    const i = (chat.thread || []).indexOf(turn.asstMsg);
+    if (i >= 0) chat.thread.splice(i, 1);
+    for (const [tid, m] of _pendingByTurnId) {
+      if (m === turn.asstMsg) _pendingByTurnId.delete(tid);
+    }
+  }
   const { onEvent, ensureActivity } = beginTurn(chat, chat.model, sessionId);
   ensureActivity();            // immediate "Working…" while we rebuild + tail
   // Continue the "Working… Ns" clock from the turn's TRUE start (server-computed
@@ -1649,6 +1745,7 @@ export const actions = {
       })();
     }
     chat.editingId = null;
+    syncQueuedView(chat);       // banner now shows THIS thread's queued entry (if any)
     if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
     storeActiveId(id);
     // Rehydrate a carried branch prefix (Task 8): branchFromMessage stashes it
@@ -1688,6 +1785,11 @@ export const actions = {
     // Re-attach to an in-flight turn for this thread, if one is still running
     // server-side (returning to a thread you left mid-answer).
     try { await reconcileTurn(chat, state, id); } catch (_) { /* non-fatal */ }
+    // A message queued for THIS thread whose turn already finished while we
+    // were away (reconcile decided 'none' — no local live state to finalize)
+    // would otherwise sit stranded in the banner forever. Fire it now; the
+    // guards inside no-op when a turn re-attached above or nothing is queued.
+    flushQueuedFor(chat, id);
     // Populate resolved update_blocks that the frontend missed while away.
     try { await hydrateThread(id, chat.thread); } catch (_) { /* non-fatal */ }
     try { await hydrateWarnings(id, chat.thread); } catch (_) { /* non-fatal */ }
@@ -1720,6 +1822,11 @@ export const actions = {
     chat.chatStrip = stripOnSessionSwitch();
     chat.editingId = null;
     chat.suggest = null;
+    // Leaving for a fresh chat drops the left-behind thread's queued messages —
+    // they were "send after the reply finishes", and the user just walked away
+    // from that conversation. (Other sessions' entries are untouched.)
+    chat.queuedList = queueDropSession(chat.queuedList, _leavingId);
+    syncQueuedView(chat);
     storeActiveId(null);
     chat.thread = [];
     chat.title = 'New chat';
@@ -1754,11 +1861,14 @@ export const actions = {
     // A turn is already streaming FOR THIS THREAD → queue this message instead of
     // starting a second turn against the same thread. It shows as a pending
     // banner the user can edit (recall) or cancel; when the current turn ends it
-    // auto-sends (see flushQueued in the turn-end paths). A turn streaming in a
-    // DIFFERENT thread must NOT gate this send — that turn keeps running +
-    // recording server-side, and dispatchSend() detaches our reader from it.
+    // auto-sends (see flushQueuedFor in the turn-end paths). Appended to the
+    // session-keyed list, so a second queued message never overwrites the
+    // first. A turn streaming in a DIFFERENT thread must NOT gate this send —
+    // that turn keeps running + recording server-side, and dispatchSend()
+    // detaches our reader from it.
     if (turn && turn.sessionId === chat.activeId) {
-      chat.queued = { text, attachSnap };
+      chat.queuedList = [...(chat.queuedList || []), { sid: chat.activeId, text, attachSnap }];
+      syncQueuedView(chat);
       state.draft = '';
       state.pendingAttach = [];
       runtime.render();
@@ -1767,28 +1877,45 @@ export const actions = {
 
     state.draft = '';
     state.pendingAttach = []; // consumed by this turn
-    await submitFromComposer(text, attachSnap);
+    const ok = await submitFromComposer(text, attachSnap);
+    if (ok === false) {
+      // Session create failed (offline first send in a new chat). The old
+      // behavior silently swallowed the message — no bubble, no error, text
+      // gone. Put the draft back and say why.
+      state.draft = text;
+      state.pendingAttach = attachSnap;
+      toast('Couldn’t start the chat — check your connection and try again.');
+      runtime.render();
+    }
   },
 
-  // Pull a queued message back into the composer to edit/recall it.
+  // Pull the ACTIVE session's first queued message back into the composer to
+  // edit/recall it. Later entries for the session stay queued (the banner
+  // shows the next one).
   queueRecall: () => {
     const state = runtime.state;
     if (!state) return;
     const chat = ensureChat(state);
-    if (!chat.queued) return;
-    state.draft = chat.queued.text || '';
-    state.pendingAttach = chat.queued.attachSnap ? [...chat.queued.attachSnap] : [];
-    chat.queued = null;
+    const { taken, rest } = queueTake(chat.queuedList, chat.activeId);
+    if (!taken) return;
+    chat.queuedList = rest;
+    syncQueuedView(chat);
+    state.draft = taken.text || '';
+    state.pendingAttach = taken.attachSnap ? [...taken.attachSnap] : [];
     runtime.render();
     const ta = document.querySelector('[data-focus="draft"],[data-focus="mdraft"]');
     if (ta) ta.focus();
   },
 
-  // Drop a queued message without sending it.
+  // Drop the active session's first queued message without sending it.
   queueCancel: () => {
     const state = runtime.state;
     if (!state) return;
-    ensureChat(state).queued = null;
+    const chat = ensureChat(state);
+    const { taken, rest } = queueTake(chat.queuedList, chat.activeId);
+    if (!taken) return;
+    chat.queuedList = rest;
+    syncQueuedView(chat);
     runtime.render();
   },
 
@@ -1799,7 +1926,19 @@ export const actions = {
     const sid = runtime.state && ensureChat(runtime.state).activeId;
     stopLive();
     stopElapsed();
-    if (sid) { apiForm(`/api/chat/stop/${sid}`, {}).catch(() => {}); }
+    // Land any text still sitting in the typewriter buffer and stop the
+    // blinking caret — without this the bubble kept `streaming` forever and
+    // the tail of the reply silently vanished with `turn.pending`.
+    flushStreamBuffer();
+    if (turn && turn.asstMsg) turn.asstMsg.streaming = false;
+    if (sid) {
+      apiForm(`/api/chat/stop/${sid}`, {}).catch(() => {
+        // The stop never reached the backend: the run is still going
+        // server-side and the notifier will re-surface it in ~4s. Say so —
+        // an unexplained resurrection looks haunted.
+        toast('Stop didn’t reach the server — the reply may still be running and could reappear.');
+      });
+    }
     if (turn && turn.activity) {
       const a = turn.activity;
       finalizeAll(a);

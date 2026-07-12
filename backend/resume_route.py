@@ -43,10 +43,14 @@ def _session_key_for(session: str) -> str:
 
 
 def _cursor(request: Request, last_event_id: str) -> str | None:
-    """Resolve the resume cursor, preferring the explicit query param but
-    falling back to the `Last-Event-ID` header that EventSource sends
-    automatically on its native (non-app-driven) reconnect."""
-    return (last_event_id or request.headers.get("last-event-id") or "") or None
+    """Resolve the resume cursor. The `Last-Event-ID` HEADER wins when present:
+    EventSource re-requests the SAME URL on its native reconnect (whatever
+    cursor was baked into the query string at first-connect time) but adds a
+    header carrying the id of the last event it actually received — fresher by
+    construction. Preferring the query param here made every SSE blip replay
+    the whole turn since the original attach. The query param remains the
+    first-connect channel (EventSource cannot set request headers)."""
+    return (request.headers.get("last-event-id") or last_event_id or "") or None
 
 
 @router.get("/api/chat/events/resume")

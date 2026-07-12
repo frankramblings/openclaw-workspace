@@ -90,6 +90,34 @@ def test_events_resume_honors_last_event_id_header(client, mapped_session):
     assert [e["data"] for e in r.json()["events"]] == ["data: b\n\n"]
 
 
+def test_cursor_header_beats_stale_query_param(client, mapped_session):
+    """On a native EventSource reconnect the browser re-requests the SAME URL
+    (whatever cursor was baked into it at first connect) but adds a
+    Last-Event-ID header carrying the id of the last event actually received.
+    The header is fresher by construction and MUST win — otherwise every SSE
+    blip replays the whole turn since the original attach."""
+    spa_id, key = mapped_session
+    e1 = event_store.append(key, "data: a\n\n")
+    e2 = event_store.append(key, "data: b\n\n")
+    event_store.append(key, "data: c\n\n")
+
+    r = client.get(
+        f"/api/chat/events/resume?session={spa_id}&last_event_id={e1}",
+        headers={"Last-Event-ID": e2})
+    assert [e["data"] for e in r.json()["events"]] == ["data: c\n\n"]
+
+
+def test_cursor_query_param_still_works_without_header(client, mapped_session):
+    """First connect: EventSource can't set headers, so the query param remains
+    the initial-cursor channel when no header is present."""
+    spa_id, key = mapped_session
+    e1 = event_store.append(key, "data: a\n\n")
+    event_store.append(key, "data: b\n\n")
+
+    r = client.get(f"/api/chat/events/resume?session={spa_id}&last_event_id={e1}")
+    assert [e["data"] for e in r.json()["events"]] == ["data: b\n\n"]
+
+
 def test_stream_subscribe_before_replay_has_no_gap():
     """The live-tail contract: subscribe() must capture events appended AFTER
     subscribing, so the window between backlog replay and going live carries no

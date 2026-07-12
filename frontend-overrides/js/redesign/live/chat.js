@@ -437,6 +437,8 @@ export async function load(state) {
   if (chat.activeId !== activeId) return;
   try {
     const cfg = await apiGet('/api/config');
+    // cwd is workspace-global (not session-scoped) — intentionally written
+    // even if the active session changed during the await.
     if (cfg?.workspace_root) chat.cwd = cfg.workspace_root;
   } catch (_) { /* ignore */ }
   if (chat.activeId !== activeId) return;

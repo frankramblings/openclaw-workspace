@@ -223,10 +223,18 @@ function localDateKey(d = new Date()) {
 }
 let lastDateKey = null;
 
+// visibilitychange→visible and window `focus` both fire on an ordinary
+// resume-from-background; without coalescing, every stale surface reloaded
+// twice (loadedAt only re-stamps on success, so the second handler saw the
+// same staleness). One sweep per second is plenty.
+let lastSweepMs = 0;
+
 function refreshStaleSurfaces() {
   const state = runtime.state;
   if (!state) return;
   const now = Date.now();
+  if (now - lastSweepMs < 1000) return;
+  lastSweepMs = now;
   for (const name of Object.keys(HAS_DATA)) {
     if (shouldRefetch(loadedAt.get(name), now)) reload(name);
   }

@@ -849,6 +849,7 @@ function researchSurface(s) {
   const has = (s.researchQuery || '').trim().length > 0;
   const running = s.research === 'running';
   const done = s.research === 'done';
+  const errored = s.research === 'error';
 
   const ctlPills = RESEARCH_CONTROLS.map((c) => {
     const val = s.resCfg[c.key];
@@ -893,6 +894,13 @@ function researchSurface(s) {
         <div class="row1"><span class="res-done-ico">✓</span><span class="t">Report ready</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:30px" data-act="resetResearch">New research</button></div>
         <p class="res-summary">${s.live?.research?.summary || ''}</p>
         <div class="card-actions"><button class="btn-sm" data-act="resReport" data-arg="${esc(s.live?.research?.lastRid || '')}">↗ Visual Report</button><button class="btn-sm ghost" data-act="resDiscuss" data-arg="${esc(s.live?.research?.lastRid || '')}">Discuss in chat</button><button class="btn-sm ghost" data-act="go" data-arg="library">Save to Library</button></div>
+      </div>`)}
+
+      ${when(errored, `
+      <div class="res-card error" style="border-color:var(--red);background:rgba(240,114,106,.08)">
+        <div class="row1"><span class="res-done-ico" style="color:var(--red)">⚠</span><span class="t">Research failed</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:30px" data-act="resetResearch">Dismiss</button></div>
+        <p class="res-summary">${esc(s.researchError || 'Something went wrong.')}</p>
+        <div class="card-actions"><button class="btn-sm" data-act="startResearch">Retry</button></div>
       </div>`)}
 
       ${s.loadError?.research ? loadErrorBlock('Research') : `

@@ -23,6 +23,34 @@ test('done research card drops the fabricated meta', () => {
   assert.doesNotMatch(html, /3 rounds · 8 sources/);
 });
 
+// ---------------------------------------------------------------------------
+// Task 2.3: an SSE 'error' event must never render as "Report ready" with an
+// empty summary and dead buttons — it renders an honest error card with a
+// Retry that re-runs the same query (startResearch reads state.researchQuery,
+// which is left untouched on error).
+// ---------------------------------------------------------------------------
+test('errored research shows a failure card with the real message, never "Report ready"', () => {
+  const html = renderCenter({
+    ...base, research: 'error', researchError: 'The research run failed.',
+    live: { research: { past: [] } },
+  });
+  assert.match(html, /Research failed/);
+  assert.match(html, /The research run failed\./);
+  assert.match(html, /data-act="startResearch"/);
+  assert.doesNotMatch(html, /Report ready/);
+});
+
+test('errored research card offers Dismiss (resetResearch) back to idle', () => {
+  const html = renderCenter({ ...base, research: 'error', researchError: 'boom' });
+  assert.match(html, /data-act="resetResearch"/);
+});
+
+test('running, done, and error states are mutually exclusive in the markup', () => {
+  const html = renderCenter({ ...base, research: 'error', researchError: 'boom', researchProgress: { label: 'should not show' } });
+  assert.doesNotMatch(html, /should not show/);
+  assert.doesNotMatch(html, /Report ready/);
+});
+
 test('the fake Queue button is gone', () => {
   const html = renderCenter(base);
   assert.doesNotMatch(html, /\+ Queue/);

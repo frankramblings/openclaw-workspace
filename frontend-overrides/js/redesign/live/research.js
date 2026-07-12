@@ -5,8 +5,16 @@
 // Render seams (already in surfaces.js):
 //   state.live.research.past    → [{ q, m, rid }]  (PAST RESEARCH rows)
 //   state.live.research.summary → HTML/text string (the 'done' card summary)
+//   state.live.research.lastRid → set the instant /start returns, so the
+//                                  done/error card's Report/Discuss buttons
+//                                  always have a working rid — even if the run
+//                                  finishes via the SSE 'error' path or the
+//                                  poll fallback below, not just the normal
+//                                  SSE-done path.
 //   state.researchProgress.label → running-panel title
-//   state.research              → 'idle' | 'running' | 'done'
+//   state.research               → 'idle' | 'running' | 'done' | 'error'
+//   state.researchError          → error-card message (set whenever
+//                                   research === 'error')
 //
 // Endpoints:
 //   GET  /api/research/library?limit=20
@@ -14,6 +22,7 @@
 //   POST /api/research/start {query, max_rounds}        → { session_id:rid }
 //   GET  /api/research/stream/{rid}  (SSE via openSSE)
 //        → events {status, phase, round, queries, total_sources, total_findings, title, final, error}
+//   GET  /api/research/status/{rid}                     → { status, progress }
 //   POST /api/research/result-peek/{rid}                → { result:markdown, sources:[...] }
 //   POST /api/research/cancel/{rid}
 //
@@ -26,12 +35,96 @@ import { apiGet, apiJson, openSSE } from './api.js';
 // ---- module-scoped run handle ---------------------------------------------
 let activeRid = null;
 let activeES = null;
+let pollTimer = null;
+let pollStartedAt = 0;
 
 function closeES() {
   if (activeES) {
     try { activeES.close(); } catch (_) {}
     activeES = null;
   }
+}
+
+// ---- poll-decision helper (pure, testable) ---------------------------------
+// The SSE stream can die mid-run without any client-visible signal (browsers
+// silently retry; openSSE's onerror is a no-op — see api.js) while the
+// backend job keeps going, e.g. across a service restart. Rather than try to
+// detect "the stream died", we run a redundant poll of
+// GET /api/research/status/{rid} every POLL_INTERVAL_MS for the whole
+// 'running' duration and let it independently notice a finished/failed job.
+// pollDecision is the pure part — given how long we've been waiting and the
+// freshest known status, decide what the poll loop should do next — so the
+// give-up/keep-going logic is unit-testable without fake timers.
+export const POLL_INTERVAL_MS = 20000;        // fallback poll cadence
+export const POLL_TIMEOUT_MS = 20 * 60 * 1000; // give up honestly after ~20 min
+
+/**
+ * @param {{elapsedMs:number, status?:string, timeoutMs?:number}} args
+ * @returns {'continue'|'done'|'error'|'timeout'}
+ */
+export function pollDecision({ elapsedMs, status, timeoutMs = POLL_TIMEOUT_MS }) {
+  if (status === 'done') return 'done';
+  if (status === 'error' || status === 'cancelled') return 'error';
+  if (elapsedMs >= timeoutMs) return 'timeout';
+  return 'continue';
+}
+
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function startPoll(rid) {
+  stopPoll();
+  pollStartedAt = Date.now();
+  pollTimer = setInterval(() => { pollTick(rid).catch(() => {}); }, POLL_INTERVAL_MS);
+  if (pollTimer && typeof pollTimer.unref === 'function') pollTimer.unref(); // node tests
+}
+
+async function pollTick(rid) {
+  if (activeRid !== rid) { stopPoll(); return; }
+  const state = runtime.state;
+  if (!state || state.research !== 'running') { stopPoll(); return; }
+
+  let status;
+  try {
+    const res = await apiGet(`/api/research/status/${rid}`);
+    status = res?.status;
+  } catch (_) {
+    // Transient fetch failure — keep polling; POLL_TIMEOUT_MS still bounds
+    // the wait even if every poll fails.
+  }
+
+  // Re-check after the await: a concurrent SSE event or a reset may have
+  // already resolved this run.
+  if (activeRid !== rid || !runtime.state || runtime.state.research !== 'running') {
+    stopPoll();
+    return;
+  }
+
+  const decision = pollDecision({ elapsedMs: Date.now() - pollStartedAt, status });
+  if (decision === 'continue') return;
+
+  stopPoll();
+  if (decision === 'done') {
+    finish(rid).catch(() => {});
+  } else if (decision === 'error') {
+    failResearch(rid, 'The research run failed.');
+  } else if (decision === 'timeout') {
+    failResearch(rid, "This is taking longer than expected and we've lost track of the run. Try again.");
+  }
+}
+
+/** Terminal failure path shared by the SSE 'error' event and the poll fallback. */
+function failResearch(rid, message) {
+  const state = runtime.state;
+  closeES();
+  stopPoll();
+  if (activeRid === rid) activeRid = null;
+  if (!state) return;
+  state.research = 'error';
+  state.researchError = message || 'The research run failed.';
+  state.researchProgress = null;
+  runtime.render();
 }
 
 // ---- formatting helpers ----------------------------------------------------
@@ -134,10 +227,17 @@ export const actions = {
 
       activeRid = rid;
       state.research = 'running';
+      state.researchError = null;
       state.researchProgress = { label: 'Researching…' };
+      // Set the instant we have a rid — not just on the normal SSE-done path —
+      // so the done/error card's Report/Discuss buttons work no matter which
+      // path (SSE done, SSE error, poll fallback, poll timeout) ends the run.
+      state.live = state.live || {};
+      state.live.research = { ...(state.live.research || {}), lastRid: rid };
       runtime.render();
 
       closeES();
+      startPoll(rid);
       activeES = openSSE(`/api/research/stream/${rid}`, (ev) => {
         if (!ev) return;
         // Ignore stray events from a stale stream.
@@ -149,11 +249,7 @@ export const actions = {
           return;
         }
         if (ev.error) {
-          // Surface the error label but stop spinning.
-          closeES();
-          state.research = 'done';
-          state.researchProgress = null;
-          runtime.render();
+          failResearch(rid, typeof ev.error === 'string' && ev.error ? ev.error : 'The research run failed.');
           return;
         }
         state.researchProgress = {
@@ -177,8 +273,10 @@ export const actions = {
     const wasRunning = state.research === 'running';
     const rid = activeRid;
     closeES();
+    stopPoll();
     activeRid = null;
     state.research = 'idle';
+    state.researchError = null;
     state.researchProgress = null;
     runtime.render();
     if (wasRunning && rid) {
@@ -216,9 +314,11 @@ export const actions = {
 async function finish(rid) {
   const state = runtime.state;
   closeES();
+  stopPoll();
   if (activeRid === rid) activeRid = null;
   if (!state) return;
   state.research = 'done';
+  state.researchError = null;
   runtime.render();
 
   try {

@@ -1,8 +1,17 @@
+import { runtime } from './redesign/live/runtime.js';
+
 // Widget/Shortcut deep links: ?action=new|photo|voice|inbox|search is
 // dispatched once at boot to the existing composer/inbox controls, then
 // stripped from the URL. Pure mapping (planForAction) is unit-tested;
 // applyPlan is the thin DOM shell.
 // Spec: docs/superpowers/specs/2026-06-13-ios-homescreen-widgets-design.md
+//
+// runtime.actions: app.js sets `runtime.actions = actions` at boot and
+// live/index.js Object.assign()s each live module's actions (chat.js's
+// convSearch among them) into that SAME object once its dynamic import
+// resolves. That's the only way this standalone module can observe "has the
+// live search action merged in yet?" without a direct reference to app.js's
+// (unexported) `actions` closure — see applyPlan's runSearch branch.
 //
 // Redesign-native, not classic-DOM: inbox/photo/search drive the redesign
 // shell (location.hash routing, [data-upload], [data-model="convFilter"] +
@@ -17,16 +26,20 @@
 // the strip and only cleared once applyPlan finishes, so the post-reload boot
 // replays an unconsumed action instead of silently eating it.
 
-export const ACTION_PLANS = {
-  new:   { newChat: true,  focus: 'input', openAttach: false, openInbox: false },
-  photo: { newChat: true,  focus: 'none',  openAttach: true,  openInbox: false },
+// Frozen (table + every entry): nothing legitimately mutates a plan in place —
+// initDeepLinks always copies (`{ ...plan }`) before attaching per-request
+// fields (see below) — so a stray direct write is a bug, and freezing turns
+// it into a loud throw instead of silent cross-request state leakage.
+export const ACTION_PLANS = Object.freeze({
+  new:   Object.freeze({ newChat: true,  focus: 'input', openAttach: false, openInbox: false }),
+  photo: Object.freeze({ newChat: true,  focus: 'none',  openAttach: true,  openInbox: false }),
   // voice: like attach, mic capture can't be auto-started without a user gesture,
   // so this intentionally just lands the user in a fresh chat (empty composer →
   // the mic button is showing) — one tap records. Not incomplete wiring.
-  voice: { newChat: true,  focus: 'none',  openAttach: false, openInbox: false },
-  inbox: { newChat: false, focus: 'none',  openAttach: false, openInbox: true  },
-  search:{ newChat: false, focus: 'none',  openAttach: false, openInbox: false, runSearch: true },
-};
+  voice: Object.freeze({ newChat: true,  focus: 'none',  openAttach: false, openInbox: false }),
+  inbox: Object.freeze({ newChat: false, focus: 'none',  openAttach: false, openInbox: true  }),
+  search:Object.freeze({ newChat: false, focus: 'none',  openAttach: false, openInbox: false, runSearch: true }),
+});
 
 // Pure: map an action string to its plan, or null if unrecognized.
 export function planForAction(action) {
@@ -71,6 +84,32 @@ function _readPending() {
 // (see the big comment above applyPlan).
 function _isMobileLayout() {
   try { return window.matchMedia('(max-width: 768px)').matches; } catch (_) { return false; }
+}
+
+// Pure: decide what a single search-dispatch poll tick should do, given the
+// live `runtime.actions` object (null/undefined until app.js's boot line
+// runs) and how many ticks have elapsed against the budget. 'ready' once
+// convSearch has merged in (checked first — a merge landing on the very last
+// tick still counts as ready, not give-up), 'give-up' once the attempt
+// budget is exhausted without it, 'retry' otherwise.
+export function searchDispatchPlan(actionsObj, attempt, maxAttempts) {
+  if (actionsObj && typeof actionsObj.convSearch === 'function') return 'ready';
+  if (attempt >= maxAttempts) return 'give-up';
+  return 'retry';
+}
+
+// Pure: `searchString` is a location.search-shaped string (leading '?'
+// optional — URLSearchParams tolerates either). Returns it with the
+// deep-link params (action/q/autosend) removed and every other param
+// preserved, in the same '?k=v&...'-or-'' shape location.search itself uses
+// — so callers can splice it straight back into pathname+hash.
+export function cleanedSearch(searchString) {
+  const params = new URLSearchParams(searchString || '');
+  params.delete('action');
+  params.delete('q');
+  params.delete('autosend');
+  const qs = params.toString();
+  return qs ? '?' + qs : '';
 }
 
 // Poll for a selector (e.g. the composer/attach controls, injected late by
@@ -122,28 +161,62 @@ export async function applyPlan(plan) {
         // markup is always in the DOM (off-screen + inert) but that's not
         // enough. Open it the same way a tap on the header's "Chats" button
         // would (data-act="openConvSheet"), then fall through to fill it.
+        //
+        // That opener only exists in the CHAT header markup (mobile/
+        // mobile-surfaces.js's mChat()) — if the deep link landed on another
+        // mobile surface (e.g. a prior session left #inbox in the URL),
+        // there's nothing to click yet. Route to chat first, the same single
+        // hash assignment openInbox above uses (SURFACES routing covers both
+        // shells with no DOM to wait for); the _waitFor poll below is the
+        // "wait a beat" for the header to actually render off that hashchange.
+        const hashSurface = (() => { try { return (window.location.hash || '').replace('#', ''); } catch (_) { return ''; } })();
+        if (hashSurface && hashSurface !== 'chat') {
+          try { window.location.hash = '#chat'; } catch (_) {}
+        }
         const opener = await _waitFor('[data-act="openConvSheet"]');
         if (opener) { try { opener.click(); } catch (_) {} }
       }
-      const input = await _waitFor('input[data-model="convFilter"]');
+      let input = await _waitFor('input[data-model="convFilter"]');
       if (input) {
         input.value = plan.searchQuery || '';
         input.focus();
         input.dispatchEvent(new Event('input', { bubbles: true }));
-        // Desktop mainly: the live semantic-search action (actions.convSearch)
-        // is merged into app.js's action map asynchronously — live/index.js
-        // dynamic-import()s chat.js and Object.assign()s its actions in,
-        // which is at least one microtask after boot even when cached. If our
-        // dispatch above landed before that merge, only the local title
-        // filter ran (the redesign's data-model input handler always syncs
-        // state, but only calls actions.convSearch when it exists). deeplink.js
-        // is a standalone module with no reference to app.js's `actions`
-        // object (not exported, nothing put on window) to poll directly, so
-        // settle briefly and re-dispatch once — a harmless no-op if the first
-        // dispatch already reached convSearch (it dedupes concurrent
-        // searches via its own sequence counter).
-        await new Promise((r) => setTimeout(r, 350));
-        try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+        // The live semantic-search action (actions.convSearch, from
+        // live/chat.js) merges into app.js's action map asynchronously —
+        // live/index.js dynamic-import()s chat.js and Object.assign()s its
+        // actions into the SAME object app.js exposed as runtime.actions,
+        // which lands at least one microtask after boot (more on a cold
+        // cache). Worse on desktop specifically: convFilter isn't in the
+        // data-model input handler's render-skip list, so the dispatch
+        // above just triggered a SYNCHRONOUS render() that rebuilds
+        // root.innerHTML wholesale — the `input` node captured above is
+        // ALREADY DETACHED by the time this line runs. A blind re-dispatch
+        // on that stale node (the previous fixed 350ms-timer approach) is
+        // dead code: the listener still fires, but on a node the live DOM
+        // has abandoned, so nothing downstream observes it — search
+        // silently degrades to the instant local title filter with no sign
+        // anything went wrong. Poll runtime.actions (app.js sets
+        // runtime.actions = actions at boot; the Object.assign above
+        // mutates that same object in place) and only re-dispatch once
+        // convSearch is actually there, against a FRESH node re-queried at
+        // dispatch time — same stale-node discipline newChat/autosend below
+        // already use. Bounded generously (~5s) since a cold dynamic import
+        // can be slow; give up honestly with one last fresh-node dispatch
+        // so the title filter (which the input handler always runs
+        // regardless of the merge) still reflects the query.
+        const maxAttempts = 40; // ~5s at 125ms
+        for (let attempt = 0; ; attempt++) {
+          const decision = searchDispatchPlan(runtime.actions, attempt, maxAttempts);
+          if (decision === 'retry') {
+            await new Promise((r) => setTimeout(r, 125));
+            continue;
+          }
+          // 'ready' (convSearch merged) or 'give-up' (timed out — honest
+          // title-filter-only fallback): either way, re-query fresh and fire.
+          input = document.querySelector('input[data-model="convFilter"]');
+          if (input) { try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {} }
+          break;
+        }
       }
       return;
     }
@@ -264,12 +337,10 @@ export function initDeepLinks() {
   if (action) {
     // Strip action + its payload params (even unrecognized ones) so a refresh
     // doesn't replay via URL — the stash owns replay now, freshness-bounded.
+    // cleanedSearch is the pure (unit-tested) half of this; other params
+    // (e.g. a real query string a bookmarklet added) survive the strip.
     try {
-      params.delete('action');
-      params.delete('q');
-      params.delete('autosend');
-      const qs = params.toString();
-      const clean = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+      const clean = window.location.pathname + cleanedSearch(window.location.search) + window.location.hash;
       window.history.replaceState(null, '', clean);
     } catch (_) { /* ignore */ }
   }

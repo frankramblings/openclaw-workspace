@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { planForAction, serializePending, parsePending, ACTION_PLANS } from '../deeplink.js';
+import {
+  planForAction, serializePending, parsePending, ACTION_PLANS,
+  cleanedSearch, searchDispatchPlan,
+} from '../deeplink.js';
 
 // ---- planForAction ----------------------------------------------------
 
@@ -45,6 +48,18 @@ test('planForAction: copy-then-mutate pattern (as used by initDeepLinks) never t
     assert.equal(ACTION_PLANS[action].searchQuery, undefined);
     assert.equal(ACTION_PLANS[action].autosend, undefined);
   }
+});
+
+// ACTION_PLANS and each plan entry are frozen — nothing (planForAction's
+// caller included) has a legitimate reason to mutate the shared table;
+// initDeepLinks always copies first (see the test above).
+test('planForAction: ACTION_PLANS and its entries are frozen', () => {
+  assert.equal(Object.isFrozen(ACTION_PLANS), true);
+  for (const action of Object.keys(ACTION_PLANS)) {
+    assert.equal(Object.isFrozen(ACTION_PLANS[action]), true, `${action} plan is not frozen`);
+  }
+  assert.throws(() => { ACTION_PLANS.new.newChat = false; });
+  assert.throws(() => { ACTION_PLANS.bogus = { newChat: true }; });
 });
 
 test('planForAction: case-insensitive lookup', () => {
@@ -94,4 +109,51 @@ test('pending: garbage input → null, never throws', () => {
   assert.equal(parsePending(JSON.stringify({ ts: NOW }), NOW), null);          // no plan
   assert.equal(parsePending(JSON.stringify({ plan: { newChat: true } }), NOW), null); // no ts
   assert.equal(parsePending(JSON.stringify({ plan: 'x', ts: NOW }), NOW), null);      // plan not object
+});
+
+// ---- cleanedSearch (URL param stripping) -------------------------------
+
+test('cleanedSearch: strips action/q/autosend, preserves other params', () => {
+  assert.equal(cleanedSearch('?action=search&q=cats&autosend=1&extra=2'), '?extra=2');
+});
+
+test('cleanedSearch: works without a leading "?"', () => {
+  assert.equal(cleanedSearch('action=new&q=hi'), '');
+});
+
+test('cleanedSearch: nothing to strip leaves other params untouched', () => {
+  assert.equal(cleanedSearch('?foo=1&bar=2'), '?foo=1&bar=2');
+});
+
+test('cleanedSearch: empty/no params → empty string', () => {
+  assert.equal(cleanedSearch(''), '');
+  assert.equal(cleanedSearch('?'), '');
+});
+
+test('cleanedSearch: only deep-link params → empty string (no trailing "?")', () => {
+  assert.equal(cleanedSearch('?action=inbox'), '');
+});
+
+// ---- searchDispatchPlan (desktop convSearch merge poll) ----------------
+
+test('searchDispatchPlan: convSearch already merged in → ready', () => {
+  assert.equal(searchDispatchPlan({ convSearch: () => {} }, 0, 40), 'ready');
+});
+
+test('searchDispatchPlan: no actions object yet, budget remains → retry', () => {
+  assert.equal(searchDispatchPlan(null, 0, 40), 'retry');
+  assert.equal(searchDispatchPlan(undefined, 5, 40), 'retry');
+});
+
+test('searchDispatchPlan: actions present but convSearch not merged yet → retry', () => {
+  assert.equal(searchDispatchPlan({ newChat: () => {} }, 10, 40), 'retry');
+});
+
+test('searchDispatchPlan: budget exhausted without convSearch → give-up', () => {
+  assert.equal(searchDispatchPlan(null, 40, 40), 'give-up');
+  assert.equal(searchDispatchPlan({}, 41, 40), 'give-up');
+});
+
+test('searchDispatchPlan: ready takes priority even at the budget edge', () => {
+  assert.equal(searchDispatchPlan({ convSearch: () => {} }, 40, 40), 'ready');
 });

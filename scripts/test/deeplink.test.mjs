@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { planForAction, ACTION_PLANS } from '../../frontend-overrides/js/deeplink.js';
+import { planForAction, ACTION_PLANS, cleanedSearch, searchDispatchPlan } from '../../frontend-overrides/js/deeplink.js';
 
 assert.equal(planForAction('new').newChat, true);
 assert.equal(planForAction('new').focus, 'input');
@@ -32,4 +32,27 @@ for (const action of ['new', 'photo', 'voice', 'search']) {
   assert.equal(ACTION_PLANS[action].prefill, undefined, `${action}: prefill leaked onto ACTION_PLANS`);
 }
 
+// ACTION_PLANS and each plan entry are frozen — initDeepLinks copies before
+// mutating (above); nothing else has a legitimate reason to write to them.
+assert.equal(Object.isFrozen(ACTION_PLANS), true);
+for (const action of Object.keys(ACTION_PLANS)) {
+  assert.equal(Object.isFrozen(ACTION_PLANS[action]), true, `${action} plan is not frozen`);
+}
+assert.throws(() => { ACTION_PLANS.new.newChat = false; });
+
+// cleanedSearch: pure param-stripping helper backing initDeepLinks' URL cleanup.
+assert.equal(cleanedSearch('?action=search&q=cats&autosend=1&extra=2'), '?extra=2');
+assert.equal(cleanedSearch('action=new&q=hi'), '');
+assert.equal(cleanedSearch('?foo=1&bar=2'), '?foo=1&bar=2');
+assert.equal(cleanedSearch(''), '');
+assert.equal(cleanedSearch('?action=inbox'), '');
+
+// searchDispatchPlan: pure poll-decision backing the desktop convSearch merge wait.
+assert.equal(searchDispatchPlan({ convSearch: () => {} }, 0, 40), 'ready');
+assert.equal(searchDispatchPlan(null, 0, 40), 'retry');
+assert.equal(searchDispatchPlan({ newChat: () => {} }, 10, 40), 'retry');
+assert.equal(searchDispatchPlan(null, 40, 40), 'give-up');
+assert.equal(searchDispatchPlan({ convSearch: () => {} }, 40, 40), 'ready');
+
 console.log('deeplink planForAction: 24 assertions OK');
+console.log('deeplink cleanedSearch/searchDispatchPlan/frozen-plans: 15 assertions OK');

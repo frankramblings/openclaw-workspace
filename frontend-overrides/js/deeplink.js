@@ -33,10 +33,9 @@ import { runtime } from './redesign/live/runtime.js';
 export const ACTION_PLANS = Object.freeze({
   new:   Object.freeze({ newChat: true,  focus: 'input', openAttach: false, openInbox: false }),
   photo: Object.freeze({ newChat: true,  focus: 'none',  openAttach: true,  openInbox: false }),
-  // voice: like attach, mic capture can't be auto-started without a user gesture,
-  // so this intentionally just lands the user in a fresh chat (empty composer →
-  // the mic button is showing) — one tap records. Not incomplete wiring.
-  voice: Object.freeze({ newChat: true,  focus: 'none',  openAttach: false, openInbox: false }),
+  // voice: neither shell has a mic/recorder — there's no capture gesture to
+  // land on. Same plan as `new`: a fresh, focused chat ready to type into.
+  voice: Object.freeze({ newChat: true,  focus: 'input', openAttach: false, openInbox: false }),
   inbox: Object.freeze({ newChat: false, focus: 'none',  openAttach: false, openInbox: true  }),
   search:Object.freeze({ newChat: false, focus: 'none',  openAttach: false, openInbox: false, runSearch: true }),
 });

@@ -8,6 +8,10 @@ assert.equal(planForAction('photo').openAttach, true);
 assert.equal(planForAction('photo').focus, 'none');
 assert.equal(planForAction('voice').newChat, true);
 assert.equal(planForAction('voice').openAttach, false);
+// Task 3.3: no mic capture exists on either shell, so `voice` now lands the
+// same as a plain new-chat-and-focus (like `new`) instead of a bare "open a
+// fresh composer, mic button is showing" plan with no gesture to trigger it.
+assert.equal(planForAction('voice').focus, 'input');
 assert.equal(planForAction('inbox').openInbox, true);
 assert.equal(planForAction('inbox').newChat, false);
 assert.equal(planForAction('search').runSearch, true);
@@ -54,5 +58,5 @@ assert.equal(searchDispatchPlan({ newChat: () => {} }, 10, 40), 'retry');
 assert.equal(searchDispatchPlan(null, 40, 40), 'give-up');
 assert.equal(searchDispatchPlan({ convSearch: () => {} }, 40, 40), 'ready');
 
-console.log('deeplink planForAction: 24 assertions OK');
+console.log('deeplink planForAction: 25 assertions OK');
 console.log('deeplink cleanedSearch/searchDispatchPlan/frozen-plans: 15 assertions OK');

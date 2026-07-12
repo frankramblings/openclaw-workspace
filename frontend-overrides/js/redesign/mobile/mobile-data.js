@@ -27,17 +27,72 @@ export const CAPTURE_TYPES = [
   { id: 'note', glyph: '✎', label: 'Note' },
   { id: 'research', glyph: '⌕', label: 'Research' },
 ];
-// live NL parse preview keyed by capture type (mirrors Calendar quick-add)
-export const CAPTURE_PARSE = {
-  remind: 'Reminder · Fri 9:00 AM',
-  task: 'Task · no due date',
-  note: 'Note · notes/quick.md',
-  research: 'Research · queued',
-};
-export const RECENT_CAPTURES = [
-  { glyph: '✓', color: 'var(--green)', text: "Book Sea Dogs tickets for Father's Day", type: 'Task' },
-  { glyph: '⌕', color: 'var(--violet)', text: 'Compare podcast hosting platforms', type: 'Research' },
-];
+// ---- quick-capture recents (real, localStorage-backed) --------------------
+// Task 3.6 (honesty): the sheet used to ship a hardcoded "RECENT CAPTURES"
+// list (two mock rows, unchanging) AND a live-looking "Gary parsed: ..."
+// preview keyed only off captureType (CAPTURE_PARSE, removed) — neither
+// reflected anything the user actually typed or sent. Worse for the preview:
+// captureDraft is in app.js's PLAIN_SHEET_FIELDS render-skip set (the sheet
+// input handler skips the full re-render so typing doesn't fight the
+// textarea's own cursor/IME state), so a "parsed" line keyed off captureDraft
+// would visibly NOT update per keystroke — a second, more obvious lie on top
+// of the first. Dropped outright rather than fixed: no speculative preview at
+// all.
+//
+// Real recents: the last RECENTS_MAX actual captures (text + chosen type +
+// timestamp), written on a SUCCESSFUL sendCapture (mobile-app.js) and read
+// back when the sheet opens. Storage functions take `storage` as a plain
+// param (same pattern as chat-strip.js's readCollapsed/toggleCollapsed) so
+// they're testable without a real localStorage, and never throw.
+const RECENTS_KEY = 'gary.recentCaptures';
+const RECENTS_MAX = 5;
+
+// Pure: prepend `entry` and cap at RECENTS_MAX. The only impure bits below
+// (readRecentCaptures/writeRecentCaptures) are thin storage wrappers around
+// this.
+export function pushRecentCapture(list, entry) {
+  return [entry, ...(Array.isArray(list) ? list : [])].slice(0, RECENTS_MAX);
+}
+
+export function readRecentCaptures(storage) {
+  try {
+    if (!storage) return [];
+    const raw = storage.getItem(RECENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) { return []; }
+}
+
+export function writeRecentCaptures(storage, list) {
+  try { if (storage) storage.setItem(RECENTS_KEY, JSON.stringify(list)); } catch (_) {}
+}
+
+// Record one successful capture and return the updated (already-persisted)
+// list, so the caller can render immediately without a second storage round
+// trip.
+export function recordCapture(storage, { text, type, ts } = {}) {
+  const list = pushRecentCapture(readRecentCaptures(storage), {
+    text: String(text || ''), type: String(type || ''), ts: ts || Date.now(),
+  });
+  writeRecentCaptures(storage, list);
+  return list;
+}
+
+// Pure: epoch-ms timestamp → short relative label ("now"/"5m"/"2h"/"3d").
+// `nowMs` is a real param (not an internal Date.now()) so it's deterministic
+// under test — mirrors live/inbox-logic.js's ageLabel, but that takes
+// pre-computed hours; this takes raw timestamps since that's what a capture
+// record stores.
+export function captureAgeLabel(ts, nowMs) {
+  const now = typeof nowMs === 'number' ? nowMs : Date.now();
+  const diffMin = Math.max(0, Math.round((now - (ts || 0)) / 60000));
+  if (diffMin < 1) return 'now';
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffH = Math.round(diffMin / 60);
+  if (diffH < 24) return `${diffH}h`;
+  return `${Math.round(diffH / 24)}d`;
+}
 
 // ---- More hub -------------------------------------------------------------
 // id maps to the desktop surface key where one exists (calendar/research/…/settings)

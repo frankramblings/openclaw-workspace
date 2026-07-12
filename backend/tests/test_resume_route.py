@@ -107,6 +107,34 @@ def test_cursor_header_beats_stale_query_param(client, mapped_session):
     assert [e["data"] for e in r.json()["events"]] == ["data: c\n\n"]
 
 
+def test_cursor_non_numeric_header_falls_back_to_query_param(client, mapped_session):
+    """Event ids are decimal seqs (event_store). A malformed Last-Event-ID
+    header (proxy junk, an extension, a spoofed value) must NOT be taken as
+    the cursor: event_store.since() treats an unparseable cursor as "replay
+    everything", so a garbage header used to override a perfectly valid query
+    param and re-send the whole ring buffer. Ignore it; fall through."""
+    spa_id, key = mapped_session
+    e1 = event_store.append(key, "data: a\n\n")
+    event_store.append(key, "data: b\n\n")
+
+    r = client.get(
+        f"/api/chat/events/resume?session={spa_id}&last_event_id={e1}",
+        headers={"Last-Event-ID": "not-a-seq!"})
+    assert [e["data"] for e in r.json()["events"]] == ["data: b\n\n"]
+
+
+def test_cursor_non_numeric_header_alone_means_no_cursor(client, mapped_session):
+    """Garbage header and no query param → same as no cursor at all (full
+    backlog), not an error."""
+    spa_id, key = mapped_session
+    event_store.append(key, "data: a\n\n")
+    event_store.append(key, "data: b\n\n")
+
+    r = client.get(f"/api/chat/events/resume?session={spa_id}",
+                   headers={"Last-Event-ID": "None"})
+    assert [e["data"] for e in r.json()["events"]] == ["data: a\n\n", "data: b\n\n"]
+
+
 def test_cursor_query_param_still_works_without_header(client, mapped_session):
     """First connect: EventSource can't set headers, so the query param remains
     the initial-cursor channel when no header is present."""

@@ -43,14 +43,24 @@ def _session_key_for(session: str) -> str:
 
 
 def _cursor(request: Request, last_event_id: str) -> str | None:
-    """Resolve the resume cursor. The `Last-Event-ID` HEADER wins when present:
-    EventSource re-requests the SAME URL on its native reconnect (whatever
-    cursor was baked into the query string at first-connect time) but adds a
-    header carrying the id of the last event it actually received — fresher by
-    construction. Preferring the query param here made every SSE blip replay
-    the whole turn since the original attach. The query param remains the
-    first-connect channel (EventSource cannot set request headers)."""
-    return (request.headers.get("last-event-id") or last_event_id or "") or None
+    """Resolve the resume cursor. The `Last-Event-ID` HEADER wins when present
+    AND well-formed: EventSource re-requests the SAME URL on its native
+    reconnect (whatever cursor was baked into the query string at
+    first-connect time) but adds a header carrying the id of the last event it
+    actually received — fresher by construction. Preferring the query param
+    here made every SSE blip replay the whole turn since the original attach.
+    The query param remains the first-connect channel (EventSource cannot set
+    request headers).
+
+    Event ids are decimal seqs (event_store), so a non-numeric header (proxy
+    junk, an extension, a spoofed value) is IGNORED rather than forwarded:
+    event_store.since() treats an unparseable cursor as "no cursor", so a
+    garbage header would otherwise override a valid query-param cursor and
+    replay the session's whole ring buffer."""
+    header = (request.headers.get("last-event-id") or "").strip()
+    if not header.isdigit():
+        header = ""
+    return (header or last_event_id or "") or None
 
 
 @router.get("/api/chat/events/resume")

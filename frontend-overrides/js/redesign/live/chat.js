@@ -808,7 +808,22 @@ async function createSession(model) {
 function stopLive() {
   if (streamCtrl) { try { streamCtrl.abort(); } catch (_) {} streamCtrl = null; }
   if (liveES) { try { liveES.close(); } catch (_) {} liveES = null; }
+  // Detaching mid-typewriter leaves the rAF pump scheduled against the old
+  // turn — cancel it so it can't paint one more frame after the turn is
+  // superseded or torn down.
+  if (turn && turn.pumpRAF) {
+    try { cancelAnimationFrame(turn.pumpRAF); } catch (_) { /* no rAF host */ }
+    turn.pumpRAF = 0;
+  }
 }
+
+// The last bubble a Stop finalized: {sessionId, msgId}. If the stop-POST
+// never landed server-side (or raced the run), the notifier re-attaches
+// ~4s later and attachTurn replays the turn from its start — it consults
+// this record and removes the stopped bubble so the rebuilt turn doesn't
+// render next to a duplicate of itself. One-shot: consumed by attachTurn,
+// refreshed by the next stopRun, invalidated by a fresh turn for the session.
+let lastStopped = null;
 
 // Build a fresh per-turn reducer bound to `chat`. Returns { onEvent,
 // ensureActivity }. `onEvent` is fed the same {delta|type|...} objects whether
@@ -822,6 +837,11 @@ function beginTurn(chat, modelLabel, sessionId) {
   // superseded (see _turnEpoch above).
   const epoch = ++_turnEpoch;
   turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: 'live-' + Date.now(), lastFrameMs: Date.now(), got404: false };
+  // A fresh turn for this session supersedes any stop-dedupe record: the
+  // stopped bubble now belongs to an OLDER, finished exchange and must stay.
+  // (attachTurn consumes the record BEFORE calling beginTurn, so the failed-
+  // stop re-attach path is unaffected.)
+  if (lastStopped && lastStopped.sessionId === turn.sessionId) lastStopped = null;
 
   const ensureAsst = () => {
     if (!turn.asstMsg) {
@@ -930,12 +950,19 @@ function beginTurn(chat, modelLabel, sessionId) {
         : 'The connection dropped before a response arrived. Try again.';
       stopElapsed();
       flushRender();
+      const errSid = turn.sessionId;   // capture before teardown
       setLiveTurn(null);
       turn = null;
       // A turn that errored leaves the queued message intact — recall it to the
       // composer so the user doesn't lose it (rather than auto-firing into a
-      // possibly-broken session).
-      if (chat.queued) { actions.queueRecall(); }
+      // possibly-broken session). Keyed to the ERRORING turn's session, not the
+      // active view: a background thread's error must never clobber the draft
+      // (or steal the queued entry) of whatever thread is on screen. When the
+      // erroring session isn't the one being viewed, its entry simply stays in
+      // the session-keyed queue for its own thread.
+      if (errSid && errSid === chat.activeId && queueHead(chat.queuedList, errSid)) {
+        actions.queueRecall();
+      }
       return;
     }
 
@@ -1151,7 +1178,7 @@ async function submitFromComposer(text, attachSnap) {
 // predicate flips false (the Edit button disappears) the instant this runs.
 // Exported (Task 3.5) so mobile edit-flow.js's Cancel can re-arm a real
 // network flush via its injectable `io` hook.
-export function flushPending(sessionId) {
+export function flushPending(sessionId, opts) {
   const state = runtime.state;
   if (!state) return;
   const chat = ensureChat(state);
@@ -1160,14 +1187,23 @@ export function flushPending(sessionId) {
   if (p.timerId) clearTimeout(p.timerId);
   chat.pendingSend = null;
   const sid = sessionId || p.sessionId;
-  // Busy gate: a turn is already live for this thread (e.g. the PREVIOUS send
-  // flushed at the top of this same buffer window). Firing a second POST now
-  // would be rejected server-side (busy_stream) — after fireSend had already
-  // aborted the live turn's reader, wrecking both turns. Divert to the
-  // session queue instead: the optimistic bubble comes out of the thread (the
-  // queued banner represents it now) and it auto-sends when the live turn
-  // finishes (flushQueuedFor).
-  if (turn && turn.sessionId === sid) {
+  // Divert to the session-keyed queue instead of firing when either:
+  //  - Busy gate: a turn is already live for this thread (e.g. the PREVIOUS
+  //    send flushed at the top of this same buffer window). Firing a second
+  //    POST now would be rejected server-side (busy_stream) — after fireSend
+  //    had already aborted the live turn's reader, wrecking both turns.
+  //  - View gate: the user switched threads inside the buffer window.
+  //    fireSend → beginTurn binds the assistant bubble to the CURRENT chat
+  //    view, so firing now would stream the reply into whatever thread is on
+  //    screen. (pagehide bypasses this gate: the page is tearing down — no
+  //    view left to corrupt, and the in-memory queue dies with it — so the
+  //    POST still goes out at its own session and the server records the
+  //    turn.)
+  // Either way, the optimistic bubble comes out of the thread (the queued
+  // banner represents it now) and the message auto-sends via flushQueuedFor
+  // the next time its own thread is active and idle.
+  if ((turn && turn.sessionId === sid)
+      || (sid !== chat.activeId && !(opts && opts.pagehide))) {
     const idx = (chat.thread || []).findIndex((m) => m.id === p.messageId);
     if (idx >= 0) chat.thread.splice(idx, 1);
     chat.queuedList = [...(chat.queuedList || []), { sid, text: p.text, attachSnap: p.attachSnap }];
@@ -1193,7 +1229,7 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
   window.addEventListener('pagehide', () => {
     const state = runtime.state;
     const chat = state && state.live && state.live.chat;
-    if (chat && chat.pendingSend) flushPending(chat.pendingSend.sessionId);
+    if (chat && chat.pendingSend) flushPending(chat.pendingSend.sessionId, { pagehide: true });
   });
 }
 
@@ -1233,6 +1269,7 @@ function parseStoredSSE(raw) {
 // bubble instead of pretending it finished.
 function finalizeLocal(chat, interrupted) {
   stopLive();
+  const sid = turn ? turn.sessionId : null;   // capture before teardown
   const a = turn && turn.activity;
   if (a) {
     finalizeAll(a);
@@ -1258,7 +1295,12 @@ function finalizeLocal(chat, interrupted) {
   // flushQueuedFor lives in reconcileTurn, AFTER its thread refetch settles —
   // flushing here would race dispatchSend's optimistic bubbles against the
   // refetch's chat.thread reassignment and leave the auto-sent turn invisible.)
-  if (interrupted && chat.queued) { actions.queueRecall(); }
+  // Keyed to the INTERRUPTED turn's session, same as the error handler: only
+  // touch the draft when that session is the one on screen; otherwise its
+  // entry stays queued for its own thread.
+  if (interrupted && sid && sid === chat.activeId && queueHead(chat.queuedList, sid)) {
+    actions.queueRecall();
+  }
 }
 
 // THE single authority for "is this turn alive?". Every caller that used to
@@ -1344,6 +1386,20 @@ async function attachTurn(chat, state, sessionId, snap) {
     for (const [tid, m] of _pendingByTurnId) {
       if (m === turn.asstMsg) _pendingByTurnId.delete(tid);
     }
+  }
+  // Stop-then-failed-POST dedupe: stopRun tears the local turn down
+  // (turn = null) but leaves its finalized bubble in the thread. If the stop
+  // never landed server-side, the notifier re-attaches ~4s later and the
+  // replay below rebuilds the SAME turn from its start — remove the stopped
+  // bubble (and its pending-token bindings) so the rebuilt one doesn't render
+  // as a duplicate. One-shot: consumed here, refreshed by the next stopRun.
+  if (lastStopped && lastStopped.sessionId === sessionId) {
+    const i = (chat.thread || []).findIndex((m) => m && m.id === lastStopped.msgId);
+    if (i >= 0) chat.thread.splice(i, 1);
+    for (const [tid, m] of _pendingByTurnId) {
+      if (m && m.id === lastStopped.msgId) _pendingByTurnId.delete(tid);
+    }
+    lastStopped = null;
   }
   const { onEvent, ensureActivity } = beginTurn(chat, chat.model, sessionId);
   ensureActivity();            // immediate "Working…" while we rebuild + tail
@@ -1925,7 +1981,11 @@ export const actions = {
     // Detach this client's reader AND abort the run server-side. With the
     // detached recorder, aborting the reader alone no longer stops the gateway
     // run — Stop must explicitly POST /api/chat/stop/{id} (chat.abort).
-    const sid = runtime.state && ensureChat(runtime.state).activeId;
+    // The TURN's own session, not chat.activeId: in the send-then-switch
+    // window the two differ, and the stop must land on the thread that is
+    // actually running — not kill an innocent turn in the viewed thread.
+    const chat = runtime.state ? ensureChat(runtime.state) : null;
+    const sid = turn ? turn.sessionId : null;
     stopLive();
     stopElapsed();
     // Land any text still sitting in the typewriter buffer and stop the
@@ -1933,6 +1993,11 @@ export const actions = {
     // the tail of the reply silently vanished with `turn.pending`.
     flushStreamBuffer();
     if (turn && turn.asstMsg) turn.asstMsg.streaming = false;
+    // Remember which bubble this Stop finalized, so a failed stop-POST's
+    // notifier re-attach resumes INTO this record's slot (attachTurn removes
+    // the stopped bubble before its replay) instead of minting a duplicate.
+    lastStopped = (turn && turn.asstMsg && sid)
+      ? { sessionId: sid, msgId: turn.asstMsg.id } : null;
     if (sid) {
       apiForm(`/api/chat/stop/${sid}`, {}).catch(() => {
         // The stop never reached the backend: the run is still going
@@ -1950,8 +2015,13 @@ export const actions = {
     }
     turn = null;
     // Stop is a deliberate halt — don't auto-fire a queued follow-up. Hand it
-    // back to the composer so the user decides whether to send it.
-    if (runtime.state && ensureChat(runtime.state).queued) { actions.queueRecall(); }
+    // back to the composer so the user decides whether to send it. Keyed to
+    // the STOPPED turn's session: when the user is viewing another thread,
+    // leave that thread's draft and queue alone (the stopped session's entry
+    // stays queued for its own thread).
+    if (chat && sid && sid === chat.activeId && queueHead(chat.queuedList, sid)) {
+      actions.queueRecall();
+    }
     runtime.render();
   },
 

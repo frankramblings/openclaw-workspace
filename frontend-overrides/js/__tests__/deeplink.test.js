@@ -16,6 +16,37 @@ test('planForAction: search → runSearch without a new chat', () => {
   assert.equal(plan.newChat, false);
 });
 
+test('planForAction: photo → fresh chat, unfocused, attach requested', () => {
+  const plan = planForAction('photo');
+  assert.equal(plan.newChat, true);
+  assert.equal(plan.focus, 'none');
+  assert.equal(plan.openAttach, true);
+});
+
+test('planForAction: inbox → openInbox without a new chat', () => {
+  const plan = planForAction('inbox');
+  assert.equal(plan.openInbox, true);
+  assert.equal(plan.newChat, false);
+});
+
+// initDeepLinks never mutates ACTION_PLANS directly — it spreads a shallow
+// copy (`{ ...plan }`) before attaching request-specific fields (prefill,
+// searchQuery, autosend). Pin that the shared table survives that pattern
+// for every action it applies it to.
+test('planForAction: copy-then-mutate pattern (as used by initDeepLinks) never touches ACTION_PLANS', () => {
+  for (const action of ['new', 'photo', 'voice', 'search']) {
+    const before = JSON.stringify(ACTION_PLANS[action]);
+    const copy = { ...planForAction(action) };
+    copy.prefill = 'hello';
+    copy.searchQuery = 'hello';
+    copy.autosend = true;
+    assert.equal(JSON.stringify(ACTION_PLANS[action]), before);
+    assert.equal(ACTION_PLANS[action].prefill, undefined);
+    assert.equal(ACTION_PLANS[action].searchQuery, undefined);
+    assert.equal(ACTION_PLANS[action].autosend, undefined);
+  }
+});
+
 test('planForAction: case-insensitive lookup', () => {
   assert.equal(planForAction('NEW'), ACTION_PLANS.new);
   assert.equal(planForAction('Search'), ACTION_PLANS.search);

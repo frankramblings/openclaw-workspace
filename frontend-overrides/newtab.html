@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover">
-<title>Gary</title>
-<link rel="icon" type="image/svg+xml" href="https://naboo.bicolor-triceratops.ts.net:8443/static/favicon.svg?v=gary1">
+<title>__AGENT_NAME__</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg?v=gary1">
 <style>
   @font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: normal;
-    src: url('https://naboo.bicolor-triceratops.ts.net:8443/static/fonts/HankenGrotesk-latin.woff2') format('woff2'); font-display: swap; }
+    src: url('/static/fonts/HankenGrotesk-latin.woff2') format('woff2'); font-display: swap; }
   @font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: normal;
-    src: url('https://naboo.bicolor-triceratops.ts.net:8443/static/fonts/MonoLisa-normal.woff2') format('woff2'); font-display: swap; }
+    src: url('/static/fonts/MonoLisa-normal.woff2') format('woff2'); font-display: swap; }
   :root {
     --bg:#15161a; --panel:#1b1c21; --panel2:#212329; --elev:#262931;
     --bd:#2d2f36; --bd2:#24262c;
@@ -107,15 +107,15 @@
   <div class="wrap">
     <div class="brand">
       <div class="avatar">
-        <img src="https://naboo.bicolor-triceratops.ts.net:8443/static/redesign-assets/gary-outline.png" alt="">
+        <img src="/static/redesign-assets/gary-outline.png" alt="">
       </div>
-      <div class="name">Gary</div>
+      <div class="name">__AGENT_NAME__</div>
       <div class="tag">Type below · <kbd style="font-family:var(--mono);font-size:11px;background:var(--elev);border:1px solid var(--bd);border-radius:4px;padding:1px 5px;color:var(--mut)">/</kbd> for commands</div>
     </div>
     <form id="f" autocomplete="off">
       <label class="oc-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input name="q" id="q" autofocus placeholder="Ask Gary anything, or search your chats…" autocorrect="off" spellcheck="false">
+        <input name="q" id="q" autofocus placeholder="Ask __AGENT_NAME__ anything, or search your chats…" autocorrect="off" spellcheck="false">
         <span class="kbd">⏎</span>
       </label>
     </form>
@@ -133,18 +133,21 @@
   <div class="footer">
     <a data-origin-href="/">Open workspace</a>
     <a data-origin-href="/?action=inbox">Inbox</a>
-    <a data-origin-href="/landing">About</a>
+    <a data-origin-href="/static/landing.html">About</a>
   </div>
 <script>
 (function () {
-  var ORIGIN = (location.port === '8443' || location.origin.indexOf(':8443') > -1)
-    ? '' : 'https://naboo.bicolor-triceratops.ts.net:8443';
   var q = document.getElementById('q');
+  // This page is only ever served same-origin with the workspace app (/home,
+  // /newtab, /gary-home.html all live on this same backend — see
+  // backend/app.py), so navigation targets are plain root-relative paths; no
+  // absolute origin to construct or hardcode.
+  //
   // Chromium only link-captures NEW-context navigations into an installed
   // PWA ("Open supported links: In app") — a same-tab location.href never
   // routes to the app window. Open a new context so capture can grab it
   // (launch_handler navigate-existing then delivers the ?action= URL to the
-  // running Gary window). Inside the PWA itself, navigate in place; if a
+  // running app window). Inside the PWA itself, navigate in place; if a
   // popup blocker eats the open, fall back to same-tab.
   function go(url) {
     var standalone = false;
@@ -160,11 +163,11 @@
     var v = (q.value || '').trim();
     // With a query, land in a fresh chat AND fire it (autosend=1) so the
     // launcher feels like a single-shot ask box, not a two-tap composer.
-    go(ORIGIN + '/?action=new' + (v ? '&q=' + encodeURIComponent(v) + '&autosend=1' : ''));
+    go('/?action=new' + (v ? '&q=' + encodeURIComponent(v) + '&autosend=1' : ''));
   }
   function search() {
     var v = (q.value || '').trim();
-    go(ORIGIN + '/?action=search' + (v ? '&q=' + encodeURIComponent(v) : ''));
+    go('/?action=search' + (v ? '&q=' + encodeURIComponent(v) : ''));
   }
   document.getElementById('f').addEventListener('submit', function (e) {
     e.preventDefault(); newChat();
@@ -174,10 +177,10 @@
   });
   document.getElementById('btn-new').addEventListener('click', newChat);
   document.getElementById('btn-search').addEventListener('click', search);
-  document.getElementById('btn-inbox').addEventListener('click', function () { go(ORIGIN + '/?action=inbox'); });
-  document.getElementById('btn-open').addEventListener('click', function () { go(ORIGIN + '/'); });
+  document.getElementById('btn-inbox').addEventListener('click', function () { go('/?action=inbox'); });
+  document.getElementById('btn-open').addEventListener('click', function () { go('/'); });
   document.querySelectorAll('a[data-origin-href]').forEach(function (a) {
-    a.href = ORIGIN + a.getAttribute('data-origin-href');
+    a.href = a.getAttribute('data-origin-href');
     a.target = '_blank'; a.rel = 'noopener';
   });
 })();

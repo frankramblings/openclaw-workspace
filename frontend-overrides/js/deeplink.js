@@ -4,6 +4,13 @@
 // applyPlan is the thin DOM shell.
 // Spec: docs/superpowers/specs/2026-06-13-ios-homescreen-widgets-design.md
 //
+// Redesign-native, not classic-DOM: inbox/photo/search drive the redesign
+// shell (location.hash routing, [data-upload], [data-model="convFilter"] +
+// its openConvSheet drawer opener). Classic Odysseus UI now lives only at
+// /classic (soaking toward retirement) and isn't targeted by these three —
+// `new`/`focus`/`voice` keep their classic fallbacks since those already
+// worked for both shells.
+//
 // Reload survival: sw-register.js reloads the page when a freshly-deployed
 // service worker takes control — which can land seconds after boot, mid-flow,
 // on a URL we already stripped. The plan is stashed in sessionStorage before
@@ -58,8 +65,17 @@ function _readPending() {
   try { return parsePending(sessionStorage.getItem(PENDING_KEY), Date.now()); } catch (_) { return null; }
 }
 
-// Poll for a selector (e.g. #rail-inbox is injected late by inbox.js).
-// Resolves the element, or null after `tries` attempts.
+// The redesign shell switches desktop/mobile layout at the same breakpoint
+// app.js uses for its own `mq` (max-width: 768px) — mirrored here since
+// deeplink.js is a standalone module with no access to app.js's internals
+// (see the big comment above applyPlan).
+function _isMobileLayout() {
+  try { return window.matchMedia('(max-width: 768px)').matches; } catch (_) { return false; }
+}
+
+// Poll for a selector (e.g. the composer/attach controls, injected late by
+// the shell's first render()). Resolves the element, or null after `tries`
+// attempts.
 function _waitFor(selector, tries = 40, interval = 50) {
   return _waitUntil(() => document.querySelector(selector), tries, interval);
 }
@@ -87,17 +103,47 @@ export async function applyPlan(plan) {
   if (!plan) return;
   try {
     if (plan.openInbox) {
-      const inbox = (await _waitFor('#rail-inbox'))
-        || document.getElementById('inbox-section-title');
-      if (inbox) inbox.click();
+      // The redesign routes surfaces off location.hash — app.js seeds
+      // state.surface from it on boot (SURFACES.includes(fromHash)) and also
+      // reacts to a live 'hashchange' (mobile's seedMobileFromHash maps
+      // #inbox straight onto the bottom-tab "inbox" surface too), so this one
+      // assignment covers desktop AND mobile with no DOM to wait for. The old
+      // #rail-inbox / #inbox-section-title targets were classic-UI-only
+      // (classic now lives at /classic only, being retired) and silently
+      // no-opped in the redesign — no DOM fallback is needed here since hash
+      // routing isn't missing anything classic-only would have added.
+      try { window.location.hash = '#inbox'; } catch (_) {}
       return;
     }
     if (plan.runSearch) {
+      if (_isMobileLayout()) {
+        // Mobile: the convFilter input lives inside the conversation drawer,
+        // which is only reachable (focus/typeable) once opened — the drawer
+        // markup is always in the DOM (off-screen + inert) but that's not
+        // enough. Open it the same way a tap on the header's "Chats" button
+        // would (data-act="openConvSheet"), then fall through to fill it.
+        const opener = await _waitFor('[data-act="openConvSheet"]');
+        if (opener) { try { opener.click(); } catch (_) {} }
+      }
       const input = await _waitFor('input[data-model="convFilter"]');
       if (input) {
         input.value = plan.searchQuery || '';
         input.focus();
         input.dispatchEvent(new Event('input', { bubbles: true }));
+        // Desktop mainly: the live semantic-search action (actions.convSearch)
+        // is merged into app.js's action map asynchronously — live/index.js
+        // dynamic-import()s chat.js and Object.assign()s its actions in,
+        // which is at least one microtask after boot even when cached. If our
+        // dispatch above landed before that merge, only the local title
+        // filter ran (the redesign's data-model input handler always syncs
+        // state, but only calls actions.convSearch when it exists). deeplink.js
+        // is a standalone module with no reference to app.js's `actions`
+        // object (not exported, nothing put on window) to poll directly, so
+        // settle briefly and re-dispatch once — a harmless no-op if the first
+        // dispatch already reached convSearch (it dedupes concurrent
+        // searches via its own sequence counter).
+        await new Promise((r) => setTimeout(r, 350));
+        try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
       }
       return;
     }
@@ -168,11 +214,26 @@ export async function applyPlan(plan) {
       }
     }
     if (plan.openAttach) {
-      // Best-effort: open the attach picker. iOS Safari blocks file-input
-      // activation without a user gesture on a fresh load, so this may no-op —
-      // by design the user then lands in a new chat with attach one tap away.
-      const attach = document.getElementById('overflow-attach-btn');
-      if (attach) { try { attach.click(); } catch (_) {} }
+      if (_isMobileLayout()) {
+        // Mobile (iOS in particular): Safari blocks file-input activation
+        // that isn't inside a synchronous user-gesture handler, and the tap
+        // that launched this deep link doesn't count by the time this async
+        // flow runs — attempting .click() on the file input here is
+        // unreliable at best. Rather than silently no-op, land honestly on
+        // the fresh chat (already created above) with the composer focused:
+        // attach is one visible tap away instead of a picker that may or may
+        // not have opened.
+        const input = await _waitFor('[data-model="draft"], #message');
+        if (input) { try { input.focus(); } catch (_) {} }
+      } else {
+        // Desktop has no such gesture restriction — the redesign's attach
+        // control is a hidden <input type=file data-upload> (in both the
+        // desktop composer toolbar and mobile's round attach button);
+        // .click() on the input itself opens the native picker without
+        // needing to resolve its wrapping <label>.
+        const attach = await _waitFor('[data-upload]');
+        if (attach) { try { attach.click(); } catch (_) {} }
+      }
     }
   } catch (_) { /* deep-link is best-effort; never block boot */
   } finally {

@@ -19,6 +19,7 @@ let term = null, fit = null, overlay = null, screen = null;
 let ws = null, currentKey = null;
 let lastRect = null, fitTO = null;
 let currentMount = null, ro = null, roTO = null;
+let slideTO = null;
 // Capped-backoff auto-reconnect: onclose used to be a noop, so a PTY WS that
 // dropped (sleep/backgrounding, a network blip, a backend restart) left the
 // terminal dead until something forced a fresh connect(key) — e.g. switching
@@ -198,6 +199,7 @@ function hide() {
   currentMount = null;
   if (ro) { ro.disconnect(); ro = null; }
   clearTimeout(roTO);
+  clearTimeout(slideTO);
   // Teardown-on-unmount: a pane that isn't shown doesn't need a live retry
   // loop ticking away in the background (no zombie reconnect timer). The
   // socket itself is left alone — onRender's `!ws` check below reconnects
@@ -231,6 +233,15 @@ async function onRender() {
     currentMount = mount;
     ro = new ResizeObserver(() => { clearTimeout(roTO); roTO = setTimeout(onRender, 50); });
     ro.observe(mount);
+    // A fresh mount can appear inside a panel that's still sliding into place
+    // (the mobile companion sheet — and its desktop open — animate in via a
+    // CSS `animation` transform, m-sheet-up, .22s: see mobile.css). That's a
+    // transform, not a size change, so ResizeObserver never sees it settle,
+    // and getBoundingClientRect() taken right here (this render, mid-slide)
+    // can capture the sheet's STARTING position with nothing left to correct
+    // it afterward. Re-measure once the slide should be done.
+    clearTimeout(slideTO);
+    slideTO = setTimeout(onRender, 240);
   }
 
   const key = (runtime.state && runtime.state.live && runtime.state.live.chat && runtime.state.live.chat.activeId) || 'global';

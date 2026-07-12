@@ -22,7 +22,10 @@ assert.ok(srcStyle('obsidian').srcColor, 'obsidian is styled');
 assert.ok(srcStyle('documents').srcColor, 'documents is styled');
 assert.notEqual(srcStyle('obsidian').srcColor, srcStyle('asana').srcColor,
   'obsidian distinct from asana');
-assert.equal(srcStyle('mystery').srcColor, 'var(--muted)', 'unknown → muted');
+// --mut is the real token (defined in redesign.css's :root); --muted was
+// never defined anywhere — an unknown source silently fell back to a color
+// that resolved to nothing.
+assert.equal(srcStyle('mystery').srcColor, 'var(--mut)', 'unknown → mut');
 
 // --- actionLabel: backend action verbs map to human labels ------------------
 assert.equal(actionLabel('archive'), 'Archive');

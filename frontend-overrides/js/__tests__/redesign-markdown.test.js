@@ -126,3 +126,24 @@ test('table directly under a paragraph (no blank line) still renders', () => {
   assert.match(html, /<p>Results below:<\/p>/);
   assert.match(html, /<table class="md-table">/);
 });
+
+test('linkifyPaths: a path-looking link label is not double-wrapped in a nested file-link span', () => {
+  // The markdown link itself already makes "src/app.py" the click target (an
+  // <a> to the URL); wrapping the same text in a second, nested
+  // data-act="wsOpenFile" span put two conflicting click targets on one run
+  // of text.
+  const html = inline('[src/app.py](https://example.com/pr/1)');
+  assert.match(html, /<a href="https:\/\/example\.com\/pr\/1"[^>]*>src\/app\.py<\/a>/);
+  assert.doesNotMatch(html, /<span class="file-link"/);
+});
+
+test('linkifyPaths still linkifies a bare path outside any link', () => {
+  const html = inline('see src/app.py for details');
+  assert.match(html, /<span class="file-link" data-act="wsOpenFile" data-arg="src\/app\.py">src\/app\.py<\/span>/);
+});
+
+test('linkifyPaths: a path-looking segment after a link (outside the <a>) still linkifies', () => {
+  const html = inline('[docs](https://example.com) also see src/app.py');
+  assert.match(html, /<a href="https:\/\/example\.com"[^>]*>docs<\/a>/);
+  assert.match(html, /<span class="file-link" data-act="wsOpenFile" data-arg="src\/app\.py">src\/app\.py<\/span>/);
+});

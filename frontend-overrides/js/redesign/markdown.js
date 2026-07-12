@@ -63,10 +63,23 @@ function isFilePath(s) {
 // Turn path-like tokens in HTML text nodes into clickable spans. Splits on HTML
 // tags so we never mangle attribute values or tag names. Only matches paths
 // with a slash — bare filenames in plain text have too many false positives.
+// Text already inside an <a>...</a> (a markdown link whose display text itself
+// looks like a path, e.g. `[foo/bar.txt](https://example.com)`) is left alone
+// — wrapping it in a second, nested wsOpenFile span put two click targets on
+// one run of text: the outer <a> navigates, the inner span opens the
+// workspace file (which usually isn't even what that link points at), and
+// which one a click actually fires became ambiguous (nested interactive
+// elements, nothing to do with here being an <a>).
 function linkifyPaths(html) {
   const PATH_RE = /(?<![.\w/\\])((?:\.{1,2}\/|\/)?(?:[\w.-]+\/)+[\w.-]+\.[\w]{1,10})(?![.\w/])/g;
+  let inAnchor = false;
   return html.replace(/(<[^>]+>)|([^<]+)/g, (m, tag, text) => {
-    if (tag) return tag;
+    if (tag) {
+      if (/^<a[\s>]/i.test(tag)) inAnchor = true;
+      else if (/^<\/a>/i.test(tag)) inAnchor = false;
+      return tag;
+    }
+    if (inAnchor) return text;
     return text.replace(PATH_RE, (path) =>
       `<span class="file-link" data-act="wsOpenFile" data-arg="${esc(path)}">${path}</span>`
     );

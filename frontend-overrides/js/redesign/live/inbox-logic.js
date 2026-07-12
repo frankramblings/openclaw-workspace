@@ -17,7 +17,7 @@ const SRC_STYLE = {
   CALENDAR: { srcColor: 'var(--teal, #45d3c7)', srcBg: 'rgba(69,211,199,.12)' },
   ENTITIES: { srcColor: 'var(--violet)', srcBg: 'rgba(169,155,245,.12)' },
 };
-const MUTED = { srcColor: 'var(--muted)', srcBg: 'rgba(255,255,255,.06)' };
+const MUTED = { srcColor: 'var(--mut)', srcBg: 'rgba(255,255,255,.06)' };
 
 export function srcStyle(source) {
   return SRC_STYLE[String(source || '').toUpperCase()] || MUTED;
@@ -192,7 +192,7 @@ export function chipRowHtml(counts, opts, esc) {
   const errUp = {}; for (const k of Object.keys(errors)) errUp[k.toUpperCase()] = true;
   const chip = (key, label, n) => {
     const active = (key === 'ALL' && !filter) || key === filter;
-    const dot = key === 'ALL' ? '' : `<span class="dot" style="background:${CHIP_DOT[key] || 'var(--muted)'}"></span>`;
+    const dot = key === 'ALL' ? '' : `<span class="dot" style="background:${CHIP_DOT[key] || 'var(--mut)'}"></span>`;
     const warn = errUp[key] ? ' <span class="chip-warn" title="source error">⚠</span>' : '';
     return `<span class="src-chip${active ? ' active' : ''}" data-act="setFilter" data-arg="${key}">${dot}${esc(label)} ${n || 0}${warn}</span>`;
   };

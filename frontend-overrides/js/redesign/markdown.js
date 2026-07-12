@@ -86,6 +86,35 @@ function linkifyPaths(html) {
   });
 }
 
+// Restore the C0/C1 code-span sentinels into real <code> elements, same
+// tag-aware inAnchor scan as linkifyPaths above. Runs AFTER linkifyPaths (a
+// markdown link's label — `[`src/app.py`](url)` — still holds its code
+// span as an unresolved sentinel at that point, since code spans are pulled
+// out before the `[]()` substitution even runs), so this needs its OWN
+// anchor guard: a code span that resolves to a clickable file-link inside an
+// <a> would nest a second, conflicting data-act click target under the
+// link's — the exact "two click targets on one run of text" problem
+// linkifyPaths already solves for plain-text paths.
+function restoreCodeSpans(html, codes) {
+  let inAnchor = false;
+  const SENTINEL_RE = new RegExp(C0 + '(\\d+)' + C1, 'g');
+  return html.replace(/(<[^>]+>)|([^<]+)/g, (m, tag, text) => {
+    if (tag) {
+      if (/^<a[\s>]/i.test(tag)) inAnchor = true;
+      else if (/^<\/a>/i.test(tag)) inAnchor = false;
+      return tag;
+    }
+    return text.replace(SENTINEL_RE, (_, i) => {
+      const raw = codes[+i];
+      const escaped = esc(raw);
+      if (!inAnchor && isFilePath(raw.trim())) {
+        return `<code class="code-inline file-link" data-act="wsOpenFile" data-arg="${escaped}">${escaped}</code>`;
+      }
+      return `<code class="code-inline">${escaped}</code>`;
+    });
+  });
+}
+
 // Inline formatting on a single run of raw text. Code spans are pulled out and
 // escaped separately so their contents are never treated as markdown.
 export function inline(text) {
@@ -103,14 +132,7 @@ export function inline(text) {
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, u) => link(t, u));
   s = linkifyPaths(s);
-  return s.replace(new RegExp(C0 + '(\\d+)' + C1, 'g'), (_, i) => {
-    const raw = codes[+i];
-    const escaped = esc(raw);
-    if (isFilePath(raw.trim())) {
-      return `<code class="code-inline file-link" data-act="wsOpenFile" data-arg="${escaped}">${escaped}</code>`;
-    }
-    return `<code class="code-inline">${escaped}</code>`;
-  });
+  return restoreCodeSpans(s, codes);
 }
 
 // Inline image sharing (parity with desktop markdown.js _extractSharedImages).

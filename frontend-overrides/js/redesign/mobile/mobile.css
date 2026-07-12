@@ -273,11 +273,23 @@ html.native .m-tabbar {
 .m-attach-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 6px 8px; }
 .m-attach-row .m-attach-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--bg); border: 1px solid var(--bd); border-radius: 8px; padding: 4px 9px; font-size: 12px; color: var(--fg); }
 .m-attach-row .m-attach-chip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
-/* RIDER B ≥44pt: invisible ::after pad (see .m-q-x above) — the chip itself
-   stays compact, the tappable zone reaches 44px by overlapping into the
-   surrounding row gap. */
-.m-attach-row .m-attach-chip .x { position: relative; display: inline-flex; color: var(--faint); cursor: pointer; font-size: 13px; }
-.m-attach-row .m-attach-chip .x::after { content: ''; position: absolute; inset: -14px; }
+/* Rider (task-w6): real <button> now (was a bare <span>, no keyboard/SR
+   affordance — same span→button fix already applied to .m-toast-x). The
+   PREVIOUS ≥44pt attempt here used inset:-14px, "reaching 44px by
+   overlapping into the surrounding row gap" — but .m-attach-row's row gap is
+   only 6px (and the .nm-to-.x gap inside each chip is 7px), so a 14px reach
+   overshot both and painted OVER the NEXT chip's own ✕ button, exactly the
+   "positioned el wins the stacking order, steals a tap meant for the
+   neighbor" bug .m-toast-x::after's comment (elsewhere in this file) already
+   called out and fixed for the toast dismiss. Capped at -5px here: safely under BOTH the
+   6px row gap and the 7px internal gap, so it can never reach a sibling
+   chip's own remove button (or, within one chip, the .nm text — harmless
+   either way since .nm has no click target of its own). The tappable zone
+   this yields is smaller than the toast's (whose 10px flex gap left more
+   headroom) — an honest ceiling given how tightly these chips pack, not the
+   full 44pt ideal. */
+.m-attach-row .m-attach-chip .x { position: relative; display: inline-flex; background: none; border: none; padding: 0; color: var(--faint); cursor: pointer; font-size: 13px; }
+.m-attach-row .m-attach-chip .x::after { content: ''; position: absolute; inset: -5px; }
 .m-round-btn.bordered { width: 30px; height: 30px; border: 1px solid var(--bd); }
 .m-send { width: 34px; height: 34px; border-radius: 50%; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; flex: none; border: none; cursor: pointer; transition: background .15s ease, color .15s ease, opacity .15s ease, transform .1s ease; }
 /* Send stays dim + inert until there's something to send; lights up live as you type. */

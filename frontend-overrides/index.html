@@ -24,10 +24,12 @@
        <img src=AVATAR> tags on every innerHTML re-render (brand tile,
        companion tabs, welcome/message avatars) — without a warm cache hit
        each swap flashed teal (the .gav/.gicon background) before the bitmap
-       painted. AVATAR is origin-relative (`/static/redesign-assets/…`) unless
-       a deploy sets window.__WS_BASE__ for a subpath host — not knowable at
-       parse time, so this covers the common (root) case; a subpath deploy
-       just loses the preload's head start, not correctness. -->
+       painted. This href is written origin-relative (`/static/…`), but a
+       subpath deploy DOES keep the head start: backend/app.py's _spa_html()
+       rewrites every `="/static/` attribute in the served HTML (this
+       preload's href included, same as the stylesheet links/script src
+       below) to `{BASE_PATH}/static/` before the page ever reaches the
+       browser — nothing here is deploy-mode-specific. -->
   <link rel="preload" as="image" href="/static/redesign-assets/gary-outline.png" />
   <link rel="stylesheet" href="/static/redesign.css" />
   <link rel="stylesheet" href="/static/chat-window-redesign.css" />

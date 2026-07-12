@@ -430,15 +430,25 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .slash-cmd .name{font-family:var(--mono);font-size:14px;color:var(--fg)}
 .slash-cmd .desc{font-size:13px;color:var(--faint)}
 
-/* 769–1100px: with the companion pane open the center column can narrow
-   enough that .composer-row's +/attach/context-meter/incognito/model/mode/
-   Send no longer fit on one line — they clipped off the right edge instead
-   of reflowing. Let the row wrap there instead, with a tighter cap on the
-   model name so it doesn't push the wrap point wider than it needs to be.
-   Outside this band there's either enough room (desktop, companion closed or
-   viewport wide) or the mobile shell takes over (≤768px) — .composer-row/
-   .model-btn-name are untouched. */
-@media (min-width:769px) and (max-width:1100px){
+/* Was a viewport media query (769–1100px) gating on the WHOLE window's
+   width — a crude proxy for "the companion pane is open and narrowed the
+   center column enough that .composer-row's +/attach/context-meter/
+   incognito/model/mode/Send no longer fit on one line". That proxy broke on
+   any layout the companion pane didn't own the same way (resizable sidebars,
+   different viewport/pane combinations landing at the same window width but
+   different composer widths). A container query measures the ACTUAL
+   rendered width of .composer instead, so it reflows exactly when the row
+   itself runs out of room, regardless of why.
+   container-type on .composer itself (not a further-out ancestor): .composer
+   is already `position:relative` and the ghost-suggest overlay's positioning
+   root (line ~392) — inline-size containment doesn't change who a
+   position:absolute descendant resolves against (that was already
+   .composer), and inline-size-only containment (not full `size`) doesn't
+   collapse the block/height axis the way `contain:size` would, so the
+   composer's height still tracks its content normally. Verified against the
+   ghost-suggest rules directly below: no change needed there. */
+.composer{container-type:inline-size}
+@container (max-width:750px){
   .composer-row{flex-wrap:wrap;row-gap:6px}
   .model-btn-name{max-width:120px}
 }
@@ -881,12 +891,12 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .gary-dock .gav{width:26px;height:26px;flex:none;border-radius:7px;overflow:hidden;background:var(--teal);display:flex;align-items:center;justify-content:center}
 .gary-dock .gav img{width:100%;height:100%;object-fit:contain;padding:2px;box-sizing:border-box;display:block}
 .gary-dock p{margin:0 0 10px;font-size:14.5px;line-height:1.6;color:#cfd3da}
-.gary-chips{display:flex;gap:7px;flex-wrap:wrap}
+/* .gary-chip (singular) is real — companion.js's "Open chat" chip. Its
+   plural container (.gary-chips) and the .gary-ask quick-ask box were only
+   ever mock markup (see companion-honest.test.js, which asserts neither
+   renders) — removed as orphaned, no JS references either. */
 .gary-chip{font-size:12.5px;border:1px solid var(--bd);padding:4px 10px;border-radius:999px;cursor:pointer;white-space:nowrap;color:var(--mut)}
 .gary-chip.teal{color:var(--teal);border-color:var(--teal2);background:var(--tealtint)}
-.gary-ask{flex:none;padding:0 12px 14px}
-.gary-ask .box{border:1px solid var(--bd);background:var(--bg);border-radius:13px;display:flex;align-items:center;padding:8px 10px;gap:9px}
-.gary-ask .ph{font-size:14px;color:var(--faint);flex:1}
 
 /* collapsed reveal strip */
 .comp-reveal{width:44px;flex:none;background:var(--panel);border-left:1px solid var(--bd);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:6px}

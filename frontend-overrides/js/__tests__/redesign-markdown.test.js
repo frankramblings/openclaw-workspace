@@ -147,3 +147,23 @@ test('linkifyPaths: a path-looking segment after a link (outside the <a>) still 
   assert.match(html, /<a href="https:\/\/example\.com"[^>]*>docs<\/a>/);
   assert.match(html, /<span class="file-link" data-act="wsOpenFile" data-arg="src\/app\.py">src\/app\.py<\/span>/);
 });
+
+// ---------------------------------------------------------------------------
+// Rider (task-w6): the code-span/file-link restore runs AFTER linkifyPaths,
+// so its own inAnchor guard doesn't cover it — a markdown link whose label is
+// a code span containing a path (e.g. [`src/app.py`](url)) still nested a
+// data-act="wsOpenFile" <code> element inside the <a>, the exact "two click
+// targets on one run of text" problem the linkifyPaths guard above already
+// solved for plain-text paths.
+// ---------------------------------------------------------------------------
+test('a code-span file path used as a link label renders a plain code span inside the anchor, no data-act', () => {
+  const html = inline('[`src/app.py`](https://example.com/pr/1)');
+  assert.match(html, /<a href="https:\/\/example\.com\/pr\/1"[^>]*><code class="code-inline">src\/app\.py<\/code><\/a>/);
+  assert.doesNotMatch(html, /data-act="wsOpenFile"/);
+  assert.doesNotMatch(html, /file-link/);
+});
+
+test('a code-span file path OUTSIDE any link still gets the clickable file-link code span', () => {
+  const html = inline('see `src/app.py` for details');
+  assert.match(html, /<code class="code-inline file-link" data-act="wsOpenFile" data-arg="src\/app\.py">src\/app\.py<\/code>/);
+});

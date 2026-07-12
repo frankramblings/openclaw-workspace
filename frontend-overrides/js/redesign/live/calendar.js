@@ -331,6 +331,16 @@ function offsetMonthLabel(offset) {
 // "Refresh failed — showing cached data" live/index.js's load orchestration
 // sets by default for a populated surface, since here we know exactly which
 // month the user was trying to reach.
+// The offset of the last month calendar ACTUALLY successfully rendered (a
+// non-stale load that resolved ok:true) — updated only in the `result.ok`
+// branch below. Rider (task-w6): a rollback used to target `prevOffset`, this
+// call's own pre-nav value — but on a double-nav (click ‹ twice fast) that
+// value may itself be an offset whose load never landed (superseded before it
+// resolved), so rolling back to it left the toolbar pointing at a "phantom"
+// month with no data behind it. Rolling back to committedOffset instead always
+// lands on a month the grid is actually showing.
+let committedOffset = 0;
+
 const shiftMonth = (delta) => {
   const s = runtime.state;
   if (!s) return;
@@ -340,10 +350,11 @@ const shiftMonth = (delta) => {
   const p = reload('calendar');
   if (p && typeof p.then === 'function') {
     p.then((result) => {
-      if (!result || result.ok || result.stale) return; // success, or superseded by a newer nav
+      if (!result || result.stale) return; // superseded by a newer nav — that nav owns the outcome
+      if (result.ok) { committedOffset = nextOffset; return; }
       const cur = runtime.state;
       if (!cur || cur.calMonthOffset !== nextOffset) return; // a newer nav already moved on
-      cur.calMonthOffset = prevOffset;
+      cur.calMonthOffset = committedOffset;
       cur.inboxToast = { msg: `Couldn't load ${offsetMonthLabel(nextOffset)} — Retry`, undoTs: null };
       runtime.render();
     });

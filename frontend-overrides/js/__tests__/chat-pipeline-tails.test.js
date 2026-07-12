@@ -409,10 +409,88 @@ test('live tool_output caps at 200 lines and head-trims — oldest dropped, most
     assert.equal(step.lines.length, 200, 'capped at the same 200-line ceiling as the history path');
     assert.equal(step.lines[0].t, 'line-50', 'head-trimmed — the oldest 50 lines were dropped');
     assert.equal(step.lines[199].t, 'line-249', 'the most recent line is kept');
+    assert.equal(step.omitted, 50, 'the trimmed count is tracked so the UI can disclose it');
   } finally {
     actions.stopRun();
     await drainMicrotasks();
     mock.timers.reset();
     delete globalThis.fetch;
   }
+});
+
+// Rider (task-w6): the omitted count accumulates across MULTIPLE trims within
+// the same step (a long-running chatty tool keeps appending after the first
+// 200-line cap already kicked in) — each trim's removed-line count must add
+// up, not just reflect the most recent trim.
+test('live tool_output: omitted accumulates across multiple trims of the same step', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  const streamCalls = [];
+  const streams = [];
+  wireLiveFetch(streamCalls, streams);
+  runtime.render = () => {};
+  try {
+    const state = freshState('sess-1');
+    runtime.state = state;
+    const chat = state.live.chat;
+
+    state.draft = 'run something very chatty';
+    await actions.send();
+    mock.timers.tick(700);
+    await drainMicrotasks();
+
+    streams[0].push('data: {"type":"tool_start","tool":"Bash","tool_id":"t1"}\n\n');
+    await drainMicrotasks();
+
+    const batch1 = [];
+    for (let i = 0; i < 220; i++) batch1.push(`a-${i}`);
+    streams[0].push(`data: ${JSON.stringify({ type: 'tool_output', tool_id: 't1', output: batch1.join('\n') })}\n\n`);
+    await drainMicrotasks();
+
+    const asst = chat.thread.find((m) => m.role === 'assistant');
+    const step = asst.activity.steps.find((s) => s.kind !== 'think');
+    assert.equal(step.omitted, 20, 'first trim: 220 lines - 200 cap');
+
+    // A second batch arrives after the cap already kicked in.
+    const batch2 = [];
+    for (let i = 0; i < 30; i++) batch2.push(`b-${i}`);
+    streams[0].push(`data: ${JSON.stringify({ type: 'tool_output', tool_id: 't1', output: batch2.join('\n') })}\n\n`);
+    await drainMicrotasks();
+
+    assert.equal(step.lines.length, 200);
+    assert.equal(step.omitted, 50, 'omitted accumulates: 20 from the first trim + 30 from the second');
+    assert.equal(step.lines[199].t, 'b-29', 'the most recent line is still kept');
+  } finally {
+    actions.stopRun();
+    await drainMicrotasks();
+    mock.timers.reset();
+    delete globalThis.fetch;
+  }
+});
+
+// ---- 8. history tool_output caps match the live path (rider task-w6) -----
+// historySteps used to head-keep (slice(0, 200) — oldest 200 lines, dropping
+// the newest), the exact opposite end from the live tool_output handler
+// above (tail-keep). Reloading a long-running step's history flipped which
+// lines were visible depending on whether you were watching it live or
+// reopened it later. Both ends must now agree: tail-kept, with the trimmed
+// count surfaced via `omitted`.
+
+test('historySteps caps at 200 lines and tail-keeps — oldest dropped, most recent kept, matching the live path', () => {
+  const lines = [];
+  for (let i = 0; i < 250; i++) lines.push(`line-${i}`);
+  const toolEvents = [{ tool: 'Bash', command: 'do a big thing', output: lines.join('\n') }];
+  const steps = chatMod.historySteps(toolEvents, 0);
+  assert.equal(steps.length, 1);
+  const step = steps[0];
+  assert.equal(step.lines.length, 200, 'capped at the same 200-line ceiling as the live path');
+  assert.equal(step.lines[0].t, 'line-50', 'tail-kept — the oldest 50 lines were dropped');
+  assert.equal(step.lines[199].t, 'line-249', 'the most recent line is kept');
+  assert.equal(step.omitted, 50);
+});
+
+test('historySteps: no omitted field when a step is under the cap', () => {
+  const toolEvents = [{ tool: 'Bash', command: 'small thing', output: 'only\na\nfew\nlines' }];
+  const steps = chatMod.historySteps(toolEvents, 0);
+  assert.equal(steps[0].lines.length, 4);
+  assert.equal(steps[0].omitted, undefined);
 });

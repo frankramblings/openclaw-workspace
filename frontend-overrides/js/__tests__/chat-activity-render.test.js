@@ -88,3 +88,38 @@ test('a done turn with no steps renders nothing (pure-text reply)', () => {
   // leaving just the assistant's text.
   assert.strictEqual(renderActivity(doneMsg([]), ui()), '');
 });
+
+// ---------------------------------------------------------------------------
+// Rider (task-w6): a step whose output was trimmed by chat.js's 200-line cap
+// (live tool_output handler, or historySteps on reload) carries `omitted` —
+// codeBlock() must render an honest "…N earlier lines omitted" line rather
+// than silently hiding that a trim happened.
+// ---------------------------------------------------------------------------
+
+test('a running step with omitted output shows the "earlier lines omitted" notice above its lines', () => {
+  const running = step('c', 'run', 'running', {
+    lines: [{ t: 'line-198', c: '#fff' }, { t: 'line-199', c: '#fff' }],
+    omitted: 50,
+  });
+  const html = renderActivity(workingMsg([running]), ui());
+  assert.match(html, /50 earlier lines omitted/);
+  const omittedIdx = html.indexOf('earlier lines omitted');
+  const firstLineIdx = html.indexOf('line-198');
+  assert.ok(omittedIdx > -1 && firstLineIdx > -1 && omittedIdx < firstLineIdx,
+    'the omitted notice renders ABOVE the kept lines');
+});
+
+test('a step with no omitted count renders no notice at all', () => {
+  const running = step('c', 'run', 'running', { lines: [{ t: 'line-1', c: '#fff' }] });
+  const html = renderActivity(workingMsg([running]), ui());
+  assert.doesNotMatch(html, /earlier line/);
+});
+
+test('a done, expanded step with omitted output shows the notice too', () => {
+  const done = step('a', 'run', 'done', {
+    lines: [{ t: 'line-198', c: '#fff' }],
+    omitted: 1,
+  });
+  const html = renderActivity(doneMsg([done]), ui({ trail: { m1: true }, step: { a: true } }));
+  assert.match(html, /1 earlier line omitted/, 'singular wording for exactly one omitted line');
+});

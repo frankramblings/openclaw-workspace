@@ -35,12 +35,19 @@ const chev = (rot) => `<svg class="act-chev" width="10" height="10" viewBox="0 0
 const checkIcon = (sz = 13) => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
 const STOP_ICON = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
 
-function codeBlock(lines, cursor) {
+// omitted (optional): a trimmed-block line count from chat.js's tool_output
+// cap (live: st.omitted, tail-kept) / historySteps (history: same field, same
+// end) — rendered as a leading "…N earlier lines omitted" row so a capped
+// step is honest about hiding output, not silently truncated.
+function codeBlock(lines, cursor, omitted) {
+  const head = omitted
+    ? `<div class="ln act-omitted" style="color:var(--faint);font-style:italic">… ${omitted} earlier line${omitted === 1 ? '' : 's'} omitted</div>`
+    : '';
   const body = lines.map((ln, i) => {
     const cur = (cursor && i === lines.length - 1) ? '<span class="act-cursor"></span>' : '';
     return `<div class="ln" style="color:${ln.c || '#cfd3da'}">${esc(ln.t)}${cur}</div>`;
   }).join('');
-  return `<div class="act-code">${body}</div>`;
+  return `<div class="act-code">${head}${body}</div>`;
 }
 
 function stepDetail(st) {
@@ -48,7 +55,7 @@ function stepDetail(st) {
     return `<div class="act-think">${esc(st.body).replace(/\n/g, '<br>')}</div>`;
   }
   if (st.diff && st.diff.length) return codeBlock(st.diff);
-  if (st.lines && st.lines.length) return codeBlock(st.lines, st.cursor);
+  if (st.lines && st.lines.length) return codeBlock(st.lines, st.cursor, st.omitted);
   return '';
 }
 
@@ -74,7 +81,7 @@ function stepRow(st, s, { iconHtml, alwaysOpen } = {}) {
 
 // active (running) step: gold spinner + shimmer label + live output, always open
 function activeStep(st) {
-  const out = (st.lines && st.lines.length) ? `<div class="act-detail">${codeBlock(st.lines, true)}</div>` : '';
+  const out = (st.lines && st.lines.length) ? `<div class="act-detail">${codeBlock(st.lines, true, st.omitted)}</div>` : '';
   return `<div class="act-working">
     <span class="act-spinner gold">${fortress(14)}</span>
     <span class="shimmer act-shim">${esc(st.label || 'Running')}</span>

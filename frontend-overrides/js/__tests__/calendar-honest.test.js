@@ -90,6 +90,71 @@ test('shiftMonth: a successful nav commits the new offset (unchanged happy path)
   delete globalThis.fetch;
 });
 
+// ---------------------------------------------------------------------------
+// Rider (task-w6): shiftMonth's rollback used to target `prevOffset` — its
+// OWN pre-nav value, captured before its fetch even started. On a double-nav
+// (click ‹/› again before the first click's fetch lands), that value can be
+// an offset that was NEVER actually committed (the first nav gets superseded
+// — its own result comes back `stale`, so it never updates anything). Rolling
+// back to it left the toolbar pointing at a "phantom" month with no real data
+// behind it. The fix tracks committedOffset — updated only by a load that
+// actually landed non-stale and ok — and rolls back to THAT instead.
+// ---------------------------------------------------------------------------
+test('shiftMonth double-nav: a stale first nav + a failed second nav rolls back to the last COMMITTED offset, not the first nav\'s phantom pre-commit value', async () => {
+  const state = { live: {}, calMonthOffset: 0 };
+  runtime.state = state;
+  runtime.actions = {};
+  runtime.render = () => {};
+
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('/api/calendar/calendars')) return jsonRes({ calendars: [] });
+    return jsonRes({ events: [] });
+  };
+  // Seed committedOffset via a REAL successful shiftMonth nav (calToday always
+  // targets offset 0), rather than the raw loadCalendar() used elsewhere in
+  // this file — committedOffset is a module-level singleton (same pattern as
+  // live/index.js's generation/committedLive maps) that ONLY updates through
+  // shiftMonth's own success path, so a previous test's nav history can
+  // otherwise leak into this one. Going through calToday() makes this test's
+  // expectations correct regardless of execution order.
+  calActions.calToday();
+  assert.ok(await until(() => state.calMonthOffset === 0 && state.retrying?.calendar !== true));
+  const monthBefore = state.live.calendar.month;
+
+  // First nav's events fetch hangs (simulates it still being in flight when
+  // the second nav fires); second nav's events fetch fails outright.
+  let releaseFirst;
+  const firstGate = new Promise((r) => { releaseFirst = r; });
+  let callN = 0;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('/api/calendar/calendars')) return jsonRes({ calendars: [] });
+    callN += 1;
+    if (callN === 1) { await firstGate; return jsonRes({ events: [] }); }
+    throw new Error('second nav events fetch failed');
+  };
+
+  calActions.calNext(); // offset 0 -> 1 (optimistic)
+  assert.equal(state.calMonthOffset, 1);
+  assert.ok(await until(() => callN === 1), 'first nav reached its (now-hanging) events fetch');
+
+  calActions.calNext(); // offset 1 -> 2 (optimistic) — supersedes the still-in-flight first nav
+  assert.equal(state.calMonthOffset, 2);
+
+  assert.ok(await until(() => state.calMonthOffset !== 2), 'the failed second nav must roll back');
+  assert.equal(state.calMonthOffset, 0,
+    'rolls back to the last COMMITTED offset (0, the seeded load) — not 1, the first nav\'s phantom, never-committed value');
+  assert.equal(state.live.calendar.month, monthBefore, 'the last successfully-loaded month data is untouched');
+
+  // The stale first nav finally landing (after being superseded) must be a no-op.
+  releaseFirst();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(state.calMonthOffset, 0, 'the late-resolving stale nav changes nothing');
+
+  delete globalThis.fetch;
+});
+
 test('desktop calendar toolbar controls are wired', () => {
   const html = renderCenter(calState({ calendar: { cells: [{ date: 1 }], month: 'July 2026' } }));
   assert.match(html, /data-act="calPrev"/);

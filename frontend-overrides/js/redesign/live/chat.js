@@ -232,7 +232,9 @@ function loadStripForKey(chat, id) {
 // Rebuild the Cowork-style activity trail from a turn's saved tool_events
 // (backend _map_history). Skips the agent's `message` reply-delivery tool — parity
 // with the live relay, which hides its card — so reload matches the live view.
-function historySteps(toolEvents, msgIdx) {
+// Exported for __tests__ (rider task-w6: history/live tool_output cap parity)
+// — otherwise only reachable through fetchThread()'s /api/history/:id fetch.
+export function historySteps(toolEvents, msgIdx) {
   if (!Array.isArray(toolEvents)) return [];
   const steps = [];
   toolEvents.forEach((ev, i) => {
@@ -240,8 +242,15 @@ function historySteps(toolEvents, msgIdx) {
     if (/^(message|mcp__openclaw__message)$/i.test(name)) return;
     const kind = toolKind(name);
     const failed = ev.exit_code != null && ev.exit_code !== 0;
-    const lines = String(ev.output || '').split('\n').filter((l) => l.length)
-      .slice(0, 200).map((t) => ({ t, c: lineColor(t) }));
+    const rawLines = String(ev.output || '').split('\n').filter((l) => l.length);
+    // Rider (task-w6): keep the TAIL (most recent output), same ceiling and
+    // same end as the live tool_output path below — this used to head-keep
+    // (slice(0, 200), oldest 200 lines) while live tail-keeps, so reloading a
+    // long-running step's history flipped which lines were visible. omitted
+    // is surfaced as a "…N earlier lines omitted" line by chat-activity.js's
+    // codeBlock().
+    const omitted = Math.max(0, rawLines.length - 200);
+    const lines = rawLines.slice(-200).map((t) => ({ t, c: lineColor(t) }));
     steps.push({
       id: `h${msgIdx}-s${i}`,
       kind,
@@ -252,6 +261,7 @@ function historySteps(toolEvents, msgIdx) {
       metaColor: failed ? 'var(--red)' : undefined,
       state: failed ? 'error' : 'done',
       lines,
+      ...(omitted ? { omitted } : {}),
     });
   });
   return steps;
@@ -393,11 +403,20 @@ async function hydrateWarnings(sessionId, thread) {
 // ---- load -----------------------------------------------------------------
 
 export async function load(state) {
+  const chat = ensureChat(state);
+  // Rider (task-w6): snapshot chat.activeId as we enter — a selectSession()/
+  // newChat() racing any of the three awaits below already owns
+  // chat.activeId/chat.groups/chat.thread by the time we'd resume, and
+  // continuing past it would resurrect a stale `r.active` flag on the sidebar
+  // (buildGroups below bakes the LOCAL `activeId` into every row). Same bail
+  // pattern the later per-session awaits in this function already use — just
+  // extended to cover these first three.
+  const enteredActiveId = chat.activeId;
   // sessions list — if this throws, loader keeps the mock.
   const sessions = await apiGet('/api/sessions');
+  if (chat.activeId !== enteredActiveId) return;
   const list = Array.isArray(sessions) ? sessions : [];
 
-  const chat = ensureChat(state);
   // Restore the session from before the reload. storeActiveId(null) is called
   // when the user explicitly leaves a chat (New Chat, delete), so a null stored
   // value correctly keeps the welcome screen after refresh in those cases.
@@ -415,10 +434,12 @@ export async function load(state) {
     fallbackModel = dc?.model || '';
     fallbackEndpointId = dc?.endpoint_id || '';
   } catch (_) { /* ignore */ }
+  if (chat.activeId !== activeId) return;
   try {
     const cfg = await apiGet('/api/config');
     if (cfg?.workspace_root) chat.cwd = cfg.workspace_root;
   } catch (_) { /* ignore */ }
+  if (chat.activeId !== activeId) return;
 
   chat.groups = buildGroups(list, activeId);
   annotateConvRows(chat);     // reflect any known working/finished dots
@@ -1059,9 +1080,16 @@ function beginTurn(chat, modelLabel, sessionId) {
           // Cap at the same 200-line ceiling the history path uses
           // (historySteps, above) — a chatty long-running tool (build log,
           // verbose test run) must not grow this step's lines/DOM/render cost
-          // unbounded. Head-trim: drop the OLDEST lines so what's visible is
-          // always the most recent output, same as a scrollback buffer.
-          if (st.lines.length > 200) st.lines.splice(0, st.lines.length - 200);
+          // unbounded. Tail-keep: drop the OLDEST lines so what's visible is
+          // always the most recent output, same as a scrollback buffer — and
+          // track the cumulative omitted count so codeBlock() can render an
+          // honest "…N earlier lines omitted" line instead of silently
+          // hiding that a trim happened at all.
+          if (st.lines.length > 200) {
+            const trimmed = st.lines.length - 200;
+            st.omitted = (st.omitted || 0) + trimmed;
+            st.lines.splice(0, trimmed);
+          }
         }
         if (ev.exit_code != null) {
           if (ev.exit_code !== 0) { st.meta = `exit ${ev.exit_code}`; st.metaColor = 'var(--red)'; }
@@ -1639,6 +1667,28 @@ function _isViewing(state, id) {
     && state.live && state.live.chat && state.live.chat.activeId === id);
 }
 
+// Rider (task-w6): whether a batch of simultaneously-finished turns should be
+// treated as restart noise (suppressed) or genuine completions (toasted).
+// Pure + exported so the tradeoff below is unit-testable without the poll
+// timer machinery. See _notifyTick for the surrounding context.
+//
+// A mass-drop (many sessions finishing in the very same 4s tick) is almost
+// certainly a backend restart clearing the whole active-session ledger at
+// once, not that many independent legitimate completions landing together —
+// the two are indistinguishable from the poll's shape alone, so a drop of
+// MORE than 2 stays suppressed. Exactly 1-2 simultaneous drops, when the feed
+// did NOT just reconnect (an unknown-length gap has the same untrustworthy
+// shape as a restart), are now surfaced: two replies landing in the same
+// poll window is an ordinary thing on a multi-thread day, and silently
+// swallowing it costs more than the rare false positive of a ≤2-session
+// restart getting toasted as if it were real. Tradeoff, accepted: a backend
+// restart that happens to have exactly 1 or 2 turns in flight will still
+// toast (indistinguishable from 1-2 genuine finishes with the information
+// available here) — cheap to reason about, cheap to revisit if it's wrong.
+export function shouldSuppressFinishedToasts(droppedCount, justReconnected) {
+  return !!justReconnected || droppedCount > 2;
+}
+
 // Stamp notify/working flags onto the already-built sidebar rows so a re-render
 // shows the dots without rebuilding the whole list.
 function annotateConvRows(chat) {
@@ -1666,15 +1716,8 @@ async function _notifyTick() {
   const justReconnected = _feedWasDown;
   _feedWasDown = false;
   const dropped = [..._prevActive].filter((id) => !now.has(id));
-  // A backend restart clears the whole active-session ledger at once — every
-  // in-flight turn "finishes" in the very same tick, which looks identical to
-  // N separate legitimate completions but isn't (their replies never actually
-  // landed; finalizeLocal's interrupted-turn path is what honestly annotates
-  // those bubbles). A just-reconnected poll is the same shape of problem: we
-  // don't know how many ticks the gap spanned, so the drop can't be trusted
-  // either. Skip the finished-toast heuristic in both cases — the working-dot
-  // refresh below still reflects `now` correctly either way.
-  const suppressFinishedToasts = justReconnected || dropped.length > 1;
+  // See shouldSuppressFinishedToasts, above, for the full tradeoff writeup.
+  const suppressFinishedToasts = shouldSuppressFinishedToasts(dropped.length, justReconnected);
 
   // A session that WAS running and now isn't — and that you aren't looking at —
   // just finished while you were elsewhere: notify.

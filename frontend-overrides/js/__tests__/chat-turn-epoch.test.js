@@ -787,3 +787,31 @@ test('cancelMobileEdit after a session switch queues through the real queueForSe
     delete globalThis.fetch;
   }
 });
+
+// ---------------------------------------------------------------------------
+// Rider (task-w6): shouldSuppressFinishedToasts — the pure decision behind
+// the cross-session notifier's restart-noise heuristic (_notifyTick). A
+// backend restart clears every in-flight turn in the same poll tick, which
+// looks identical to N simultaneous genuine completions from the poll's
+// shape alone — but exactly 1-2 simultaneous finishes (not a reconnect) are
+// common enough on an ordinary multi-thread day that suppressing them costs
+// more than the rare false positive of a small restart getting toasted.
+// ---------------------------------------------------------------------------
+
+test('shouldSuppressFinishedToasts: a single genuine finish is never suppressed', () => {
+  assert.equal(chatMod.shouldSuppressFinishedToasts(1, false), false);
+});
+
+test('shouldSuppressFinishedToasts: exactly two simultaneous genuine finishes are surfaced, not treated as restart noise', () => {
+  assert.equal(chatMod.shouldSuppressFinishedToasts(2, false), false);
+});
+
+test('shouldSuppressFinishedToasts: more than two simultaneous drops still reads as a mass restart and is suppressed', () => {
+  assert.equal(chatMod.shouldSuppressFinishedToasts(3, false), true);
+  assert.equal(chatMod.shouldSuppressFinishedToasts(10, false), true);
+});
+
+test('shouldSuppressFinishedToasts: a just-reconnected poll suppresses regardless of the drop count (unknown-length gap, can\'t trust the diff)', () => {
+  assert.equal(chatMod.shouldSuppressFinishedToasts(1, true), true);
+  assert.equal(chatMod.shouldSuppressFinishedToasts(2, true), true);
+});

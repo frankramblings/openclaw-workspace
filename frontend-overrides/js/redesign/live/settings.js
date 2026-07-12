@@ -158,7 +158,7 @@ export const actions = {
       await apiJson('/api/auth/change-password', { current_password: cur, new_password: nw }, 'POST');
       st.pwCurrent = ''; st.pwNew = ''; st.pwConfirm = '';
       runtime.render();
-      try { window.alert('Password updated.'); } catch (_) {}
+      try { window.alert('Password updated. Restart the OpenClaw gateway when convenient — chat routing keeps the old credential until then.'); } catch (_) {}
     } catch (e) {
       const msg = apiErrorMessage(e, 'Could not change password — check the current password.');
       try { window.alert(msg); } catch (_) {}

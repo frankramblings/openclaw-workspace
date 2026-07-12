@@ -24,10 +24,13 @@ export function monthWindow(real, offset) {
   const first = new Date(real.getFullYear(), real.getMonth() + off, 1);
   const gridStart = addDays(first, -monIdx(first)); // back up to Monday
 
-  // Calculate dynamic grid size: leading blanks + days in month, rounded to complete weeks
+  // Calculate dynamic grid size: leading blanks + days in month, rounded to complete weeks.
+  // daysInMonth MUST come from calendar fields (day-0-of-next-month), not a Date
+  // subtraction — subtracting two local midnights in ms is wall-clock time, which
+  // gains/loses an hour across a DST transition (e.g. Nov 2025 falls back on Nov 2,
+  // so (nextMonth - first)/86400000 == 30.0417 instead of 30, silently adding a 6th row).
   const leadingBlanks = monIdx(first);
-  const nextMonth = new Date(real.getFullYear(), real.getMonth() + off + 1, 1);
-  const daysInMonth = (nextMonth - first) / (1000 * 60 * 60 * 24);
+  const daysInMonth = new Date(real.getFullYear(), real.getMonth() + off + 1, 0).getDate();
   const totalCells = Math.ceil((leadingBlanks + daysInMonth) / 7) * 7;
   const gridEnd = addDays(gridStart, totalCells - 1); // totalCells inclusive
 

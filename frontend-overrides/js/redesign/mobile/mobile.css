@@ -240,6 +240,11 @@ html.native .m-tabbar {
    smaller than that, which is the "it zooms in/out on the text field" bug. */
 .m-composer textarea { flex: 1; background: transparent; border: none; resize: none; font-size: 16px; line-height: 1.4; color: var(--fg); padding: 6px 0; max-height: 40vh; }
 .m-composer textarea::placeholder { color: var(--faint); }
+/* Ghost prompt suggestion — the ghost itself is the tap-to-accept control
+   (no Tab key on iOS). Wrapper takes over the textarea's flex slot. */
+.m-composer .ta-wrap { flex: 1 1 auto; min-width: 0; position: relative; display: flex; }
+.m-composer .ta-wrap textarea { width: 100%; }
+.m-composer .ghost-suggest { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); color: var(--faint); font-size: 16px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; z-index: 2; }
 .m-round-btn { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--mut); flex: none; background: none; border: none; cursor: pointer; }
 /* composer attachments: the + opens the native photo/file picker; chips show what's queued */
 .m-attach-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 6px 8px; }

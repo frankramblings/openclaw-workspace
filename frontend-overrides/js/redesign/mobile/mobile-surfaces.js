@@ -10,6 +10,7 @@ import { renderActivity } from '../chat-activity.js';
 import { renderChatStrip } from '../chat-strip.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
+import { suggestGhost } from '../suggest-ghost.js';
 import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
@@ -166,8 +167,8 @@ export function mChat(s) {
     ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], (a) => `<span class="m-attach-chip"><span class="nm">${esc(a.name || a.id)}</span><span class="x" data-act="removeAttach" data-arg="${esc(a.id)}">✕</span></span>`)}</div>`)}
     <div class="bar">
       <label class="m-round-btn bordered" title="Attach photo or file"><input type="file" data-upload multiple style="display:none">${I.plus(16)}</label>
-      <textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message __AGENT_NAME__…">
-${esc(s.draft || '')}</textarea>
+      <div class="ta-wrap">${suggestGhost(s.live?.chat?.suggest, s.draft, { mobile: true })}<textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="${suggestGhost(s.live?.chat?.suggest, s.draft, { mobile: true }) ? ' ' : 'Message __AGENT_NAME__…'}">
+${esc(s.draft || '')}</textarea></div>
       <button class="m-round-btn m-hide-kb">${ic.mic()}</button>
       <button class="m-send${s.mobileEditingPending ? ' editing' : ''}" data-act="send">${I.send(16)}${s.mobileEditingPending ? `<span class="m-send-lbl">Save</span>` : ''}</button>
     </div>

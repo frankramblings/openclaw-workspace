@@ -1252,6 +1252,23 @@ function flushQueuedFor(chat, sid) {
   Promise.resolve().then(() => dispatchSend(taken.text, taken.attachSnap));
 }
 
+// Route a message into the session-keyed queue from OUTSIDE the send paths —
+// mobile edit-flow's cross-session Cancel (mobile/edit-flow.js, wired through
+// app.js's io hooks). The user cancelled an edit after switching threads, so
+// the restored message must NOT be spliced into the viewed thread; it queues
+// for its own session and fires through the normal plumbing the next time
+// that thread is active and idle (selectSession → flushQueuedFor). Toasts so
+// the "where did my message go?" moment has an answer.
+export function queueForSession(sid, text, attachSnap) {
+  const state = runtime.state;
+  if (!state || !sid) return;
+  const chat = ensureChat(state);
+  chat.queuedList = [...(chat.queuedList || []), { sid, text: text || '', attachSnap: attachSnap || [] }];
+  syncQueuedView(chat);
+  toast('Message will send in its original chat.');
+  runtime.render();
+}
+
 // Parse one stored SSE payload (the raw string event_store kept, e.g.
 // "data: {...}\n\n" or "data: [DONE]\n\n") into a reducer event, or null.
 function parseStoredSSE(raw) {

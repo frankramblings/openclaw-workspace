@@ -22,6 +22,7 @@ function makeState({ pendingId = 'u1', pendingText = 'hello there', timerId = 99
     mobileEditingPending: null,
     live: {
       chat: {
+        activeId: 'sess-1',
         thread: t,
         pendingSend: pendingId ? { messageId: pendingId, text: pendingText, timerId, attachSnap: [], sessionId: 'sess-1' } : null,
       },
@@ -127,6 +128,76 @@ test('cancelMobileEdit tolerates a missing io argument (production call site pas
   editPendingOnMobile(state, 'u1', { clearTimeout: () => {} });
   assert.doesNotThrow(() => cancelMobileEdit(state));
   assert.strictEqual(state.live.chat.thread.length, 2);
+});
+
+// ---- cross-session Cancel (3.5 review): the user switched threads mid-edit --
+
+test('cross-session cancel routes the message to its own session queue via io.queue, never the viewed thread', () => {
+  const state = makeState();
+  editPendingOnMobile(state, 'u1', { clearTimeout: () => {} });
+  // Mid-edit the user opens another conversation: chat.thread now belongs to
+  // sess-2, so splicing the restored bubble in would misfile it there.
+  state.live.chat.activeId = 'sess-2';
+  state.live.chat.thread = [{ id: 'c1', role: 'assistant', text: 'other thread' }];
+
+  const queued = [];
+  const timers = [];
+  cancelMobileEdit(state, {
+    setTimeout: (fn, ms) => { timers.push(ms); return 1; },
+    queue: (sid, text, attachSnap) => queued.push({ sid, text, attachSnap }),
+  });
+
+  assert.deepStrictEqual(queued, [{ sid: 'sess-1', text: 'hello there', attachSnap: [] }],
+    'message routed to ITS OWN session\'s queue');
+  assert.deepStrictEqual(state.live.chat.thread.map((m) => m.id), ['c1'],
+    'no bubble misfiled into the viewed thread');
+  assert.strictEqual(timers.length, 0, 'no send timer armed against the wrong view');
+  assert.strictEqual(state.live.chat.pendingSend, null, 'no pendingSend re-armed for the wrong view');
+  assert.strictEqual(state.mobileEditingPending, null);
+  assert.strictEqual(state.focus, null);
+});
+
+test('cross-session cancel without io.queue still queues directly, never splices', () => {
+  const state = makeState();
+  editPendingOnMobile(state, 'u1', { clearTimeout: () => {} });
+  state.live.chat.activeId = 'sess-2';
+
+  cancelMobileEdit(state, { setTimeout: () => 1 });
+
+  assert.deepStrictEqual(state.live.chat.queuedList,
+    [{ sid: 'sess-1', text: 'hello there', attachSnap: [] }]);
+  assert.strictEqual(state.live.chat.thread.length, 1,
+    'thread untouched (only u0 remains — u1 was spliced out by the edit)');
+  assert.strictEqual(state.live.chat.pendingSend, null);
+});
+
+test('same-session cancel still restores the bubble + re-arms the send (queue path not taken)', () => {
+  const state = makeState();
+  editPendingOnMobile(state, 'u1', { clearTimeout: () => {} });
+
+  const queued = [];
+  cancelMobileEdit(state, { setTimeout: () => 7, queue: (...a) => queued.push(a) });
+
+  assert.deepStrictEqual(queued, [], 'matching sessions never route to the queue');
+  assert.strictEqual(state.live.chat.thread.length, 2, 'bubble restored');
+  assert.ok(state.live.chat.pendingSend, 'send re-armed');
+});
+
+// ---- double-fired Cancel guard (3.5 review, minor) ---------------------------
+
+test('double-fired Cancel is inert: the second call cannot wipe the just-restored draft', () => {
+  const state = makeState({ draft: 'prior draft' });
+  editPendingOnMobile(state, 'u1', { clearTimeout: () => {} });
+  cancelMobileEdit(state, { setTimeout: () => 1 });
+  assert.strictEqual(state.draft, 'prior draft');
+
+  state.draft = 'typed after cancel';
+  const threadBefore = state.live.chat.thread.map((m) => m.id).join(',');
+  cancelMobileEdit(state, { setTimeout: () => 1 });
+
+  assert.strictEqual(state.draft, 'typed after cancel', 'second Cancel must not wipe the draft');
+  assert.strictEqual(state.live.chat.thread.map((m) => m.id).join(','), threadBefore,
+    'no double restore');
 });
 
 test('commit-edit path is unchanged: commitMobileEditIfPending just clears the editing flag', () => {

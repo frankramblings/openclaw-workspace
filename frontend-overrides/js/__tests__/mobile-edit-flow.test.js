@@ -19,6 +19,7 @@ function makeState({ pendingId = 'u1', pendingText = 'hello there', timerId = 99
     mobileEditingPending: null,
     live: {
       chat: {
+        activeId: 'sess-1',
         thread: t,
         pendingSend: pendingId ? { messageId: pendingId, text: pendingText, timerId, attachSnap: [], sessionId: 'sess-1' } : null,
       },
@@ -83,5 +84,19 @@ test('cancelMobileEdit clears editing state and focus, restores prior draft (no 
 test('cancelMobileEdit is safe when nothing to cancel', () => {
   const state = { draft: '', focus: null, mobileEditingPending: null };
   cancelMobileEdit(state);
+  assert.strictEqual(state.mobileEditingPending, null);
+});
+
+test('cancel after a session switch routes the message to its own session, not the viewed thread', () => {
+  const state = makeState();
+  editPendingOnMobile(state, 'u1', { clearTimeout: () => {} });
+  state.live.chat.activeId = 'sess-9';   // switched threads mid-edit
+
+  const queued = [];
+  cancelMobileEdit(state, { setTimeout: () => 1, queue: (sid, text) => queued.push([sid, text]) });
+
+  assert.deepStrictEqual(queued, [['sess-1', 'hello there']]);
+  assert.strictEqual(state.live.chat.thread.length, 0, 'nothing spliced into the viewed thread');
+  assert.strictEqual(state.live.chat.pendingSend, null);
   assert.strictEqual(state.mobileEditingPending, null);
 });

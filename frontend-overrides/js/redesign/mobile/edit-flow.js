@@ -40,30 +40,45 @@ export function editPendingOnMobile(state, msgId, io) {
 // sends), and the draft reverts to whatever the user had typed before they
 // tapped Edit (not emptied).
 //
-// io is optional: the app.js call site (`cancelMobileEdit: () =>
-// cancelMobileEdit(state)`) passes none today, so this falls back to the
-// real global setTimeout. That default arms a timer but has no `io.flush`
-// to call when it fires — wiring a real flush callback through requires
-// app.js (out of scope here; see task report).
+// Session guard: the user can switch conversations mid-edit, after which
+// chat.thread (and pendingSend's flush path) belong to a DIFFERENT session —
+// splicing the bubble back would misfile it into whatever thread is on
+// screen. When the snapshot's session isn't the active one, the message is
+// routed to chat's session-keyed queue instead (io.queue → live/chat.js
+// queueForSession, which also toasts; a direct queuedList push when no hook
+// is wired) and fires through the normal queue plumbing when its own thread
+// is next active. Safe because queuedList entries only ever fire into their
+// own session (flushQueuedFor / flushPending's view gate).
+//
+// io is optional: the app.js call site wires { setTimeout, flush, queue };
+// the bare default arms a timer with no flush/queue to call (see app.js).
 export function cancelMobileEdit(state, io = DEFAULT_IO) {
   const pend = state.mobileEditingPending;
-  if (pend) {
-    const chat = state.live && state.live.chat;
-    if (chat && pend.originalMsg) {
-      const idx = Math.max(0, Math.min(pend.originalIndex, chat.thread.length));
-      const deadline = Date.now() + GRACE_MS;
-      chat.thread.splice(idx, 0, { ...pend.originalMsg, _optimistic: true, _deadline: deadline });
-      if (pend.pending) {
-        const timerId = io.setTimeout(() => {
-          if (typeof io.flush === 'function') io.flush(pend.pending.sessionId);
-        }, GRACE_MS);
-        chat.pendingSend = { ...pend.pending, deadline, timerId };
-      }
+  // Double-fired Cancel (ghost tap, stale handler): the first call already
+  // restored everything — a second must be inert, not wipe the draft the
+  // first call just put back (or whatever the user typed since).
+  if (!pend) return;
+  const chat = state.live && state.live.chat;
+  const sid = pend.pending ? pend.pending.sessionId : null;
+  if (chat && pend.pending && sid != null && chat.activeId !== sid) {
+    if (typeof io.queue === 'function') {
+      io.queue(sid, pend.pending.text, pend.pending.attachSnap);
+    } else {
+      chat.queuedList = [...(chat.queuedList || []),
+        { sid, text: pend.pending.text, attachSnap: pend.pending.attachSnap }];
     }
-    state.draft = pend.priorDraft || '';
-  } else {
-    state.draft = '';
+  } else if (chat && pend.originalMsg) {
+    const idx = Math.max(0, Math.min(pend.originalIndex, chat.thread.length));
+    const deadline = Date.now() + GRACE_MS;
+    chat.thread.splice(idx, 0, { ...pend.originalMsg, _optimistic: true, _deadline: deadline });
+    if (pend.pending) {
+      const timerId = io.setTimeout(() => {
+        if (typeof io.flush === 'function') io.flush(pend.pending.sessionId);
+      }, GRACE_MS);
+      chat.pendingSend = { ...pend.pending, deadline, timerId };
+    }
   }
+  state.draft = pend.priorDraft || '';
   state.mobileEditingPending = null;
   state.focus = null;
 }

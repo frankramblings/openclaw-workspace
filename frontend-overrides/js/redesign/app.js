@@ -12,7 +12,7 @@ import { renderCenter, renderChatList, chatMsg, inboxToastHtml } from './surface
 import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
-import { derivedDepth, closeTopmost } from './mobile/mobile-history.js';
+import { derivedDepth, closeTopmost, computeMobileLatch } from './mobile/mobile-history.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { maybeShowThreadsHint } from './mobile/threads-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
@@ -104,7 +104,22 @@ const mq = window.matchMedia('(max-width: 768px)');
 // Hide root until the first live-data render so mock sample data never flashes.
 let rootRevealed = false;
 root.style.visibility = 'hidden';
-const isMobile = () => mq.matches;
+// Shell choice is decided ONCE at boot (computeMobileLatch, mobile-history.js)
+// instead of live `mq.matches` — a phone rotated to landscape (844-932px on
+// an iPhone) clears the ≤768 breakpoint, and re-reading it mid-session used
+// to silently swap in the desktop shell. mobile-history's pushed `ocUi`
+// history entries only exist/settle while isMobile() reads true, so that
+// swap stranded them; when portrait returned, `_uiDepth` was left ahead of
+// the real layer count and the next hardware Back closed one entry too many,
+// exiting the PWA instead of closing the still-open sheet. Every isMobile()
+// caller (render, syncMobileHistory, the popstate handler, …) reads this
+// same latched value, so they can never disagree mid-session.
+const _mobileLatched = computeMobileLatch({
+  coarsePointer: (() => { try { return window.matchMedia('(pointer: coarse)').matches; } catch (_) { return false; } })(),
+  touchCapable: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0),
+  width: window.innerWidth,
+});
+const isMobile = () => _mobileLatched;
 
 // Fade out the fortress boot loader (index.html #app-loader) once the shell is
 // revealed. Idempotent — safe to call from every reveal path.
@@ -1156,7 +1171,10 @@ wireMobileGestures({
   onOverlayChange: syncMobileHistory,
 });
 
-// re-render on breakpoint cross (desktop ⇆ mobile), then load the active surface
+// Re-render + reload the active surface on ≤768px breakpoint crossings that
+// are NOT a shell swap — isMobile() is latched at boot (see above) and never
+// flips from this, so on a latched-mobile phone this just re-renders the
+// same mobile shell across a rotation; on desktop it's a live browser resize.
 mq.addEventListener('change', () => { render(); loadActive(); });
 
 // expose state/render/actions to live/* modules (async re-renders after fetch)

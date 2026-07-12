@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { startLongPress, moveLongPress, endLongPress, resetLongPress } from '../redesign/mobile/longpress.js';
+import { startLongPress, moveLongPress, endLongPress, resetLongPress, armSwallow, shouldSwallowClick, scheduleSwallowDisarm } from '../redesign/mobile/longpress.js';
 
 function harness() {
   const dispatched = [];
@@ -74,4 +74,49 @@ test('startLongPress on the same target twice replaces the pending timer', () =>
   startLongPress(st, { msgId: 'u2', x: 5, y: 5 }, h);
   h.advance(500);
   assert.deepStrictEqual(h.dispatched, [['openMobileMsgSheet', 'u2']]);
+});
+
+// ---- click-swallow gate (center "+" long-press → capture sheet) -----------
+// Regression: the old implementation armed a FIXED 700ms window from the
+// moment the long-press fired. Holding past 450ms (fire) + 700ms (window) —
+// i.e. past ~1.15s total — meant the click synthesized on release landed
+// unguarded and fired "new chat" underneath the just-opened capture sheet.
+
+test('armSwallow marks the gate active', () => {
+  const gate = {};
+  armSwallow(gate);
+  assert.equal(shouldSwallowClick(gate), true);
+});
+
+test('an unarmed gate never swallows', () => {
+  assert.equal(shouldSwallowClick({}), false);
+  assert.equal(shouldSwallowClick(undefined), false);
+});
+
+test('swallow persists across an arbitrarily long hold — no fixed timer to outlast', () => {
+  const gate = {};
+  armSwallow(gate);
+  // Simulate holding well past what used to be a fixed 700ms window; nothing
+  // but an explicit pointerup-driven disarm should ever clear it.
+  assert.equal(shouldSwallowClick(gate), true);
+});
+
+test('scheduleSwallowDisarm clears the gate only after the deferred tick fires', () => {
+  const h = harness();
+  const gate = {};
+  armSwallow(gate);
+  scheduleSwallowDisarm(gate, h);
+  // Still armed synchronously — the click the browser fires immediately
+  // after pointerup must land inside this window.
+  assert.equal(shouldSwallowClick(gate), true);
+  h.advance(0);
+  assert.equal(shouldSwallowClick(gate), false);
+});
+
+test('scheduleSwallowDisarm is a no-op when the gate is not armed', () => {
+  const h = harness();
+  const gate = {};
+  scheduleSwallowDisarm(gate, h);
+  h.advance(0);
+  assert.equal(shouldSwallowClick(gate), false);
 });

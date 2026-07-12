@@ -10,6 +10,8 @@ import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderCon
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
 import { cardActions, isInvite, swipeIntent } from '../live/inbox-logic.js';
+import { edgeSwipeBlocked } from './mobile-history.js';
+import { armSwallow, shouldSwallowClick, scheduleSwallowDisarm } from './longpress.js';
 
 const PUSHED_SURFACES = new Set(['research', 'library', 'notes', 'settings']);
 
@@ -334,20 +336,30 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   // Tap fires mNewChat (new thread); holding ~450ms opens the capture sheet
   // instead, and we swallow the click that follows so a new thread isn't ALSO
   // created. Movement past a small threshold cancels (it was a scroll/swipe).
+  //
+  // The swallow gate (armSwallow/shouldSwallowClick/scheduleSwallowDisarm,
+  // longpress.js) stays armed until the ACTUAL pointerup rather than a fixed
+  // timer — holding past the old 700ms window let the release click through
+  // unguarded, which fired mNewChat right under the just-opened sheet
+  // (closeSheets() closed it again and started a fresh thread).
   const LP_MS = 450;
   let lp = null; // { sx, sy, timer }
+  const swallowGate = {};
+  const swallowIo = { setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t) };
   const clearLp = () => { if (lp) { clearTimeout(lp.timer); lp = null; } };
   const fireCaptureLongPress = () => {
     lp = null;
     state.quickCaptureOpen = true;
     state.captureType = state.captureType || 'remind';
     try { if (navigator.vibrate) navigator.vibrate(8); } catch (_) { /* no haptics */ }
-    // Eat the click that the browser dispatches on release so mNewChat is skipped.
-    const swallow = (ev) => { ev.stopPropagation(); ev.preventDefault(); root.removeEventListener('click', swallow, true); };
-    root.addEventListener('click', swallow, true);
-    setTimeout(() => root.removeEventListener('click', swallow, true), 700);
+    armSwallow(swallowGate);
     render();
   };
+  root.addEventListener('click', (e) => {
+    if (!shouldSwallowClick(swallowGate)) return;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
   root.addEventListener('pointerdown', (e) => {
     const btn = e.target.closest('.m-add-btn');
     if (!btn) return;
@@ -356,8 +368,9 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   root.addEventListener('pointermove', (e) => {
     if (lp && (Math.abs(e.clientX - lp.sx) > 8 || Math.abs(e.clientY - lp.sy) > 8)) clearLp();
   });
-  root.addEventListener('pointerup', clearLp);
-  root.addEventListener('pointercancel', clearLp);
+  const endLp = () => { clearLp(); scheduleSwallowDisarm(swallowGate, swallowIo); };
+  root.addEventListener('pointerup', endLp);
+  root.addEventListener('pointercancel', endLp);
 
   // --- edge-swipe → conversation drawer ------------------------------------
   // Swipe inward from the very left OR right screen edge to pull out the thread
@@ -426,8 +439,13 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
       } else { edg = null; }
       return;
     }
-    // Block opening while another surface owns the gesture layer.
-    if (state.quickCaptureOpen || state.companionSheetOpen || state.mConvSheetOpen || state.mModelSheetOpen || state.keyboard) { edg = null; return; }
+    // Block opening while another surface owns the gesture layer — including
+    // the compose sheet, the inbox/email reader, and the message-tools sheet,
+    // which used to be missing here: the drawer could open right OVER any of
+    // them, and one hardware Back then closed everything at once (see
+    // mobile-history.js's closeTopmost). edgeSwipeBlocked is the single
+    // source of truth shared with the Back-stack layer model.
+    if (edgeSwipeBlocked(state)) { edg = null; return; }
     const x = t.clientX;
     if (x <= EDGE) edg = { side: 'left', startX: x, startY: t.clientY, active: false, closing: false, shown: 0 };
     else if (x >= window.innerWidth - EDGE) edg = { side: 'right', startX: x, startY: t.clientY, active: false, closing: false, shown: 0 };

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { derivedDepth, closeTopmost } from '../redesign/mobile/mobile-history.js';
+import { derivedDepth, closeTopmost, edgeSwipeBlocked, computeMobileLatch } from '../redesign/mobile/mobile-history.js';
 
 test('depth 0 on a bare tab', () => {
   assert.equal(derivedDepth({ mTab: 'chat' }), 0);
@@ -13,10 +13,6 @@ test('each layer adds one: sub-screen, reader, sheet', () => {
   assert.equal(derivedDepth({ mTab: 'more', mSub: 'settings', quickCaptureOpen: true }), 2);
 });
 
-test('any open sheet counts as one layer, not one each', () => {
-  assert.equal(derivedDepth({ mTab: 'chat', mDrawerOpen: true, quickCaptureOpen: true }), 1);
-});
-
 test('message long-press sheet (nested in live.chat) counts', () => {
   assert.equal(derivedDepth({ mTab: 'chat', live: { chat: { mobileSheetMsgId: 'm1' } } }), 1);
 });
@@ -25,25 +21,140 @@ test('inbox reader counts as a layer', () => {
   assert.equal(derivedDepth({ mTab: 'inbox', inboxReader: { id: '1' } }), 1);
 });
 
-test('closeTopmost closes sheets before readers before sub-screens', () => {
-  const s = { mTab: 'more', mSub: 'notes', mReader: true, mModelSheetOpen: true, live: { chat: { mobileSheetMsgId: 'm1' } } };
+test('compose sheet counts as a layer', () => {
+  assert.equal(derivedDepth({ mTab: 'email', composeOpen: true }), 1);
+});
+
+// Regression: capture and the conversation drawer used to be bucketed into a
+// single "any sheet" layer, so both being open at once still only counted as
+// depth 1 — meaning a single Back closed both together instead of one at a
+// time. They're distinct priority levels now.
+test('capture and drawer are two DISTINCT layers, not one bucket', () => {
+  assert.equal(derivedDepth({ mTab: 'chat', mDrawerOpen: true, quickCaptureOpen: true }), 2);
+});
+
+test('closeTopmost closes msg-sheet, then capture, then compose, then reader, then drawer/model group, then sub-screen — one at a time', () => {
+  const s = {
+    mTab: 'more',
+    mSub: 'notes',
+    mReader: true,
+    mModelSheetOpen: true,
+    composeOpen: true,
+    quickCaptureOpen: true,
+    live: { chat: { mobileSheetMsgId: 'm1' } },
+  };
+  assert.equal(derivedDepth(s), 6);
+
   assert.equal(closeTopmost(s), true);
-  assert.equal(s.mModelSheetOpen, false);
-  assert.equal(s.live.chat.mobileSheetMsgId, null);
-  assert.equal(s.mReader, true, 'reader survives the sheet close');
+  assert.equal(s.live.chat.mobileSheetMsgId, null, 'msg-sheet closes first');
+  assert.equal(s.quickCaptureOpen, true, 'everything else survives');
+  assert.equal(s.composeOpen, true);
+  assert.equal(s.mReader, true);
+  assert.equal(s.mModelSheetOpen, true);
+  assert.equal(s.mSub, 'notes');
+
   assert.equal(closeTopmost(s), true);
-  assert.equal(s.mReader, false);
-  assert.equal(s.mSub, 'notes', 'sub-screen survives the reader close');
+  assert.equal(s.quickCaptureOpen, false, 'capture closes next');
+  assert.equal(s.composeOpen, true);
+
   assert.equal(closeTopmost(s), true);
-  assert.equal(s.mSub, null);
+  assert.equal(s.composeOpen, false, 'compose closes next');
+  assert.equal(s.mReader, true, 'reader survives the compose close');
+
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.mReader, false, 'reader closes next');
+  assert.equal(s.mModelSheetOpen, true, 'model sheet survives the reader close');
+  assert.equal(s.mSub, 'notes');
+
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.mModelSheetOpen, false, 'drawer/model group closes next');
+  assert.equal(s.mSub, 'notes', 'sub-screen survives the drawer/model close');
+
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.mSub, null, 'sub-screen closes last');
+
   assert.equal(closeTopmost(s), false, 'nothing left to close');
 });
 
-test('closeTopmost clears every sheet flag in one step', () => {
+// Regression for the audit bug: one hardware Back used to clear every open
+// sheet flag together (they were a single bucket). Each must close alone.
+test('closeTopmost never clears more than one sheet flag per call', () => {
   const s = { mTab: 'chat', mDrawerOpen: true, quickCaptureOpen: true, composeOpen: true };
-  closeTopmost(s);
-  assert.equal(s.mDrawerOpen, false);
-  assert.equal(s.quickCaptureOpen, false);
-  assert.equal(s.composeOpen, false);
+  assert.equal(derivedDepth(s), 3, 'capture, compose, and drawer are three distinct layers');
+
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.quickCaptureOpen, false, 'capture closes first');
+  assert.equal(s.composeOpen, true, 'compose survives the same call');
+  assert.equal(s.mDrawerOpen, true, 'drawer survives the same call');
+
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.composeOpen, false, 'compose closes next');
+  assert.equal(s.mDrawerOpen, true, 'drawer still survives');
+
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.mDrawerOpen, false, 'drawer closes last');
   assert.equal(derivedDepth(s), 0);
+});
+
+test('closeTopmost is a no-op on a bare tab', () => {
+  const s = { mTab: 'chat' };
+  assert.equal(closeTopmost(s), false);
+});
+
+// ---- edgeSwipeBlocked -----------------------------------------------------
+
+test('edgeSwipeBlocked is false with no overlay open', () => {
+  assert.equal(edgeSwipeBlocked({ mTab: 'chat' }), false);
+});
+
+test('edgeSwipeBlocked blocks over the compose sheet', () => {
+  assert.equal(edgeSwipeBlocked({ composeOpen: true }), true);
+});
+
+test('edgeSwipeBlocked blocks over the inbox reader', () => {
+  assert.equal(edgeSwipeBlocked({ inboxReader: { id: '1' } }), true);
+});
+
+test('edgeSwipeBlocked blocks over the email reader (mReader)', () => {
+  assert.equal(edgeSwipeBlocked({ mReader: true }), true);
+});
+
+test('edgeSwipeBlocked blocks over the message-tools long-press sheet', () => {
+  assert.equal(edgeSwipeBlocked({ live: { chat: { mobileSheetMsgId: 'm1' } } }), true);
+});
+
+test('edgeSwipeBlocked blocks over capture, companion, and model sheets', () => {
+  assert.equal(edgeSwipeBlocked({ quickCaptureOpen: true }), true);
+  assert.equal(edgeSwipeBlocked({ companionSheetOpen: true }), true);
+  assert.equal(edgeSwipeBlocked({ mModelSheetOpen: true }), true);
+});
+
+test('edgeSwipeBlocked blocks while the keyboard is up', () => {
+  assert.equal(edgeSwipeBlocked({ keyboard: true }), true);
+});
+
+// ---- computeMobileLatch ----------------------------------------------------
+
+test('computeMobileLatch: touch + coarse pointer is mobile at any width (landscape rotation)', () => {
+  assert.equal(computeMobileLatch({ coarsePointer: true, touchCapable: true, width: 926 }), true);
+});
+
+test('computeMobileLatch: touch + coarse pointer stays mobile at a narrow width too', () => {
+  assert.equal(computeMobileLatch({ coarsePointer: true, touchCapable: true, width: 390 }), true);
+});
+
+test('computeMobileLatch: a narrow desktop window (no touch) still latches mobile at boot', () => {
+  assert.equal(computeMobileLatch({ coarsePointer: false, touchCapable: false, width: 700 }), true);
+});
+
+test('computeMobileLatch: a wide desktop window with no touch stays desktop', () => {
+  assert.equal(computeMobileLatch({ coarsePointer: false, touchCapable: false, width: 1440 }), false);
+});
+
+test('computeMobileLatch: coarse pointer alone (no touch events) is not enough', () => {
+  assert.equal(computeMobileLatch({ coarsePointer: true, touchCapable: false, width: 1440 }), false);
+});
+
+test('computeMobileLatch: touch alone (no coarse pointer) is not enough', () => {
+  assert.equal(computeMobileLatch({ coarsePointer: false, touchCapable: true, width: 1440 }), false);
 });

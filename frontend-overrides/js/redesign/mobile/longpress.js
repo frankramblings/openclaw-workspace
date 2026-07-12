@@ -34,3 +34,32 @@ export function resetLongPress(state, io) {
     state.active = null;
   }
 }
+
+// ---- click-swallow gate ------------------------------------------------
+// A long-press that opens a sheet on release must eat the synthetic `click`
+// the browser dispatches right after — otherwise the tap target's normal
+// click handler ALSO fires underneath the sheet that just opened (e.g. the
+// center "+" button: long-press opens quick-capture, but the follow-up click
+// used to still fire "new chat", which closed the sheet it had just opened
+// AND started a fresh thread). The window used to be a fixed timer measured
+// from the moment the long-press fired; holding past it meant the release
+// click landed unguarded. The swallow must instead last until the ACTUAL
+// pointerup — an arbitrarily long hold is fine — then disarm itself shortly
+// after so a later, unrelated tap isn't eaten too.
+export function armSwallow(gate) {
+  gate.swallowClick = true;
+}
+
+export function shouldSwallowClick(gate) {
+  return !!(gate && gate.swallowClick);
+}
+
+// Call once on pointerup/pointercancel while armed. Disarms on a deferred
+// tick rather than immediately: the browser dispatches `click` synchronously
+// right after pointerup, in the same task, so clearing the flag straight
+// away would race it closed before the click that pointerup itself produced
+// ever arrives.
+export function scheduleSwallowDisarm(gate, io) {
+  if (!gate || !gate.swallowClick) return;
+  io.setTimer(() => { gate.swallowClick = false; }, 0);
+}

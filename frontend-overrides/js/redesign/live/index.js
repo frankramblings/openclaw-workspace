@@ -25,6 +25,19 @@ const fetchedOnce = new Set();  // surfaces whose load() has run at least once
 const generation = new Map();   // surface -> latest load attempt's generation
 const inFlight = new Map();     // surface -> the currently in-flight load's Promise
 const committedLive = new Map(); // surface -> state.live[surface] value last written by a CURRENT (non-stale) load
+const loadedAt = new Map();     // surface -> Date.now() of its last successful (non-stale) load — see the freshness sweep below
+// Invariant: the stale-attempt revert above (`state.live[name] = committedLive
+// get(name)`) only works because every live module REASSIGNS state.live[name]
+// wholesale on each load — the old object stays intact, untouched, so
+// "restore the last committed value" really does undo a clobber. A module
+// that instead mutates the existing state.live[name] object IN PLACE defeats
+// this: committedLive would just hold a reference to the same (now-mutated)
+// object, and there'd be nothing distinct to revert to. chat.js is exactly
+// that case (it patches state.live.chat's fields incrementally across a long
+// turn) — it's excluded from this whole mechanism via HAS_DATA (no entry) and
+// by never being called with force from the generic reentrancy-guard path in
+// a way that matters here; its own staleness/reconcile logic lives entirely
+// in live/chat.js instead.
 
 // Fix round 1, finding 2 (task-w2a-report.md): a surface that already has
 // something displayable on screen must survive a transient refresh failure —
@@ -116,6 +129,7 @@ export async function loadSurface(name, { state, actions, render, force = false 
           return { ok: false, stale: true };
         }
         committedLive.set(name, state.live ? state.live[name] : undefined);
+        loadedAt.set(name, Date.now()); // stamp for the visibility/focus freshness sweep below
         // Success clears any previously-recorded failure for this surface —
         // otherwise a fixed/retried load would keep showing the error
         // partial forever (loadError only ever got SET below, never
@@ -182,3 +196,65 @@ export function reload(name) {
   fetchedOnce.delete(name);
   return loadSurface(name, { state: runtime.state, actions: runtime.actions, render: runtime.render, force: true });
 }
+
+// ---- freshness: refetch stale surfaces on visibility/focus (task 6.1) -----
+// A tab that's been backgrounded (or just unfocused a while) can be showing
+// data that's quietly gone stale by the time the user comes back. On
+// visibilitychange->visible or window focus, any surface with a HAS_DATA
+// entry (chat/companion/settings are deliberately excluded — chat owns its
+// own reconcile-on-resume in live/chat.js, and the other two aren't
+// "freshness"-sensitive the same way) whose last successful load is older
+// than STALE_MS gets refetched through reload() — the SAME force path Retry
+// uses, so the keep-data-on-failure policy and generation guards above apply
+// exactly as they do to a manual retry: a transient failure on a populated
+// surface is a toast, never a wipe. Surfaces never yet loaded (no loadedAt
+// entry) are left alone — the normal activation path on first visit owns them.
+const STALE_MS = 60_000;
+
+// Pure predicate, exported for unit tests — no timers/DOM required.
+export function shouldRefetch(lastLoadedAt, now, staleMs = STALE_MS) {
+  return lastLoadedAt != null && (now - lastLoadedAt) >= staleMs;
+}
+
+// Local Y-M-D key (browser-local time, no timezone lib needed) — used only to
+// detect that midnight has passed while the tab sat open.
+function localDateKey(d = new Date()) {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+let lastDateKey = null;
+
+function refreshStaleSurfaces() {
+  const state = runtime.state;
+  if (!state) return;
+  const now = Date.now();
+  for (const name of Object.keys(HAS_DATA)) {
+    if (shouldRefetch(loadedAt.get(name), now)) reload(name);
+  }
+  // Calendar's `today` cell flag is computed once, inside load() (see
+  // live/calendar.js), not at render time — so a tab left open across
+  // midnight keeps highlighting yesterday's cell until calendar's data is
+  // actually refetched. That refetch may not happen above (a calendar
+  // checked seconds after midnight isn't yet 60s stale), so this is a
+  // separate, unconditional check: any local-date change since the last
+  // visibility/focus pass force-reloads calendar specifically. reload()'s own
+  // generation guard makes a second concurrent call here harmless if the
+  // staleness loop above already queued one.
+  const key = localDateKey();
+  if (lastDateKey != null && lastDateKey !== key) reload('calendar');
+  lastDateKey = key;
+}
+
+let _freshnessWired = false;
+function wireFreshnessResume() {
+  if (_freshnessWired) return;
+  _freshnessWired = true;
+  // Same defensive try/catch as live/chat.js's wireVisibilityResume — a test
+  // (or any environment without a real document/window) just no-ops here.
+  try {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshStaleSurfaces();
+    });
+    window.addEventListener('focus', refreshStaleSurfaces);
+  } catch (_) { /* environments without document/window: harmless */ }
+}
+wireFreshnessResume();

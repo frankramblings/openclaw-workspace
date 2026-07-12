@@ -17,6 +17,19 @@ import './task-rows.js'; // side-effect: boots the feed subscription and injects
 import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
+// Fetch caps for the task-6.2 "showing first N" disclosure footer (capNotice,
+// below). NOT imported from the live/*.js modules that own them — every
+// live/*.js file eventually imports api.js, which reads `location.origin` at
+// MODULE TOP LEVEL; surfaces.js is a pure renderer with no other live-module
+// dependency and stays importable before `location` exists (several tests
+// rely on exactly that). Kept in sync by hand — each value is mirrored from
+// its live module's own exported CAP (see the comment at each site).
+// Exported (INBOX_CAP/EMAIL_CAP) so mobile-surfaces.js's separate mInbox/
+// mEmailList renderers can share the same value instead of a third copy.
+export const INBOX_CAP = 200;    // live/inbox.js CAP
+export const EMAIL_CAP = 50;     // live/email.js CAP
+const LIBRARY_CAP = 30;   // live/library.js CAP
+const RESEARCH_CAP = 20;  // live/research.js CAP
 
 // ===========================================================================
 // SHARED — load-failure partial
@@ -46,6 +59,30 @@ export function loadErrorBlock(surfaceLabel, s) {
     <div>Couldn't load ${esc(surfaceLabel)}.</div>
     <button class="btn-sm" data-act="retrySurface" data-arg="${esc(key)}"${retrying ? ' disabled' : ''}>${retrying ? `${fortress(12)} Retrying…` : 'Retry'}</button>
   </div>`;
+}
+
+// Task 6.1: small manual-refresh button for a surface header — reuses the
+// SAME retrySurface plumbing as the error-state Retry button above (data-act
+// + state.retrying spinner state), just available from a healthy header too.
+// The visibility/focus freshness sweep in live/index.js already refetches a
+// surface once its data turns 60s+ stale; this covers "I want it now".
+function refreshBtn(key, s) {
+  const retrying = !!(s && s.retrying && s.retrying[key]);
+  return `<button type="button" class="icon-btn ocbtn" data-act="retrySurface" data-arg="${esc(key)}" title="Refresh" aria-label="Refresh"${retrying ? ' disabled' : ''}>${retrying ? fortress(14) : I.refresh(14)}</button>`;
+}
+
+// Task 6.2: every capped list endpoint (see each live/*.js module's exported
+// CAP) can silently hide real data once a fetch lands exactly at the cap —
+// there's no way for the UI to tell "that's everything" from "there's more,
+// we just didn't ask for it". No pagination build here, disclosure only: a
+// plain footer line when length === cap. Exported so mobile-surfaces.js's
+// separate mInbox/mEmailList renderers can share it (library/research reuse
+// THIS module's renderers wholesale via mobile-app.js's pushedSurface, so
+// they get the footer for free and need no separate mobile call).
+export function capNotice(len, cap) {
+  return len === cap
+    ? `<div style="padding:10px 4px 2px;color:var(--faint);font-size:12px;text-align:center">Showing first ${cap} — refine to see more</div>`
+    : '';
 }
 
 // ===========================================================================
@@ -479,7 +516,7 @@ function emailSurface(s) {
   <div class="split-h">
     <div class="oc-secondary email-list">
       <div class="list-top">
-        <div class="list-top-head"><span class="ttl">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="oc-spacer"></div><button class="btn btn-teal" data-act="composeNew">+ New</button></div>
+        <div class="list-top-head"><span class="ttl">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="oc-spacer"></div>${refreshBtn('email', s)}<button class="btn btn-teal" data-act="composeNew">+ New</button></div>
         <div class="oc-search">${I.search()}<input data-model="emailQuery" data-focus="emailQuery" placeholder="Search · INBOX" value="${esc(s.emailQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
       </div>
       <div class="list-scroll">
@@ -491,6 +528,7 @@ function emailSurface(s) {
             <div class="from">${esc(e.from)}</div>
           </div>`;
         }).join('')}
+        ${!s.loadError?.email ? capNotice(emails.length, EMAIL_CAP) : ''}
       </div>
     </div>
     ${s.loadError?.email ? loadErrorBlock('Email', s) : (s.live?.email?.current || emails.length) ? `<div class="reader">
@@ -737,6 +775,7 @@ function inboxSurface(s) {
         <div class="oc-spacer"></div>
         <button class="triage-btn" data-act="triageAll">✦ Triage with __AGENT_NAME__</button>
         <button class="icon-btn ocbtn" data-act="toggleHistory" title="Recent actions" style="margin-left:6px;flex:none;white-space:nowrap;font-size:13px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:7px;color:${s.inboxHistoryOpen ? 'var(--teal)' : 'var(--faint)'};cursor:pointer">⏱ History</button>
+        ${refreshBtn('inbox', s)}
       </div>
       ${chipRowHtml(
         sourceCounts(items, { dismissed: s.dismissed }, s.live?.inbox?.sources),
@@ -762,6 +801,7 @@ function inboxSurface(s) {
       ${s.loadError?.inbox
         ? loadErrorBlock('Inbox', s)
         : when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed. Nothing left to triage.</div></div>`)}
+      ${!s.loadError?.inbox ? capNotice(items.length, INBOX_CAP) : ''}
     </div>
     ${when(!!s.inboxEditFor, `
       <div class="inbox-edit-sheet">
@@ -930,7 +970,8 @@ function researchSurface(s) {
 
       ${s.loadError?.research ? loadErrorBlock('Research', s) : `
       <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past || []).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer" data-act="go" data-arg="library">Library, Research →</span></div>
-      ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}`}
+      ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}
+      ${capNotice((s.live?.research?.past || []).length, RESEARCH_CAP)}`}
     </div>
   </div>`;
 }
@@ -944,7 +985,7 @@ function librarySurface(s) {
   const lq = (s.libQuery || '').trim().toLowerCase();
   const items = all.filter((a) => (lf === 'all' || a.cat === lf) && (!lq || String(a.title || '').toLowerCase().includes(lq)));
   return `
-  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts __AGENT_NAME__ has produced</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newDoc" style="margin-right:8px">+ New doc</button><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div></div>
+  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts __AGENT_NAME__ has produced</span><div class="oc-spacer"></div>${refreshBtn('library', s)}<button class="btn btn-teal" data-act="newDoc" style="margin-right:8px">+ New doc</button><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div></div>
   <div class="lib-wrap">
     <div class="lib-filters">
       ${map(LIB_FILTERS, ([id, label]) => `<span class="lib-filter${lf === id ? ' active' : ''}" data-act="libFilter" data-arg="${id}">${esc(label)}</span>`)}
@@ -962,6 +1003,7 @@ function librarySurface(s) {
         </div>`;
       })}
     </div>
+    ${!s.loadError?.library ? capNotice(all.length, LIBRARY_CAP) : ''}
   </div>`;
 }
 
@@ -985,7 +1027,7 @@ function notesSurface(s) {
   <div class="split-h">
     <div class="oc-secondary notes-list">
       <div class="list-top">
-        <div class="list-top-head"><span class="ttl">Notes</span><span style="font-size:11px;color:var(--faint)">${s.live?.notes?.docs ? `vault · ${s.live.notes.docs.length}` : ''}</span><div class="oc-spacer"></div><button class="btn btn-teal" data-act="newNote">+ New</button></div>
+        <div class="list-top-head"><span class="ttl">Notes</span><span style="font-size:11px;color:var(--faint)">${s.live?.notes?.docs ? `vault · ${s.live.notes.docs.length}` : ''}</span><div class="oc-spacer"></div>${refreshBtn('notes', s)}<button class="btn btn-teal" data-act="newNote">+ New</button></div>
         <div class="oc-search">${I.search()}<input data-model="notesFilter" data-focus="notesFilter" placeholder="Search notes…" value="${esc(s.notesFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
       </div>
       <div class="list-scroll">

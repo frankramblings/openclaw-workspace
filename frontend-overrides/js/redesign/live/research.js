@@ -205,8 +205,13 @@ function firstParagraphHtml(md) {
 // fail-soft contract of the rest of the module (actions.*, the poll
 // machinery below) — those still swallow internally by design, since a
 // failed action shouldn't abort a running research job.
+// Fetch cap — exported so surfaces.js can render an honest "showing first N
+// — refine to see more" footer when the list comes back exactly at the cap
+// (task 6.2 — disclosure only, no pagination).
+export const CAP = 20;
+
 export async function load(state) {
-  const data = await apiGet('/api/research/library?limit=20');
+  const data = await apiGet(`/api/research/library?limit=${CAP}`);
   const research = Array.isArray(data?.research) ? data.research : [];
   const past = research.map((r) => ({
     q: r.query,

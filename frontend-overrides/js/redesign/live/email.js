@@ -169,8 +169,13 @@ async function readCurrent(uid) {
   return toCurrent(d);
 }
 
+// Fetch cap — exported so surfaces.js/mobile-surfaces.js can render an honest
+// "showing first N — refine to see more" footer when the list comes back
+// exactly at the cap (task 6.2 — disclosure only, no pagination).
+export const CAP = 50;
+
 export async function load(state) {
-  const res = await apiGet(`/api/email/list?folder=${encodeURIComponent(FOLDER)}&limit=50`);
+  const res = await apiGet(`/api/email/list?folder=${encodeURIComponent(FOLDER)}&limit=${CAP}`);
   const emails = (res?.emails || []).map(toListItem);
   // A legitimately-empty INBOX is a valid, successful result — it must NOT
   // throw (a throw here becomes a false "couldn't load Email" via

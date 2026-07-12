@@ -54,8 +54,13 @@ function toItem(it) {
   };
 }
 
+// Fetch cap — exported so surfaces.js/mobile-surfaces.js can render an honest
+// "showing first N — refine to see more" footer when the list comes back
+// exactly at the cap (task 6.2 — disclosure only, no pagination).
+export const CAP = 200;
+
 export async function load(state) {
-  const raw = await apiGet('/api/items?limit=200');
+  const raw = await apiGet(`/api/items?limit=${CAP}`);
   const list = Array.isArray(raw && raw.items) ? raw.items : [];
   state.live.inbox = {
     items: list.map(toItem),

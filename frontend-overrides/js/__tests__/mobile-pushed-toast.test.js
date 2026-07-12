@@ -47,3 +47,27 @@ test('mToastHtml is exported (pushedSurface reuses the same shared renderer as m
   assert.match(mToastHtml({ inboxToast: toastState }), /inbox-toast/);
   assert.strictEqual(mToastHtml({ inboxToast: null }), '');
 });
+
+// ---------------------------------------------------------------------------
+// Task 6.1: pull-to-refresh on the pushed More surfaces. wireMobileGestures'
+// touchstart handler (mobile-app.js) resolves the pullable feed via
+// `closest('[data-ptr]')` — pushedSurface's `.m-pushed` wrapper must carry
+// that attribute (mobile.css already makes it the scroll container:
+// flex:1;overflow:auto) or a downward pull on Notes/Library/Research/
+// Settings silently does nothing, unlike every other mobile list.
+// ---------------------------------------------------------------------------
+for (const sub of ['notes', 'library', 'research', 'settings']) {
+  test(`pushed "${sub}" surface's scroll container is pull-to-refreshable`, () => {
+    const html = renderMobile({
+      mTab: 'more', mSub: sub, live: {}, dismissed: [], ...subState[sub],
+    });
+    assert.match(html, /<div class="m-pushed" data-ptr="1">/);
+  });
+}
+
+test('pushed surface shows the pull-to-refresh spinner while state.refreshing is set', () => {
+  const html = renderMobile({
+    mTab: 'more', mSub: 'notes', live: {}, dismissed: [], refreshing: true, ...subState.notes,
+  });
+  assert.match(html, /m-ptr open/);
+});

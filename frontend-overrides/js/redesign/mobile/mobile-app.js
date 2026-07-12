@@ -5,7 +5,7 @@
 
 import { icon } from '../icons.js';
 import { renderCenter } from '../surfaces.js';
-import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore, mToastHtml } from './mobile-surfaces.js';
+import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore, mToastHtml, mPtr } from './mobile-surfaces.js';
 import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvDrawer, renderModelSheet, renderSnoozeSheet } from './mobile-sheets.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
@@ -28,13 +28,23 @@ export function swipeDirClass(dx) {
   return null;
 }
 
+// Task 6.1: pull-to-refresh on the pushed More surfaces (notes/library/
+// research/settings). `.m-pushed` (mobile.css: flex:1;overflow:auto) IS the
+// scroll container for whatever desktop renderer renderCenter produces here,
+// so it's the right element for data-ptr — wireMobileGestures' touchstart
+// handler resolves the pullable feed via `closest('[data-ptr]')` and its
+// release calls the generic refresh() (doRefresh in app.js), which re-derives
+// the active surface from state.mSub — already correctly pointed at `sub`
+// here — so no per-surface plumbing is needed beyond the attribute + the
+// indicator markup itself (mPtr, shared with mobile-surfaces.js's own
+// data-ptr feeds).
 function pushedSurface(s, sub) {
   const back = icon('<path d="m15 18-6-6 6-6"/>', { size: 20, sw: 2.2 });
   return `
   <div class="m-head" style="display:flex;align-items:center;gap:6px;padding-top:calc(env(safe-area-inset-top,0px) + 14px);padding-bottom:10px">
     <button class="m-back" data-act="mBackToHub">${back}<span>More</span></button>
   </div>
-  <div class="m-pushed">${renderCenter({ ...s, surface: sub })}</div>
+  <div class="m-pushed" data-ptr="1">${mPtr(s)}${renderCenter({ ...s, surface: sub })}</div>
   ${mToastHtml(s)}`;
 }
 

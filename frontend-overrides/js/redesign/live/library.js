@@ -15,7 +15,10 @@ import { actions as docActions, initDocEditor } from './document-editor.js';
 export const actions = { ...docActions };
 let editorInited = false;
 
-const CAP = 30;
+// Fetch/render cap — exported so surfaces.js can render an honest "showing
+// first N — refine to see more" footer when the list comes back exactly at
+// the cap (task 6.2 — disclosure only, no pagination).
+export const CAP = 30;
 
 // Languages that should render as a code SNIPPET rather than a DOCUMENT.
 const CODE_LANGS = new Set([

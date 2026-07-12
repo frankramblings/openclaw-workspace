@@ -4,7 +4,7 @@
 import { I, icon, fortress } from '../icons.js';
 import { esc, map, when, stripMd } from '../dom.js';
 import { AVATAR } from '../data.js';
-import { QUICK_CHIPS } from '../surfaces.js';
+import { QUICK_CHIPS, capNotice, INBOX_CAP, EMAIL_CAP } from '../surfaces.js';
 import { MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
 import { renderChatStrip } from '../chat-strip.js';
@@ -155,7 +155,9 @@ export function mChatMsg(m, s) {
 // Pull-to-refresh indicator. Any .m-scroll marked data-ptr="1" with this as its
 // first child becomes pullable (see wireMobileGestures); refresh() re-fetches
 // whatever surface is active, so the markup is all each surface needs.
-const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr${s.refreshing ? ' open' : ''}" style="height:${s.refreshing ? 'auto' : '0'}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
+// Exported: mobile-app.js's pushedSurface (research/library/notes/settings —
+// task 6.1) reuses this same indicator on its own data-ptr scroll container.
+export const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr${s.refreshing ? ' open' : ''}" style="height:${s.refreshing ? 'auto' : '0'}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
 
 // Bottom pull-to-refresh indicator — the mirror of mPtr, anchored to the END of
 // a bottom-pinned feed (chat). A .m-scroll marked data-ptr-btm="1" with this as
@@ -343,6 +345,7 @@ export function mInbox(s) {
     ${s.loadError?.inbox
       ? mLoadErrorBlock('Inbox', s)
       : when(visible.length === 0, `<div class="inbox-zero" style="padding:60px 0"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed.</div></div>`)}
+    ${!s.loadError?.inbox ? capNotice(items.length, INBOX_CAP) : ''}
   </div>
   ${inboxReaderSheet}
   ${mToastHtml(s)}`;
@@ -375,6 +378,7 @@ export function mEmailList(s) {
         <div class="snip">${esc(e.from)}${snippet ? ` · ${esc(snippet)}` : ''}</div>
       </div>`;
     }) : `<div class="m-mail-empty">${emptyMsg}</div>`}
+    ${!s.loadError?.email ? capNotice(emails.length, EMAIL_CAP) : ''}
   </div>
   ${mToastHtml(s)}`;
 }

@@ -15,7 +15,7 @@ import assert from 'node:assert';
 globalThis.location = { origin: 'http://localhost' };
 
 const { runtime } = await import('../redesign/live/runtime.js');
-const { loadSurface, reload } = await import('../redesign/live/index.js');
+const { loadSurface, reload, shouldRefetch } = await import('../redesign/live/index.js');
 
 function jsonRes(obj) {
   return { ok: true, headers: { get: () => 'application/json' }, json: async () => obj, text: async () => JSON.stringify(obj) };
@@ -198,4 +198,32 @@ test('finding 5: reload() (what retrySurface actually calls) also flags retrying
 
   d.resolve(jsonRes({ research: [] }));
   delete globalThis.fetch;
+});
+
+// ---------------------------------------------------------------------------
+// Task 6.1: freshness — shouldRefetch() is the pure staleness decision behind
+// the visibility/focus sweep (the DOM wiring itself isn't unit-testable here;
+// this is the decision the wiring delegates to).
+// ---------------------------------------------------------------------------
+
+test('shouldRefetch: never-loaded (null/undefined) is left alone — the initial activation path owns it, not the freshness sweep', () => {
+  assert.equal(shouldRefetch(null, Date.now()), false);
+  assert.equal(shouldRefetch(undefined, Date.now()), false);
+});
+
+test('shouldRefetch: freshly-loaded data (< 60s old) is left alone', () => {
+  const now = 1_000_000;
+  assert.equal(shouldRefetch(now - 59_000, now), false);
+});
+
+test('shouldRefetch: data loaded exactly 60s ago (or more) is stale', () => {
+  const now = 1_000_000;
+  assert.equal(shouldRefetch(now - 60_000, now), true);
+  assert.equal(shouldRefetch(now - 90_000, now), true);
+});
+
+test('shouldRefetch: honors a custom threshold', () => {
+  const now = 1_000_000;
+  assert.equal(shouldRefetch(now - 5_000, now, 10_000), false);
+  assert.equal(shouldRefetch(now - 10_000, now, 10_000), true);
 });

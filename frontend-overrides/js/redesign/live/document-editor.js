@@ -32,9 +32,13 @@ let overlay = null;    // fixed dock container
 let titleEl = null;    // title <input>
 let statusEl = null;   // "Saved"/"Saving…" hint
 let flashEl = null;    // transient "Updated" chip
+let saveBtn = null;    // Save button — disabled while the buffer failed to load
 let loadingJs = null;  // in-flight script promise
 let grabber = null;    // left-edge resize handle
 let conflictBanner = null; // "This file changed on disk" banner
+let errorBanner = null;    // "Couldn't load" / "Couldn't save on close" banner
+let errorMsgEl = null;     // its message text
+let errorActionsEl = null; // its action-buttons container
 let watchWs = null;    // shared workspace-watch WebSocket
 let watchWsReady = null; // Promise for the current connect attempt
 let watchedPath = null;  // abs path currently subscribed for the open doc
@@ -69,9 +73,56 @@ function docState() {
   if (!st.docEditor) st.docEditor = {
     open: false, id: null, title: '', status: '',
     wsPath: null, wsRootKey: null, wsMtimeNs: null, wsAbsPath: null,
-    readOnly: false,
+    readOnly: false, loadFailed: false, saveFailed: false,
   };
   return st.docEditor;
+}
+
+// ---- pure decision helpers (exported for unit tests — no DOM/network) ------
+//
+// These are the single source of truth for "where does a save go" and
+// "should we warn before the tab closes". Keeping them pure means the
+// buffer-identity bugs this task fixes (a stale wsPath surviving into a
+// Library-doc buffer, autosave running against a failed/blank load) show up
+// as a wrong return value here under `node --test`, not just as a corrupted
+// file discovered later.
+
+/**
+ * Decide where actions.saveDoc should write, given the current docState.
+ * `wsPath` takes precedence over `id` when both are set on the same buffer —
+ * but the real fix for the cross-write bug is that resetBufferIdentity()
+ * clears the previous kind's fields before a new open ever sets the other,
+ * so both should never legitimately be set at once (see its tests).
+ */
+export function saveTarget(d) {
+  if (!d || !d.open) return { kind: 'none' };
+  if (d.loadFailed) return { kind: 'none' };
+  if (d.readOnly) return { kind: 'none' };
+  if (d.wsPath) return { kind: 'ws', path: d.wsPath, mtimeNs: d.wsMtimeNs != null ? d.wsMtimeNs : null, rootKey: d.wsRootKey || 'workspace' };
+  if (d.id) return { kind: 'doc', id: d.id };
+  return { kind: 'none' };
+}
+
+/**
+ * Clear every field that identifies "which buffer is open" and any leftover
+ * per-buffer scratch state (conflict payload). openDoc and openWorkspaceFile
+ * both call this FIRST, before setting their own kind's fields, so opening a
+ * Library doc after a workspace file (or vice versa) can never inherit the
+ * previous buffer's wsPath/id/readOnly/loadFailed.
+ */
+export function resetBufferIdentity(d) {
+  if (!d) return d;
+  d.id = null;
+  d.wsPath = null; d.wsRootKey = null; d.wsMtimeNs = null; d.wsAbsPath = null;
+  d.readOnly = false;
+  d.loadFailed = false;
+  d._incoming = null; d._incomingMtimeNs = null;
+  return d;
+}
+
+/** beforeunload guard: warn while there's unsaved work that would be lost. */
+export function shouldWarnBeforeUnload(d, isDirty) {
+  return !!(d && d.open && (isDirty || d.saveFailed));
 }
 
 // ---- shared workspace-watch WebSocket (silent reload on disk changes) -------
@@ -220,6 +271,7 @@ function acceptIncoming() {
   d.wsMtimeNs = d._incomingMtimeNs || d.wsMtimeNs;
   d.status = 'Saved';
   dirty = false;
+  d.saveFailed = false; // the unresolved-conflict save-failure no longer applies — we just discarded local edits
   if (statusEl) statusEl.textContent = 'Saved';
   hideConflict();
   flashChip('Reloaded');
@@ -232,6 +284,42 @@ async function keepMineAndSave() {
   d.wsMtimeNs = null;
   hideConflict();
   if (runtime.actions && runtime.actions.saveDoc) runtime.actions.saveDoc();
+}
+
+// ---- error banner (load-failed retry / close-failed discard) ---------------
+
+/** `buttons`: [{label, onClick, primary?}]. Rebuilds the action row each call. */
+function showError(message, buttons) {
+  if (!errorBanner) return;
+  errorMsgEl.textContent = message;
+  errorActionsEl.innerHTML = '';
+  for (const { label, onClick, primary } of buttons) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = primary
+      ? 'height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--border,#2a2d33);background:var(--teal,#4fe3d1);color:#06231f;font-weight:600;cursor:pointer'
+      : 'height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--border,#2a2d33);background:transparent;color:var(--fg,#e8eaed);cursor:pointer';
+    b.onclick = onClick;
+    errorActionsEl.appendChild(b);
+  }
+  errorBanner.style.display = 'flex';
+}
+
+function hideError() {
+  if (errorBanner) errorBanner.style.display = 'none';
+}
+
+// Visually + functionally lock the buffer while a load has failed: pointer
+// events off (nothing to click/type into) and the Save button disabled, on
+// top of the markDirty/saveDoc guards (saveTarget returns 'none') that
+// refuse to persist anything regardless of the UI state.
+function setBufferLocked(locked) {
+  if (host) { host.style.pointerEvents = locked ? 'none' : ''; host.style.opacity = locked ? '0.55' : ''; }
+  if (saveBtn) {
+    saveBtn.disabled = locked;
+    saveBtn.style.opacity = locked ? '0.5' : '';
+    saveBtn.style.cursor = locked ? 'not-allowed' : 'pointer';
+  }
 }
 
 function applyMode(mode) {
@@ -304,7 +392,7 @@ async function ensureEditor() {
     modeSeg.appendChild(btn);
   }
 
-  const saveBtn = document.createElement('button');
+  saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
   saveBtn.style.cssText = 'height:30px;padding:0 14px;border-radius:8px;border:1px solid var(--border,#2a2d33);background:var(--teal,#4fe3d1);color:#06231f;font-weight:600;cursor:pointer;flex:none';
   saveBtn.onclick = () => { if (runtime.actions && runtime.actions.saveDoc) runtime.actions.saveDoc(); };
@@ -334,10 +422,22 @@ async function ensureEditor() {
   cbKeep.onclick = keepMineAndSave;
   conflictBanner.append(cbMsg, cbReload, cbKeep);
 
+  // Generic error banner: "couldn't load this doc/file" (retry affordance) or
+  // "couldn't save on close" (discard affordance). Reddish, distinct from the
+  // amber conflict banner above. Message + buttons are (re)built per call by
+  // showError() since the situation/actions differ each time it's shown.
+  errorBanner = document.createElement('div');
+  errorBanner.style.cssText = 'display:none;align-items:center;gap:10px;padding:8px 16px;background:rgba(240,80,60,0.14);border-bottom:1px solid rgba(240,80,60,0.4);color:var(--fg,#e8eaed);font-size:13px;flex:none';
+  errorMsgEl = document.createElement('span');
+  errorMsgEl.style.cssText = 'flex:1;min-width:0';
+  errorActionsEl = document.createElement('span');
+  errorActionsEl.style.cssText = 'display:flex;gap:8px;flex:none';
+  errorBanner.append(errorMsgEl, errorActionsEl);
+
   host = document.createElement('div');
   host.style.cssText = 'flex:1;min-height:0;overflow:hidden';
 
-  overlay.append(head, conflictBanner, host);
+  overlay.append(head, conflictBanner, errorBanner, host);
   document.body.appendChild(overlay);
 
   editor = new window.toastui.Editor({
@@ -365,7 +465,10 @@ let dirtyTO = null;
 function markDirty() {
   if (suppressChange) return; // our own reload/openDoc setMarkdown — not a user edit
   const d = docState();
-  if (d && d.readOnly) return; // read-only files never autosave
+  // No valid save target (read-only, failed-to-load, or nothing open) — never
+  // arm autosave. In particular this is what stops a blank/failed-load
+  // buffer from autosaving near-empty content over the real file.
+  if (d && saveTarget(d).kind === 'none') return;
   dirty = true;
   if (d) d.status = 'Unsaved';
   if (statusEl) statusEl.textContent = 'Unsaved';
@@ -437,6 +540,15 @@ export function initDocEditor() {
     const d = docState();
     if (d && d.open) applyDockWidth(readSavedWidth());
   });
+  // Warn before an accidental tab close/reload drops unsaved edits (or a
+  // save that already failed once — dirty gets cleared into an autosave
+  // retry loop, but the failure itself must keep blocking silent unload).
+  window.addEventListener('beforeunload', (e) => {
+    if (!shouldWarnBeforeUnload(docState(), dirty)) return;
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  });
 }
 
 export const actions = {
@@ -456,13 +568,50 @@ export const actions = {
     if (!d) return;
     try {
       await ensureEditor();
-      let doc = {};
-      try { doc = await apiGet(`/api/document/${id}`); } catch (_) { doc = {}; }
+      let doc = null;
+      let loadFailed = false;
+      try { doc = await apiGet(`/api/document/${id}`); } catch (_) { loadFailed = true; }
+
+      // Reset buffer identity FIRST — before assigning the new id — so a doc
+      // opened right after a workspace file can never inherit its
+      // wsPath/wsAbsPath/readOnly (the cross-write bug: autosave would keep
+      // checking wsPath first and silently write this doc's markdown over
+      // the previous workspace file on disk).
+      const prevAbsPath = d.wsAbsPath;
+      resetBufferIdentity(d);
+      if (prevAbsPath) unsubscribeWatch(prevAbsPath);
+      hideConflict(); // a stale "file changed on disk" banner from a previous ws-file buffer must not survive
+      dirty = false;
+      d.saveFailed = false;
+      d.open = true;
+      d.id = id;
+      d.loadFailed = loadFailed;
+      if (titleEl) titleEl.readOnly = false; // stuck `true` from a prior workspace-file open
+
+      if (loadFailed) {
+        d.title = 'Untitled document';
+        d.status = 'Load failed';
+        if (titleEl) titleEl.value = d.title;
+        if (statusEl) statusEl.textContent = d.status;
+        suppressChange = true;
+        try { editor.setMarkdown('', false); } catch (_) {}
+        setTimeout(() => { suppressChange = false; }, 60);
+        setBufferLocked(true);
+        showError("Couldn't load this document.", [
+          { label: 'Retry', primary: true, onClick: () => actions.openDoc(id) },
+          { label: 'Close', onClick: () => actions.closeDoc() },
+        ]);
+        runtime.render();
+        return;
+      }
+
       const content = (doc && (doc.current_content != null ? doc.current_content : doc.content)) || '';
       const title = (doc && doc.title) || 'Untitled document';
-      d.open = true; d.id = id; d.title = title; d.status = 'Saved';
+      d.title = title; d.status = 'Saved';
       if (titleEl) titleEl.value = title;
       if (statusEl) statusEl.textContent = 'Saved';
+      setBufferLocked(false);
+      hideError();
       suppressChange = true;
       try { editor.setMarkdown(content, false); } catch (_) {}
       setTimeout(() => { suppressChange = false; }, 60);
@@ -497,14 +646,17 @@ export const actions = {
       let content = '';
       let mtimeNs = null;
       let absPath = null;
+      let loadFailed = false;
       try {
         const res = await fetch('/api/workspace/file?' + qs, { credentials: 'same-origin' });
         if (res.ok) {
           content = await res.text();
           const hdr = res.headers.get('X-Mtime-Ns');
           if (hdr) mtimeNs = parseInt(hdr, 10) || null;
+        } else {
+          loadFailed = true;
         }
-      } catch (_) {}
+      } catch (_) { loadFailed = true; }
       // Absolute path — used as the WebSocket subscription key. Fetching the
       // roots list once gives us the base for `rk`; cheap and cached client-side.
       try {
@@ -517,39 +669,69 @@ export const actions = {
       } catch (_) {}
       const name = path.split('/').pop() || path;
       const readOnly = rk !== 'workspace';
-      // Tear down any prior subscription before switching docs.
-      if (d.wsAbsPath && d.wsAbsPath !== absPath) unsubscribeWatch(d.wsAbsPath);
-      d.open = true; d.id = null; d.wsPath = path; d.wsRootKey = rk;
-      d.wsMtimeNs = mtimeNs; d.wsAbsPath = absPath;
+
+      // Reset buffer identity FIRST — before assigning the new wsPath — so a
+      // workspace file opened right after a Library doc can never inherit
+      // its id/readOnly/loadFailed (the cross-write bug's mirror image).
+      const prevAbsPath = d.wsAbsPath;
+      resetBufferIdentity(d);
+      if (prevAbsPath && prevAbsPath !== absPath) unsubscribeWatch(prevAbsPath);
+
+      d.open = true; d.wsPath = path; d.wsRootKey = rk;
+      // On a failed load we don't have a trustworthy mtime — force the next
+      // save (once retried) to go through the normal 409-conflict path
+      // rather than silently winning a race with a null if_mtime_ns.
+      d.wsMtimeNs = loadFailed ? null : mtimeNs;
+      d.wsAbsPath = absPath;
       d.readOnly = readOnly;
-      d.title = name; d.status = readOnly ? 'Read-only' : 'Saved';
+      d.loadFailed = loadFailed;
+      d.title = name; d.status = loadFailed ? 'Load failed' : (readOnly ? 'Read-only' : 'Saved');
       dirty = false;
+      d.saveFailed = false;
       hideConflict();
       if (titleEl) { titleEl.value = name; titleEl.readOnly = true; }
       if (statusEl) statusEl.textContent = d.status;
       suppressChange = true;
-      try { editor.setMarkdown(content, false); } catch (_) {}
+      try { editor.setMarkdown(loadFailed ? '' : content, false); } catch (_) {}
       setTimeout(() => { suppressChange = false; }, 60);
       applyMode('md');
-      if (!readOnly && absPath) subscribeWatch(absPath);
+      setBufferLocked(loadFailed);
+      if (loadFailed) {
+        showError("Couldn't load this file.", [
+          { label: 'Retry', primary: true, onClick: () => actions.openWorkspaceFile(path, rk) },
+          { label: 'Close', onClick: () => actions.closeDoc() },
+        ]);
+      } else {
+        hideError();
+        if (!readOnly && absPath) subscribeWatch(absPath);
+      }
       runtime.render();
     } catch (_) { try { window.alert('Could not open the file.'); } catch (e) {} }
   },
 
-  // Save the current doc (also used by autosave + close).
+  // Save the current doc (also used by autosave + close). Returns a status
+  // code: 'ok' (saved), 'skip' (nothing to do — read-only/failed-load/
+  // nothing open), 'conflict' (409 — conflictBanner is now showing), or
+  // 'failed' (network/HTTP error — caller should surface it, e.g. closeDoc).
   saveDoc: async () => {
     const d = docState();
-    if (!d || !editor) return;
-    // Read-only files (outside the workspace root) never round-trip through
-    // the write endpoint — the backend would refuse it anyway.
-    if (d.readOnly) { if (statusEl) statusEl.textContent = 'Read-only'; return; }
+    if (!d || !editor) return 'skip';
+    const target = saveTarget(d);
+    if (target.kind === 'none') {
+      // Read-only / failed-load / nothing-open — never round-trip through
+      // the write endpoint. In particular this is what stops autosave from
+      // writing near-empty content over a doc/file that never finished
+      // loading in the first place.
+      if (statusEl) statusEl.textContent = d.loadFailed ? 'Load failed' : (d.readOnly ? 'Read-only' : (d.status || ''));
+      return 'skip';
+    }
     const content = (() => { try { return editor.getMarkdown(); } catch (_) { return ''; } })();
     const title = (titleEl && titleEl.value) || d.title || 'Untitled document';
     if (statusEl) statusEl.textContent = 'Saving…';
     try {
-      if (d.wsPath) {
-        const body = { path: d.wsPath, content };
-        if (d.wsMtimeNs != null) body.if_mtime_ns = d.wsMtimeNs;
+      if (target.kind === 'ws') {
+        const body = { path: target.path, content };
+        if (target.mtimeNs != null) body.if_mtime_ns = target.mtimeNs;
         const res = await fetch('/api/workspace/file', {
           method: 'PUT', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -559,7 +741,7 @@ export const actions = {
           // Someone else won the race. Fetch the winning content and let the
           // user pick (Reload disk / Keep mine).
           try {
-            const qs = `path=${encodeURIComponent(d.wsPath)}&root_key=${encodeURIComponent(d.wsRootKey || 'workspace')}`;
+            const qs = `path=${encodeURIComponent(target.path)}&root_key=${encodeURIComponent(target.rootKey)}`;
             const r2 = await fetch('/api/workspace/file?' + qs, { credentials: 'same-origin' });
             if (r2.ok) {
               d._incoming = await r2.text();
@@ -568,8 +750,9 @@ export const actions = {
             }
           } catch (_) {}
           if (statusEl) statusEl.textContent = 'Conflict';
+          d.saveFailed = true;
           showConflict();
-          return;
+          return 'conflict';
         }
         if (res.ok) {
           const j = await res.json().catch(() => ({}));
@@ -580,46 +763,78 @@ export const actions = {
           // Leave `dirty` set so the next autosave tick / close-doc retries
           // instead of silently losing the edit under a "Saved" label.
           if (statusEl) statusEl.textContent = 'Save failed';
-          return;
+          d.saveFailed = true;
+          return 'failed';
         }
-      } else if (d.id) {
+      } else if (target.kind === 'doc') {
         // Raw fetch, not apiJson: apiJson (api.js) deliberately resolves
         // rather than throws on 502/503 (routine restart blips get treated
         // as success by most callers), which would otherwise fall through to
         // the 'Saved' line below on a save that never actually landed.
         // Checking res.ok directly here catches that case too.
-        const res = await fetch(`/api/document/${d.id}`, {
+        const res = await fetch(`/api/document/${target.id}`, {
           method: 'PUT', credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content, title }),
         });
         if (!res.ok) {
           if (statusEl) statusEl.textContent = 'Save failed';
-          return;
+          d.saveFailed = true;
+          return 'failed';
         }
-      } else {
-        return;
       }
       d.status = 'Saved';
       dirty = false;
+      d.saveFailed = false;
       if (statusEl) statusEl.textContent = 'Saved';
+      // A later autosave landing successfully must clear any stale
+      // "couldn't save on close" banner left over from an earlier attempt —
+      // the user kept editing instead of clicking Retry/Discard, and the
+      // data is fine now, so the banner shouldn't stay stuck.
+      hideError();
+      return 'ok';
     } catch (_) {
       if (statusEl) statusEl.textContent = 'Save failed';
+      d.saveFailed = true;
+      return 'failed';
     }
   },
 
-  // Close the editor (saving first), then refresh the Library list.
-  closeDoc: async () => {
+  // Close the editor (saving first unless discarding), then refresh the
+  // Library list. `opts.discard: true` skips the save attempt entirely —
+  // used only by the "Discard & close" affordance after a save already
+  // failed once, so a downed backend can't wedge the close button forever.
+  closeDoc: async (opts = {}) => {
     const d = docState();
     if (!d) return;
     clearTimeout(dirtyTO);
-    if ((d.id || d.wsPath) && !d.readOnly && editor) { try { await actions.saveDoc(); } catch (_) {} }
+    if (!opts.discard && (d.id || d.wsPath) && !d.readOnly && !d.loadFailed && editor) {
+      let result = 'failed';
+      try { result = await actions.saveDoc(); } catch (_) { result = 'failed'; }
+      if (result === 'conflict') {
+        // conflictBanner is already showing its own Reload-disk/Keep-mine
+        // actions — closing now would silently discard the unresolved edit.
+        runtime.render();
+        return;
+      }
+      if (result === 'failed') {
+        showError('Could not save your changes before closing.', [
+          { label: 'Retry save', primary: true, onClick: () => actions.closeDoc() },
+          { label: 'Discard & close', onClick: () => actions.closeDoc({ discard: true }) },
+        ]);
+        runtime.render();
+        return; // keep the editor open — NO teardown on a failed save
+      }
+    }
+    hideError();
     const wasLibraryDoc = !!d.id;
     if (d.wsAbsPath) unsubscribeWatch(d.wsAbsPath);
-    d.open = false; d.wsPath = null; d.wsAbsPath = null; d.wsMtimeNs = null;
-    d.wsRootKey = null; d.readOnly = false;
+    resetBufferIdentity(d);
+    d.open = false; d.title = ''; d.status = '';
     dirty = false;
+    d.saveFailed = false;
     hideConflict();
+    setBufferLocked(false);
     if (titleEl) titleEl.readOnly = false;
     runtime.render();
     if (wasLibraryDoc) { try { reload('library'); } catch (_) {} }

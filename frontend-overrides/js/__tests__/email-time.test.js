@@ -36,6 +36,18 @@ test('shortTime: falsy/invalid input unchanged', () => {
   assert.equal(shortTime('not-a-date', NOW), 'not-a-date');
 });
 
+test('shortTime: now just after midnight — 11:59pm yesterday is a date, not "today"', () => {
+  const justPastMidnight = new Date('2026-07-12T00:05:00');
+  assert.equal(shortTime('2026-07-11T23:59:00', justPastMidnight), 'Jul 11');
+  assert.equal(shortTime('2026-07-12T00:01:00', justPastMidnight), '12:01 AM');
+});
+
+test('shortTime: now at Jan 1 — Dec 31 of the prior year gets the year form', () => {
+  const newYear = new Date('2026-01-01T00:05:00');
+  assert.equal(shortTime('2025-12-31T23:59:00', newYear), '12/31/25');
+  assert.equal(shortTime('2026-01-01T00:01:00', newYear), '12:01 AM');
+});
+
 test('shortTime: defaults `now` to the real current time when omitted', () => {
   // Doesn't assert an exact value (that would be a flaky clock test) — just
   // that calling with one arg doesn't throw and returns a non-empty string

@@ -135,7 +135,7 @@ async function runRsvp(id, response) {
     if (r && r.ok === false) throw new Error(r.error || 'rsvp failed');
     if (r && r.undoTs) {
       state._lastUndoTs = r.undoTs;
-      state.inboxToast = { msg: `RSVP’d ${LABEL[response] || response}`, undoTs: r.undoTs };
+      state.inboxToast = { msg: `RSVP’d ${LABEL[response] || response}`, undoTs: r.undoTs, undoId: String(id) };
     }
   } catch (e) {
     unmarkDismissed(state, id);
@@ -167,7 +167,7 @@ async function runEntity(id, action, type) {
     if (r && r.ok === false) throw new Error(r.error || 'action failed');
     if (r && r.undoTs) {
       state._lastUndoTs = r.undoTs;
-      state.inboxToast = { msg: action === 'not_entity' ? 'Marked not an entity' : 'Verified', undoTs: r.undoTs };
+      state.inboxToast = { msg: action === 'not_entity' ? 'Marked not an entity' : 'Verified', undoTs: r.undoTs, undoId: String(id) };
     }
   } catch (e) {
     unmarkDismissed(state, id);
@@ -241,7 +241,7 @@ export const actions = {
         // During an Apply-all batch the batch toast owns the message — don't
         // flash a per-item toast (applyAll reads _lastUndoTs for the batch).
         if (!state.inboxApplying) {
-          state.inboxToast = { msg: `Added → ${payload.due ? 'due ' + payload.due : 'no due date'}`, undoTs: r.undoTs };
+          state.inboxToast = { msg: `Added → ${payload.due ? 'due ' + payload.due : 'no due date'}`, undoTs: r.undoTs, undoId: String(id) };
         }
       }
     } catch (e) {
@@ -283,7 +283,7 @@ export const actions = {
         snippet: item.body, meta: item.meta || {},
       });
       if (r && r.ok === false) throw new Error(r.error || 'add failed');
-      if (r && r.undoTs) { state._lastUndoTs = r.undoTs; state.inboxToast = { msg: `Added → ${edit.due ? 'due ' + edit.due : 'no due date'}`, undoTs: r.undoTs }; }
+      if (r && r.undoTs) { state._lastUndoTs = r.undoTs; state.inboxToast = { msg: `Added → ${edit.due ? 'due ' + edit.due : 'no due date'}`, undoTs: r.undoTs, undoId: String(edit.id) }; }
     } catch (e) {
       unmarkDismissed(state, edit.id);
       state.inboxToast = { msg: "Couldn't add to Asana — retry", undoTs: null };
@@ -404,7 +404,7 @@ export const actions = {
       if (r && r.ok === false) throw new Error(r.error || 'snooze failed');
       if (r && r.undoTs) {
         state._lastUndoTs = r.undoTs;
-        state.inboxToast = { msg: 'Snoozed', undoTs: r.undoTs };
+        state.inboxToast = { msg: 'Snoozed', undoTs: r.undoTs, undoId: String(id) };
       }
     } catch (e) {
       unmarkDismissed(state, id);
@@ -461,12 +461,13 @@ export const actions = {
     state.inboxToast = { msg: `Applying 0/${work.length}…`, undoTs: null };
     runtime.render();
     const batch = [];
+    const batchIds = [];
     for (const w of work) {
       const fn = APPLY_FN[w.action] && actions[APPLY_FN[w.action]];
       if (fn) {
         state._lastUndoTs = null;
         try { await fn(w.id); } catch (_) { /* per-item failure already reverted the card */ }
-        if (state._lastUndoTs) batch.push(state._lastUndoTs);
+        if (state._lastUndoTs) { batch.push(state._lastUndoTs); batchIds.push(w.id); }
       }
       state.inboxApplying.done += 1;
       state.inboxToast = { msg: `Applying ${state.inboxApplying.done}/${work.length}…`, undoTs: null };
@@ -475,7 +476,7 @@ export const actions = {
     state.inboxApplying = null;
     state.inboxTriageReviewed = true;   // batch done — retire the summary bar
     state.inboxToast = batch.length
-      ? { msg: `Applied ${batch.length}`, undoTs: null, undoBatch: batch }
+      ? { msg: `Applied ${batch.length}`, undoTs: null, undoBatch: batch, undoBatchIds: batchIds }
       : { msg: 'Nothing applied', undoTs: null };
     runtime.render();
   },
@@ -521,6 +522,10 @@ export const actions = {
       for (const ts of toast.undoBatch) {
         try { await apiJson('/api/items/undo', { ts }); } catch (_) { /* skip failures */ }
       }
+      // Un-hide every restored card — reloadInbox refetches state.live.inbox
+      // but never touches state.dismissed, so each batch id must come out
+      // explicitly or the whole batch stays hidden until a page reload.
+      for (const id of (toast.undoBatchIds || [])) unmarkDismissed(state, id);
       await reloadInbox(state);
       state.inboxToast = null;
       runtime.render();
@@ -530,7 +535,12 @@ export const actions = {
     if (!ts) return;
     try {
       const r = await apiJson('/api/items/undo', { ts });
-      if (r && r.ok) { await reloadInbox(state); }
+      if (r && r.ok) {
+        // Same as above: undoing the server-side action doesn't clear the
+        // client-side dismissed flag on its own — do it before/along the refetch.
+        if (toast.undoId) unmarkDismissed(state, toast.undoId);
+        await reloadInbox(state);
+      }
     } catch (_) {}
     state.inboxToast = null;
     runtime.render();
@@ -563,9 +573,14 @@ export const actions = {
   // Per-row undo from the history drawer. arg is the numeric ts of the entry.
   undoRow: async (arg) => {
     const state = runtime.state;
+    const tsNum = Number(arg);
+    // Look up the entry's item id before firing the request — the drawer only
+    // hands us the ts, but unmarkDismissed needs the same id markDismissed used.
+    const entry = (state.inboxHistory || []).find((e) => e.ts === tsNum);
     try {
-      const r = await apiJson('/api/items/undo', { ts: Number(arg) });
+      const r = await apiJson('/api/items/undo', { ts: tsNum });
       if (r && r.ok) {
+        if (entry && entry.id != null) unmarkDismissed(state, entry.id);
         await reloadInbox(state);
         await actions.loadHistory();
       }

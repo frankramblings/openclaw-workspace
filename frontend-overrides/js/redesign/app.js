@@ -99,6 +99,25 @@ let researchTimer = null;
 let refreshTimer = null;
 let toastTimer = null;
 let _convFilterRenderTimer = null;  // mobile: coalesce conv-search re-renders
+
+// ---- input-handler skip list (Task 4.4) ------------------------------------
+// These data-model fields belong to sheets/panels with no per-keystroke UI
+// need of their own — no slash palette, no live thread to reflow — so paying
+// render()'s full root.innerHTML rebuild cost on every character is pure
+// waste, and on iOS it's actively destructive: the same composition/
+// autocorrect breakage the draft/mdraft/msgEdit skips above (search this file
+// for "msg-edit-ta") exist to dodge. State is synced (`state[field] = t.value`)
+// before these are consulted, same as those three, so every action/submit
+// still sees the typed text even though the DOM never rebuilds mid-type.
+// Matched on `field` (data-model), not `fk` (data-focus), because "quick" has
+// two focus keys (desktop "quick" / mobile "mquick") behind one model field.
+const PLAIN_SHEET_FIELDS = new Set(['captureDraft', 'composeTo', 'composeSubject', 'composeBody', 'quick']);
+// These three DO have a results list that must eventually catch up with what
+// was typed, so instead of skipping forever they get one coalesced render
+// after a short typing pause — the same idea as convFilter's own (mobile-
+// only) debounce below, generalized here and applied on every platform.
+const DEBOUNCED_SEARCH_FIELDS = new Set(['emailQuery', 'libQuery', 'notesFilter']);
+const _searchDebounceTimers = {};
 const root = document.getElementById('oc-root');
 const mq = window.matchMedia('(max-width: 768px)');
 // Hide root until the first live-data render so mock sample data never flashes.
@@ -814,6 +833,18 @@ root.addEventListener('input', (e) => {
     }
   }
 
+  // Task 4.4: quick-capture / compose-sheet / filter-box fields skip the full
+  // re-render entirely (state is already synced above); the filter/search
+  // fields among them get one debounced render ~250ms after typing pauses so
+  // their results list still catches up. See PLAIN_SHEET_FIELDS /
+  // DEBOUNCED_SEARCH_FIELDS above for why.
+  if (PLAIN_SHEET_FIELDS.has(field)) return;
+  if (DEBOUNCED_SEARCH_FIELDS.has(field)) {
+    if (_searchDebounceTimers[field]) clearTimeout(_searchDebounceTimers[field]);
+    _searchDebounceTimers[field] = setTimeout(() => { _searchDebounceTimers[field] = null; render(); }, 250);
+    return;
+  }
+
   const fk = t.getAttribute('data-focus');
   // Auto-grow the chat composer to fit content (nothing else sets its height).
   if (fk === 'draft' || fk === 'mdraft') { autoGrowComposer(t); syncGhostVisibility(t); }
@@ -1011,11 +1042,20 @@ root.addEventListener('keydown', (e) => {
       return;
     }
     if (e.key === 'Enter') {
-      e.preventDefault();
       const filtered = filterSlashCommands(state.draft);
       const pick = filtered.find((c) => c.name === state.slashSel) || filtered[0];
-      if (pick && actions.pickSlash) { actions.pickSlash(pick.name); render(); }
-      return;
+      // No candidate to pick — e.g. the draft has moved past an exact command
+      // into typed arguments ("/run ls") and filterSlashCommands now returns
+      // no matches (Task 4.3), but a stale `.slash-menu` from the last render
+      // is still what gated this block. Previously this branch always ran
+      // preventDefault()+return regardless of `pick`, silently eating Enter
+      // (no send AND no pick) whenever that happened. Falling through instead
+      // lets the plain Enter-to-send handling below fire, so "/run ls" sends.
+      if (pick) {
+        e.preventDefault();
+        if (actions.pickSlash) { actions.pickSlash(pick.name); render(); }
+        return;
+      }
     }
     if (e.key === 'Escape') {
       e.preventDefault();

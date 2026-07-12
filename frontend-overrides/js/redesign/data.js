@@ -20,9 +20,24 @@ export const SLASH_COMMANDS = [
 // both always agree on which commands are showing for a given draft. A draft
 // that doesn't start with "/" (the toolbar "+" toggle opened the menu with
 // plain or empty text) matches everything — q stays ''.
+//
+// Once the first token is an EXACT command name and the user has typed
+// something after the following space (i.e. they've moved on to arguments —
+// "/run ls"), this returns no matches so the menu closes. That matters
+// because app.js's Enter handling only intercepts Enter-as-pick while
+// `.slash-menu` is in the DOM; closing it here is what lets Enter fall
+// through to send() instead of pickSlash() clobbering the typed args back to
+// "/run ". A bare prefix ("/ru") or an exact command with no args yet
+// ("/run", "/run ") still matches, preserving today's pick-to-complete flow.
 export function filterSlashCommands(draft) {
   const d = draft || '';
-  const q = d.startsWith('/') ? d.slice(1).toLowerCase().split(' ')[0] : '';
+  const rest = d.startsWith('/') ? d.slice(1) : '';
+  const sp = rest.indexOf(' ');
+  const q = (sp === -1 ? rest : rest.slice(0, sp)).toLowerCase();
+  if (sp !== -1 && rest.slice(sp + 1).length > 0) {
+    const exact = SLASH_COMMANDS.some((c) => c.name.slice(1) === q);
+    if (exact) return [];
+  }
   return SLASH_COMMANDS.filter((c) => q === '' || c.name.slice(1).startsWith(q));
 }
 

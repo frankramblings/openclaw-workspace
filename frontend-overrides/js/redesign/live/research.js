@@ -26,8 +26,10 @@
 //   POST /api/research/result-peek/{rid}                → { result:markdown, sources:[...] }
 //   POST /api/research/cancel/{rid}
 //
-// Fail soft: every backend call is wrapped; on error we keep the mock and never
-// throw out of an action.
+// Fail soft: every action below is wrapped; on error we keep the mock and
+// never throw out of an action. The one exception is load() (the past-runs
+// list loader) — it deliberately DOES throw on failure so live/index.js's
+// loadSurface() can record/surface it (see the load() banner below).
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson, openSSE } from './api.js';
@@ -192,21 +194,27 @@ function firstParagraphHtml(md) {
 }
 
 // ---- load (past runs) ------------------------------------------------------
-
+// Fix round 1, finding 1 (task-w2a-report.md): this used to swallow every
+// fetch failure ("fail soft: keep whatever's there"), which meant
+// state.loadError.research was unreachable in production — live/index.js's
+// loadSurface() only ever sets it from a load() that actually throws, so the
+// desktop/mobile error-partial branches for research were dead code. load()
+// now lets a genuine fetch failure propagate; live/index.js's catch takes it
+// from there (loadError, or — per the populated-surface policy — a toast
+// that keeps the existing past-runs list up). This does NOT change the
+// fail-soft contract of the rest of the module (actions.*, the poll
+// machinery below) — those still swallow internally by design, since a
+// failed action shouldn't abort a running research job.
 export async function load(state) {
-  try {
-    const data = await apiGet('/api/research/library?limit=20');
-    const research = Array.isArray(data?.research) ? data.research : [];
-    const past = research.map((r) => ({
-      q: r.query,
-      m: `${fmtDur(r.duration)} · ${r.source_count || 0} sources`,
-      rid: r.id,
-    }));
-    state.live = state.live || {};
-    state.live.research = { ...(state.live.research || {}), past };
-  } catch (_) {
-    // Fail soft: keep whatever's there (mock or prior live data).
-  }
+  const data = await apiGet('/api/research/library?limit=20');
+  const research = Array.isArray(data?.research) ? data.research : [];
+  const past = research.map((r) => ({
+    q: r.query,
+    m: `${fmtDur(r.duration)} · ${r.source_count || 0} sources`,
+    rid: r.id,
+  }));
+  state.live = state.live || {};
+  state.live.research = { ...(state.live.research || {}), past };
 }
 
 // ---- actions ---------------------------------------------------------------

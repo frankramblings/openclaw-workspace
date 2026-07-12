@@ -23,12 +23,38 @@ import { currentHealth, healthDotColor } from '../live/health.js';
 // empty-state visual language (compact, centered, faint) is native to this
 // file's existing m-mail-empty/m-agenda-empty pattern, not desktop's wide
 // flex .cal-empty block.
-function mLoadErrorBlock(surfaceLabel) {
+//
+// Fix round 1, finding 5: the optional state `s` arg mirrors desktop's
+// loadErrorBlock — disables the button + swaps in a spinner while
+// state.retrying[key] is set (live/index.js, while a (re)load for this
+// surface is in flight).
+function mLoadErrorBlock(surfaceLabel, s) {
   const key = String(surfaceLabel || '').toLowerCase();
+  const retrying = !!(s && s.retrying && s.retrying[key]);
   return `<div class="load-error-block" style="padding:34px 16px;text-align:center;color:var(--faint);font-size:13.5px;display:flex;flex-direction:column;align-items:center;gap:10px">
     <span>Couldn't load ${esc(surfaceLabel)}.</span>
-    <button class="btn-sm" data-act="retrySurface" data-arg="${esc(key)}">Retry</button>
+    <button class="btn-sm" data-act="retrySurface" data-arg="${esc(key)}"${retrying ? ' disabled' : ''}>${retrying ? `${fortress(12)} Retrying…` : 'Retry'}</button>
   </div>`;
+}
+
+// Fix round 1, findings 2+3: state.inboxToast is the shared cross-surface
+// toast (inbox undo/retry, and — as of this fix round — a populated
+// surface's "refresh failed, showing cached data" notice from
+// live/index.js's load orchestration, plus calendar's nav-specific failure
+// toast). It used to be inlined only inside mInbox's own template, so on
+// mobile a refresh-failure toast raised while viewing Email or Calendar had
+// nowhere to render — the desktop shell shows it from any surface (app.js
+// calls surfaces.js's inboxToastHtml unconditionally), but mobile has no
+// equivalent always-on shell wrapper. Extracted so mEmailList/mCalendar can
+// carry it too, not just mInbox.
+function mToastHtml(s, bottom = '80px') {
+  if (!s.inboxToast) return '';
+  return `
+    <div class="inbox-toast" style="position:fixed;bottom:${bottom};left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:8px;padding:10px 14px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:80;white-space:nowrap;max-width:90vw">
+      <span>${esc(s.inboxToast.msg)}</span>
+      ${(s.inboxToast.undoTs || s.inboxToast.undoLocal || (s.inboxToast.undoBatch && s.inboxToast.undoBatch.length)) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
+      <span data-act="dismissToast" style="cursor:pointer;color:var(--faint);margin-left:4px">✕</span>
+    </div>`;
 }
 
 const ic = {
@@ -309,16 +335,11 @@ export function mInbox(s) {
     ${when(needs.length > 0, `<div class="m-grp needs">NEEDS YOU · ${needs.length}</div>${map(needs, swipeCard)}`)}
     ${when(fyi.length > 0, `<div class="m-grp fyi">AI-SUGGESTED · FYI · ${fyi.length}</div>${map(fyi, fyiCard)}`)}
     ${s.loadError?.inbox
-      ? mLoadErrorBlock('Inbox')
+      ? mLoadErrorBlock('Inbox', s)
       : when(visible.length === 0, `<div class="inbox-zero" style="padding:60px 0"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed.</div></div>`)}
   </div>
   ${inboxReaderSheet}
-  ${s.inboxToast ? `
-    <div class="inbox-toast" style="position:fixed;bottom:80px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:8px;padding:10px 14px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:80;white-space:nowrap;max-width:90vw">
-      <span>${esc(s.inboxToast.msg)}</span>
-      ${(s.inboxToast.undoTs || s.inboxToast.undoLocal || (s.inboxToast.undoBatch && s.inboxToast.undoBatch.length)) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
-      <span data-act="dismissToast" style="cursor:pointer;color:var(--faint);margin-left:4px">✕</span>
-    </div>` : ''}`;
+  ${mToastHtml(s)}`;
 }
 
 // ---- email list -----------------------------------------------------------
@@ -340,7 +361,7 @@ export function mEmailList(s) {
   </div>
   <div class="m-scroll m-mail-list" data-ptr="1">
     ${mPtr(s, 'Checking mail…')}
-    ${s.loadError?.email ? mLoadErrorBlock('Email') : shown.length ? map(shown, ({ e, i }) => {
+    ${s.loadError?.email ? mLoadErrorBlock('Email', s) : shown.length ? map(shown, ({ e, i }) => {
       const snippet = (e.body && e.body[0]) ? e.body[0] : '';
       return `<div class="m-mail${s.mEmailOpened && i === s.selEmail ? ' active' : ''}" data-act="mOpenReader" data-arg="${i}">
         <div class="top"><span class="m-src" style="color:${e.srcColor};background:${e.srcBg}">${esc(e.src)}</span>${when(e.unread, '<span class="udot"></span>')}<span class="time">${esc(e.time)}</span></div>
@@ -348,7 +369,8 @@ export function mEmailList(s) {
         <div class="snip">${esc(e.from)}${snippet ? ` · ${esc(snippet)}` : ''}</div>
       </div>`;
     }) : `<div class="m-mail-empty">${emptyMsg}</div>`}
-  </div>`;
+  </div>
+  ${mToastHtml(s)}`;
 }
 
 // ---- email reader (pushed, no tab bar) ------------------------------------
@@ -402,8 +424,9 @@ export function mCalendar(s) {
       ${map(week, (w) => `<div class="col"><span class="dl${w.today ? ' today' : ''}">${w.d}</span><span class="dn${w.today ? ' today' : ''}">${w.date}</span></div>`)}
     </div>
   </div>
-  <div class="m-scroll m-agenda" data-ptr="1">${mPtr(s, 'Refreshing…')}${s.loadError?.calendar ? mLoadErrorBlock('Calendar') : (agenda.length ? map(agenda, group) : '<div class="m-agenda-empty">No events in the next 7 days.</div>')}</div>
-  <div class="m-quickadd"><div class="box"><span class="star">✦</span><input data-model="quick" data-focus="mquick" placeholder="&quot;feed Krypto 1pm tmrw&quot;" value="${esc(s.quick || '')}"/><button class="add" data-act="clearQuick">${I.plus(15)}</button></div></div>`;
+  <div class="m-scroll m-agenda" data-ptr="1">${mPtr(s, 'Refreshing…')}${s.loadError?.calendar ? mLoadErrorBlock('Calendar', s) : (agenda.length ? map(agenda, group) : '<div class="m-agenda-empty">No events in the next 7 days.</div>')}</div>
+  <div class="m-quickadd"><div class="box"><span class="star">✦</span><input data-model="quick" data-focus="mquick" placeholder="&quot;feed Krypto 1pm tmrw&quot;" value="${esc(s.quick || '')}"/><button class="add" data-act="clearQuick">${I.plus(15)}</button></div></div>
+  ${mToastHtml(s, '96px')}`;
 }
 
 // ---- More hub -------------------------------------------------------------

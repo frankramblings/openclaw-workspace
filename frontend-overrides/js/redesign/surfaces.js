@@ -33,11 +33,18 @@ import { renderChatStrip } from './chat-strip.js';
 // mobile-surfaces.js (kept separate — its empty-state visual language is
 // compact/centered where desktop's is a wide flex block; sharing one class
 // across both would fight one shell or the other).
-export function loadErrorBlock(surfaceLabel) {
+//
+// Fix round 1, finding 5: the optional state `s` arg lets the Retry button
+// reflect state.retrying[key] (set by live/index.js while a (re)load for
+// this surface is in flight) — disabled + a spinner label instead of a
+// clickable "Retry" a second tap could re-trigger before the first attempt
+// even resolves.
+export function loadErrorBlock(surfaceLabel, s) {
   const key = String(surfaceLabel || '').toLowerCase();
+  const retrying = !!(s && s.retrying && s.retrying[key]);
   return `<div class="load-error-block cal-empty" style="flex-direction:column;gap:10px;padding:40px 20px;text-align:center">
     <div>Couldn't load ${esc(surfaceLabel)}.</div>
-    <button class="btn-sm" data-act="retrySurface" data-arg="${esc(key)}">Retry</button>
+    <button class="btn-sm" data-act="retrySurface" data-arg="${esc(key)}"${retrying ? ' disabled' : ''}>${retrying ? `${fortress(12)} Retrying…` : 'Retry'}</button>
   </div>`;
 }
 
@@ -480,7 +487,7 @@ function emailSurface(s) {
         }).join('')}
       </div>
     </div>
-    ${s.loadError?.email ? loadErrorBlock('Email') : (s.live?.email?.current || emails.length) ? `<div class="reader">
+    ${s.loadError?.email ? loadErrorBlock('Email', s) : (s.live?.email?.current || emails.length) ? `<div class="reader">
       <div class="reader-head">
         <h1>${esc(m.subj)}</h1>
         <div class="reader-from">
@@ -747,7 +754,7 @@ function inboxSurface(s) {
       ${when(needs.length > 0, `<div class="grp-label"><span class="lbl needs">NEEDS YOU</span><span class="n">${needs.length}</span><div class="sect-divider"></div></div>${map(needs, inboxCard)}`)}
       ${when(fyi.length > 0, `<div class="grp-label fyi"><span class="lbl fyilbl">AI-SUGGESTED · FYI</span><span class="n">${fyi.length}</span><div class="sect-divider"></div></div>${map(fyi, inboxCard)}`)}
       ${s.loadError?.inbox
-        ? loadErrorBlock('Inbox')
+        ? loadErrorBlock('Inbox', s)
         : when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed. Nothing left to triage.</div></div>`)}
     </div>
     ${when(!!s.inboxEditFor, `
@@ -838,7 +845,19 @@ function calendarSurface(s) {
     <div class="cal-weekdays">${map(weekdays, (d) => `<div>${d}</div>`)}</div>
     ${cells.length
       ? `<div class="cal-grid">${map(cells, cell)}</div>`
-      : `<div class="cal-empty" style="flex-direction:column;gap:10px">Calendar hasn’t loaded.<button class="btn-sm" data-act="retrySurface" data-arg="calendar">Retry</button></div>`}
+      // Fix round 1, finding 3: this used to show the same "hasn't loaded"
+      // copy whether the calendar had simply never loaded yet OR a real nav
+      // had just failed — silently indistinguishable, and its Retry button
+      // never reflected state.loadError.calendar at all. A real load
+      // failure (nothing to show — see live/index.js's populated-surface
+      // policy, which means loadError.calendar is only ever set when there
+      // truly is no data) now gets the same shared error partial every
+      // other surface uses; the plain "hasn't loaded yet" copy is left for
+      // the genuinely-not-loaded-yet case (first render, before any load
+      // has resolved either way).
+      : s.loadError?.calendar
+        ? loadErrorBlock('Calendar', s)
+        : `<div class="cal-empty" style="flex-direction:column;gap:10px">Calendar hasn’t loaded.<button class="btn-sm" data-act="retrySurface" data-arg="calendar">Retry</button></div>`}
   </div>`;
 }
 
@@ -903,7 +922,7 @@ function researchSurface(s) {
         <div class="card-actions"><button class="btn-sm" data-act="startResearch">Retry</button></div>
       </div>`)}
 
-      ${s.loadError?.research ? loadErrorBlock('Research') : `
+      ${s.loadError?.research ? loadErrorBlock('Research', s) : `
       <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past || []).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer" data-act="go" data-arg="library">Library, Research →</span></div>
       ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}`}
     </div>
@@ -925,7 +944,7 @@ function librarySurface(s) {
       ${map(LIB_FILTERS, ([id, label]) => `<span class="lib-filter${lf === id ? ' active' : ''}" data-act="libFilter" data-arg="${id}">${esc(label)}</span>`)}
     </div>
     <div class="lib-grid">
-      ${s.loadError?.library ? loadErrorBlock('Library') : map(items, (a) => {
+      ${s.loadError?.library ? loadErrorBlock('Library', s) : map(items, (a) => {
         const k = KIND_STYLE[a.kind];
         const openable = a.id && (a.cat === 'doc' || a.cat === 'code');
         return `<div class="lib-card"${openable ? ` data-act="openDoc" data-arg="${esc(a.id)}" style="cursor:pointer"` : ''}>
@@ -945,7 +964,7 @@ function librarySurface(s) {
 // ===========================================================================
 function notesSurface(s) {
   if (s.loadError?.notes) {
-    return `<div class="split-h">${loadErrorBlock('Notes')}</div>`;
+    return `<div class="split-h">${loadErrorBlock('Notes', s)}</div>`;
   }
   const docs0 = s.live?.notes?.docs || [];
   const sel = Math.max(0, Math.min(s.selDoc, docs0.length - 1));

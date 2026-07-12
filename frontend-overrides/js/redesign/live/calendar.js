@@ -305,13 +305,49 @@ export async function load(state /* , { force } = {} */) {
 // toast; only a real success clears the input. quick-parse returns a BARE
 // event dict (NOT {ok,event}).
 
+// Fix round 1, finding 3 (task-w2a-report.md): the label of the month a given
+// offset resolves to — used only for the failed-nav toast below, so a bad
+// click names the month that didn't load rather than a generic message.
+function offsetMonthLabel(offset) {
+  const { first } = monthWindow(new Date(), offset);
+  return MONTHS[first.getMonth()];
+}
+
 // Month navigation (desktop toolbar ‹ / Today / ›). Offset lives in state so
 // load() can window the fetch; reload re-runs load with force.
+//
+// Fix round 1, finding 3: this used to bump calMonthOffset BEFORE the fetch
+// unconditionally — a failed nav left the offset pointing at a month whose
+// data never actually loaded, so the NEXT successful load would silently
+// jump two months from wherever the grid still visually was. reload()
+// (live/index.js) now returns its outcome, so a genuine (non-stale) failure
+// rolls the offset back to its pre-nav value here. Guarded by re-checking
+// the offset is still what THIS nav set: a newer nav (e.g. a fast second
+// click) superseding this one via live/index.js's generation counter must
+// win outright, not get its own in-progress offset stomped by an older
+// call's late failure. Also raises a toast naming the month that failed —
+// reusing the shared state.inboxToast + render() convention (see
+// quickAddFailed below) with a more specific message than the generic
+// "Refresh failed — showing cached data" live/index.js's load orchestration
+// sets by default for a populated surface, since here we know exactly which
+// month the user was trying to reach.
 const shiftMonth = (delta) => {
   const s = runtime.state;
   if (!s) return;
-  s.calMonthOffset = delta === 0 ? 0 : (Number(s.calMonthOffset) || 0) + delta;
-  reload('calendar');
+  const prevOffset = Number(s.calMonthOffset) || 0;
+  const nextOffset = delta === 0 ? 0 : prevOffset + delta;
+  s.calMonthOffset = nextOffset;
+  const p = reload('calendar');
+  if (p && typeof p.then === 'function') {
+    p.then((result) => {
+      if (!result || result.ok || result.stale) return; // success, or superseded by a newer nav
+      const cur = runtime.state;
+      if (!cur || cur.calMonthOffset !== nextOffset) return; // a newer nav already moved on
+      cur.calMonthOffset = prevOffset;
+      cur.inboxToast = { msg: `Couldn't load ${offsetMonthLabel(nextOffset)} — Retry`, undoTs: null };
+      runtime.render();
+    });
+  }
 };
 
 // Reuses the same state.inboxToast + render() convention the inbox

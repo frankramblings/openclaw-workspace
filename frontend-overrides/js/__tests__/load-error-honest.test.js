@@ -6,7 +6,7 @@
 // pushedSurface, so fixing surfaces.js covers both shells for those three).
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { renderCenter } from '../redesign/surfaces.js';
+import { renderCenter, inboxToastHtml } from '../redesign/surfaces.js';
 import { mInbox, mEmailList, mCalendar } from '../redesign/mobile/mobile-surfaces.js';
 
 // ---------------------------------------------------------------------------
@@ -123,4 +123,88 @@ test('notes: loadError shows the error partial instead of the (blank) editor', (
   assert.match(html, /load-error-block/);
   assert.match(html, /data-act="retrySurface"/);
   assert.match(html, /data-arg="notes"/);
+});
+
+// ---------------------------------------------------------------------------
+// Fix round 1, finding 2 (task-w2a-report.md): POLICY CHANGE — a populated
+// surface must survive a transient refresh failure. live/index.js's load
+// orchestration now never sets state.loadError for a surface that already
+// has displayable data (see load-orchestration.test.js for that decision
+// itself); it sets a toast instead and leaves the data alone. These are the
+// renderer-level half of that contract: given the state shape the fixed
+// orchestrator actually produces (data present, loadError absent, toast
+// set), the reader/list/grid must still render and the error partial must
+// never appear — this is what used to "nuke" the email reader and the
+// library grid on any background refresh hiccup. Covers both shells ×
+// email/library at minimum (library has no separate mobile renderer —
+// mobile's "More" hub reuses renderCenter directly, same as the loadError
+// coverage above).
+// ---------------------------------------------------------------------------
+test('desktop email: a populated reader survives a failed background refresh (no loadError set) and the toast still shows', () => {
+  const s = {
+    surface: 'email', selEmail: 0, emailQuery: '',
+    live: { email: { emails: [{ subj: 'Hi', from: 'a@b.com', time: '1:00', srcColor: '', srcBg: '' }] } },
+    inboxToast: { msg: 'Refresh failed — showing cached data', undoTs: null },
+  };
+  const html = renderCenter(s);
+  assert.doesNotMatch(html, /load-error-block/, 'a populated surface must never show the error partial for a background refresh failure');
+  assert.match(html, /class="reader"/, 'the existing reader must still render');
+  assert.match(inboxToastHtml(s), /Refresh failed/, 'the transient notice must be visible (shell-level toast)');
+});
+
+test('mobile email: a populated list survives a failed background refresh (no loadError set) and the toast still shows', () => {
+  const s = {
+    selEmail: 0, emailQuery: '',
+    live: { email: { emails: [{ subj: 'Hi', from: 'a@b.com', time: '1:00', srcColor: '', srcBg: '' }] } },
+    inboxToast: { msg: 'Refresh failed — showing cached data', undoTs: null },
+  };
+  const html = mEmailList(s);
+  assert.doesNotMatch(html, /load-error-block/);
+  assert.match(html, /m-mail-list/);
+  assert.match(html, />Hi</, 'the existing email row must still render');
+  assert.match(html, /Refresh failed/, 'mEmailList now carries the shared inline toast (mToastHtml), same as mInbox');
+});
+
+test('desktop library: a populated grid survives a failed background refresh (no loadError set) and the toast still shows', () => {
+  const s = {
+    surface: 'library', libFilter: 'all', libQuery: '',
+    live: { library: { items: [{ title: 'Doc A', kind: 'DOC', kindLabel: 'DOCUMENT', when: '1h', cat: 'doc' }] } },
+    inboxToast: { msg: 'Refresh failed — showing cached data', undoTs: null },
+  };
+  const html = renderCenter(s);
+  assert.doesNotMatch(html, /load-error-block/, 'a populated surface must never show the error partial for a background refresh failure');
+  assert.match(html, /Doc A/, 'the existing library grid must still render');
+  assert.match(inboxToastHtml(s), /Refresh failed/);
+});
+
+test('empty + failure (no prior data) still shows the honest error partial — unchanged by the policy change', () => {
+  // Sanity check that the existing empty+loadError tests above still hold:
+  // the toast/keep-data path only applies when there IS something to keep.
+  const html = renderCenter({ surface: 'email', selEmail: 0, emailQuery: '', loadError: { email: 'fetch failed' }, live: {} });
+  assert.match(html, /load-error-block/);
+});
+
+// ---------------------------------------------------------------------------
+// Fix round 1, finding 5: the Retry button reflects state.retrying[surface]
+// (set by live/index.js while a (re)load for that surface is in flight) —
+// disabled, with a spinner label, instead of a second clickable "Retry" a
+// user could tap again before the first attempt even resolves.
+// ---------------------------------------------------------------------------
+test('desktop: the Retry button disables and shows a spinner while state.retrying[surface] is set', () => {
+  const idle = renderCenter({ surface: 'library', libFilter: 'all', libQuery: '', loadError: { library: 'fetch failed' }, live: {} });
+  assert.doesNotMatch(idle, /disabled/);
+  assert.match(idle, />Retry</);
+
+  const busy = renderCenter({ surface: 'library', libFilter: 'all', libQuery: '', loadError: { library: 'fetch failed' }, retrying: { library: true }, live: {} });
+  assert.match(busy, /data-act="retrySurface"[^>]*disabled/);
+  assert.match(busy, /Retrying…/);
+});
+
+test('mobile: the Retry button disables and shows a spinner while state.retrying[surface] is set', () => {
+  const idle = mEmailList({ selEmail: 0, emailQuery: '', loadError: { email: 'fetch failed' }, live: {} });
+  assert.doesNotMatch(idle, /disabled/);
+
+  const busy = mEmailList({ selEmail: 0, emailQuery: '', loadError: { email: 'fetch failed' }, retrying: { email: true }, live: {} });
+  assert.match(busy, /data-act="retrySurface"[^>]*disabled/);
+  assert.match(busy, /Retrying…/);
 });

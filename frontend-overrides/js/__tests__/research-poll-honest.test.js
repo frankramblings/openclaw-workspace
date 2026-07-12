@@ -38,7 +38,7 @@ globalThis.EventSource = class {
 globalThis.EventSource.CLOSED = 2;
 
 const { runtime } = await import('../redesign/live/runtime.js');
-const { actions, pollDecision, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } = await import('../redesign/live/research.js');
+const { actions, load, pollDecision, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } = await import('../redesign/live/research.js');
 
 const jsonRes = (obj) => ({
   ok: true,
@@ -94,6 +94,35 @@ test('pollDecision: gives up honestly once the timeout is reached', () => {
 
 test('POLL_INTERVAL_MS matches the ~20s cadence from the brief', () => {
   assert.equal(POLL_INTERVAL_MS, 20000);
+});
+
+// ---------------------------------------------------------------------------
+// Fix round 1, finding 1 (task-w2a-report.md): load() (the past-runs list
+// loader) used to swallow every fetch failure — "fail soft: keep whatever's
+// there" — which made state.loadError.research unreachable in production:
+// live/index.js's loadSurface() only ever sets loadError from a load() that
+// actually throws. load() must now propagate a genuine fetch failure.
+// ---------------------------------------------------------------------------
+test('load() propagates a fetch failure instead of swallowing it', async () => {
+  wireFetch((path) => {
+    if (path.startsWith('/api/research/library')) throw new Error('network down');
+  });
+  const state = { live: {} };
+  await assert.rejects(() => load(state), /network down/);
+  delete globalThis.fetch;
+});
+
+test('load() still populates state.live.research.past on success (unchanged happy path)', async () => {
+  wireFetch((path) => {
+    if (path.startsWith('/api/research/library')) {
+      return jsonRes({ research: [{ id: 'r1', query: 'q', duration: 90, source_count: 4 }] });
+    }
+  });
+  const state = { live: {} };
+  await load(state);
+  assert.equal(state.live.research.past.length, 1);
+  assert.equal(state.live.research.past[0].rid, 'r1');
+  delete globalThis.fetch;
 });
 
 // ---------------------------------------------------------------------------

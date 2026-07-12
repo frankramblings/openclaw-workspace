@@ -9,8 +9,10 @@
 //   2. the quick-capture sheet
 //   3. the compose sheet
 //   4. a reader (email reader / inbox reader overlay)
-//   5. the conversation drawer / model sheet / companion sheet
-//   6. a pushed "More" sub-screen (calendar/research/library/notes/settings)
+//   5. the model picker sheet
+//   6. the companion sheet
+//   7. the conversation drawer
+//   8. a pushed "More" sub-screen (calendar/research/library/notes/settings)
 // The original design bucketed every sheet flag together as a single layer,
 // so closeTopmost cleared ALL of them in one call whenever more than one
 // happened to be set — reachable via the edge-swipe conversation drawer,
@@ -18,10 +20,14 @@
 // / message-tools sheet. edgeSwipeBlocked() below stops that combination
 // from arising through the gesture; the per-layer ordering here makes
 // closeTopmost correct regardless.
+// Layers 5-7 used to be one more bucket ("drawer/model group", closed
+// together by a single closeTopmost() call) protected only by the convention
+// that at most one of the three was ever open at once — nothing enforced
+// that. Split into three individual entries so one Back always closes
+// exactly one flag, same as every other layer here.
 
 const hasMsgSheet = (s) => !!(s.live && s.live.chat && s.live.chat.mobileSheetMsgId);
 const hasReader = (s) => !!(s.mReader || s.inboxReader);
-const hasDrawerGroup = (s) => !!(s.mDrawerOpen || s.mModelSheetOpen || s.companionSheetOpen || s.mConvSheetOpen);
 
 // Ordered top → bottom. `has` tests whether the layer is open; `close` clears
 // it. closeTopmost() closes exactly the first matching entry per call.
@@ -30,7 +36,9 @@ const LAYERS = [
   { has: (s) => !!s.quickCaptureOpen, close: (s) => { s.quickCaptureOpen = false; } },
   { has: (s) => !!s.composeOpen, close: (s) => { s.composeOpen = false; } },
   { has: hasReader, close: (s) => { s.mReader = false; s.inboxReader = null; } },
-  { has: hasDrawerGroup, close: (s) => { s.mDrawerOpen = false; s.mModelSheetOpen = false; s.companionSheetOpen = false; s.mConvSheetOpen = false; } },
+  { has: (s) => !!s.mModelSheetOpen, close: (s) => { s.mModelSheetOpen = false; } },
+  { has: (s) => !!s.companionSheetOpen, close: (s) => { s.companionSheetOpen = false; } },
+  { has: (s) => !!s.mDrawerOpen, close: (s) => { s.mDrawerOpen = false; } },
   { has: (s) => !!s.mSub, close: (s) => { s.mSub = null; } },
 ];
 
@@ -49,7 +57,7 @@ export function closeTopmost(s) {
 // True while a layer that must never sit UNDER the edge-swipe conversation
 // drawer holds the gesture surface — mobile-app.js consults this before
 // arming an open-swipe from the screen edge. Deliberately broader than the
-// drawer/model/companion group itself: capture, compose, a reader, or the
+// drawer/model/companion trio itself: capture, compose, a reader, or the
 // message-tools sheet must all block the drawer too (an up keyboard already
 // owns the gesture layer). Shares the same layer predicates as derivedDepth/
 // closeTopmost above so the gesture guard and the Back-stack model can never
@@ -57,7 +65,8 @@ export function closeTopmost(s) {
 export function edgeSwipeBlocked(s) {
   return !!(
     s.quickCaptureOpen || s.composeOpen || s.keyboard
-    || hasReader(s) || hasMsgSheet(s) || hasDrawerGroup(s)
+    || hasReader(s) || hasMsgSheet(s)
+    || s.mDrawerOpen || s.mModelSheetOpen || s.companionSheetOpen
   );
 }
 
@@ -76,6 +85,19 @@ export function edgeSwipeBlocked(s) {
 // signal changes on rotation); a narrow window at BOOT (e.g. a resized
 // desktop browser) also gets the mobile shell, but — like the touch signal —
 // that decision is never revisited after boot.
-export function computeMobileLatch({ coarsePointer, touchCapable, width, breakpoint = 768 } = {}) {
-  return !!(coarsePointer && touchCapable) || (typeof width === 'number' && width <= breakpoint);
+//
+// `touchCeiling` bounds the coarse+touch signal to <=1024px. Without it, ANY
+// coarse+touch device latched mobile at any width — an iPad in landscape
+// (1024-1194px, genuinely coarse+touch) would be stuck on the phone UI for
+// the rest of the session. Deliberate, narrow tradeoff for a single-user
+// iPhone deployment: nothing legitimate here is coarse+touch AND wider than
+// an iPad's landscape width, so drawing the line at 1024 costs nothing real
+// while closing the iPad-landscape case. A width narrower than the plain
+// `breakpoint` still latches regardless of pointer/touch (the resized-desktop-
+// window case above), and an unknown width (not passed) doesn't get bounded —
+// there's nothing to bound it against.
+export function computeMobileLatch({ coarsePointer, touchCapable, width, breakpoint = 768, touchCeiling = 1024 } = {}) {
+  const coarseTouch = !!(coarsePointer && touchCapable);
+  const withinTouchCeiling = typeof width !== 'number' || width <= touchCeiling;
+  return (coarseTouch && withinTouchCeiling) || (typeof width === 'number' && width <= breakpoint);
 }

@@ -24,7 +24,15 @@ const LS_WIDTH = 'oc-doc-dock-width';
 const DOCK_MIN = 360;
 const DOCK_MAX_VW = 0.75; // cap width at 75vw
 const DOCK_DEFAULT = 560;
-const MOBILE_BP = 768; // match the mobile-shell breakpoint (app.js max-width:768)
+// Whether the mobile dock layout applies. Reads the JS shell latch stamped
+// once at boot on <html> (see app.js's `_mobileLatched` / mobile-history.js's
+// computeMobileLatch) instead of re-deriving mobile-ness from raw
+// `window.innerWidth`. This used to compare live width against a 768px
+// breakpoint independently of the shell's own latched decision — a
+// latched-mobile iPhone rotated to landscape (>768px) would flip THIS dock
+// back into desktop layout (fixed-width panel + resize grabber) while the
+// rest of the shell (app.js) stayed on the mobile UI, splitting the two.
+const isMobileShell = () => document.documentElement.classList.contains('shell-mobile');
 
 let editor = null;     // Toast UI instance
 let host = null;       // editor mount element
@@ -370,7 +378,7 @@ async function ensureEditor() {
   overlay.className = 'oc-doc-overlay';
   // Right-side dock: position:fixed on the right edge, full viewport height.
   // Width is set from localStorage (or DOCK_DEFAULT) and clamped on resize.
-  // Mobile (<=MOBILE_BP) is handled in applyDockWidth().
+  // Mobile (isMobileShell()) is handled in applyDockWidth().
   overlay.style.cssText = 'position:fixed;top:0;right:0;bottom:0;z-index:70;display:none;flex-direction:column;background:var(--bg,#15161a);border-left:1px solid var(--border,#2a2d33);box-shadow:-8px 0 24px rgba(0,0,0,0.35)';
 
   // Left-edge resize grabber (invisible strip, cursor changes on hover).
@@ -538,8 +546,7 @@ function readSavedWidth() {
 
 function applyDockWidth(px) {
   if (!overlay) return;
-  const isMobile = window.innerWidth <= MOBILE_BP;
-  if (isMobile) {
+  if (isMobileShell()) {
     overlay.style.width = '100vw';
     document.documentElement.style.setProperty('--doc-dock-w', '0px');
     return;
@@ -553,7 +560,7 @@ function applyDockWidth(px) {
 }
 
 function onGrabberDown(e) {
-  if (window.innerWidth <= MOBILE_BP) return;
+  if (isMobileShell()) return;
   e.preventDefault();
   const startX = e.clientX;
   const startW = overlay.getBoundingClientRect().width;

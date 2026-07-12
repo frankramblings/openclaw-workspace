@@ -58,7 +58,7 @@ const state = {
   mTab: 'chat', mSub: null, mReader: false, keyboard: false,
   companionSheetOpen: false, companionTab: 'terminal',
   quickCaptureOpen: false, captureType: 'remind', captureDraft: '',
-  mConvSheetOpen: false, mModelSheetOpen: false,
+  mModelSheetOpen: false,
   mDrawerOpen: false, mDrawerSide: 'left',
   refreshing: false,
   // AGPL-3.0 §13: persistent offer of this running version's source. Seeded with
@@ -139,6 +139,12 @@ const _mobileLatched = computeMobileLatch({
   width: window.innerWidth,
 });
 const isMobile = () => _mobileLatched;
+// Stamp the SAME latched decision onto <html> so CSS (mobile.css's
+// html.shell-mobile rules) and any other module that can't import isMobile()
+// without a cycle (e.g. live/document-editor.js) read the identical frozen
+// value instead of re-deriving mobile-ness from a live width check that can
+// disagree with this shell after a rotation.
+document.documentElement.classList.add(_mobileLatched ? 'shell-mobile' : 'shell-desktop');
 
 // Fade out the fortress boot loader (index.html #app-loader) once the shell is
 // revealed. Idempotent — safe to call from every reveal path.
@@ -317,11 +323,17 @@ function render() {
       if (selStart != null && el.setSelectionRange) {
         try { el.setSelectionRange(selStart, selEnd); } catch (_) { /* non-text input */ }
       }
-      // render() rebuilds the textarea fresh (no inline height), so the height the
-      // input handler grew it to is gone. Re-apply it here or the box never grows.
-      if (focusKey === 'draft' || focusKey === 'mdraft') autoGrowComposer(el);
     }
   }
+
+  // render() rebuilds the composer textarea fresh (no inline height), so any
+  // grown height is gone. Re-fit it to its content on EVERY render — not just
+  // when it was focused (the old behavior): a ghost-suggestion tap fills the
+  // draft from outside the textarea (the chip is the tap target, nothing is
+  // focused), and the accepted text otherwise sat collapsed at one row,
+  // unreadable. Runs before the scroll restore below so stick-to-bottom
+  // measures the thread at its final height.
+  autoGrowComposer(root.querySelector('[data-focus="draft"], [data-focus="mdraft"]'));
 
   // restore scroll (after focus — focusing an input can itself scroll a region).
   // On first entry into a chat (or switching sessions) jump to the newest message
@@ -396,16 +408,19 @@ const actions = {
   pickSlash: (name) => { state.draft = name + ' '; state.forceSlash = false; state.slashDismissed = false; state.slashSel = null; },
   fillComposer: (prompt) => { state.draft = prompt || ''; state.forceSlash = false; },
   // Composer ghost suggestion: accept fills the draft (Tab / tap), dismiss
-  // drops it (Esc). Typing merely hides it — see syncGhostVisibility.
+  // drops it (Esc). Typing merely hides it (CSS :placeholder-shown rules).
+  // No programmatic focus here: on desktop the render loop's focusKey restore
+  // already re-focuses + autogrows the composer, and on iOS a focus() outside
+  // the tap's synchronous stack wouldn't raise the keyboard anyway.
   acceptSuggest: () => {
-    const sug = state.live?.chat?.suggest;
+    const chat = state.live?.chat;
+    const sug = chat && chat.suggest;
     if (!sug || !sug.text) return;
+    // A suggestion generated for another session (archived/deleted thread,
+    // stale stamp) must never fill this composer — drop it instead.
+    if (sug.sessionId !== undefined && sug.sessionId !== chat.activeId) { chat.suggest = null; return; }
     state.draft = sug.text;
-    state.live.chat.suggest = null;
-    requestAnimationFrame(() => {
-      const ta = root.querySelector('[data-focus="draft"], [data-focus="mdraft"]');
-      if (ta) { ta.focus(); autoGrowComposer(ta); }
-    });
+    chat.suggest = null;
   },
   dismissSuggest: () => { if (state.live?.chat) state.live.chat.suggest = null; },
   setMode: (mode) => { state.chatMode = mode; },
@@ -475,7 +490,16 @@ const actions = {
   selEmail: (i) => { state.selEmail = Number(i); },
 
   // calendar
-  clearQuick: () => { state.quick = ''; },
+  // Placeholder only — live/calendar.js's real clearQuick (quick-add parse +
+  // create) overrides this via loadSurface's Object.assign (live/index.js)
+  // the first time the calendar surface loads. That merge is a dynamic
+  // import, so there is a narrow window right after navigating to Calendar,
+  // before it resolves, where THIS stub is still what "+"/Enter dispatches.
+  // It used to unconditionally clear state.quick, which would silently
+  // discard whatever the user had already typed if they hit "+" inside that
+  // window. No-op instead: worst case the tap does nothing until the real
+  // action lands a beat later — the typed text is never thrown away.
+  clearQuick: () => {},
 
   // settings
   setSection: (id) => { state.setSection = id; },
@@ -786,14 +810,8 @@ function autoGrowComposer(t) {
   t.style.height = Math.min(t.scrollHeight, cap) + 'px';
 }
 
-// Ghost suggestion visibility on keystrokes: the draft/mdraft input paths
-// skip re-renders, so toggle the overlay directly. Emptying the box brings
-// the ghost back (the suggestion stays in state until dismissed/accepted).
-function syncGhostVisibility(t) {
-  const wrap = t.closest('.composer, .m-composer');
-  const ghost = wrap && wrap.querySelector('.ghost-suggest');
-  if (ghost) ghost.style.display = (t.value || '').trim() ? 'none' : '';
-}
+// Ghost-suggestion hide-on-type is pure CSS (`:has(textarea:not(
+// :placeholder-shown))` in redesign.css/mobile.css) — no per-keystroke JS.
 
 root.addEventListener('input', (e) => {
   // Color picker input: data-act-color fires setAccent on every change
@@ -847,7 +865,7 @@ root.addEventListener('input', (e) => {
 
   const fk = t.getAttribute('data-focus');
   // Auto-grow the chat composer to fit content (nothing else sets its height).
-  if (fk === 'draft' || fk === 'mdraft') { autoGrowComposer(t); syncGhostVisibility(t); }
+  if (fk === 'draft' || fk === 'mdraft') autoGrowComposer(t);
 
   // The mobile composer must NOT re-render on every keystroke. render() rebuilds
   // root.innerHTML wholesale, and doing that mid-type on a touch keyboard drops
@@ -910,7 +928,7 @@ root.addEventListener('compositionend', (e) => {
   if (field !== 'draft' && field !== 'mdraft') return;
   state[field] = t.value;
   const fk = t.getAttribute('data-focus');
-  if (fk === 'draft' || fk === 'mdraft') { autoGrowComposer(t); syncGhostVisibility(t); }
+  if (fk === 'draft' || fk === 'mdraft') autoGrowComposer(t);
   if (fk === 'mdraft') return; // mobile never re-renders the composer (see input handler)
   const before = root.querySelector('.chat-thread');
   const savedTop = before ? before.scrollTop : null;
@@ -1066,20 +1084,27 @@ root.addEventListener('keydown', (e) => {
   }
 
   // Ghost-suggestion keys: Tab accepts, Esc dismisses — only while the ghost
-  // is actually showing (suggestion present + composer empty).
+  // is actually VISIBLE in the DOM (a render while the draft was non-empty
+  // drops the ghost element even though state still holds the suggestion; Tab
+  // must never insert text the user can't see), never while the slash menu is
+  // open (Tab there reads as command completion), desktop composer only.
   const sug = state.live?.chat?.suggest;
-  if (sug && sug.text && !(t.value || '').trim()) {
-    if (e.key === 'Tab' && !e.shiftKey) {
-      e.preventDefault();
-      actions.acceptSuggest();
-      render();
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      actions.dismissSuggest();
-      render();
-      return;
+  if (sug && sug.text && fk === 'draft' && !(t.value || '').trim()
+      && !root.querySelector('.slash-menu')) {
+    const ghostEl = root.querySelector('.composer .ghost-suggest');
+    if (ghostEl && ghostEl.offsetParent !== null) {
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        actions.acceptSuggest();
+        render();
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        actions.dismissSuggest();
+        render();
+        return;
+      }
     }
   }
 

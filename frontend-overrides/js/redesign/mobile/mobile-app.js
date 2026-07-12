@@ -61,7 +61,7 @@ export function mobileActions(state) {
   // switch and re-open on return.
   const closeSheets = () => {
     state.companionSheetOpen = false; state.quickCaptureOpen = false;
-    state.mConvSheetOpen = false; state.mModelSheetOpen = false; state.mDrawerOpen = false;
+    state.mModelSheetOpen = false; state.mDrawerOpen = false;
     state.composeOpen = false; state.inboxReader = null;
     if (state.live && state.live.chat) state.live.chat.mobileSheetMsgId = null;
   };
@@ -96,7 +96,7 @@ export function mobileActions(state) {
     // wireMobileGestures; these handle the tap affordances / scrim dismiss).
     openConvDrawer: (side) => { closeSheets(); state.mDrawerSide = (side === 'right' ? 'right' : 'left'); state.mDrawerOpen = true; if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions(); },
     closeDrawer: () => { state.mDrawerOpen = false; },
-    mSelectSession: (id) => { state.mConvSheetOpen = false; state.mDrawerOpen = false; if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(id); },
+    mSelectSession: (id) => { state.mDrawerOpen = false; if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(id); },
     openModelSheet: async () => {
       closeSheets();
       state.mModelSheetOpen = true;

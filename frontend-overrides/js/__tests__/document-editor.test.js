@@ -25,7 +25,7 @@ globalThis.document = {
   }),
   head: { appendChild() {} },
   body: { appendChild() {}, classList: { add() {}, remove() {} } },
-  documentElement: { style: { setProperty() {} } },
+  documentElement: { style: { setProperty() {} }, classList: { contains: () => false } },
   addEventListener() {},
   activeElement: null,
 };

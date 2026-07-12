@@ -220,13 +220,23 @@ html.native .m-tabbar {
 
 /* jump-to-latest button (shown only when the thread is scrolled up; toggled by
    app.js render() + the scroll listener). Position is set inline per focus state. */
-.m-scroll-btm { position: absolute; right: 14px; z-index: 30; width: 38px; height: 38px; border-radius: 50%; background: var(--panel); border: 1px solid var(--bd); color: var(--fg); align-items: center; justify-content: center; box-shadow: 0 5px 16px rgba(0,0,0,.45); cursor: pointer; }
+/* RIDER B: `bottom` used to be set inline on the element itself (its resting
+   position depends on env(safe-area-inset-bottom), computed per-device) —
+   an inline declaration ALWAYS wins over any stylesheet rule regardless of
+   specificity (short of !important), so the .kb-up override below could
+   never take effect while the keyboard was up; the button just stayed
+   parked at its resting spot, overlapping the lifted composer. Fix: the
+   inline style now only sets a CUSTOM PROPERTY (--m-scroll-btm-y) — that's
+   not the same as declaring `bottom` inline, so `bottom` itself is only
+   ever set here in the stylesheet, and normal cascade/specificity decides
+   between this rule and .kb-up's below. */
+.m-scroll-btm { position: absolute; right: 14px; z-index: 30; width: 38px; height: 38px; border-radius: 50%; background: var(--panel); border: 1px solid var(--bd); color: var(--fg); align-items: center; justify-content: center; box-shadow: 0 5px 16px rgba(0,0,0,.45); cursor: pointer; bottom: var(--m-scroll-btm-y, 20px); }
 
 /* ---- composing layout (keyboard up) --------------------------------------
    Driven by a `.kb-up` class on .m-app toggled in app.js (setMobileKb) rather
    than a re-render, so focusing the composer never rebuilds the DOM (which
    dropped focus and swallowed the first Send tap). Hides the chrome the old
-   focused layout removed (tab bar, companion handle, new-chat, mic) and applies
+   focused layout removed (tab bar, companion handle, new-chat) and applies
    the lifted composer styling. */
 .m-app.kb-up .m-tabbar,
 .m-app.kb-up .m-hide-kb { display: none; }
@@ -237,7 +247,13 @@ html.native .m-tabbar {
 .m-queued { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 7px 9px 7px 12px; background: color-mix(in srgb, var(--gold, #e0b341) 13%, var(--panel)); border: 1px solid color-mix(in srgb, var(--gold, #e0b341) 35%, transparent); border-radius: 12px; font-size: 12.5px; color: var(--mut); }
 .m-queued .q-ico { flex: none; }
 .m-queued .q-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.m-queued .m-q-x { flex: none; width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--mut); font-size: 14px; cursor: pointer; }
+/* RIDER B ≥44pt: keeps its 26px visual glyph (a full 44px box here would
+   blow out the compact banner) — the invisible ::after pad below extends
+   the actual TAPPABLE area to 44px without affecting layout (absolute +
+   negative inset, out of flow), same technique used for the other small
+   dismiss glyphs in this file (attach-chip ✕, summary ✕, toast ✕). */
+.m-queued .m-q-x { position: relative; flex: none; width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--mut); font-size: 14px; cursor: pointer; }
+.m-queued .m-q-x::after { content: ''; position: absolute; inset: -9px; }
 
 /* ---- chat composer -------------------------------------------------------- */
 .m-composer { flex: none; padding: 8px 12px; background: var(--bg); }
@@ -257,7 +273,11 @@ html.native .m-tabbar {
 .m-attach-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 6px 8px; }
 .m-attach-row .m-attach-chip { display: inline-flex; align-items: center; gap: 7px; background: var(--bg); border: 1px solid var(--bd); border-radius: 8px; padding: 4px 9px; font-size: 12px; color: var(--fg); }
 .m-attach-row .m-attach-chip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; }
-.m-attach-row .m-attach-chip .x { color: var(--faint); cursor: pointer; font-size: 13px; }
+/* RIDER B ≥44pt: invisible ::after pad (see .m-q-x above) — the chip itself
+   stays compact, the tappable zone reaches 44px by overlapping into the
+   surrounding row gap. */
+.m-attach-row .m-attach-chip .x { position: relative; display: inline-flex; color: var(--faint); cursor: pointer; font-size: 13px; }
+.m-attach-row .m-attach-chip .x::after { content: ''; position: absolute; inset: -14px; }
 .m-round-btn.bordered { width: 30px; height: 30px; border: 1px solid var(--bd); }
 .m-send { width: 34px; height: 34px; border-radius: 50%; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; flex: none; border: none; cursor: pointer; transition: background .15s ease, color .15s ease, opacity .15s ease, transform .1s ease; }
 /* Send stays dim + inert until there's something to send; lights up live as you type. */
@@ -327,11 +347,26 @@ html.native .m-tabbar {
 .m-chip.active { color: var(--teal); background: var(--tealtint); border-color: var(--teal2); font-weight: 500; }
 .m-chip .dot { width: 7px; height: 7px; border-radius: 50%; }
 
-/* swipe-to-archive */
+/* swipe-to-archive — Task 3.4: right-swipe (primary action) and left-swipe
+   (dismiss) used to stack BOTH hints in the same right-aligned spot with no
+   .act-left/.act-right rules to tell them apart, so the background always
+   read the same regardless of which way the card moved. mobile-app.js's
+   pointermove handler now toggles .dir-right/.dir-left on .m-swipe (the wrap
+   — a sibling of .m-swipe-card, not an ancestor, so the class lives on their
+   shared parent) as the drag direction becomes determinate; only the hint
+   matching the live direction shows, aligned toward the edge the card is
+   revealing FROM. */
 .m-swipe { position: relative; border-radius: 13px; overflow: hidden; margin-bottom: 9px; }
-.m-swipe-bg { position: absolute; inset: 0; background: var(--teal2); display: flex; align-items: center; justify-content: flex-end; padding-right: 18px; }
-.m-swipe-bg .act { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--ink); }
+.m-swipe-bg { position: absolute; inset: 0; display: flex; align-items: center; }
+.m-swipe-bg .act { display: none; flex-direction: column; align-items: center; gap: 3px; padding: 0 18px; }
 .m-swipe-bg .act span { font-size: 11px; font-weight: 700; }
+/* Right-swipe: real primary action (cardActions — same lookup endSwipe uses
+   to actually fire it), left-aligned, teal — revealed as the card slides right. */
+.m-swipe.dir-right .m-swipe-bg { background: var(--teal2); justify-content: flex-start; }
+.m-swipe.dir-right .m-swipe-bg .act-right { display: flex; color: var(--ink); }
+/* Left-swipe: dismiss, right-aligned, red tint — revealed as the card slides left. */
+.m-swipe.dir-left .m-swipe-bg { background: rgba(229,97,106,.22); justify-content: flex-end; }
+.m-swipe.dir-left .m-swipe-bg .act-left { display: flex; color: var(--red, #e5616a); }
 .m-swipe-card { position: relative; background: var(--panel); border: 1px solid var(--bd); border-radius: 13px; padding: 13px 14px; touch-action: pan-y; will-change: transform; }
 .m-swipe-card.swiping { box-shadow: -8px 0 18px rgba(0,0,0,.3); transition: none; }
 .m-swipe-card.snap { transition: transform .2s ease; }
@@ -364,7 +399,9 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-email-summary { border: 1px solid rgba(169,155,245,.28); background: rgba(169,155,245,.08); border-radius: 11px; padding: 11px 13px; margin: 0 0 18px; }
 .m-email-summary .hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
 .m-email-summary .hd .t { font-size: 12px; font-weight: 700; color: var(--violet); }
-.m-email-summary .hd .x { background: none; border: none; color: var(--faint); font-size: 14px; cursor: pointer; padding: 0 2px; font-family: inherit; }
+/* RIDER B ≥44pt: invisible ::after pad (see .m-q-x above). */
+.m-email-summary .hd .x { position: relative; background: none; border: none; color: var(--faint); font-size: 14px; cursor: pointer; padding: 0 2px; font-family: inherit; }
+.m-email-summary .hd .x::after { content: ''; position: absolute; inset: -14px; }
 .m-email-summary .bd { font-size: 13px; line-height: 1.55; color: #d3d7de; white-space: pre-wrap; }
 .m-reader p { margin: 0 0 13px; font-size: 14.5px; line-height: 1.65; color: #d3d7de; }
 .m-attach { display: inline-flex; align-items: center; gap: 10px; border: 1px solid var(--bd); background: var(--panel); border-radius: 11px; padding: 9px 13px; margin-top: 3px; }
@@ -450,17 +487,23 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-cap-head .cancel { font-size: 13px; color: var(--faint); cursor: pointer; background: none; border: none; }
 .m-cap-input { border: 1px solid var(--teal2); background: var(--bg); border-radius: 14px; padding: 14px; margin-bottom: 13px; min-height: 96px; }
 .m-cap-input textarea { width: 100%; background: transparent; border: none; resize: none; font-size: 16px; line-height: 1.5; color: var(--fg); min-height: 66px; }
-.m-cap-parse { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--mut); background: var(--bg); border: 1px dashed var(--teal2); border-radius: 8px; padding: 7px 11px; margin-bottom: 14px; }
-.m-cap-parse .k { color: var(--teal); font-weight: 600; }
 .m-cap-types { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .m-cap-type { font-size: 12.5px; color: var(--mut); background: var(--bg); border: 1px solid var(--bd); padding: 7px 14px; border-radius: 999px; cursor: pointer; }
 .m-cap-type.active { color: var(--ink); background: var(--teal); border-color: transparent; font-weight: 600; }
 .m-cap-send { height: 48px; border-radius: 14px; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 600; border: none; width: 100%; cursor: pointer; }
 .m-cap-recent-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; color: var(--faint); margin: 18px 2px 9px; }
 .m-cap-recent { display: flex; align-items: center; gap: 9px; padding: 9px 0; border-top: 1px solid var(--bd2); }
-.m-cap-recent .g { font-size: 13px; }
-.m-cap-recent .tx { font-size: 13px; color: var(--mut); flex: 1; }
-.m-cap-recent .ty { font-size: 11px; color: var(--faint); }
+.m-cap-recent .tx { font-size: 13px; color: var(--mut); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-cap-recent .ty { font-size: 11px; color: var(--faint); flex: none; }
+.m-cap-recent-empty { font-size: 12.5px; color: var(--faint); padding: 9px 0; border-top: 1px solid var(--bd2); }
+
+/* inbox snooze sheet (task 3.1) — mirrors the capture/model sheets' chrome;
+   .m-snooze-row is its own ≥44pt tap target (min-height:48px), not reusing
+   .m-cap-type's small pill sizing. */
+.m-sheet.snooze { padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 20px); }
+.m-snooze-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 4px; }
+.m-snooze-row { min-height: 48px; display: flex; align-items: center; padding: 0 16px; border-radius: 12px; border: 1px solid var(--bd); background: var(--bg); color: var(--fg); font-size: 15px; font-weight: 500; text-align: left; cursor: pointer; }
+.m-snooze-row:active { background: var(--row-hover); }
 
 /* email compose / reply sheet (reuses .m-cap-head + .m-cap-send) */
 .m-sheet.compose { max-height: 92%; padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 22px); }
@@ -503,7 +546,18 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-conv-badge.term { color: var(--faint); background: transparent; border: 1px solid var(--bd); }
 .m-conv-badge.provider { background: transparent; padding: 0; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: var(--mut); }
 .m-conv-badge.provider svg { width: 100%; height: 100%; display: block; }
-.m-conv-title { flex: 1; font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* RIDER B: this used to be a SECOND `.m-conv-title` rule — same class as the
+   chat header's flex wrapper (line ~118 above). Its declared properties
+   didn't collide with the header rule's (flex/font-size/color/white-space/
+   overflow/text-overflow vs. display/align-items/gap/max-width), so BOTH
+   sets landed on BOTH usages: a stray `flex:1` bled onto the header's
+   flex-column child, and — the actual bug — these ellipsis properties
+   applied to a `display:flex` element (the header's own wrapper rule
+   doesn't override display:flex for the row usage below), which doesn't
+   reliably truncate, AND with no min-width:0 the row couldn't shrink below
+   its content's width in the first place. Split into its own class, scoped
+   to drawer/semantic-hit rows only (mobile-sheets.js convListHtml). */
+.m-conv-row-title { flex: 1; min-width: 0; font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Cross-session run state in the mobile chat list (parity with desktop conv-dot/conv-spin). */
 .m-conv-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
 .m-conv-dot.notify { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 20%, transparent); animation: pulse 1.6s ease-in-out infinite; }
@@ -663,9 +717,12 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   margin: 6px 0 0 0;
   align-items: center;
 }
+/* RIDER B ≥44pt: bumped straight from 32px to 44px (own row under the
+   message, room to grow — unlike the compact chips above this doesn't need
+   the invisible-pad trick). */
 .m-msg-tool {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -709,6 +766,13 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 }
 .m-msg-dl-item:hover { background: color-mix(in srgb, var(--teal) 14%, transparent); }
 .m-msg-dl-ic { display: inline-flex; align-items: center; color: var(--faint); }
+
+/* RIDER A/B: the shared refresh-failure toast (mToastHtml, mobile-surfaces.js)
+   — its dismiss ✕ is a real <button> now (was a bare span), sized with the
+   same invisible-pad ≥44pt technique as the other small dismiss glyphs above
+   (.m-q-x etc.) since the toast pill itself stays compact. */
+.m-toast-x { position: relative; flex: none; min-width: 0; background: none; border: none; color: var(--faint); font-size: 15px; line-height: 1; cursor: pointer; padding: 0; }
+.m-toast-x::after { content: ''; position: absolute; inset: -14px; }
 
 .m-msg-sheet-backdrop {
   position: fixed;

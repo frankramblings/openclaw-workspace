@@ -2,9 +2,9 @@
 // the quick-capture modal (the ➕ tab — a mobile-only surface).
 
 import { I, icon, fortress } from '../icons.js';
-import { esc, map, when, stripMd } from '../dom.js';
+import { esc, map, stripMd } from '../dom.js';
 import { AVATAR, EXT_COLOR } from '../data.js';
-import { CAPTURE_TYPES, CAPTURE_PARSE, RECENT_CAPTURES } from './mobile-data.js';
+import { CAPTURE_TYPES, captureAgeLabel } from './mobile-data.js';
 import { providerLogo } from '../provider-logo.js';
 
 // compact file tree (shared FS data) for the companion sheet's Files tab
@@ -94,7 +94,7 @@ function convListHtml(s) {
     const badgeClass = 'm-conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
     return `<div class="m-conv-row ocrow${r.active ? ' active' : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}" tabindex="${rowTabindex}" role="button">
     <span class="${badgeClass}">${badgeInner}</span>
-    <span class="m-conv-title">${esc(r.title)}</span>
+    <span class="m-conv-row-title">${esc(r.title)}</span>
     ${r.notify ? `<span class="m-conv-dot notify" title="Reply finished"></span>`
       : r.working ? `<span class="m-conv-spin working" title="Working…">${fortress(14)}</span>`
       : r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
@@ -131,7 +131,7 @@ function mConvSemanticHits(s, titleGroups, rowTabindex) {
   if (!rows.length) return '';
   const hitRow = (r) => `<div class="m-conv-row ocrow m-conv-msghit" data-act="mSelectSession" data-arg="${esc(r.session_id)}" tabindex="${rowTabindex ?? '0'}" role="button">
     <span class="m-conv-badge">G</span>
-    <span class="m-conv-hit"><span class="m-conv-title">${esc(r.session_name || 'Conversation')}</span><span class="m-conv-hit-snip">${esc(stripMd(r.content_snippet || ''))}</span></span>
+    <span class="m-conv-hit"><span class="m-conv-row-title">${esc(r.session_name || 'Conversation')}</span><span class="m-conv-hit-snip">${esc(stripMd(r.content_snippet || ''))}</span></span>
   </div>`;
   return label + map(rows, hitRow);
 }
@@ -193,22 +193,68 @@ export function renderModelSheet(s) {
   </div>`;
 }
 
+// ---- inbox snooze sheet -----------------------------------------------
+// Mobile counterpart to desktop's inline snooze popover (surfaces.js
+// inboxSurface's snoozeMenu): a bottom sheet instead of an inline row, to
+// match every other transient chooser on this shell (capture/compose/model).
+// Shares the SAME state field (`inboxSnoozeFor`, set by the ⏰ tap / left
+// -swipe → the `snooze` action in live/inbox.js) and the SAME commit action
+// (`snoozeFor`, arg "<id>:<preset>") as desktop — only the chrome differs.
+// Preset ids/semantics mirror live/inbox-logic.js's snoozeUntilMs (later =
+// +4h; tomorrow/nextweek = that day at 09:00 local) — that file is owned by
+// another lane this round, so the id/label pairing is kept local here rather
+// than imported.
+// Self-guarded like userSheet() in mobile-msg-tools.js: renders '' when
+// nothing is snoozing, so callers can splice it into the sheet stack
+// unconditionally instead of gating on s.inboxSnoozeFor at the call site.
+const SNOOZE_PRESETS = [
+  { id: 'later', label: 'In 4 hours' },
+  { id: 'tomorrow', label: 'Tomorrow, 9:00 AM' },
+  { id: 'nextweek', label: 'Next week' },
+];
+
+export function renderSnoozeSheet(s) {
+  const id = s && s.inboxSnoozeFor;
+  if (!id) return '';
+  return `
+  <div class="m-scrim" data-act="closeSnooze" aria-hidden="true"></div>
+  <div class="m-sheet snooze" role="dialog" aria-modal="true" aria-label="Snooze">
+    <div class="m-grab"><div class="h"></div></div>
+    <div class="m-cap-head"><span class="t">Snooze</span><div class="m-spacer"></div><button class="cancel" data-act="closeSnooze">Cancel</button></div>
+    <div class="m-snooze-list">
+      ${map(SNOOZE_PRESETS, (p) => `<button class="m-snooze-row" data-act="snoozeFor" data-arg="${esc(id + ':' + p.id)}">${esc(p.label)}</button>`)}
+    </div>
+  </div>`;
+}
+
+const CAPTURE_TYPE_BY_ID = Object.fromEntries(CAPTURE_TYPES.map((t) => [t.id, t]));
+
 export function renderCaptureSheet(s) {
   const type = s.captureType || 'remind';
   const draft = s.captureDraft || '';
-  const parse = CAPTURE_PARSE[type];
+  // Task 3.6 (honesty): no "Gary parsed: ..." preview. It used to be keyed
+  // only off captureType (a static string per type, not the actual draft) —
+  // and even a real per-keystroke parse isn't viable here: captureDraft is
+  // in app.js's PLAIN_SHEET_FIELDS render-skip set, so this sheet's own
+  // input handler deliberately skips the full re-render a live preview would
+  // need to track typing. No speculative preview at all beats a stale one.
+  const recents = Array.isArray(s.captureRecents) ? s.captureRecents : [];
+  const recentRow = (r) => {
+    const meta = CAPTURE_TYPE_BY_ID[r.type];
+    const tag = meta ? `${meta.glyph} ${meta.label}` : esc(r.type || '');
+    return `<div class="m-cap-recent"><span class="tx">${esc(String(r.text || '').slice(0, 80))}</span><span class="ty">${tag} · ${esc(captureAgeLabel(r.ts, Date.now()))}</span></div>`;
+  };
   return `
   <div class="m-scrim" data-act="closeCapture" aria-hidden="true"></div>
   <div class="m-sheet capture" role="dialog" aria-modal="true" aria-label="Quick capture">
     <div class="m-grab"><div class="h"></div></div>
     <div class="m-cap-head"><div class="av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><span class="t">Quick capture</span><div class="m-spacer"></div><button class="cancel" data-act="closeCapture">Cancel</button></div>
     <div class="m-cap-input"><textarea data-model="captureDraft" data-focus="mcapture" rows="2" placeholder="Remind me to send the Cannes deck to legal before Friday">${esc(draft)}</textarea></div>
-    ${when(draft.trim().length > 0, `<div class="m-cap-parse"><span class="k">__AGENT_NAME__ parsed:</span>${esc(parse)}</div>`)}
     <div class="m-cap-types" role="radiogroup" aria-label="Capture type">
       ${map(CAPTURE_TYPES, (t) => `<span class="m-cap-type${type === t.id ? ' active' : ''}" data-act="setCaptureType" data-arg="${t.id}" tabindex="0" role="radio" aria-checked="${type === t.id}">${t.glyph} ${esc(t.label)}</span>`)}
     </div>
     <button class="m-cap-send" data-act="sendCapture">${I.send(17)}Send to __AGENT_NAME__</button>
     <div class="m-cap-recent-lbl">RECENT CAPTURES</div>
-    ${map(RECENT_CAPTURES, (r) => `<div class="m-cap-recent"><span class="g" style="color:${r.color}">${r.glyph}</span><span class="tx">${esc(r.text)}</span><span class="ty">${esc(r.type)}</span></div>`)}
+    ${recents.length ? map(recents, recentRow) : `<div class="m-cap-recent-empty">Nothing captured yet.</div>`}
   </div>`;
 }

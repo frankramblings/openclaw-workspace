@@ -5,15 +5,28 @@
 
 import { icon } from '../icons.js';
 import { renderCenter } from '../surfaces.js';
-import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore } from './mobile-surfaces.js';
-import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvDrawer, renderModelSheet } from './mobile-sheets.js';
+import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore, mToastHtml } from './mobile-surfaces.js';
+import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvDrawer, renderModelSheet, renderSnoozeSheet } from './mobile-sheets.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
+import { recordCapture, readRecentCaptures } from './mobile-data.js';
 import { cardActions, isInvite, swipeIntent } from '../live/inbox-logic.js';
 import { edgeSwipeBlocked } from './mobile-history.js';
 import { armSwallow, shouldSwallowClick, scheduleSwallowDisarm } from './longpress.js';
 
 const PUSHED_SURFACES = new Set(['research', 'library', 'notes', 'settings']);
+
+// Task 3.4: pure direction→class mapping for the inbox swipe-card background
+// hint (mobile.css .m-swipe.dir-right/.dir-left, applied to the card's wrap
+// element while dragging — see wireMobileGestures below). Right-swipe reveals
+// the left-aligned primary-action hint; left-swipe reveals the right-aligned
+// dismiss hint. Pulled out as its own function so the direction logic is
+// testable without a pointer-event/DOM environment.
+export function swipeDirClass(dx) {
+  if (dx > 0) return 'dir-right';
+  if (dx < 0) return 'dir-left';
+  return null;
+}
 
 function pushedSurface(s, sub) {
   const back = icon('<path d="m15 18-6-6 6-6"/>', { size: 20, sw: 2.2 });
@@ -21,7 +34,8 @@ function pushedSurface(s, sub) {
   <div class="m-head" style="display:flex;align-items:center;gap:6px;padding-top:calc(env(safe-area-inset-top,0px) + 14px);padding-bottom:10px">
     <button class="m-back" data-act="mBackToHub">${back}<span>More</span></button>
   </div>
-  <div class="m-pushed">${renderCenter({ ...s, surface: sub })}</div>`;
+  <div class="m-pushed">${renderCenter({ ...s, surface: sub })}</div>
+  ${mToastHtml(s)}`;
 }
 
 export function renderMobile(s) {
@@ -47,7 +61,9 @@ export function renderMobile(s) {
     (s.companionSheetOpen ? renderCompanionSheet(s) : '') +
     (s.quickCaptureOpen ? renderCaptureSheet(s) : '') +
     (s.composeOpen ? renderComposeSheet(s) : '') +
-    (s.mModelSheetOpen ? renderModelSheet(s) : '');
+    (s.mModelSheetOpen ? renderModelSheet(s) : '') +
+    // Self-guarded (renders '' with no s.inboxSnoozeFor) — see mobile-sheets.js.
+    renderSnoozeSheet(s);
 
   // The conversation drawer is ALWAYS in the DOM (off-screen when closed) so the
   // edge-swipe gesture can finger-track it without rebuilding innerHTML mid-touch.
@@ -63,6 +79,13 @@ export function mobileActions(state) {
     state.companionSheetOpen = false; state.quickCaptureOpen = false;
     state.mModelSheetOpen = false; state.mDrawerOpen = false;
     state.composeOpen = false; state.inboxReader = null;
+    // The inbox snooze sheet (⏰ tap / left-swipe) is otherwise untouched by a
+    // tab switch — it lives on state.inboxSnoozeFor, set by the shared
+    // live/inbox.js `snooze` action, which has no idea a mobile tab exists.
+    // Without clearing it here, switching off the Inbox tab left it truthy,
+    // and renderSnoozeSheet (self-guarded only on that flag) would pop back
+    // open over whatever surface came next.
+    state.inboxSnoozeFor = null;
     if (state.live && state.live.chat) state.live.chat.mobileSheetMsgId = null;
   };
   return {
@@ -85,7 +108,13 @@ export function mobileActions(state) {
     openCompanion: () => { state.companionSheetOpen = true; },
     closeCompanion: () => { state.companionSheetOpen = false; },
     companionTab: (t) => { state.companionTab = t; },
-    openCapture: () => { state.quickCaptureOpen = true; state.captureType = state.captureType || 'remind'; },
+    openCapture: () => {
+      state.quickCaptureOpen = true;
+      state.captureType = state.captureType || 'remind';
+      // Real recents (task 3.6) — re-read on every open so a capture written
+      // from elsewhere (or a prior session) is picked up.
+      try { state.captureRecents = readRecentCaptures(localStorage); } catch (_) { state.captureRecents = []; }
+    },
     closeCapture: () => { state.quickCaptureOpen = false; },
     // Opening the conversations list is exactly when you're looking for a thread
     // you just started — pull a fresh list so a newly-created (or out-of-band)
@@ -118,6 +147,9 @@ export function mobileActions(state) {
       try { runtime.render(); } catch (_) {}
       try {
         await apiJson('/api/notes', { title, body: text, kind });
+        // Task 3.6: record the REAL capture (not a mock row) for the "recent
+        // captures" list, only on confirmed success.
+        try { state.captureRecents = recordCapture(localStorage, { text, type: kind, ts: Date.now() }); } catch (_) {}
       } catch (_) {
         // restore so the user doesn't lose what they typed
         state.captureDraft = text;
@@ -161,6 +193,17 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
       const t = Math.max(SWIPE_MAX, Math.min(100, dx));
       drag.card.style.transform = `translateX(${t}px)`;
       drag.dx = t;
+      // Direction class lives on the WRAP (.m-swipe — the common ancestor of
+      // .m-swipe-bg and .m-swipe-card, see mInbox), not the card itself:
+      // .m-swipe-bg is a sibling of the card, so mobile.css's
+      // .m-swipe.dir-right/.dir-left rules need it on the shared parent to
+      // reach the hint layer underneath.
+      const wrap = drag.card.parentElement;
+      if (wrap) {
+        const dir = swipeDirClass(t);
+        wrap.classList.toggle('dir-right', dir === 'dir-right');
+        wrap.classList.toggle('dir-left', dir === 'dir-left');
+      }
       e.preventDefault();
     }
   }, { passive: false });
@@ -204,10 +247,15 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
       }
       render();
     } else {
-      // Below commit threshold — snap back.
+      // Below commit threshold — snap back. No render() on this path (unlike
+      // every branch above), so the dir-right/dir-left class set during the
+      // drag won't be cleared by a DOM rebuild — remove it here or the hint
+      // layer stays tinted under the resting card until the next swipe.
       d.card.classList.remove('swiping');
       d.card.classList.add('snap');
       d.card.style.transform = 'translateX(0)';
+      const wrap = d.card.parentElement;
+      if (wrap) wrap.classList.remove('dir-right', 'dir-left');
     }
   };
   root.addEventListener('pointerup', endSwipe);

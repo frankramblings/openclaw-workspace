@@ -11,7 +11,7 @@ import { renderChatStrip } from '../chat-strip.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
 import { suggestGhost } from '../suggest-ghost.js';
-import { cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath } from '../live/inbox-logic.js';
+import { cardActions, cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 import { currentHealth, healthDotColor } from '../live/health.js';
@@ -47,18 +47,22 @@ function mLoadErrorBlock(surfaceLabel, s) {
 // calls surfaces.js's inboxToastHtml unconditionally), but mobile has no
 // equivalent always-on shell wrapper. Extracted so mEmailList/mCalendar can
 // carry it too, not just mInbox.
-function mToastHtml(s, bottom = '80px') {
+// Exported: RIDER A (task-w3b) — pushed "More" sub-screens (Notes/Library/
+// Research/Settings, see mobile-app.js's pushedSurface) never carried this,
+// so a background refresh failure on those four surfaces was silently
+// invisible on mobile even though desktop shows the SAME toast unconditionally
+// around every surface (app.js's inboxToastHtml call).
+export function mToastHtml(s, bottom = '80px') {
   if (!s.inboxToast) return '';
   return `
     <div class="inbox-toast" style="position:fixed;bottom:${bottom};left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--panel,#1e2025);border:1px solid var(--border);border-radius:8px;padding:10px 14px;box-shadow:0 4px 20px rgba(0,0,0,.4);z-index:80;white-space:nowrap;max-width:90vw">
       <span>${esc(s.inboxToast.msg)}</span>
       ${(s.inboxToast.undoTs || s.inboxToast.undoLocal || (s.inboxToast.undoBatch && s.inboxToast.undoBatch.length)) ? `<button class="btn-sm" data-act="undo">Undo</button>` : ''}
-      <span data-act="dismissToast" style="cursor:pointer;color:var(--faint);margin-left:4px">✕</span>
+      <button type="button" class="m-toast-x" data-act="dismissToast" aria-label="Dismiss">✕</button>
     </div>`;
 }
 
 const ic = {
-  mic: () => icon('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', { size: 17, sw: 1.8 }),
   dots: () => icon('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>', { size: 22, sw: 2 }),
   back: () => icon('<path d="m15 18-6-6 6-6"/>', { size: 22, sw: 2.2 }),
   archive: () => icon('<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/>', { size: 20, sw: 2 }),
@@ -201,7 +205,7 @@ export function mChat(s) {
   </div>
   <div class="m-comp-handle m-hide-kb"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>
   <div class="m-scroll m-thread${thread.length ? '' : ' empty'}" data-ptr="1" data-ptr-btm="1">${mPtr(s, 'Refreshing chat…')}${threadHtml}${mPtrBtm(s, 'Refreshing chat…')}</div>
-  <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;bottom:calc(env(safe-area-inset-bottom,0px) + 122px)">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
+  <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;--m-scroll-btm-y:calc(env(safe-area-inset-bottom,0px) + 122px)">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
   <div class="m-composer${focused ? ' focused' : ''}">
     ${renderChatStrip(s.live?.chat?.chatStrip, { renderMarkdown })}
     ${when(s.mobileEditingPending, `<div class="m-comp-edit-chip"><span class="m-comp-edit-lbl">Editing message</span><button class="m-comp-edit-cancel" data-act="cancelMobileEdit">Cancel</button></div>`)}
@@ -211,7 +215,6 @@ export function mChat(s) {
       <label class="m-round-btn bordered" title="Attach photo or file"><input type="file" data-upload multiple style="display:none">${I.plus(16)}</label>
       <div class="ta-wrap">${suggestGhost(s.live?.chat?.suggest, s.draft, { mobile: true })}<textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="${suggestGhost(s.live?.chat?.suggest, s.draft, { mobile: true }) ? ' ' : 'Message __AGENT_NAME__…'}">
 ${esc(s.draft || '')}</textarea></div>
-      <button class="m-round-btn m-hide-kb">${ic.mic()}</button>
       <button class="m-send${s.mobileEditingPending ? ' editing' : ''}" data-act="send">${I.send(16)}${s.mobileEditingPending ? `<span class="m-send-lbl">Save</span>` : ''}</button>
     </div>
   </div>
@@ -233,15 +236,18 @@ export function mInbox(s) {
   const swipeCard = (it) => {
     const off = (s.swipe && s.swipe.id === it.id) ? s.swipe.dx : 0;
     // Invites don't auto-act on a right swipe (no accidental "Yes" → organizer
-    // email) — the hint tells the user to tap a button instead.
+    // email) — the hint tells the user to tap a button instead. Otherwise the
+    // hint names the REAL primary action (cardActions — same lookup
+    // endSwipe/mobile-app.js uses to actually fire it on release), not a
+    // generic placeholder.
     const rightHint = isInvite(it)
       ? '📅<span>Tap Yes / Maybe / No</span>'
-      : '✓<span>Action</span>';
+      : `✓<span>${esc((cardActions(it).find((a) => a.role === 'primary') || {}).label || 'Action')}</span>`;
     return `
     <div class="m-swipe" data-swipe-id="${it.id}">
       <div class="m-swipe-bg">
         <div class="act act-right">${rightHint}</div>
-        <div class="act act-left">✕<span>Dismiss · ⏰</span></div>
+        <div class="act act-left">✕<span>Dismiss</span></div>
       </div>
       <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
         <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>

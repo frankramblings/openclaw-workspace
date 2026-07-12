@@ -1077,6 +1077,12 @@ if config.FRONTEND_DIR.exists():
     async def gary_newtab():
         return _spa_html("newtab.html")
 
+    @app.get("/gary-home.html")
+    async def gary_home_alias():
+        # Path-compatible alias for the :8011 media-server copy, so a new-tab
+        # setting pointed at .../gary-home.html works verbatim on this origin.
+        return _spa_html("newtab.html")
+
     @app.get("/classic")
     async def index_classic():
         # Task 18 step 1 (parity gate, instrumentation only — retirement is

@@ -60,10 +60,23 @@ work past its deadline fires immediately on the next 30s sweep after boot.
 
 ## Gary adoption note
 
-Add to Gary's OpenClaw workspace instructions (lives outside this repo):
+Add to Gary's OpenClaw workspace instructions (lives outside this repo;
+current copy: `~/.openclaw/workspace/AGENTS.md` § "Background Tasks"):
 
-> When you start background work from a web chat and promise to report back,
-> run it through `bin/followup run --session <this chat's session id>
-> --label "<short name>" -- <command>` instead of running the command bare.
-> The workspace will wake you in the same chat when it finishes (or goes
-> silent), so the promise keeps itself.
+> When you start background work from a **web chat**, prefer the wrapper:
+> `bin/followup run --session <this chat's session id> --label "<short name>"
+> [--deadline 4h] -- <command>`. The workspace wakes you in the same chat when
+> the command finishes (or goes silent), with the **real exit code** and
+> output tail — the promise keeps itself.
+>
+> **Safety net (Phase 3):** a bare background launch (`nohup … &`, `setsid`,
+> `& disown`, detached screen/tmux — including via the workspace terminal) is
+> auto-detected ~10s later: a watched task row appears in the chat and you're
+> woken when the process exits. But the watcher can't see the real exit code
+> ("exit unknown — inspect the artifacts") and falls back to a 4h deadline
+> turn if it loses the process. The wrapper is strictly better.
+>
+> **Never promise into the void:** a reply that says "I'll / I will let you
+> know · report back · keep you posted" with nothing tracked for that chat
+> puts a persistent amber card on your reply — *"you will NOT be pinged"* —
+> and it survives reloads. Don't say it unless something makes it true.

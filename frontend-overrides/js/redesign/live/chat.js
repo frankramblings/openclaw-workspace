@@ -1172,6 +1172,39 @@ async function submitFromComposer(text, attachSnap) {
   return true;
 }
 
+// Cross-session pagehide flush (see flushPending below): fire a best-effort,
+// fire-and-forget POST to /api/chat_stream so the server starts + records the
+// turn, WITHOUT opening any local turn state (no beginTurn, no streamCtrl, no
+// reader). This is a REQUEST-only replica of what fireSend() posts to the
+// SAME endpoint — same FormData shape, same credentials — it just never reads
+// the response body, because by the time it would matter the page may already
+// be gone. `keepalive: true` is what lets the browser actually deliver the
+// request across an unload/backgrounding instead of cancelling it with the
+// document (this is also why it's a plain fetch and not postStream: opening a
+// stream reader here would be pointless work the teardown can't use).
+// navigator.sendBeacon was considered but rejected — chat_stream is a
+// multipart POST expecting a streamed SSE response, not the small text/blob
+// beacon is meant for, and sendBeacon can't carry the fields as multipart
+// form data the backend already parses. Errors are swallowed: there is no
+// local state left here to revert into by the time this settles.
+function keepaliveSend(sessionId, text, attachSnap, state) {
+  const attachIds = (attachSnap || []).map((a) => a.id);
+  const fields = {
+    message: text,
+    session: sessionId,
+    mode: (state && state.chatMode) || 'agent',
+    ...(attachIds.length ? { attachments: JSON.stringify(attachIds) } : {}),
+    ...(state && state.incognito ? { incognito: 'true' } : {}),
+  };
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) if (v != null) fd.append(k, v);
+  try {
+    fetch('/api/chat_stream', {
+      method: 'POST', credentials: 'same-origin', body: fd, keepalive: true,
+    }).catch(() => { /* best-effort — nothing left to revert into */ });
+  } catch (_) { /* fetch unavailable / threw synchronously — best effort only */ }
+}
+
 // Fires a buffered send early — timer expiry, a second send arriving, or (in
 // Task 8) an explicit Save & Send mid-edit. Clears pendingSend + the
 // optimistic flags before handing off to fireSend, so msgTools' canEdit
@@ -1187,23 +1220,43 @@ export function flushPending(sessionId, opts) {
   if (p.timerId) clearTimeout(p.timerId);
   chat.pendingSend = null;
   const sid = sessionId || p.sessionId;
+  const busy = !!(turn && turn.sessionId === sid);
+  const crossView = sid !== chat.activeId;
+  const isPagehide = !!(opts && opts.pagehide);
+
+  // Cross-session pagehide: the page is backgrounding/tearing down (iOS
+  // Safari's pagehide-with-survival case included — see the listener below),
+  // and this pendingSend belongs to a DIFFERENT session than the one on
+  // screen. A regular fireSend()/beginTurn() here would bind the assistant
+  // bubble into whatever thread IS currently displayed — send in A, switch to
+  // B, background within the buffer window, and A's reply streams into B's
+  // view on foregrounding. There's no view to fire into safely, so don't open
+  // any local turn state at all: no beginTurn, and — critically — no queue
+  // entry either (the in-memory queue may well survive an iOS suspend, and
+  // queuing here on top of the keepalive POST below would double-send once
+  // that thread is next viewed). Just get the request out the door; the
+  // server records the turn, and the notifier/reconcile machinery re-attaches
+  // it correctly the next time this session is actually opened.
+  if (isPagehide && crossView && !busy) {
+    const idx = (chat.thread || []).findIndex((m) => m.id === p.messageId);
+    if (idx >= 0) chat.thread.splice(idx, 1);
+    keepaliveSend(sid, p.text, p.attachSnap, state);
+    return;
+  }
+
   // Divert to the session-keyed queue instead of firing when either:
   //  - Busy gate: a turn is already live for this thread (e.g. the PREVIOUS
   //    send flushed at the top of this same buffer window). Firing a second
   //    POST now would be rejected server-side (busy_stream) — after fireSend
   //    had already aborted the live turn's reader, wrecking both turns.
-  //  - View gate: the user switched threads inside the buffer window.
-  //    fireSend → beginTurn binds the assistant bubble to the CURRENT chat
-  //    view, so firing now would stream the reply into whatever thread is on
-  //    screen. (pagehide bypasses this gate: the page is tearing down — no
-  //    view left to corrupt, and the in-memory queue dies with it — so the
-  //    POST still goes out at its own session and the server records the
-  //    turn.)
+  //  - View gate: the user switched threads inside the buffer window (and
+  //    this ISN'T the cross-session-pagehide case handled above). fireSend →
+  //    beginTurn binds the assistant bubble to the CURRENT chat view, so
+  //    firing now would stream the reply into whatever thread is on screen.
   // Either way, the optimistic bubble comes out of the thread (the queued
   // banner represents it now) and the message auto-sends via flushQueuedFor
   // the next time its own thread is active and idle.
-  if ((turn && turn.sessionId === sid)
-      || (sid !== chat.activeId && !(opts && opts.pagehide))) {
+  if (busy || (crossView && !isPagehide)) {
     const idx = (chat.thread || []).findIndex((m) => m.id === p.messageId);
     if (idx >= 0) chat.thread.splice(idx, 1);
     chat.queuedList = [...(chat.queuedList || []), { sid, text: p.text, attachSnap: p.attachSnap }];
@@ -2022,12 +2075,32 @@ export const actions = {
     lastStopped = (turn && turn.asstMsg && sid)
       ? { sessionId: sid, msgId: turn.asstMsg.id } : null;
     if (sid) {
-      apiForm(`/api/chat/stop/${sid}`, {}).catch(() => {
-        // The stop never reached the backend: the run is still going
-        // server-side and the notifier will re-surface it in ~4s. Say so —
-        // an unexplained resurrection looks haunted.
-        toast('Stop didn’t reach the server — the reply may still be running and could reappear.');
-      });
+      // Capture THIS call's record by identity so the .then() below only ever
+      // clears its own slot — single-slot invariant: attachTurn consumes
+      // lastStopped without a refetch in between, so it only ever runs
+      // against the SAME session/view this stopRun just recorded (a second
+      // stopRun for a different session would have already overwritten the
+      // module slot with its own record before this one's POST settles).
+      const stopRec = lastStopped;
+      apiForm(`/api/chat/stop/${sid}`, {})
+        .then(() => {
+          // The server confirmed the abort actually landed (chat.abort
+          // succeeded — see backend/app.py stop_chat) — this is a genuinely
+          // finished turn, not one that might still be running. Clear the
+          // record: leaving it live would let an UNRELATED later turn in this
+          // same session (e.g. a follow-up promise firing) get dedupe-spliced
+          // by attachTurn as if it were this stopped turn resuming, deleting
+          // a perfectly legitimate finished bubble.
+          if (lastStopped === stopRec) lastStopped = null;
+        })
+        .catch(() => {
+          // The stop never reached the backend (or the gateway call itself
+          // failed): the run is still going server-side and the notifier
+          // will re-surface it in ~4s — keep the record so attachTurn's
+          // dedupe replaces the stopped bubble instead of duplicating it.
+          // Say so — an unexplained resurrection looks haunted.
+          toast('Stop didn’t reach the server — the reply may still be running and could reappear.');
+        });
     }
     if (turn && turn.activity) {
       const a = turn.activity;
@@ -2502,7 +2575,12 @@ export const actions = {
     const msg = (chat.thread || []).find((m) => m.id === msgId);
     if (msg) msg.text = text;
     state.editDraft = null;
-    flushPending(chat.activeId);
+    // The buffered send's OWN session, not chat.activeId: Save & Send can fire
+    // after the user switched threads mid-edit, and flushPending's view gate
+    // is keyed off the sid it's handed — passing the viewed thread's id here
+    // would make a same-session-looking flush that is actually cross-session,
+    // skipping the gate and streaming the reply into the wrong thread.
+    flushPending(chat.pendingSend.sessionId);
   },
 
   // Cancel: close the inline editor, keep the original buffered text/deadline

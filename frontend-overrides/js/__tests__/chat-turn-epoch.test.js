@@ -26,7 +26,19 @@
 //  10. Behavioral (I2): a message queued in A stays intact while B runs and
 //      finishes, then fires when A is reselected.
 //  11. Behavioral (I3): after a Stop whose POST failed, the notifier re-attach
-//      replaces the stopped bubble instead of minting a duplicate.
+//      replaces the stopped bubble instead of minting a duplicate; a
+//      SUCCESSFUL stop instead clears the dedupe record, so an unrelated
+//      later re-attach in that session never touches the finished bubble
+//      (Review round 2, Important 2).
+//  12. Behavioral (Review round 2, Important 1): a pagehide flush for a
+//      DIFFERENT session than the one on screen fires exactly one
+//      fire-and-forget keepalive POST and opens no local turn state — no
+//      assistant bubble in the viewed thread, nothing queued either (that
+//      would double-send on resume).
+//  13. Behavioral (Review round 2, Minor 6): cancelMobileEdit's cross-session
+//      Cancel routed through the REAL queueForSession (not a stub) lands in
+//      chat.queuedList with the right shape, and reselecting that session
+//      fires it through the normal queue plumbing.
 //
 // live/chat.js is a browser module (fetch/location/DOM), so this test stubs
 // the minimum browser surface it touches — same pattern as
@@ -34,6 +46,7 @@
 // across tests in this file, so each behavioral test tears down via stopRun.
 import { test, mock } from 'node:test';
 import assert from 'node:assert';
+import { editPendingOnMobile, cancelMobileEdit } from '../redesign/mobile/edit-flow.js';
 
 // ---- minimal browser shims (must exist before chat.js's transitive imports
 // evaluate — api.js reads `location.origin` at module-load time) ------------
@@ -536,19 +549,41 @@ test('a message queued in A survives B\'s turn completing and fires when A is re
   }
 });
 
-// ---- 11. failed-stop re-attach dedupes the stopped bubble (I3) ------------------
+// ---- 11. stop-dedupe record lifecycle (I3 + Review round 2 Important 2) --------
+//
+// The notifier's re-attach-on-active-again path is the ONLY testable way to
+// drive attachTurn from outside the module (reconcileTurn/attachTurn aren't
+// exported), and load()'s startNotifier() is a MODULE-LEVEL singleton whose
+// setInterval handle does NOT survive a mock.timers.reset()/re-enable() cycle
+// (verified empirically — a second test calling load() in a fresh mock.timers
+// session never gets its notifier tick to fire). So both the FAILED-stop and
+// SUCCESSFUL-stop scenarios have to share one mock.timers session — hence one
+// test, two phases, instead of two independent tests.
 
-test('notifier re-attach after a failed stop replaces the stopped bubble instead of duplicating it', async () => {
+test('stop-dedupe record: a FAILED stop keeps it (dedupe fires on re-attach); a SUCCESSFUL stop clears it (dedupe must NOT fire for an unrelated later turn)', async () => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const streamCalls = [];
   const streams = [];
   let activeSessions = [];
   let turnSnap = { active: false };
+  // Whether /api/chat/stop/<id> succeeds or fails THIS phase. wireLiveFetch's
+  // jsonRes() always resolves ok:true, which can't represent the 502 apiForm
+  // throws on when backend/app.py's stop_chat catches a gateway_call failure
+  // — so the stop route is handled here instead of via wireLiveFetch's routes.
+  let stopOk = false;
   wireLiveFetch(streamCalls, streams, {
     '/api/chat/active_sessions': () => ({ active: activeSessions }),
     '/api/chat/turn': () => turnSnap,
-    '/api/chat/stop/': () => ({}),
   });
+  const baseFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).includes('/api/chat/stop/')) {
+      return Promise.resolve(stopOk
+        ? { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ ok: true, runIds: ['r1'] }), text: async () => '{}' }
+        : { ok: false, status: 502, headers: { get: () => 'application/json' }, json: async () => ({ ok: false }), text: async () => '{}' });
+    }
+    return baseFetch(url, opts);
+  };
   runtime.render = () => {};
   try {
     const state = freshState('sess-1');
@@ -559,6 +594,11 @@ test('notifier re-attach after a failed stop replaces the stopped bubble instead
     const chat = state.live.chat;
     await drainMicrotasks();
 
+    // ---- Phase 1 (I3, unchanged): the stop POST FAILS (502 — the gateway
+    // call itself threw). The run is still live server-side, so the
+    // notifier's re-attach must dedupe: replace the stopped bubble instead of
+    // duplicating it.
+    stopOk = false;
     state.draft = 'hello';
     await actions.send();
     mock.timers.tick(700);
@@ -569,13 +609,11 @@ test('notifier re-attach after a failed stop replaces the stopped bubble instead
 
     actions.stopRun();
     await drainMicrotasks();
-    const stopped = chat.thread.filter((m) => m.role === 'assistant');
+    let stopped = chat.thread.filter((m) => m.role === 'assistant');
     assert.equal(stopped.length, 1);
     assert.match(stopped[0].text, /Partial answer/, 'stop flushed the buffered text');
     const stoppedMsg = stopped[0];   // object identity — msgIds can collide within one ms
 
-    // The stop never landed: the server still reports the turn active, and the
-    // notifier's next tick re-attaches (replaying the turn from its start).
     turnSnap = {
       active: true,
       elapsed_ms: 9000,
@@ -589,10 +627,159 @@ test('notifier re-attach after a failed stop replaces the stopped bubble instead
     mock.timers.tick(4000);
     await drainMicrotasks();
 
-    const asst = chat.thread.filter((m) => m.role === 'assistant');
+    let asst = chat.thread.filter((m) => m.role === 'assistant');
     assert.equal(asst.length, 1,
-      're-attach must resume into ONE bubble, not duplicate the stopped one');
+      'a FAILED stop must still dedupe on re-attach — one bubble, not a duplicate');
     assert.notEqual(asst[0], stoppedMsg, 'the replayed rebuild owns the slot');
+
+    // Tear down phase 1's live replay before phase 2 starts a new session.
+    actions.stopRun();
+    await drainMicrotasks();
+    turnSnap = { active: false };
+    activeSessions = [];
+
+    // ---- Phase 2 (Review round 2, Important 2): a DIFFERENT session's turn
+    // is stopped SUCCESSFULLY (the gateway confirmed the abort — a genuinely
+    // finished turn, nothing left running). Later, an UNRELATED
+    // server-initiated turn starts in that SAME session (e.g. a follow-up
+    // promise firing) and the notifier re-attaches. A stale dedupe record
+    // must not delete the finished Stop bubble — it belongs to a different,
+    // already-finished exchange.
+    chat.activeId = 'sess-2';
+    chat.thread = [];
+    stopOk = true;
+    state.draft = 'second session';
+    await actions.send();
+    mock.timers.tick(700);
+    await drainMicrotasks();
+    assert.equal(streamCalls.length, 2, 'sess-2\'s own send fired');
+    streams[1].push('data: {"delta":"First reply"}\n\n');
+    await drainMicrotasks();
+
+    actions.stopRun();
+    await drainMicrotasks();   // let the successful stop POST's .then() settle
+    stopped = chat.thread.filter((m) => m.role === 'assistant');
+    assert.equal(stopped.length, 1);
+    const stoppedMsg2 = stopped[0];
+    assert.match(String(stoppedMsg2.activity && stoppedMsg2.activity.worked || ''), /^Stopped after /);
+
+    turnSnap = {
+      active: true,
+      elapsed_ms: 0,
+      last_event_id: '1',
+      events: [{ id: '1', data: 'data: {"delta":"A fresh, unrelated reply"}\n\n' }],
+    };
+    activeSessions = ['sess-2'];
+    mock.timers.tick(4000);
+    await drainMicrotasks();
+
+    asst = chat.thread.filter((m) => m.role === 'assistant');
+    assert.equal(asst.length, 2,
+      'a successful stop must clear the dedupe record — the finished Stop bubble survives an unrelated later re-attach');
+    assert.ok(asst.includes(stoppedMsg2), 'the original stopped bubble is untouched, same object');
+  } finally {
+    actions.stopRun();
+    await drainMicrotasks();
+    mock.timers.reset();
+    delete globalThis.fetch;
+  }
+});
+
+// ---- 12. pagehide cross-session flush: keepalive only, no local turn (Review
+// round 2, Important 1) ------------------------------------------------------
+
+test('a pagehide flush for a session OTHER than the one on screen fires exactly one keepalive POST and opens no local turn state', async () => {
+  const streamCalls = [];
+  globalThis.fetch = (url, opts) => {
+    const u = String(url);
+    if (u.includes('/api/chat_stream')) {
+      streamCalls.push({ url: u, opts });
+      // Fire-and-forget: the keepalive path never reads the response body.
+      return Promise.resolve({ ok: true, status: 200, headers: { get: () => '' } });
+    }
+    return Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: async () => ({}), text: async () => '{}' });
+  };
+  runtime.render = () => {};
+  try {
+    const state = freshState('sess-2');   // the user has switched to sess-2...
+    runtime.state = state;
+    const chat = state.live.chat;
+    chat.thread = [{ id: 'u-viewed', role: 'user', text: 'viewed thread', time: '' }];
+    // ...while sess-1's buffered send is still sitting in its window.
+    chat.pendingSend = {
+      messageId: 'pend-1', text: 'background msg', attachSnap: [], sessionId: 'sess-1',
+      deadline: Date.now(), timerId: 0,
+    };
+
+    chatMod.flushPending('sess-1', { pagehide: true });
+    await drainMicrotasks();
+
+    assert.equal(streamCalls.length, 1, 'exactly one keepalive POST fired');
+    assert.equal(streamCalls[0].opts.method, 'POST');
+    assert.equal(streamCalls[0].opts.keepalive, true,
+      'must use fetch keepalive so the request survives the page tearing down/backgrounding');
+    assert.equal(streamCalls[0].opts.body.get('session'), 'sess-1');
+    assert.equal(streamCalls[0].opts.body.get('message'), 'background msg');
+
+    assert.equal(chat.thread.some((m) => m.role === 'assistant'), false,
+      'no assistant bubble bound into the viewed (sess-2) thread — beginTurn never ran');
+    assert.equal(chat.thread.some((m) => m.id === 'pend-1'), false,
+      'the optimistic bubble for the backgrounded session is gone from the viewed thread');
+    assert.equal(chatMod.queueHead(chat.queuedList, 'sess-1'), null,
+      'not also queued — the server already has the turn; queuing too would double-send on resume');
+    assert.equal(chat.pendingSend, null, 'pendingSend consumed');
+  } finally {
+    actions.stopRun();
+    await drainMicrotasks();
+    delete globalThis.fetch;
+  }
+});
+
+// ---- 13. cancelMobileEdit cross-session Cancel through the REAL
+// queueForSession (Review round 2, Minor 6) ----------------------------------
+
+test('cancelMobileEdit after a session switch queues through the real queueForSession, and reselecting fires it', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const streamCalls = [];
+  const streams = [];
+  wireLiveFetch(streamCalls, streams);
+  runtime.render = () => {};
+  try {
+    const state = freshState('sess-1');
+    runtime.state = state;
+    const chat = state.live.chat;
+
+    // A buffered send is being edited on mobile...
+    chat.thread = [{ id: 'u1', role: 'user', text: 'edited text', _optimistic: true, _deadline: Date.now() + 700 }];
+    chat.pendingSend = { messageId: 'u1', text: 'edited text', attachSnap: [], sessionId: 'sess-1', timerId: 0 };
+    editPendingOnMobile(state, 'u1', { clearTimeout: () => {} });
+    assert.ok(state.mobileEditingPending, 'edit snapshot captured');
+
+    // ...then the user switches to a different thread before hitting Cancel.
+    chat.activeId = 'sess-2';
+
+    cancelMobileEdit(state, {
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      flush: chatMod.flushPending,
+      queue: chatMod.queueForSession,   // the REAL production hook, not a stub
+    });
+
+    assert.equal(chat.pendingSend, null, 'not re-armed for the viewed thread');
+    assert.ok(!chat.thread.some((m) => m.id === 'u1'),
+      'nothing spliced into sess-2\'s viewed thread');
+    const q = chatMod.queueHead(chat.queuedList, 'sess-1');
+    assert.deepEqual(q, { sid: 'sess-1', text: 'edited text', attachSnap: [] },
+      'entry lands in queuedList with the correct shape');
+
+    // Reselecting sess-1 fires it through the normal queue plumbing
+    // (selectSession → flushQueuedFor).
+    await actions.selectSession('sess-1');
+    await drainMicrotasks();
+
+    assert.equal(streamCalls.length, 1, 'the queued edit fired on reselect');
+    assert.equal(streamCalls[0].opts.body.get('message'), 'edited text');
+    assert.equal(streamCalls[0].opts.body.get('session'), 'sess-1');
+    assert.equal(chatMod.queueHead(chat.queuedList, 'sess-1'), null, 'queue drained');
   } finally {
     actions.stopRun();
     await drainMicrotasks();

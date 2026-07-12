@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend import app as app_module
-from backend import event_store, sessions_store
+from backend import event_store, resume_route, sessions_store
 
 
 @pytest.fixture
@@ -121,6 +121,32 @@ def test_cursor_non_numeric_header_falls_back_to_query_param(client, mapped_sess
         f"/api/chat/events/resume?session={spa_id}&last_event_id={e1}",
         headers={"Last-Event-ID": "not-a-seq!"})
     assert [e["data"] for e in r.json()["events"]] == ["data: b\n\n"]
+
+
+def test_cursor_superscript_digit_header_falls_back_to_query_param():
+    """'²'.isdigit() is True but int('²') raises ValueError — isdigit() alone
+    lets this header masquerade as numeric, shadow a valid query-param cursor,
+    then blow up event_store.since()'s int() call and silently fall back to
+    "no cursor" (full replay) instead of the query param's intended cursor.
+    isdecimal() rejects it outright, same as any other non-numeric junk.
+
+    Exercises resume_route._cursor() directly rather than round-tripping
+    through TestClient/httpx: both re-encode non-ASCII header values in ways
+    that mangle a raw '²' before it reaches the server (httpx.testclient
+    rejects a plain str value outright — ASCII-only — and re-encoding as
+    latin-1/utf-8 bytes arrives on the other side re-decoded into a different,
+    multi-char string). The bug lives entirely in this helper's own
+    digit-check, not the transport, so test the helper directly."""
+    class _FakeHeaders(dict):
+        def get(self, key, default=None):  # Starlette Headers.get is case-insensitive
+            return dict.get(self, key.lower(), default)
+
+    class _FakeRequest:
+        def __init__(self, headers):
+            self.headers = _FakeHeaders({k.lower(): v for k, v in headers.items()})
+
+    cursor = resume_route._cursor(_FakeRequest({"last-event-id": "²"}), "42")
+    assert cursor == "42", "the superscript-2 header must be ignored, not shadow the query param"
 
 
 def test_cursor_non_numeric_header_alone_means_no_cursor(client, mapped_session):

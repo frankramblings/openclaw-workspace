@@ -56,9 +56,16 @@ def _cursor(request: Request, last_event_id: str) -> str | None:
     junk, an extension, a spoofed value) is IGNORED rather than forwarded:
     event_store.since() treats an unparseable cursor as "no cursor", so a
     garbage header would otherwise override a valid query-param cursor and
-    replay the session's whole ring buffer."""
+    replay the session's whole ring buffer.
+
+    isdecimal(), not isdigit(): isdigit() also accepts non-decimal digit
+    characters (e.g. '²' the superscript two) that int() can't parse — such a
+    header would pass this guard, then blow up event_store.since()'s int()
+    call, land in its except branch, and silently fall back to "no cursor"
+    (full replay) INSTEAD of falling through to a perfectly valid query-param
+    cursor. isdecimal() only accepts characters int() actually parses."""
     header = (request.headers.get("last-event-id") or "").strip()
-    if not header.isdigit():
+    if not header.isdecimal():
         header = ""
     return (header or last_event_id or "") or None
 

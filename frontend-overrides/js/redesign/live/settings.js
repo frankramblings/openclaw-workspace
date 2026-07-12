@@ -18,7 +18,7 @@
 // visibly drives the app.
 
 import { runtime } from './runtime.js';
-import { apiGet, apiJson, apiDelete } from './api.js';
+import { apiGet, apiJson, apiDelete, ApiError } from './api.js';
 import { updateTermTheme } from './terminal.js';
 
 const ACCENT_KEY = 'oc-accent';
@@ -60,6 +60,17 @@ async function persistSetting(realKey, value) {
   try {
     await apiJson('/api/auth/settings', { [realKey]: value }, 'POST');
   } catch (_) { /* fail soft */ }
+}
+
+// Pull a human-readable message out of an ApiError's parsed body (the common
+// FastAPI shape is {detail: "..."}), falling back to `fallback` for anything
+// else (network failure, a 502 gateway blip with no JSON body, etc.) so the
+// user sees the server's actual reason when there is one.
+function apiErrorMessage(e, fallback) {
+  if (e instanceof ApiError && e.body && typeof e.body === 'object' && typeof e.body.detail === 'string' && e.body.detail) {
+    return e.body.detail;
+  }
+  return fallback;
 }
 
 export async function load(state) {
@@ -159,8 +170,9 @@ export const actions = {
       st.pwCurrent = ''; st.pwNew = ''; st.pwConfirm = '';
       runtime.render();
       try { window.alert('Password updated.'); } catch (_) {}
-    } catch (_) {
-      try { window.alert('Could not change password — check the current password.'); } catch (_) {}
+    } catch (e) {
+      const msg = apiErrorMessage(e, 'Could not change password — check the current password.');
+      try { window.alert(msg); } catch (_) {}
     }
   },
 
@@ -177,8 +189,9 @@ export const actions = {
       st.newUsername = ''; st.newPassword = '';
       runtime.render();
       try { window.alert('User added.'); } catch (_) {}
-    } catch (_) {
-      try { window.alert('Could not add user.'); } catch (_) {}
+    } catch (e) {
+      const msg = apiErrorMessage(e, 'Could not add user.');
+      try { window.alert(msg); } catch (_) {}
     }
   },
 
@@ -262,8 +275,12 @@ export const actions = {
   },
   cronRun: async (id) => {
     if (!id) return;
-    try { await apiJson(`/api/cron/${id}/run`, {}); } catch (_) {}
-    try { window.alert('Job triggered.'); } catch (_) {}
+    try {
+      await apiJson(`/api/cron/${id}/run`, {});
+      try { window.alert('Job triggered.'); } catch (_) {}
+    } catch (_) {
+      try { window.alert('Could not trigger the job — try again.'); } catch (_) {}
+    }
   },
   cronToggle: async (id) => {
     const s = runtime.state;

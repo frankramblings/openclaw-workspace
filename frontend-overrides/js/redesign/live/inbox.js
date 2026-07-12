@@ -109,6 +109,9 @@ async function runAction(id, action) {
     if (r && r.undoTs) state._lastUndoTs = r.undoTs;   // consumed in slice C
   } catch (e) {
     unmarkDismissed(state, id);                         // snap the card back
+    // Apply-all owns its own progress toast during a batch — don't stomp it
+    // with a per-item failure message (mirrors addAsana/confirmAddAsana below).
+    if (!state.inboxApplying) state.inboxToast = { msg: "Couldn't complete that — retry", undoTs: null };
     runtime.render();
     return;
   }

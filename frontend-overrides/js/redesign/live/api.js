@@ -10,6 +10,22 @@ async function parse(res) {
   return res.text();
 }
 
+/**
+ * Thrown by apiJson on any non-2xx response (including 502/503 gateway-restart
+ * blips — see the module banner). `.status` is the HTTP status; `.body` is the
+ * parsed response body (JSON when the content-type says so, else raw text) so
+ * callers that legitimately branch on a structured error (e.g. change-password
+ * reading `.body.detail`) can do so without re-fetching or re-parsing.
+ */
+export class ApiError extends Error {
+  constructor(status, body, path, method) {
+    super(`${method || 'GET'} ${path || ''} → ${status}`);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
 /** GET → parsed JSON (throws on non-2xx). */
 export async function apiGet(path, { signal } = {}) {
   const res = await fetch(BASE + path, { credentials: 'same-origin', signal });
@@ -17,15 +33,26 @@ export async function apiGet(path, { signal } = {}) {
   return parse(res);
 }
 
-/** JSON-body request (POST/PUT/PATCH/DELETE) → parsed JSON. */
+/**
+ * JSON-body request (POST/PUT/PATCH/DELETE) → parsed JSON.
+ * Throws ApiError on any !res.ok — including 502/503, which this helper used
+ * to swallow and resolve as if the request had succeeded (a gateway restart
+ * is a known recurring event on this box). Every mutation caller assumes
+ * throw-on-failure, so silently resolving turned a failed write into a fake
+ * success: the UI would drop an optimistic revert, close a compose box on an
+ * email that was never sent, or alert "saved" for a change that never
+ * happened. Callers must catch this to revert optimistic state and surface
+ * the failure — see live/inbox.js and live/email.js for the pattern.
+ */
 export async function apiJson(path, body, method = 'POST') {
   const res = await fetch(BASE + path, {
     method, credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: body == null ? undefined : JSON.stringify(body),
   });
-  if (!res.ok && res.status !== 502 && res.status !== 503) throw new Error(`${method} ${path} → ${res.status}`);
-  return parse(res);
+  const parsed = await parse(res);
+  if (!res.ok) throw new ApiError(res.status, parsed, path, method);
+  return parsed;
 }
 
 /** multipart/form-data request (the gateway-proxied mutations want this). */

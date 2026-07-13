@@ -1071,3 +1071,9 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-meta .model { font-family: var(--mono); font-size: 11.5px; }
 .msg-meta .time  { font-family: var(--mono); font-size: 11.5px; }
 
+/* ---- composer attachment upload lifecycle (task 4.2) ---------------------- */
+.atch-chip.atch-uploading{opacity:.8}
+.atch-chip .atch-spin{display:inline-flex;align-items:center;padding:0 2px 0 8px;color:var(--faint)}
+.atch-chip.atch-failed{border-color:var(--red);background:rgba(240,114,106,.08)}
+.atch-chip.atch-failed .atch-ext,.atch-chip.atch-failed .atch-name{color:var(--red)}
+

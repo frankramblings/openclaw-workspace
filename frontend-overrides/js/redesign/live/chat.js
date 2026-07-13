@@ -17,6 +17,7 @@ import { AVATAR } from '../data.js';
 import { reconcileDecision } from './reconcile-decision.js';
 import { promiseWarningText, latestAsstAtOrBefore } from './promise-warning.js';
 import { setLiveTurn } from './turn-ref.js';
+import { beginUploads, resolveUploads, failUploads, sendableAttach, uploadGate } from './attach-logic.js';
 import { buildSuggestContext, activitySummary } from './suggest-core.js';
 import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
@@ -1945,6 +1946,11 @@ let _convSearchSeq = 0;
 // success/failure render covers it.
 let _modelsInFlight = false;
 
+// Temp ids for in-flight upload chips (task 4.2) — unique per selection so a
+// second batch picked mid-flight never claims the first batch's chips.
+let _uploadSeq = 0;
+const mintUploadId = () => `up-${Date.now().toString(36)}-${(_uploadSeq++).toString(36)}`;
+
 export const actions = {
   // Semantic search across ALL conversations by message CONTENT (not just the
   // title substring the list filters on locally). Debounced; hits land in
@@ -2143,7 +2149,14 @@ export const actions = {
     const state = runtime.state;
     if (!state) return;
     const text = (state.draft || '').trim();
-    const attachSnap = state.pendingAttach ? [...state.pendingAttach] : [];
+    // Uploads still in flight (or dead) gate the send — the old snapshot took
+    // whatever had RESOLVED, silently sending without the file that was still
+    // uploading. Block with a notice instead of guessing; the draft and chips
+    // stay put, so Send after the chip settles carries everything.
+    const gate = uploadGate(state.pendingAttach);
+    if (gate === 'uploading') { toast('Attachment still uploading — send once the chip settles.'); return; }
+    if (gate === 'failed') { toast('An attachment failed to upload — remove the red chip (✕) or attach it again.'); return; }
+    const attachSnap = sendableAttach(state.pendingAttach);
     if (!text && !attachSnap.length) return;
     const chat = ensureChat(state);
     chat.suggest = null; // sending (or queueing) consumes any ghost suggestion
@@ -2387,22 +2400,38 @@ export const actions = {
     }
   },
 
-  // Composer attach: upload picked files, keep ids as pending chips; send()
-  // carries them on the next turn. Called directly by the file-input change
-  // listener (app.js) with a FileList.
+  // Composer attach (task 4.2): the chip appears AT SELECTION in an
+  // 'uploading' state, not after the fetch resolves — before this, a slow
+  // upload was invisible (nothing showed that Send was about to miss the
+  // file) and a failed one vanished without a trace. Failure flips the batch
+  // red (removable) + toasts; success swaps in the real server ids. send()
+  // blocks with a notice while any chip is uploading/failed — see uploadGate
+  // there. Called directly by the file-input change listener (app.js) with a
+  // FileList. Pure lifecycle decisions live in attach-logic.js.
   uploadAttachments: async (files) => {
     const state = runtime.state;
     if (!state || !files || !files.length) return;
+    const fileList = Array.from(files);
+    const { list, ids } = beginUploads(
+      state.pendingAttach, fileList.map((f) => f.name || 'upload'), mintUploadId);
+    state.pendingAttach = list;
+    runtime.render();
     const fd = new FormData();
-    for (const f of files) fd.append('files', f, f.name || 'upload');
+    for (const f of fileList) fd.append('files', f, f.name || 'upload');
     try {
       const res = await fetch(`${location.origin}/api/upload`, { method: 'POST', credentials: 'same-origin', body: fd });
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
-      const saved = (data && data.files) || [];
-      state.pendingAttach = [...(state.pendingAttach || []), ...saved.map((s) => ({ id: s.id, name: s.name, url: s.url }))];
-      runtime.render();
-    } catch (_) { /* soft-fail: nothing attached */ }
+      const saved = ((data && data.files) || []).map((s) => ({ id: s.id, name: s.name, url: s.url }));
+      state.pendingAttach = resolveUploads(state.pendingAttach, ids, saved);
+      // Partial save (server accepted the POST but skipped files): the
+      // unmatched chips are now red — say so, same voice as the failure path.
+      if (saved.length < ids.length) toast('Some attachments didn’t upload — remove the red chips or attach them again.');
+    } catch (_) {
+      state.pendingAttach = failUploads(state.pendingAttach, ids);
+      toast('Upload failed — remove the red chip or attach the file again.');
+    }
+    runtime.render();
   },
 
   // Remove a pending attachment chip before sending.

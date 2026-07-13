@@ -165,6 +165,16 @@ export const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr${s.refres
 // newest message (see wireMobileGestures). Easier to reach than the top pull.
 const mPtrBtm = (s, label = 'Refreshing chat…') => `<div class="m-ptr-btm${s.refreshing ? ' open' : ''}" style="height:${s.refreshing ? 'auto' : '0'}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
 
+// Composer attachment chip (task 4.2): spinner while the upload is in
+// flight, red + removable when it failed — mirrors surfaces.js attachChip.
+const mAttachChip = (a) => {
+  const x = `<button type="button" class="x" data-act="removeAttach" data-arg="${esc(a.id)}" aria-label="Remove attachment">✕</button>`;
+  const nm = `<span class="nm">${esc(a.name || a.id)}</span>`;
+  if (a.status === 'uploading') return `<span class="m-attach-chip uploading" title="${esc(a.name || a.id)} — uploading">${fortress(12)}${nm}${x}</span>`;
+  if (a.status === 'failed') return `<span class="m-attach-chip failed" title="${esc(a.name || a.id)} — upload failed">${nm}${x}</span>`;
+  return `<span class="m-attach-chip">${nm}${x}</span>`;
+};
+
 // ---- chat -----------------------------------------------------------------
 export function mChat(s) {
   const focused = s.keyboard;
@@ -212,7 +222,7 @@ export function mChat(s) {
     ${renderChatStrip(s.live?.chat?.chatStrip, { renderMarkdown })}
     ${when(s.mobileEditingPending, `<div class="m-comp-edit-chip"><span class="m-comp-edit-lbl">Editing message</span><button class="m-comp-edit-cancel" data-act="cancelMobileEdit">Cancel</button></div>`)}
     ${when(s.live?.chat?.queued, `<div class="m-queued" data-act="queueRecall"><span class="q-ico">⏳</span><span class="q-txt">Queued${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 50))}` : ' · image'}</span><button class="m-q-x" data-act="queueCancel">✕</button></div>`)}
-    ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], (a) => `<span class="m-attach-chip"><span class="nm">${esc(a.name || a.id)}</span><button type="button" class="x" data-act="removeAttach" data-arg="${esc(a.id)}" aria-label="Remove attachment">✕</button></span>`)}</div>`)}
+    ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], mAttachChip)}</div>`)}
     <div class="bar">
       <label class="m-round-btn bordered" title="Attach photo or file"><input type="file" data-upload multiple style="display:none">${I.plus(16)}</label>
       <div class="ta-wrap">${suggestGhost(s.live?.chat?.suggest, s.draft, { mobile: true })}<textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="${suggestGhost(s.live?.chat?.suggest, s.draft, { mobile: true }) ? ' ' : 'Message __AGENT_NAME__…'}">

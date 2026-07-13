@@ -393,6 +393,15 @@ function attachChip(a) {
   const name = a.name || a.id;
   const ext = (name.split('.').pop() || '').toLowerCase();
   const rm = `<button class="atch-rm" data-act="removeAttach" data-arg="${esc(a.id)}" title="Remove">✕</button>`;
+  // Upload lifecycle (task 4.2): spinner while the POST is in flight, red +
+  // removable on failure. Neither is sendable (attach-logic.uploadGate), and
+  // neither has a server id yet, so no thumbnail fetch against a temp id.
+  if (a.status === 'uploading') {
+    return `<div class="atch-chip atch-file atch-uploading" title="${esc(name)} — uploading"><span class="atch-spin">${fortress(13)}</span><span class="atch-name">${esc(name)}</span>${rm}</div>`;
+  }
+  if (a.status === 'failed') {
+    return `<div class="atch-chip atch-file atch-failed" title="${esc(name)} — upload failed"><span class="atch-ext">✕</span><span class="atch-name">${esc(name)}</span>${rm}</div>`;
+  }
   if (_IMG_EXTS.has(ext)) {
     return `<div class="atch-chip atch-img" title="${esc(name)}"><img src="/api/upload/${esc(a.id)}" alt="">${rm}</div>`;
   }

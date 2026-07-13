@@ -989,3 +989,8 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   font-style: italic;
   font-size: 13px;
 }
+
+/* ---- composer attachment upload lifecycle (task 4.2) ---------------------- */
+.m-attach-row .m-attach-chip.uploading { opacity: .8; }
+.m-attach-row .m-attach-chip.uploading .fl-svg { color: var(--faint); flex: none; }
+.m-attach-row .m-attach-chip.failed { border-color: var(--red); color: var(--red); }

@@ -715,7 +715,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .past-row{border:1px solid var(--bd);border-radius:11px;padding:13px 15px;margin-bottom:9px;background:var(--panel)}
 .past-row .top{display:flex;align-items:center;gap:9px;margin-bottom:9px}
 .past-row .q{font-size:14.5px;color:var(--fg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.past-row .m{font-family:var(--mono);font-size:12px;color:var(--faint);margin-left:auto}
+.past-row .m{font-family:var(--mono);font-size:12px;color:var(--faint);margin-left:auto;white-space:nowrap;flex:none}
 .past-row .chips{display:flex;gap:7px}
 .chip-teal{font-size:12.5px;color:var(--teal);border:1px solid var(--teal2);background:var(--tealtint);padding:3px 10px;border-radius:999px;cursor:pointer}
 .chip-ghost{font-size:12.5px;color:var(--mut);border:1px solid var(--bd);padding:3px 10px;border-radius:999px;cursor:pointer}
@@ -1070,6 +1070,12 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-meta .name  { font-family: var(--prose); font-size: 14px; font-weight: 600; letter-spacing: -0.006em; }
 .msg-meta .model { font-family: var(--mono); font-size: 11.5px; }
 .msg-meta .time  { font-family: var(--mono); font-size: 11.5px; }
+
+/* ---- library card thumbnails (task 5.4) ----------------------------------- */
+.lib-thumb{flex-direction:column;gap:7px}
+.lib-thumb .kl{font-size:11px;letter-spacing:.08em}
+.lib-thumb.has-snip{align-items:flex-start;justify-content:flex-start;padding:10px 12px;overflow:hidden}
+.lib-thumb .snip{font-size:11.5px;line-height:1.45;color:var(--mut);white-space:pre-line;word-break:break-word;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 
 /* ---- inbox History button + clock affordances (task 5.1d) ----------------- */
 .btn-hist{display:inline-flex;align-items:center;gap:5px;flex:none;white-space:nowrap;margin-left:6px;font-size:13px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--faint);cursor:pointer}

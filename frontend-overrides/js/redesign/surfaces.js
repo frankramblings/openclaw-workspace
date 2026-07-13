@@ -7,7 +7,7 @@ import { esc, map, when, stripMd } from './dom.js';
 import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import {
-  AVATAR, filterSlashCommands, RESEARCH_CONTROLS, RESEARCH_SCOPES,
+  AVATAR, filterSlashCommands, RESEARCH_CONTROLS,
   KIND_STYLE, LIB_FILTERS, CAL_BAR_TONE,
 } from './data.js';
 import { TAB, PANELS, NAV_GROUPS } from './settings-data.js';
@@ -943,16 +943,14 @@ function researchSurface(s) {
     </div>`;
   }).join('');
 
-  const scopes = RESEARCH_SCOPES.map((sc, i) =>
-    `<span class="scope-chip${i === 0 ? ' active' : ''}">${esc(sc)}</span>`).join('');
-
+  // No scope chips: they dispatched no action and the backend start route
+  // reads nothing scope-shaped that changes the run (task 5.3).
   return `
   <div class="oc-head">${I.research(17, 'var(--teal)')}<span class="title">Deep Research</span><span class="desc">multi-step web research, LLM in the loop</span></div>
   <div class="res-wrap">
     <div class="res-inner">
       <div class="res-composer${has ? ' has' : ''}">
         <textarea data-model="researchQuery" data-focus="researchQuery" rows="2" placeholder="What should __AGENT_NAME__ investigate? e.g. “Compare the top 3 podcast hosting platforms on price, analytics, and Wistia integration.”">${esc(s.researchQuery || '')}</textarea>
-        <div class="scope-chips">${scopes}</div>
         <div class="res-controls">
           <span class="lbl">Defaults — click any to override:</span>
           ${ctlPills}
@@ -970,7 +968,7 @@ function researchSurface(s) {
       <div class="res-card done">
         <div class="row1"><span class="res-done-ico">✓</span><span class="t">Report ready</span><div class="oc-spacer"></div><button class="btn btn-ghost" style="height:30px" data-act="resetResearch">New research</button></div>
         <p class="res-summary">${s.live?.research?.summary || ''}</p>
-        <div class="card-actions"><button class="btn-sm" data-act="resReport" data-arg="${esc(s.live?.research?.lastRid || '')}">↗ Visual Report</button><button class="btn-sm ghost" data-act="resDiscuss" data-arg="${esc(s.live?.research?.lastRid || '')}">Discuss in chat</button><button class="btn-sm ghost" data-act="go" data-arg="library">Save to Library</button></div>
+        <div class="card-actions"><button class="btn-sm" data-act="resReport" data-arg="${esc(s.live?.research?.lastRid || '')}">↗ Visual Report</button><button class="btn-sm ghost" data-act="resDiscuss" data-arg="${esc(s.live?.research?.lastRid || '')}">Discuss in chat</button><button class="btn-sm ghost" data-act="go" data-arg="library" title="Finished runs are already saved — this opens the Library">In Library →</button></div>
       </div>`)}
 
       ${when(errored, `
@@ -982,7 +980,7 @@ function researchSurface(s) {
 
       ${s.loadError?.research ? loadErrorBlock('Research', s) : `
       <div class="grp-label" style="margin:18px 0 12px"><span class="sect-label">PAST RESEARCH</span><span class="n" style="font-size:11px;color:var(--faint)">${(s.live?.research?.past || []).length}</span><div class="sect-divider"></div><span style="font-size:11.5px;color:var(--teal);cursor:pointer" data-act="go" data-arg="library">Library, Research →</span></div>
-      ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}
+      ${map(s.live?.research?.past || [], (r) => `<div class="past-row"><div class="top"><span class="q">${esc(r.q)}</span><span class="m" title="run duration · sources fetched">${esc(r.m)}</span></div><div class="chips"><span class="chip-teal"${r.rid ? ` data-act="resDiscuss" data-arg="${esc(r.rid)}"` : ''}>Discuss</span><span class="chip-ghost"${r.rid ? ` data-act="resReport" data-arg="${esc(r.rid)}"` : ''}>↗ Visual Report</span></div></div>`)}
       ${capNotice((s.live?.research?.past || []).length, RESEARCH_CAP)}`}
     </div>
   </div>`;
@@ -1006,8 +1004,17 @@ function librarySurface(s) {
       ${s.loadError?.library ? loadErrorBlock('Library', s) : map(items, (a) => {
         const k = KIND_STYLE[a.kind];
         const openable = a.id && (a.cat === 'doc' || a.cat === 'code');
+        // Thumb (task 5.4): first lines of the artifact's content when the
+        // list API carries any (documents `preview`, notes `content`);
+        // otherwise a kind-colored icon over the kind label — not the old
+        // flat all-caps text block.
+        const snip = (a.snippet || '').trim();
+        const kindIco = ({ REPORT: I.research, DOC: I.library, NOTE: I.notes, CODE: I.code })[a.kind] || I.file;
+        const thumb = snip
+          ? `<div class="lib-thumb has-snip" style="background:${k.thumbBg}"><span class="snip">${esc(snip)}</span></div>`
+          : `<div class="lib-thumb" style="background:${k.thumbBg}"><span class="k-ico" style="color:${k.kindColor}">${kindIco(22)}</span><span class="kl" style="color:${k.kindColor}">${esc(a.kindLabel)}</span></div>`;
         return `<div class="lib-card"${openable ? ` data-act="openDoc" data-arg="${esc(a.id)}" style="cursor:pointer"` : ''}>
-          <div class="lib-thumb" style="background:${k.thumbBg}"><span class="kl" style="color:${k.kindColor}">${esc(a.kindLabel)}</span></div>
+          ${thumb}
           <div class="meta">
             <div class="t">${esc(a.title)}</div>
             <div class="tags"><span class="lib-tag" style="color:${k.kindColor};background:${k.tagBg}">${esc(a.kind)}</span><span class="when">${esc(a.when)}</span></div>

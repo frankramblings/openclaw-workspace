@@ -48,13 +48,14 @@ export function filterSlashCommands(draft) {
 // honest quiet state instead — see that file.)
 
 // ---- research controls ----------------------------------------------------
+// Only what the backend actually reads (task 5.3). live/research.js's start
+// payload sends {query, max_rounds}; backend/research.py clamps rounds to
+// MAX_ROUNDS=3 (so the old '5' option silently ran 3) and never read the
+// Engine/Endpoint/Model pills or the scope chips that used to render here —
+// pure decoration, removed rather than left lying.
 export const RESEARCH_CONTROLS = [
-  { key: 'rounds', label: 'Rounds', opts: ['Auto', '1', '2', '3', '5'] },
-  { key: 'engine', label: 'Engine', opts: ['Default', 'Fast', 'Thorough'] },
-  { key: 'endpoint', label: 'Endpoint', opts: ['Claude-Cli', 'API', 'Local'] },
-  { key: 'model', label: 'Model', opts: ['opus-4', 'sonnet-4', 'haiku-4'] },
+  { key: 'rounds', label: 'Rounds', opts: ['Auto', '1', '2', '3'] },
 ];
-export const RESEARCH_SCOPES = ['Auto', 'Product', 'Compare', 'How-to', 'Fact-check'];
 export const PAST_RESEARCH = [
   { q: "Standup comedy that's funny, innovative, can be weird…", m: '2:27 · 4 sources' },
   { q: 'Discussion guide for the film “District 9”', m: '4:18 · 27 sources' },

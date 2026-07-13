@@ -48,7 +48,7 @@ const state = {
   wsRootKey: (() => { try { return localStorage.getItem('oc-ws-root') || 'workspace'; } catch (_) { return 'workspace'; } })(),
   // research
   researchQuery: '', research: 'idle', resOpenCtl: null,
-  resCfg: { rounds: 'Auto', engine: 'Default', endpoint: 'Claude-Cli', model: 'opus-4' },
+  resCfg: { rounds: 'Auto' },  // only the control the backend reads (task 5.3)
   // library / notes / email / inbox / calendar
   libFilter: 'all', selDoc: 0, selEmail: 0, dismissed: [], quick: '',
   // settings

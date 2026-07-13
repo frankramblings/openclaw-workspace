@@ -10,6 +10,7 @@
 
 import { apiGet } from './api.js';
 import { actions as docActions, initDocEditor } from './document-editor.js';
+import { humanizeTitle, contentSnippet } from './library-logic.js';
 
 // Library exposes the document-editor actions (newDoc / openDoc / saveDoc / closeDoc).
 export const actions = { ...docActions };
@@ -88,10 +89,16 @@ async function safe(fn) {
   }
 }
 
+// Titles run through humanizeTitle (task 5.4): raw ALLCAPS/dash filenames
+// display as words (MARISSA-BETA-RUNBOOK → Marissa Beta Runbook); anything
+// already mixed-case — research queries, typed titles — passes through
+// untouched. `snippet` feeds the card thumbnail where the list API carries
+// content (documents `preview`, notes `content`); research runs have none,
+// so their cards fall back to the kind-icon thumb.
 async function loadResearch() {
   const raw = await apiGet('/api/research/library?limit=30');
   return asArray(raw, 'research').map((r) => ({
-    title: r.query || r.title || 'Untitled research',
+    title: humanizeTitle(r.query || r.title || 'Untitled research'),
     kind: 'REPORT',
     kindLabel: 'VISUAL REPORT',
     cat: 'report',
@@ -105,10 +112,11 @@ async function loadDocuments() {
     const code = isCodeLang(d.language);
     return {
       id: d.id,
-      title: d.title || 'Untitled document',
+      title: humanizeTitle(d.title || 'Untitled document'),
       kind: code ? 'CODE' : 'DOC',
       kindLabel: code ? 'SNIPPET' : 'DOCUMENT',
       cat: code ? 'code' : 'doc',
+      snippet: contentSnippet(d.preview),
       _ts: toMs(d.updated_at),
     };
   });
@@ -117,10 +125,11 @@ async function loadDocuments() {
 async function loadNotes() {
   const raw = await apiGet('/api/notes');
   return asArray(raw, 'notes').map((n) => ({
-    title: n.title || 'Untitled note',
+    title: humanizeTitle(n.title || 'Untitled note'),
     kind: 'NOTE',
     kindLabel: 'NOTE',
     cat: 'note',
+    snippet: contentSnippet(n.content),
     _ts: toMs(n.updated),
   }));
 }

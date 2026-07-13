@@ -150,7 +150,10 @@ function cap(s) {
   return str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
 }
 
-/** 'Auto' → 2; otherwise clamp parseInt to 1..3. */
+/** 'Auto' → 2; otherwise clamp parseInt to 1..3 — mirrors backend
+ * research.py's MAX_ROUNDS=3 clamp, and data.js's RESEARCH_CONTROLS offers
+ * exactly Auto|1|2|3 so the UI can't promise a rounds count this would
+ * silently shrink (task 5.3). */
 function roundsOf(v) {
   if (v == null || v === 'Auto') return 2;
   const n = parseInt(v, 10);

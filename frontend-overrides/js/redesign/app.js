@@ -391,11 +391,18 @@ const actions = {
   go: (surface) => { state.surface = surface; state.resOpenCtl = null; },
   // Open an image fullscreen (inline shared images carry data-act="imgView").
   imgView: (src) => { openImageOverlay(src); },
+  // Pre-merge stub: live/chat.js's newChat (Object.assign'd over this key by
+  // live/index.js once its dynamic import lands) is the canonical action —
+  // full thread/queue/strip reset plus everything below. This stub keeps the
+  // same visible shape for a click that lands BEFORE the merge: route to the
+  // chat surface (both shells), clear the draft, focus the composer.
   newChat: () => {
     state.surface = 'chat';
+    state.mTab = 'chat';   // mobile shell routes off mTab/mSub (unused on desktop)
+    state.mSub = null;
     state.draft = '';
     requestAnimationFrame(() => {
-      const ta = root.querySelector('[data-focus="draft"]');
+      const ta = root.querySelector('[data-focus="draft"],[data-focus="mdraft"]');
       if (ta) ta.focus();
     });
   },

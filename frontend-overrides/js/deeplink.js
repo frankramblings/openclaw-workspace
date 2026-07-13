@@ -225,16 +225,29 @@ export async function applyPlan(plan) {
       const newBtn = (await _waitFor('[data-act="newChat"]'))
         || (await _waitFor('#rail-new-session', 4, 50));
       if (newBtn) {
-        // The redesign has TWO newChat actions: a weak one from app.js that
-        // just clears the draft, and a full reset from live/chat.js that gets
-        // merged in async by live/index.js. If we click before the merge, the
-        // weak one wins and the previously-active thread stays open. Click
-        // once immediately, then again after a beat to catch the strong
-        // version once it's registered.
-        newBtn.click();
-        await new Promise((r) => setTimeout(r, 400));
+        // The redesign has TWO newChat actions: a minimal pre-merge stub from
+        // app.js and the canonical full reset from live/chat.js, merged into
+        // the SAME runtime.actions object once its dynamic import resolves.
+        // The old workaround clicked twice with a fixed 400ms gap — a race
+        // (a slow merge still got the stub twice) and a double reset when the
+        // strong action was already there. Do what the runSearch branch above
+        // does instead: poll runtime.actions until the live chat module's
+        // actions have merged (searchDispatchPlan's convSearch sentinel comes
+        // from that same module), then click ONCE against a fresh node. On
+        // give-up (~5s, e.g. the dynamic import failed) the single click
+        // lands on the stub — which shares the canonical visible shape (chat
+        // surface, cleared draft, focused composer), just without the live
+        // thread reset the missing module would have done anyway.
+        const maxAttempts = 40; // ~5s at 125ms, same budget as runSearch
+        for (let attempt = 0; ; attempt++) {
+          const decision = searchDispatchPlan(runtime.actions, attempt, maxAttempts);
+          if (decision === 'retry') {
+            await new Promise((r) => setTimeout(r, 125));
+            continue;
+          }
+          break;
+        }
         try { (document.querySelector('[data-act="newChat"]') || newBtn).click(); } catch (_) {}
-        await new Promise((r) => setTimeout(r, 200));
       }
     }
     if (plan.focus === 'input') {

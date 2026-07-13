@@ -2108,7 +2108,24 @@ export const actions = {
       for (const g of chat.groups) for (const r of g.rows) r.active = false;
     }
     chat.subtitle = `0 messages · ${chat.model || ''}`;
+    // Canonical shape (task 3.10): this is THE newChat — app.js's pre-merge
+    // stub only mirrors the visible half (chat surface + cleared draft +
+    // focused composer) until this merges over it. Without the routing bits
+    // here, a post-merge "New chat" fired from Inbox/Library/a deep link
+    // reset the thread but stranded the user on the surface they were on.
+    state.surface = 'chat';
+    state.mTab = 'chat';   // mobile shell routes off mTab/mSub (unused on desktop)
+    state.mSub = null;
+    state.draft = '';
     runtime.render();
+    // Focus the composer once the render above has painted it. rAF-guarded:
+    // node tests drive this action with no DOM scheduler.
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        const ta = document.querySelector('[data-focus="draft"],[data-focus="mdraft"]');
+        if (ta) ta.focus();
+      });
+    }
     // A new chat should start on the persisted default model, not whatever the
     // last-opened conversation happened to use. Fetch it and re-render if it
     // differs (createSession() on first send then carries this model).

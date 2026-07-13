@@ -564,7 +564,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .reader-empty{align-items:center;justify-content:center;color:var(--faint);font-size:13.5px}
 .cal-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:13.5px}
 /* Inbox card body that is an ingest source pointer, not prose. */
-.body-src{font-family:var(--mono);font-size:11.5px;color:var(--faint);word-break:break-all}
+.body-src{display:inline-block;max-width:100%;font-family:var(--mono);font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .reader-head{padding:20px 28px 14px;border-bottom:1px solid var(--bd2)}
 .reader-head h1{margin:0 0 12px;font-size:21px;font-weight:600;color:var(--fg);line-height:1.25}
 .reader-from{display:flex;align-items:center;gap:11px;margin-bottom:12px}
@@ -1070,6 +1070,11 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-meta .name  { font-family: var(--prose); font-size: 14px; font-weight: 600; letter-spacing: -0.006em; }
 .msg-meta .model { font-family: var(--mono); font-size: 11.5px; }
 .msg-meta .time  { font-family: var(--mono); font-size: 11.5px; }
+
+/* ---- inbox History button + clock affordances (task 5.1d) ----------------- */
+.btn-hist{display:inline-flex;align-items:center;gap:5px;flex:none;white-space:nowrap;margin-left:6px;font-size:13px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:7px;color:var(--faint);cursor:pointer}
+.btn-hist.on{color:var(--teal)}
+.btn-hist svg{flex:none}
 
 /* ---- composer attachment upload lifecycle (task 4.2) ---------------------- */
 .atch-chip.atch-uploading{opacity:.8}

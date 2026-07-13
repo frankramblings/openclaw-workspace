@@ -11,7 +11,7 @@ import { renderChatStrip } from '../chat-strip.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
 import { suggestGhost } from '../suggest-ghost.js';
-import { cardActions, cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath } from '../live/inbox-logic.js';
+import { cardActions, cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 import { currentHealth, healthDotColor } from '../live/health.js';
@@ -241,9 +241,11 @@ export function mInbox(s) {
   const fyi = visible.filter((m) => m.group === 'fyi');
 
   const mBodyAttr = (it) => detailEndpoint(it) ? ` data-act="openReader" data-arg="${esc(it.id)}" style="cursor:pointer"` : '';
-  // Ingest source pointers render as a dim mono line, not as body prose.
+  // Ingest source pointers are debugging refs, not content (task 5.1a) —
+  // same suppression as surfaces.js inboxSurface's bodyInner.
   const mBodyInner = (it) => bodyIsPath(it.body)
-    ? `<span class="body-src">${esc(it.body)}</span>` : esc(stripMd(it.body));
+    ? `<span class="body-src" title="${esc(it.body)}">${esc(pointerRefLabel(it.body))}</span>`
+    : esc(stripMd(it.body));
   // swipeable card (NEEDS YOU); offset driven by s.swipe for the active id
   const swipeCard = (it) => {
     const off = (s.swipe && s.swipe.id === it.id) ? s.swipe.dx : 0;

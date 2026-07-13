@@ -23,11 +23,63 @@ export function srcStyle(source) {
   return SRC_STYLE[String(source || '').toUpperCase()] || MUTED;
 }
 
-// Card age chip from the backend's ageHours. Fresh items say "now", not "0h".
-export function ageLabel(h) {
-  const n = Number(h) || 0;
-  if (n < 1) return 'now';
-  return n < 24 ? `${Math.round(n)}h` : `${Math.round(n / 24)}d`;
+// --- honest card age (task 5.1b) --------------------------------------------
+// The backend's `ageHours` is computed when the collector RUNS (and cached),
+// so rendering it collapsed everything fresh-ingested to "now" — a blanket
+// lie. Derive the age from the item's REAL origin timestamp instead:
+// meta.receivedAt / meta.date (ISO or epoch), meta.start (calendar events —
+// honestly rendered as "in 2h"), then the cross-source `ts` (epoch ms)
+// contract every collector but one stamps from the source's own clock.
+// `entities` items mint ts at scan time (backend/inbox/sources/entities.py:
+// ts=now_ms, ageHours 0.0) — no real origin exists, so they get an honest
+// em-dash, never a fake "now".
+
+function parseTsMs(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+    return v < 1e12 ? v * 1000 : v; // epoch seconds vs milliseconds
+  }
+  if (typeof v === 'string') {
+    const s = v.trim();
+    if (/^\d+(\.\d+)?$/.test(s)) return parseTsMs(Number(s));
+    const t = Date.parse(s);
+    if (!Number.isNaN(t)) return t;
+  }
+  return null;
+}
+
+// The item's real origin in epoch ms, or null when it doesn't have one.
+export function itemOriginMs(item) {
+  const meta = (item && item.meta) || {};
+  for (const k of ['receivedAt', 'date', 'start']) {
+    const ms = parseTsMs(meta[k]);
+    if (ms != null) return ms;
+  }
+  if (item && item.source === 'entities') return null; // scan-time stamp, not an origin
+  return parseTsMs(item && item.ts);
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// 'now' | '5m' | '3h' | '4d' | 'in 2h' (future starts) | 'Jun 15' / 'Nov 2
+// 2025' (week-plus, date-aware) | '—' (no real origin — honesty over vibes).
+export function ageLabelFor(item, nowMs) {
+  const origin = itemOriginMs(item);
+  if (origin == null) return '—';
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const future = origin > now;
+  const mins = Math.floor(Math.abs(now - origin) / 60000);
+  let label;
+  if (mins < 1) return 'now';
+  if (mins < 60) label = `${mins}m`;
+  else if (mins < 60 * 24) label = `${Math.round(mins / 60)}h`;
+  else if (mins < 60 * 24 * 7) label = `${Math.round(mins / (60 * 24))}d`;
+  else {
+    const d = new Date(origin);
+    const year = d.getFullYear() === new Date(now).getFullYear() ? '' : ` ${d.getFullYear()}`;
+    return `${MONTHS[d.getMonth()]} ${d.getDate()}${year}`;
+  }
+  return future ? `in ${label}` : label;
 }
 
 // True when a card body is an ingest source pointer (e.g.
@@ -37,6 +89,15 @@ export function bodyIsPath(body) {
   const b = String(body || '').trim();
   if (!b || /\s/.test(b)) return false;
   return /^[\w.~-]+(\/[\w.~-]+)+(#L\d+(-L?\d+)?)?$/.test(b);
+}
+
+// Display label for a pointer body (task 5.1a): just the source file name —
+// no directory chain, no #Lnn suffix. The full pointer stays in the chip's
+// title attribute for debugging; the raw path never renders as body copy.
+export function pointerRefLabel(body) {
+  const b = String(body || '').trim();
+  const seg = b.split('/').pop() || b;
+  return seg.replace(/#L\d+(-L?\d+)?$/, '');
 }
 
 // --- entityView: pure view model for the `entities` source card -------------
@@ -197,7 +258,10 @@ export function chipRowHtml(counts, opts, esc) {
     return `<span class="src-chip${active ? ' active' : ''}" data-act="setFilter" data-arg="${key}">${dot}${esc(label)} ${n || 0}${warn}</span>`;
   };
   const order = ['GMAIL', 'SLACK', 'ASANA', 'OBSIDIAN', 'DOCUMENTS', 'CALENDAR', 'ENTITIES'];
-  const present = order.filter((k) => k in counts || errUp[k]);
+  // Zero-count chips are noise (task 5.1c) — hide them unless the user is
+  // actively filtered onto one (it must stay togglable) or the source errored
+  // (the ⚠ needs somewhere to live).
+  const present = order.filter((k) => (counts[k] || 0) > 0 || errUp[k] || k === filter);
   return `<div class="src-chips">${chip('ALL', 'All', counts.all)}${present.map((k) => chip(k, k.toLowerCase(), counts[k])).join('')}</div>`;
 }
 

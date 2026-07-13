@@ -4,7 +4,7 @@
 
 import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
-import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath } from './live/inbox-logic.js';
+import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import {
   AVATAR, filterSlashCommands, RESEARCH_CONTROLS, RESEARCH_SCOPES,
@@ -736,9 +736,12 @@ function inboxSurface(s) {
       ).join('')}
       <button class="btn-sm ghost" data-act="closeSnooze" style="margin-left:auto">Cancel</button>
     </div>`);
-  // Ingest source pointers render as a dim mono line, not as body prose.
+  // Ingest source pointers are debugging refs, not content (task 5.1a):
+  // render just the source file name as a subtle one-line meta ref — the full
+  // pointer lives in the tooltip, and nothing mid-word-wraps as fake prose.
   const bodyInner = (it) => bodyIsPath(it.body)
-    ? `<span class="body-src">${esc(it.body)}</span>` : esc(stripMd(it.body));
+    ? `<span class="body-src" title="${esc(it.body)}">${esc(pointerRefLabel(it.body))}</span>`
+    : esc(stripMd(it.body));
   const needsCard = (it) => `
     <div class="inbox-card">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span><span class="inbox-x" data-act="dismiss" data-arg="${esc(it.id)}">${I.x()}</span></div>
@@ -769,7 +772,7 @@ function inboxSurface(s) {
         <button class="btn-sm" data-act="confirm" data-arg="${esc(it.id)}">${esc(v.confirmLabel)}</button>
         ${v.chips.map((c) => `<button class="btn-sm ghost" data-act="reclassify" data-arg="${esc(it.id + ':' + c.type)}">${esc(c.label)}</button>`).join('')}
         <button class="ic-btn" data-act="open" data-arg="${esc(it.id)}" title="Open source">↗</button>
-        <button class="ic-btn" data-act="snooze" data-arg="${esc(it.id)}" title="Snooze">⏰</button>
+        <button class="ic-btn" data-act="snooze" data-arg="${esc(it.id)}" title="Snooze">${I.clock(13)}</button>
       </div>
       ${snoozeMenu(it)}
     </div>`;
@@ -783,7 +786,7 @@ function inboxSurface(s) {
         <span class="ttl">Inbox</span><span class="cnt">${visible.length} to triage</span>
         <div class="oc-spacer"></div>
         <button class="triage-btn" data-act="triageAll">✦ Triage with __AGENT_NAME__</button>
-        <button class="icon-btn ocbtn" data-act="toggleHistory" title="Recent actions" style="margin-left:6px;flex:none;white-space:nowrap;font-size:13px;padding:4px 8px;background:none;border:1px solid var(--border);border-radius:7px;color:${s.inboxHistoryOpen ? 'var(--teal)' : 'var(--faint)'};cursor:pointer">⏱ History</button>
+        <button class="btn-hist ocbtn${s.inboxHistoryOpen ? ' on' : ''}" data-act="toggleHistory" title="Recent actions">${I.clock(13)}<span>History</span></button>
         ${refreshBtn('inbox', s)}
       </div>
       ${chipRowHtml(

@@ -8,7 +8,7 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
-import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs, triageSummary, ageLabel } from './inbox-logic.js';
+import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs, triageSummary, ageLabelFor } from './inbox-logic.js';
 import { detailEndpoint } from './inbox-detail.js';
 
 // Pick a sensible primary CTA label from the backend's allowed actions list —
@@ -44,7 +44,10 @@ function toItem(it) {
     srcColor: style.srcColor,
     srcBg: style.srcBg,
     who: it.title || '',
-    time: ageLabel(it.ageHours),
+    // Honest age off the item's real origin timestamp (task 5.1b) — the
+    // backend's ageHours is stamped at collector-run time and said "now"
+    // for everything. Em-dash when no origin exists (entities).
+    time: ageLabelFor(it, Date.now()),
     unread: !!(it.meta && it.meta.unread),
     body: it.snippet || it.subtitle || '',
     // labels used by the mobile mock card

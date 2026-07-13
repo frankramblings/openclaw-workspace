@@ -74,4 +74,7 @@ export const I = {
   play: (s = 13) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`,
   code: (s = 15) => icon('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>', { size: s, sw: 1.9 }),
   refresh: (s = 15) => icon('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', { size: s, sw: 1.9 }),
+  // Monochrome clock — replaces the colored ⏰/⏱ emoji in inbox affordances
+  // (task 5.1d); same geometry as the snooze glyph in inbox-logic.js.
+  clock: (s = 13) => icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', { size: s, sw: 2 }),
 };

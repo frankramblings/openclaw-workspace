@@ -26,8 +26,8 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup, launch_sniffer,
-               monitor, pending_tokens, promise_guard, sessions_store, task_ingest,
-               task_registry, terminals, turn_state, websearch)
+               monitor, pending_tokens, promise_guard, sessions_store, syschatter,
+               task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -688,9 +688,10 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
         if m.get("role") == "user":
             content = websearch.strip_context_block(m.get("content"))
             content = terminals.strip_capability_note(content)
-            # A followup seed is machinery, not something Frank typed — show
-            # the compact ⚙️ card line instead (frontend styles it).
-            card = followup.history_card(content)
+            # A followup seed or an injected continuation seed is machinery, not
+            # something Frank typed — show the compact ⚙️ card line instead
+            # (frontend styles any ⚙️-prefixed user message as a system pill).
+            card = followup.history_card(content) or syschatter.history_card(content)
             m["content"] = card if card is not None else content
     # The terminal-attach flow records the prompt twice (the two messages differ
     # only in the stripped terminal-control note), so after stripping they're
@@ -1029,6 +1030,29 @@ def _spa_html(filename: str):
         'NE.prototype=E.prototype;try{NE.CONNECTING=E.CONNECTING;NE.OPEN=E.OPEN;NE.CLOSED=E.CLOSED;}catch(e){}window.EventSource=NE;}'
         'var W=window.WebSocket;if(W){var NW=function(u,p){return p===undefined?new W(fix(u)):new W(fix(u),p);};'
         'NW.prototype=W.prototype;try{NW.CONNECTING=W.CONNECTING;NW.OPEN=W.OPEN;NW.CLOSING=W.CLOSING;NW.CLOSED=W.CLOSED;}catch(e){}window.WebSocket=NW;}'
+        # Attribute/property shim: img.src, link.href, a.href, source.src, iframe.src, script.src, video/audio.src assigned at runtime
+        # skip fetch (already wrapped) but catch attribute sets that go straight to the network.
+        'var ATTR={IMG:["src","srcset"],SOURCE:["src","srcset"],SCRIPT:["src"],LINK:["href"],A:["href"],IFRAME:["src"],VIDEO:["src","poster"],AUDIO:["src"],TRACK:["src"]};'
+        'function fixSrcset(v){try{return String(v).split(",").map(function(p){var t=p.trim().split(/\\s+/);if(t[0])t[0]=fix(t[0]);return t.join(" ");}).join(", ");}catch(e){return v;}}'
+        'var _setAttr=Element.prototype.setAttribute;'
+        'Element.prototype.setAttribute=function(n,v){try{var tag=this.tagName,attrs=tag&&ATTR[tag];if(attrs&&attrs.indexOf(n)>=0&&typeof v==="string"){v=(n==="srcset")?fixSrcset(v):fix(v);}}catch(e){}return _setAttr.call(this,n,v);};'
+        'var _setAttrNS=Element.prototype.setAttributeNS;'
+        'Element.prototype.setAttributeNS=function(ns,n,v){try{var tag=this.tagName,attrs=tag&&ATTR[tag];if(attrs&&attrs.indexOf(n)>=0&&typeof v==="string"){v=(n==="srcset")?fixSrcset(v):fix(v);}}catch(e){}return _setAttrNS.call(this,ns,n,v);};'
+        'function wrapProp(proto,prop,srcset){if(!proto)return;var d=Object.getOwnPropertyDescriptor(proto,prop);if(!d||!d.set)return;Object.defineProperty(proto,prop,{configurable:true,enumerable:d.enumerable,get:d.get,set:function(v){try{if(typeof v==="string")v=srcset?fixSrcset(v):fix(v);}catch(e){}d.set.call(this,v);}});}'
+        'wrapProp(HTMLImageElement&&HTMLImageElement.prototype,"src",false);'
+        'wrapProp(HTMLImageElement&&HTMLImageElement.prototype,"srcset",true);'
+        'wrapProp(HTMLSourceElement&&HTMLSourceElement.prototype,"src",false);'
+        'wrapProp(HTMLSourceElement&&HTMLSourceElement.prototype,"srcset",true);'
+        'wrapProp(HTMLScriptElement&&HTMLScriptElement.prototype,"src",false);'
+        'wrapProp(HTMLLinkElement&&HTMLLinkElement.prototype,"href",false);'
+        'wrapProp(HTMLAnchorElement&&HTMLAnchorElement.prototype,"href",false);'
+        'wrapProp(HTMLIFrameElement&&HTMLIFrameElement.prototype,"src",false);'
+        'wrapProp(HTMLMediaElement&&HTMLMediaElement.prototype,"src",false);'
+        'wrapProp(HTMLVideoElement&&HTMLVideoElement.prototype,"poster",false);'
+        # sweep DOM for absolute /api or /static refs that landed via innerHTML/template strings
+        'function sweep(root){try{if(!root||!root.querySelectorAll)return;var sel="img[src^=\\"/\\"],img[srcset],source[src^=\\"/\\"],source[srcset],script[src^=\\"/\\"],link[href^=\\"/\\"],a[href^=\\"/\\"],iframe[src^=\\"/\\"],video[src^=\\"/\\"],video[poster^=\\"/\\"],audio[src^=\\"/\\"],track[src^=\\"/\\"]";var ns=root.querySelectorAll(sel);for(var i=0;i<ns.length;i++){var el=ns[i],tag=el.tagName,attrs=ATTR[tag]||[];for(var j=0;j<attrs.length;j++){var a=attrs[j],cur=el.getAttribute(a);if(!cur)continue;var nv=(a==="srcset")?fixSrcset(cur):fix(cur);if(nv!==cur)_setAttr.call(el,a,nv);}}}catch(e){}}'
+        'if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",function(){sweep(document);});}else{sweep(document);}'
+        'try{var mo=new MutationObserver(function(muts){for(var i=0;i<muts.length;i++){var m=muts[i];if(m.type==="childList"){for(var j=0;j<m.addedNodes.length;j++){var n=m.addedNodes[j];if(n.nodeType===1){sweep(n);sweep(n.parentNode||document);}}}else if(m.type==="attributes"){sweep(m.target);}}});mo.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:["src","srcset","href","poster"]});}catch(e){}'
         '})();</script>'
     )
     html = html.replace("<head>", "<head>" + inject, 1)

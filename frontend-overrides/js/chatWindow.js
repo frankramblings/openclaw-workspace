@@ -36,7 +36,8 @@ const DOCKED_KEY = 'openclaw_docked_sessions';
 const MOBILE_MAX = 768;
 
 export function dualSessionEnabled() {
-  try { return localStorage.getItem(FLAG_KEY) === '1'; } catch (_) { return false; }
+  // Default-on: only disabled if the user explicitly opts out with '0'.
+  try { return localStorage.getItem(FLAG_KEY) !== '0'; } catch (_) { return true; }
 }
 
 // ── Persisted docked layout (per-device, localStorage) ──────────────────────

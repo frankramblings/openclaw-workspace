@@ -19,10 +19,11 @@ def brain(monkeypatch):
     """Stub bridge.run_text inside the suggest module; records prompts."""
     calls = {"prompts": [], "reply": "Fix the granola cron job"}
 
-    async def fake_run_text(prompt, session_key, model_ref=None):
+    async def fake_run_text(prompt, session_key, model_ref=None, utility=False):
         calls["prompts"].append(prompt)
         calls["session_key"] = session_key
         calls["model_ref"] = model_ref
+        calls["utility"] = utility
         return calls["reply"]
 
     monkeypatch.setattr(suggest.bridge, "run_text", fake_run_text)
@@ -44,6 +45,9 @@ def test_followup_happy_path(client, brain):
     assert "User: hi" in p and "next" in p.lower()
     assert brain["model_ref"] == config.SUGGEST_MODEL
     assert brain["session_key"].endswith("-suggester")
+    # Suggest turns must never steal/refill the warm gateway socket a real
+    # user turn is about to want (bridge routes utility turns to throwaways).
+    assert brain["utility"] is True
 
 
 def test_midturn_prompt_variant(client, brain):

@@ -9,7 +9,9 @@ export function suggestGhost(suggest, draft, { mobile = false } = {}) {
   const text = suggest && suggest.text;
   if (!text || String(draft || '').trim()) return '';
   if (mobile) {
-    return `<span class="ghost-suggest m-ghost" data-act="acceptSuggest" role="button" aria-label="Use suggestion: ${esc(text)}">${esc(text)}</span>`;
+    // ✦ + chip styling (mobile.css) mark it as a tappable AI suggestion —
+    // the same visual language as .m-ai-pill — not pre-typed composer text.
+    return `<span class="ghost-suggest m-ghost" data-act="acceptSuggest" role="button" aria-label="Use suggestion: ${esc(text)}">✦ ${esc(text)}</span>`;
   }
   return `<span class="ghost-suggest" aria-hidden="true">${esc(text)}<span class="tabhint">tab</span></span>`;
 }

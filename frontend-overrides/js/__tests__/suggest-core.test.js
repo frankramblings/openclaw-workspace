@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { buildSuggestContext, activitySummary } from '../redesign/live/suggest-core.js';
+import { buildSuggestContext, activitySummary, suggestSurvivesReattach } from '../redesign/live/suggest-core.js';
 
 test('formats thread as role-labelled lines, most recent last', () => {
   const ctx = buildSuggestContext([
@@ -25,6 +25,16 @@ test('caps at 4000 chars keeping the tail', () => {
   const ctx = buildSuggestContext([{ role: 'user', text: long }]);
   assert.strictEqual(ctx.length, 4000);
   assert.ok(ctx.endsWith('TAIL'));
+});
+
+// attachTurn replays the SAME in-flight turn (iOS resume, dropped stream);
+// only that turn's own mid-turn ghost may survive beginTurn's blanket clear.
+test('suggestSurvivesReattach: midturn ghost for the re-attached session only', () => {
+  const mid = { text: 'While you wait…', mode: 'midturn', sessionId: 's1' };
+  assert.strictEqual(suggestSurvivesReattach(mid, 's1'), true);
+  assert.strictEqual(suggestSurvivesReattach(mid, 's2'), false);
+  assert.strictEqual(suggestSurvivesReattach({ ...mid, mode: 'followup' }, 's1'), false);
+  assert.strictEqual(suggestSurvivesReattach(null, 's1'), false);
 });
 
 test('activitySummary lists recent step labels, empty when no steps', () => {

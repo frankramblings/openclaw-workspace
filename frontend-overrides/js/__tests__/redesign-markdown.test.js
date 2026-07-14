@@ -63,6 +63,10 @@ test('unordered and ordered lists with inline formatting', () => {
   assert.match(ul, /<ul class="md-list"><li>one<\/li><li><strong>two<\/strong><\/li><li>three<\/li><\/ul>/);
   const ol = renderMarkdown('1. first\n2. second');
   assert.match(ol, /<ol class="md-list"><li>first<\/li><li>second<\/li><\/ol>/);
+  // A list that doesn't start at 1 must carry `start="N"` so the visible
+  // numbering is preserved (e.g. after a code block breaks a list in two).
+  const olStart2 = renderMarkdown('2. second\n3. third');
+  assert.match(olStart2, /<ol class="md-list" start="2"><li>second<\/li><li>third<\/li><\/ol>/);
 });
 
 test('fenced code block keeps content literal and escaped', () => {

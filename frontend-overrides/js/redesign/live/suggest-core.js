@@ -6,12 +6,29 @@ const MAX_CONTEXT = 4000;
 
 // {role, text} thread → "User: …\n\nAssistant: …", tail-capped at 4000 chars.
 // `extra` (midturn activity summary) is appended last so it survives the cap.
+// Walks the thread from the END and stops once the cap is covered, so a
+// months-long thread never allocates a giant throwaway string on the UI thread.
+// attachTurn REPLAYS a still-in-flight turn (iOS resume, dropped stream) via
+// beginTurn, whose blanket "new turn invalidates the ghost" clear would eat
+// the mid-turn ghost that this same turn generated — and the turn-keyed
+// suggestAskedTurn stamp means it could never re-fire. Only that ghost is
+// still valid across the replay; a followup ghost with a turn in flight for
+// the session is stale (new content is coming).
+export function suggestSurvivesReattach(suggest, sessionId) {
+  return !!(suggest && suggest.mode === 'midturn' && suggest.sessionId === sessionId);
+}
+
 export function buildSuggestContext(thread, extra = '') {
+  const list = Array.isArray(thread) ? thread : [];
   const lines = [];
-  for (const m of Array.isArray(thread) ? thread : []) {
+  let total = 0;
+  for (let i = list.length - 1; i >= 0 && total <= MAX_CONTEXT; i--) {
+    const m = list[i];
     const text = String((m && m.text) || '').trim();
     if (!text) continue;
-    lines.push(`${m.role === 'user' ? 'User' : 'Assistant'}: ${text}`);
+    const line = `${m.role === 'user' ? 'User' : 'Assistant'}: ${text}`;
+    lines.unshift(line);
+    total += line.length + 2;
   }
   let ctx = lines.join('\n\n');
   if (extra) ctx = ctx ? `${ctx}\n\n${extra}` : extra;

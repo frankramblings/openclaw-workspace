@@ -440,6 +440,11 @@ export function chatSurface(s) {
   const slashSel = filtered.find((c) => c.name === s.slashSel) || filtered[0];
   const agent = s.chatMode === 'agent';
   const chat = s.live?.chat || {};
+  // Ghost suggestion renders only for the session it was generated in — an
+  // archive/delete/switch that leaves a stale stamp shows nothing rather than
+  // ghosting another thread's prompt into this composer.
+  const ghost = suggestGhost(
+    chat.suggest && chat.suggest.sessionId === chat.activeId ? chat.suggest : null, d);
   // No mock fallbacks — before live data lands the header shows neutral
   // placeholders, never invented titles/models/usage numbers.
   const title = chat.title ?? 'New chat';
@@ -487,8 +492,8 @@ export function chatSurface(s) {
     ${when(s.modelMenuOpen, modelPopover(s))}
     <div class="composer${slashOpen ? ' slash' : ''}">
       ${when(s.live?.chat?.queued, `<div class="queued-msg" data-act="queueRecall" title="Click to edit"><span class="q-ico">⏳</span><span class="q-txt">Queued — sends when the reply finishes${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 90))}` : ' · (image)'}</span><button class="q-x ocbtn" data-act="queueCancel" title="Cancel">✕</button></div>`)}
-      ${suggestGhost(s.live?.chat?.suggest, d)}
-      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="${suggestGhost(s.live?.chat?.suggest, d) ? ' ' : 'Message __AGENT_NAME__…   ( type / for commands )'}">
+      ${ghost}
+      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message __AGENT_NAME__…   ( type / for commands )">
 ${esc(d)}</textarea>
       ${when(s.pendingAttach && s.pendingAttach.length, `
       <div class="attach-pending">

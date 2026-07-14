@@ -18,7 +18,8 @@ import { reconcileDecision } from './reconcile-decision.js';
 import { promiseWarningText, latestAsstAtOrBefore } from './promise-warning.js';
 import { setLiveTurn } from './turn-ref.js';
 import { beginUploads, resolveUploads, failUploads, sendableAttach, uploadGate } from './attach-logic.js';
-import { buildSuggestContext, activitySummary } from './suggest-core.js';
+import { buildSuggestContext, activitySummary, suggestSurvivesReattach } from './suggest-core.js';
+import { suggestGhost } from '../suggest-ghost.js';
 import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
   onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
@@ -268,6 +269,31 @@ export function historySteps(toolEvents, msgIdx) {
   return steps;
 }
 
+// Adjacent user bubbles with identical text = the "network hiccup dupe":
+// server recorded the same POST twice (keepalive pagehide + buffered flush
+// racing) or the client posted twice. Server-truth thread is authoritative
+// but not always deduped. Collapse and warn so a real double still surfaces
+// in the console for root-causing, but never as a visible duplicate bubble.
+function dedupeAdjacentUserMessages(thread, source) {
+  if (!Array.isArray(thread) || thread.length < 2) return thread;
+  const out = [];
+  let dropped = 0;
+  for (const m of thread) {
+    const prev = out[out.length - 1];
+    if (m && prev && m.role === 'user' && prev.role === 'user'
+        && (m.text || '') === (prev.text || '')
+        && (m.text || '').length > 0) {
+      dropped++;
+      continue;
+    }
+    out.push(m);
+  }
+  if (dropped) {
+    try { console.warn(`[chat] deduped ${dropped} adjacent user message(s) at ${source}`); } catch (_) {}
+  }
+  return out;
+}
+
 async function fetchThread(id, fallbackModel, name) {
   const hist = await apiGet(`/api/history/${id}?limit=100`);
   const list = Array.isArray(hist?.history) ? hist.history : [];
@@ -281,9 +307,11 @@ async function fetchThread(id, fallbackModel, name) {
       time: fmtTime(meta.timestamp),
       model: meta.model || model,
     };
-    // Backend rewrites followup seeds to a compact ⚙️ line; render as a
-    // centered system card, not a user bubble (surfaces.js chatMsg).
-    if (msg.role === 'user' && /^⚙️ Background task/.test(msg.text)) msg.sys = true;
+    // Backend rewrites machinery user-messages (followup seeds, injected
+    // session-continuation seeds — see backend/syschatter.py) to a compact ⚙️
+    // line; render any of them as a centered system card, not a "You" bubble
+    // (surfaces.js chatMsg / mobile-surfaces.js mChatMsg).
+    if (msg.role === 'user' && /^⚙️ /.test(msg.text)) msg.sys = true;
     // Image attachments persisted by the backend sidecar (the gateway transcript
     // only keeps text) → rehydrate so sent images survive a refresh.
     if (Array.isArray(h.attachments) && h.attachments.length) {
@@ -457,7 +485,7 @@ export async function load(state) {
       // have moved chat.activeId on while this awaited — a stale resolve
       // must not overwrite the thread the user is now looking at.
       if (chat.activeId !== activeId) return;
-      chat.thread = t.thread;
+      chat.thread = dedupeAdjacentUserMessages(t.thread, 'selectSession');
       chat.title = t.title || chat.title;
       chat.subtitle = t.subtitle;
       chat.model = t.model || fallbackModel;
@@ -730,12 +758,18 @@ function startElapsed() {
       const el = document.querySelector('.act-elapsed');
       if (el) el.textContent = turn.activity.elapsed;
       else runtime.render();
-      // Mid-turn ghost suggestion ("While you wait, …"): once per turn, ≥30s
-      // in, only while the user is looking at the busy thread.
-      if (!turn.suggestAsked && Date.now() - turn.activity.startMs >= MIDTURN_SUGGEST_MS) {
-        turn.suggestAsked = true;
+      // Mid-turn ghost suggestion ("While you wait, …"): once per SERVER turn
+      // (chat.suggestAskedTurn is keyed by turn_id so an iOS suspend/resume
+      // re-attach — which rebuilds the local turn object with a backdated
+      // startMs — can't re-fire it), ≥30s in, only while the user is looking
+      // at the busy thread. The stamp is only spent when a request actually
+      // dispatched: a skip (hidden tab, draft in progress) retries next tick.
+      if (turn.turnId != null && Date.now() - turn.activity.startMs >= MIDTURN_SUGGEST_MS) {
         const chat = ensureChat(runtime.state);
-        if (chat.activeId === turn.sessionId) fetchSuggestion(chat, 'midturn', turn.activity);
+        if (chat.suggestAskedTurn !== turn.turnId && chat.activeId === turn.sessionId
+            && fetchSuggestion(chat, 'midturn', turn.activity)) {
+          chat.suggestAskedTurn = turn.turnId;
+        }
       }
     } else stopElapsed();
   }, 500);
@@ -748,30 +782,62 @@ function startElapsed() {
 const MIDTURN_SUGGEST_MS = 30_000;
 let suggestInFlight = false;
 
-async function fetchSuggestion(chat, mode, activity) {
-  if (suggestInFlight || !chat || chat.queued) return;
-  if ((runtime.state?.draft || '').trim()) return;
-  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+// Surgically insert the ghost next to the live composer textarea instead of
+// runtime.render(): a suggestion can land mid-turn (or mid-text-selection),
+// and a wholesale root.innerHTML rebuild wipes selection/scroll — the exact
+// regression the elapsed ticker's .act-elapsed patching exists to avoid. Any
+// later natural render re-derives the same ghost from chat.suggest.
+function paintGhost(chat) {
+  if (!chat.suggest || typeof document === 'undefined') return;
+  const ta = document.querySelector('[data-focus="draft"], [data-focus="mdraft"]');
+  if (!ta || (ta.value || '').trim()) return;
+  const mobile = ta.getAttribute('data-focus') === 'mdraft';
+  // Mobile-only: midturn ("while you wait…") is Gary talking to Frank, so it
+  // renders inline under the last assistant message, not in the composer.
+  // Followup mode stays a composer chip on both desktop and mobile.
+  if (mobile && chat.suggest.mode === 'midturn') {
+    const asstMds = document.querySelectorAll('.m-msg-asst .m-md');
+    const last = asstMds[asstMds.length - 1];
+    if (!last || last.querySelector('.ghost-suggest')) return;
+    last.insertAdjacentHTML('beforeend', suggestGhost(chat.suggest, ta.value, { mobile: true }));
+    return;
+  }
+  const wrap = ta.closest('.composer, .m-composer');
+  if (!wrap || wrap.querySelector('.ghost-suggest')) return;
+  ta.insertAdjacentHTML('beforebegin', suggestGhost(chat.suggest, ta.value, { mobile }));
+}
+
+// Guards synchronously, then fires the fetch in the background. Returns true
+// only when a request was actually dispatched — the midturn one-shot stamp
+// keys off this so a skipped attempt (hidden tab, draft in progress) doesn't
+// burn the turn's single mid-turn suggestion.
+function fetchSuggestion(chat, mode, activity) {
+  if (suggestInFlight || !chat || chat.queued) return false;
+  if ((runtime.state?.draft || '').trim()) return false;
+  if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return false;
   const sessionId = chat.activeId;
   const t = turn; // staleness token — the turn slot must be unchanged on landing
-  const context = buildSuggestContext(
-    chat.thread, mode === 'midturn' ? activitySummary(activity) : '');
-  if (!context) return;
+  const context = buildSuggestContext(chat.thread, activitySummary(activity));
+  if (!context) return false;
   suggestInFlight = true;
-  let text = '';
-  try {
-    const res = await apiJson('/api/chat/suggest',
-      { session_key: sessionId || '', mode, context });
-    text = res && typeof res.text === 'string' ? res.text.trim() : '';
-  } catch (_) { text = ''; }
-  finally { suggestInFlight = false; }
-  if (!text || text.length > 120) return;
-  const cur = ensureChat(runtime.state);
-  if (cur !== chat || cur.activeId !== sessionId) return; // switched threads
-  if (turn !== t) return;                    // turn ended or a new one started
-  if ((runtime.state?.draft || '').trim()) return;   // user typed meanwhile
-  chat.suggest = { text, mode };
-  runtime.render();
+  (async () => {
+    let text = '';
+    try {
+      const res = await apiJson('/api/chat/suggest',
+        { session_key: sessionId || '', mode, context });
+      text = res && typeof res.text === 'string' ? res.text.trim() : '';
+    } catch (_) { text = ''; }
+    finally { suggestInFlight = false; }
+    if (!text) return;                       // server owns the length policy
+    const cur = ensureChat(runtime.state);
+    if (cur !== chat || cur.activeId !== sessionId) return; // switched threads
+    if (turn !== t) return;                  // turn ended or a new one started
+    if (chat.queued) return;                 // user queued a message meanwhile
+    if ((runtime.state?.draft || '').trim()) return; // user typed meanwhile
+    chat.suggest = { text, mode, sessionId };
+    paintGhost(chat);
+  })();
+  return true;
 }
 
 function finalizeStep(st) {
@@ -986,19 +1052,23 @@ function beginTurn(chat, modelLabel, sessionId) {
         m.error = true;
         m.notice = 'No response from this model — it may not be available on your plan or endpoint. Try another model from the picker.';
       }
+      chat.suggest = null; // a finished turn invalidates any "While you wait" ghost
       flushRender();
       if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); turn = null; return; }
       refreshSidebarUsage(runtime.state);
-      // Follow-up ghost suggestion — only after a CLEAN finish with nothing
+      // Follow-up ghost suggestion — only after a CLEAN finish (an explicit
+      // turn_end status of 'ok' AND a real reply; endStatus is undefined when
+      // the stream dropped, and hadText/hadWork are false on the empty-reply
+      // error notice above — no suggestions under an error card) with nothing
       // queued (flushQueuedFor fires a queued message into a new turn, which
       // would immediately invalidate the suggestion anyway).
-      const endedOk = turn.endStatus !== 'aborted';
+      const cleanFinish = turn.endStatus === 'ok' && !!(hadText || hadWork);
       const doneSid = turn.sessionId;
       const hadQueued = !!queueHead(chat.queuedList, doneSid);
       setLiveTurn(null);
       turn = null;
       flushQueuedFor(chat, doneSid);
-      if (endedOk && !hadQueued) fetchSuggestion(chat, 'followup', null);
+      if (cleanFinish && !hadQueued) fetchSuggestion(chat, 'followup', null);
       return;
     }
     if (ev.type === 'error') {
@@ -1022,6 +1092,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       m.notice = ev.status
         ? `Couldn’t get a response (HTTP ${ev.status}). Try again, or pick another model.`
         : 'The connection dropped before a response arrived. Try again.';
+      chat.suggest = null; // no ghost suggestions under an error notice
       stopElapsed();
       flushRender();
       const errSid = turn.sessionId;   // capture before teardown
@@ -1389,6 +1460,22 @@ function flushQueuedFor(chat, sid) {
   if (!taken) return;
   chat.queuedList = rest;
   syncQueuedView(chat);
+  // A queued retry that the server ALREADY recorded (network-hiccup dupe:
+  // POST landed, ES died, user resent, reconcile-finalize-stale pulled the
+  // server truth). Firing again would double-post + double-bubble. The last
+  // user message in server truth is either this one (drop the queued retry)
+  // or a different message (fire normally).
+  const thread = chat.thread || [];
+  for (let i = thread.length - 1; i >= 0; i--) {
+    const m = thread[i];
+    if (!m || m.role !== 'user') continue;
+    if ((m.text || '') === (taken.text || '') && (taken.text || '').length > 0) {
+      try { console.warn('[chat] dropped queued retry — server truth already has this message'); } catch (_) {}
+      syncQueuedView(chat);
+      return;
+    }
+    break; // most recent user message differs → real new send, fire it
+  }
   Promise.resolve().then(() => dispatchSend(taken.text, taken.attachSnap));
 }
 
@@ -1500,7 +1587,7 @@ async function reconcileTurn(chat, state, sessionId) {
       if (chat.activeId === sessionId) {
         try {
           const t = await fetchThread(sessionId, chat.model, chat.title);
-          chat.thread = t.thread;
+          chat.thread = dedupeAdjacentUserMessages(t.thread, 'reconcile:finalize-stale');
           chat.subtitle = t.subtitle || chat.subtitle;
           flushRender();
         } catch (_) { /* keep the finalized local state; next trigger retries */ }
@@ -1558,7 +1645,12 @@ async function attachTurn(chat, state, sessionId, snap) {
     }
     lastStopped = null;
   }
+  // This replay rebuilds the SAME turn the mid-turn ghost came from — carry
+  // it across beginTurn's clear (see suggestSurvivesReattach). A done/error
+  // frame in the replayed tail re-clears it, same as it would have live.
+  const keptSug = suggestSurvivesReattach(chat.suggest, sessionId) ? chat.suggest : null;
   const { onEvent, ensureActivity } = beginTurn(chat, chat.model, sessionId);
+  if (keptSug) chat.suggest = keptSug;
   ensureActivity();            // immediate "Working…" while we rebuild + tail
   // Continue the "Working… Ns" clock from the turn's TRUE start (server-computed
   // elapsed) instead of restarting at 0 on re-attach. Anchored to the client
@@ -2043,7 +2135,7 @@ export const actions = {
       // whatever the user switched to. Bail; the fresher call's own render
       // is authoritative.
       if (chat.activeId !== id) return;
-      chat.thread = t.thread;
+      chat.thread = dedupeAdjacentUserMessages(t.thread, 'openSession');
       if (t.title) chat.title = t.title;
       chat.subtitle = t.subtitle;
       if (t.model) chat.model = t.model;

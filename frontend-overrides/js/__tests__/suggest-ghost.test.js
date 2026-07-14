@@ -25,6 +25,11 @@ test('mobile: tappable ghost, no tab hint', () => {
   assert.doesNotMatch(html, /tabhint/);
 });
 
+test('mobile: chip carries the ✦ suggestion marker; desktop does not', () => {
+  assert.match(suggestGhost(SUG, '', { mobile: true }), /✦/);
+  assert.doesNotMatch(suggestGhost(SUG, ''), /✦/);
+});
+
 test('escapes suggestion text', () => {
   const html = suggestGhost({ text: '<img onerror=x>' }, '');
   assert.doesNotMatch(html, /<img/);

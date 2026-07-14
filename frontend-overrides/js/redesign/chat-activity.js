@@ -121,9 +121,21 @@ function renderItem(it, s, working) {
   return working ? stepRow(st, s, { iconHtml: checkIcon(13) }) : stepRow(st, s);
 }
 
+const LIVE_TRAIL_CAP = 5;
+
 function renderWorking(m, s) {
   const act = m.activity;
-  const rows = groupSteps(act.steps).map((it) => renderItem(it, s, true)).join('');
+  const items = groupSteps(act.steps);
+  const workExpanded = !!((s.chatUI && s.chatUI.work) || {})[m.id];
+  const hidden = Math.max(0, items.length - LIVE_TRAIL_CAP);
+  const visible = (workExpanded || hidden === 0) ? items : items.slice(-LIVE_TRAIL_CAP);
+  const moreRow = (hidden > 0) ? `<div class="act-more ocact" data-act="toggleWork" data-arg="${esc(m.id)}">
+      <div class="oc-spacer"></div>
+      <span class="lbl" style="color:var(--faint)">${workExpanded ? 'Show last 5' : `Show ${hidden} earlier step${hidden === 1 ? '' : 's'}`}</span>
+      ${chev(workExpanded ? '90deg' : '0deg')}
+      <div class="oc-spacer"></div>
+    </div>` : '';
+  const rows = visible.map((it) => renderItem(it, s, true)).join('');
   return `
   <div class="act-wrap"><div class="act-spine">
     <div class="act-working">
@@ -133,6 +145,7 @@ function renderWorking(m, s) {
       <div class="oc-spacer"></div>
       <button class="act-stop ocbtn" data-act="stopRun" data-arg="${esc(m.id)}">${STOP_ICON}Stop</button>
     </div>
+    ${moreRow}
     ${rows}
   </div></div>`;
 }

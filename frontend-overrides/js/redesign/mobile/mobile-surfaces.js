@@ -89,7 +89,7 @@ export function renderTabBar(s) {
 }
 
 // one mobile chat message → html (live thread item: {role,time,model,text,activity?})
-export function mChatMsg(m, s) {
+export function mChatMsg(m, s, ghostCtx) {
   const hasText = String(m.text || '').trim().length > 0;
   // Assistant text is markdown — render it the same way the desktop thread does
   // (headings, lists, bold, links, code) instead of dumping raw markup as plain text.
@@ -108,7 +108,7 @@ export function mChatMsg(m, s) {
     const ring = pending ? `<span class="m-msg-pending-ring" title="Sending…"></span>` : '';
     const chip = pending ? `<button class="m-msg-edit-chip" data-act="editPendingOnMobile" data-arg="${esc(m.id)}">Tap to edit</button>` : '';
     const meta = pending ? `<div class="m-msg-user-meta">${ring}${chip}</div>` : '';
-    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '')}</div>${meta}</div>`;
+    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '').replace(/\n/g, '<br>')}</div>${meta}</div>`;
   }
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
   // Promise guard (Phase 3, mirrors surfaces.js): amber nudge when a reply
@@ -146,9 +146,10 @@ export function mChatMsg(m, s) {
   const notice = m.error
     ? `<div class="m-msg-error"><span aria-hidden="true">⚠</span><span>${esc(m.notice || 'No response from this model.')}</span></div>`
     : '';
+  const ghostHtml = (ghostCtx && ghostCtx.msgId === m.id) ? (ghostCtx.html || '') : '';
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}</div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${ghostHtml}</div>`
   + `</div>`;
 }
 
@@ -179,6 +180,19 @@ const mAttachChip = (a) => {
 export function mChat(s) {
   const focused = s.keyboard;
   const thread = s.live?.chat?.thread || [];
+  // Ghost suggestion renders only for the session it was generated in (see
+  // the matching guard in surfaces.js chatSurface).
+  // Two flavors of suggestion:
+  //   midturn  = Gary talking to Frank while a turn runs ("while you wait…")
+  //              → render inline at the tail of the last assistant message
+  //   followup = a suggested next prompt Frank could send after a clean turn
+  //              → render as a tap-to-draft chip in the composer
+  const _sug = s.live?.chat?.suggest;
+  const _activeSug = _sug && _sug.sessionId === s.live?.chat?.activeId ? _sug : null;
+  const _asstSug = _activeSug && _activeSug.mode === 'midturn' ? _activeSug : null;
+  const _composerSug = _activeSug && _activeSug.mode !== 'midturn' ? _activeSug : null;
+  const mGhostAsst = suggestGhost(_asstSug, s.draft, { mobile: true });
+  const mGhostComposer = suggestGhost(_composerSug, s.draft, { mobile: true });
   const model = s.live?.chat?.model || '';
   const modelLogo = providerLogo(s.live?.chat?.endpointId, model);
   // Friendly model name (e.g. "Opus 4.8") from the live model list, matching the
@@ -199,7 +213,14 @@ export function mChat(s) {
     <div class="cw-hint">Type a message below &nbsp;·&nbsp; <kbd>/</kbd> for commands</div>
     <div class="cw-chips">${chips}</div>
   </div>`;
-  const threadHtml = thread.length ? map(thread, (msg) => mChatMsg(msg, s)) : mWelcome;
+  // Find the last assistant message so we can render the ghost suggestion
+  // inline at its tail (previously a chip in the composer).
+  let _lastAsstId = null;
+  for (let i = thread.length - 1; i >= 0; i--) {
+    if (thread[i].role !== 'user') { _lastAsstId = thread[i].id; break; }
+  }
+  const _ghostCtx = { html: mGhostAsst, msgId: _lastAsstId };
+  const threadHtml = thread.length ? map(thread, (msg) => mChatMsg(msg, s, _ghostCtx)) : mWelcome;
   // composing layout: keyboard up, tab bar hidden (handled by shell), composer lifts
   const sheetId = s.live?.chat?.mobileSheetMsgId;
   const sheetMsg = sheetId ? (thread.find((m) => m.id === sheetId) || null) : null;
@@ -225,7 +246,7 @@ export function mChat(s) {
     ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], mAttachChip)}</div>`)}
     <div class="bar">
       <label class="m-round-btn bordered" title="Attach photo or file"><input type="file" data-upload multiple style="display:none">${I.plus(16)}</label>
-      <div class="ta-wrap">${suggestGhost(s.live?.chat?.suggest, s.draft, { mobile: true })}<textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="${suggestGhost(s.live?.chat?.suggest, s.draft, { mobile: true }) ? ' ' : 'Message __AGENT_NAME__…'}">
+      <div class="ta-wrap">${mGhostComposer}<textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message __AGENT_NAME__…">
 ${esc(s.draft || '')}</textarea></div>
       <button class="m-send${s.mobileEditingPending ? ' editing' : ''}" data-act="send">${I.send(16)}${s.mobileEditingPending ? `<span class="m-send-lbl">Save</span>` : ''}</button>
     </div>

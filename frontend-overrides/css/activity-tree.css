@@ -195,6 +195,19 @@
   overflow: auto;
 }
 
+/* Collapsed live-trail "show N earlier steps" toggle — sits above the last-5 window. */
+.act-more {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.act-more:hover { opacity: 1; }
+.act-more .lbl { color: var(--faint); }
+
 /* Grouped run line (e.g. "Ran 11 commands") — same rhythm as .act-row, clickable. */
 .act-group {
   display: flex;

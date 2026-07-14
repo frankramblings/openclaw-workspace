@@ -185,6 +185,12 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
 
   root.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // iOS standalone PWA: arming a non-passive pointer chain on a tap that
+    // lands on an interactive element (button/anchor/[data-act]) suppresses
+    // the synthetic click on release — swipe worked but the buttons on inbox
+    // cards silently no-op'd. Skip the gesture for those hits so the browser
+    // dispatches a normal click through redesign/app.js's delegated handler.
+    if (e.target.closest('button, a, input, select, textarea, label, [data-act]')) return;
     const card = e.target.closest('[data-swipe-card]');
     if (card) drag = { mode: 'pending', card, id: card.getAttribute('data-swipe-card'), startX: e.clientX, startY: e.clientY };
   });
@@ -429,6 +435,21 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   const endLp = () => { clearLp(); scheduleSwallowDisarm(swallowGate, swallowIo); };
   root.addEventListener('pointerup', endLp);
   root.addEventListener('pointercancel', endLp);
+
+  // --- tap header background → scroll current surface to top --------------
+  // Twitter/Slack convention: iOS's status-bar-tap doesn't reach nested
+  // scrollers in a PWA, so we give the header itself the affordance. Ignores
+  // taps that land on real controls (buttons/anchors/[data-act]) so the model
+  // chip, conversation switch, back button etc. keep working.
+  root.addEventListener('click', (e) => {
+    const head = e.target.closest('.m-head');
+    if (!head) return;
+    if (e.target.closest('button, a, input, select, textarea, label, [data-act]')) return;
+    const scroller = head.parentElement && head.parentElement.querySelector('.m-scroll');
+    if (!scroller) return;
+    try { scroller.scrollTo({ top: 0, behavior: 'smooth' }); }
+    catch (_) { scroller.scrollTop = 0; }
+  });
 
   // --- edge-swipe → conversation drawer ------------------------------------
   // Swipe inward from the very left OR right screen edge to pull out the thread

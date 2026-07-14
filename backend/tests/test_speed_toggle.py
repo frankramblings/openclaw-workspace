@@ -139,7 +139,8 @@ def test_stall_retry_preserves_thinking(monkeypatch):
     seen_thinking = []
 
     async def fake_open_turn(message, session_key, model_ref, attachments,
-                             run_info, allow_warm, thinking=None):
+                             run_info, allow_warm, thinking=None,
+                             touch_warm=True):
         seen_thinking.append(thinking)
         run_id = f"r{len(seen_thinking)}"
         if run_info is not None:

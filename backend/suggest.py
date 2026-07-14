@@ -75,7 +75,7 @@ async def chat_suggest(body: dict = Body(...)):
     try:
         raw = await asyncio.wait_for(
             bridge.run_text(prompt, _SESSION_KEY,
-                            model_ref=config.SUGGEST_MODEL),
+                            model_ref=config.SUGGEST_MODEL, utility=True),
             timeout=_TIMEOUT_S)
     except Exception:  # noqa: BLE001 — any failure means "no suggestion"
         log.warning("suggest turn failed (mode=%s session=%s)",

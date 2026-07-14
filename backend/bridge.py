@@ -178,13 +178,18 @@ async def _connect_and_auth():
 
 
 async def _open_turn(message, session_key, model_ref, attachments, run_info,
-                     allow_warm: bool, thinking: str | None = None):
+                     allow_warm: bool, thinking: str | None = None,
+                     touch_warm: bool = True):
     """Acquire a connection (warm if free+alive, else fresh), pin the model only
     if it changed, send chat.send. Returns (ws, run_id, use_warm) on success — and
     when use_warm is True the CALLER owns _warm.lock and must release it. On ANY
     failure this cleans up after itself (drops a bad warm socket, releases the
     lock, closes the socket) and re-raises, so the caller's retry/handlers start
-    from a clean slate."""
+    from a clean slate.
+
+    `touch_warm=False` (utility turns — suggestions etc.) additionally keeps a
+    FRESH socket out of the warm slot: it must not evict/steal the connection a
+    real user turn is about to want, nor _pinned.clear() the model-pin cache."""
     ws = None
     use_warm = False
     holds_lock = False
@@ -200,7 +205,7 @@ async def _open_turn(message, session_key, model_ref, attachments, run_info,
         if ws is None:
             ws = await _connect_and_auth()
             # Promote this fresh socket to the warm slot if nobody else holds it.
-            if not _warm.lock.locked():
+            if touch_warm and not _warm.lock.locked():
                 await _warm.lock.acquire()
                 holds_lock = use_warm = True
                 _warm.ws = ws
@@ -266,7 +271,8 @@ async def stream_turn(message: str, session_key: str | None = None,
                       model_ref: str | None = None,
                       attachments: list | None = None,
                       thinking: str | None = None,
-                      run_info: dict | None = None):
+                      run_info: dict | None = None,
+                      utility: bool = False):
     """Async generator yielding SSE strings for one user turn.
 
     Reuses a warm authed socket when possible (see `_Warm`), otherwise opens a
@@ -277,6 +283,12 @@ async def stream_turn(message: str, session_key: str | None = None,
     `model_ref` (e.g. "openai/gpt-5.5") sets THIS session's modelOverride — so the
     web picker actually switches the model for this chat only. Agent `main`'s
     default (shared with Signal) is never touched.
+
+    `utility=True` (background sidecar turns: suggestions, titles-style work)
+    runs the turn on a throwaway socket that never acquires OR becomes the warm
+    connection — a utility turn firing right as a real turn ends must not steal
+    the just-freed warm socket, hold its lock for seconds, or clear the model
+    pins the next real turn relies on.
     """
     session_key = session_key or config.session_key()
     ws = None
@@ -285,13 +297,15 @@ async def stream_turn(message: str, session_key: str | None = None,
         try:
             ws, run_id, use_warm = await _open_turn(
                 message, session_key, model_ref, attachments, run_info,
-                allow_warm=True, thinking=thinking)
+                allow_warm=not utility, thinking=thinking,
+                touch_warm=not utility)
         except (websockets.ConnectionClosed, OSError, asyncio.TimeoutError):
             # Warm socket was stale/dead (or a fresh connect raced a gateway
             # blip): retry once on a guaranteed-fresh connection.
             ws, run_id, use_warm = await _open_turn(
                 message, session_key, model_ref, attachments, run_info,
-                allow_warm=False, thinking=thinking)
+                allow_warm=False, thinking=thinking,
+                touch_warm=not utility)
 
         # Relay events for this run until lifecycle end. On a stall (no
         # run-activity for STALL_CAP_S) abort the zombie run and retry ONCE on
@@ -412,7 +426,8 @@ async def _warm_request(method: str, params: dict | None = None,
 
 
 async def run_text(prompt: str, session_key: str,
-                   model_ref: str | None = None) -> str:
+                   model_ref: str | None = None,
+                   utility: bool = False) -> str:
     """One brain turn → just the assistant text (no SSE plumbing).
 
     Shared helper for backend features that need a single utility turn
@@ -423,7 +438,7 @@ async def run_text(prompt: str, session_key: str,
     utility work like JSON tagging shouldn't run on the heavy shared model."""
     chunks: list[str] = []
     async for sse in stream_turn(prompt, session_key=session_key,
-                                 model_ref=model_ref):
+                                 model_ref=model_ref, utility=utility):
         if not sse.startswith("data:"):
             continue
         body = sse[5:].strip()

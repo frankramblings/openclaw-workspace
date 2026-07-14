@@ -176,7 +176,7 @@ const RE = {
   hr: /^\s*([-*_])\1\1+\s*$/,
   quote: /^\s*>\s?/,
   ul: /^\s*[-*+]\s+/,
-  ol: /^\s*\d+[.)]\s+/,
+  ol: /^\s*(\d+)[.)]\s+/,
   blank: /^\s*$/,
 };
 
@@ -291,9 +291,12 @@ export function renderMarkdown(src, topLevel = true) {
       continue;
     }
     if (RE.ol.test(line)) {               // ordered list
+      const startMatch = line.match(RE.ol);
+      const start = startMatch ? parseInt(startMatch[1], 10) : 1;
       const items = [];
       while (i < lines.length && RE.ol.test(lines[i])) { items.push(lines[i].replace(RE.ol, '')); i++; }
-      out.push(`<ol class="md-list">${items.map((t) => `<li>${inline(t)}</li>`).join('')}</ol>`);
+      const startAttr = (Number.isFinite(start) && start !== 1) ? ` start="${start}"` : '';
+      out.push(`<ol class="md-list"${startAttr}>${items.map((t) => `<li>${inline(t)}</li>`).join('')}</ol>`);
       continue;
     }
     // paragraph: gather consecutive non-blank lines that don't start a block

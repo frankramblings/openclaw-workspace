@@ -340,6 +340,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-user .meta .time{font-size:12.5px;color:var(--faint)}
 .msg-user .meta .you{font-size:14px;font-weight:600;color:var(--teal)}
 .msg-user p{margin:0;font-size:15.5px;line-height:1.58;color:#dfe4ea;overflow-wrap:anywhere}
+.msg-user p + p{margin-top:.75em}
 
 /* rendered markdown inside chat messages (renderMarkdown output) */
 .msg-body strong,.msg-user strong{font-weight:700;color:var(--fg)}
@@ -390,10 +391,18 @@ html.shell-mobile .oc-toast{max-width:none}
 .composer-row{display:flex;align-items:center;gap:7px}
 /* Ghost prompt suggestion — overlays the empty textarea's first line.
    pointer-events:none on desktop: clicks fall through to focus the box (Tab
-   accepts). Offsets = .composer padding (12px 14px) + textarea padding (2px). */
+   accepts). Offsets = .composer padding (12px 14px) + textarea padding (2px).
+   Visibility is pure CSS: while a ghost is present the real placeholder is
+   masked (not removed — :placeholder-shown still drives 'composer is empty'
+   and screen readers keep the hint), and any typed text hides the ghost via
+   :not(:placeholder-shown) — no per-keystroke JS. A queued-message banner
+   shifts the textarea down, so the ghost also hides while one is showing. */
 .composer{position:relative}
 .composer .ghost-suggest{position:absolute;left:16px;right:16px;top:14px;z-index:2;color:var(--faint);font-family:var(--prose);font-size:16.5px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .composer .ghost-suggest .tabhint{display:inline-block;margin-left:10px;font:600 10px/1 ui-monospace,SFMono-Regular,monospace;color:var(--mut);border:1px solid var(--bd);border-radius:4px;padding:2px 5px;vertical-align:2px}
+.composer:has(.ghost-suggest) textarea::placeholder{color:transparent}
+.composer:has(textarea:not(:placeholder-shown)) .ghost-suggest,
+.composer:has(.queued-msg) .ghost-suggest{display:none}
 .icon-btn{width:32px;height:32px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer}
 .ctx-meter{display:flex;align-items:center;gap:7px;margin-left:4px}
 .ctx-meter .track{width:54px;height:4px;border-radius:3px;background:#2a2d34;overflow:hidden}

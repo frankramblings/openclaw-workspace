@@ -1671,6 +1671,41 @@ async function _cmdRagRemove(args, ctx) {
 
 // ── Web Search ──
 
+function _formatPplxAnswer(data, ctx) {
+  const answer = String(data?.answer || '').trim();
+  if (!answer) return 'Perplexity returned an empty answer.';
+  const meta = [];
+  if (data?.model) meta.push(`model: ${ctx.esc(String(data.model))}`);
+  if (data?.rounds != null) meta.push(`rounds: ${ctx.esc(String(data.rounds))}`);
+  const metaHtml = meta.length
+    ? `<div style="opacity:.68;font-size:.9em;margin-bottom:8px;">Perplexity sidecar · ${meta.join(' · ')}</div>`
+    : '<div style="opacity:.68;font-size:.9em;margin-bottom:8px;">Perplexity sidecar</div>';
+  return metaHtml + `<div style="white-space:pre-wrap;">${ctx.esc(answer)}</div>`;
+}
+
+async function _cmdPplx(args, ctx) {
+  const prompt = args.join(' ').trim();
+  if (!prompt) { slashReply('Usage: /pplx &lt;research question&gt;'); return true; }
+  slashReply('<span style="opacity:.68">Asking Perplexity sidecar...</span>');
+  try {
+    const res = await fetch(`${API_BASE}/api/perplexity-agent/ask`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, max_rounds: 4 })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = data?.detail || `HTTP ${res.status}`;
+      slashReply(`Perplexity sidecar failed: ${ctx.esc(String(detail).slice(0, 500))}`);
+      return true;
+    }
+    slashReply(_formatPplxAnswer(data, ctx));
+  } catch (e) {
+    slashReply(`Perplexity sidecar unavailable: ${ctx.esc(e.message)}`);
+  }
+  return true;
+}
+
 async function _cmdWebSearch(args, ctx) {
   const query = args.join(' ');
   if (!query) { slashReply('Usage: /search &lt;query&gt;'); return true; }
@@ -5578,6 +5613,13 @@ const COMMANDS = {
     handler: _cmdWebSearch,
     noUserBubble: true,
     usage: '/search query'
+  },
+  pplx: {
+    alias: ['perplexity'],
+    category: 'AI Tools',
+    help: 'Ask the Perplexity research sidecar',
+    handler: _cmdPplx,
+    usage: '/pplx research question'
   },
   find: {
     alias: ['search-history'],

@@ -10,6 +10,7 @@ export const AVATAR = (typeof window !== 'undefined' && window.__WS_BASE__ || ''
 // ---- chat slash commands --------------------------------------------------
 export const SLASH_COMMANDS = [
   { glyph: '⚡', name: '/run', desc: 'shell command in the Terminal', color: 'var(--gold)' },
+  { glyph: '◇', name: '/pplx', desc: 'ask the Perplexity research sidecar', color: 'var(--violet)' },
   { glyph: '⌕', name: '/research', desc: 'multi-step web research', color: 'var(--violet)' },
   { glyph: '▤', name: '/split', desc: 'open a surface beside chat', color: 'var(--teal)' },
   { glyph: '✎', name: '/note', desc: 'capture a note to the vault', color: 'var(--green)' },

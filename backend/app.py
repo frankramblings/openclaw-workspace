@@ -46,6 +46,7 @@ from .research import router as research_router
 from .settings_status import router as settings_router
 from .skills import router as skills_router
 from .uploads import router as uploads_router
+from .perplexity_agent import router as perplexity_agent_router
 from .workspace_files import router as workspace_files_router
 from .workspace_watch import router as workspace_watch_router
 from . import workspace_watch
@@ -270,6 +271,7 @@ app.include_router(pending_tokens.router)
 app.include_router(promise_guard.router)
 app.include_router(uploads_router)
 app.include_router(research_router)
+app.include_router(perplexity_agent_router)
 app.include_router(emoji_router)
 app.include_router(workspace_files_router)
 app.include_router(workspace_watch_router)

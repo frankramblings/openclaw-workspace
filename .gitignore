@@ -55,3 +55,7 @@ frontend-overrides/.redesign.css.*
 # Runtime branch-context handoff payloads (per-branch pending-context store,
 # written by the live checkout at runtime; not source).
 /data/branch_context/
+
+# frontend-next build artifacts
+frontend-next/node_modules/
+frontend-next/dist/

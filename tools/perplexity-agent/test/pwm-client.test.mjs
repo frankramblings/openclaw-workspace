@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPwmClient } from '../src/pwm-client.mjs';
+import { createPwmClient, normalizePwmModel } from '../src/pwm-client.mjs';
+
+test('normalizes OpenClaw model ids to pwm model ids', () => {
+  assert.equal(normalizePwmModel('perplexity-auto'), 'auto');
+  assert.equal(normalizePwmModel('perplexity-sonar'), 'sonar');
+  assert.equal(normalizePwmModel('gpt-5.5'), 'gpt55');
+  assert.equal(normalizePwmModel('claude-sonnet-4-6'), 'claude_sonnet');
+  assert.equal(normalizePwmModel('auto'), 'auto');
+});
 
 test('posts OpenAI-compatible chat completions to pwm', async () => {
   const calls = [];
@@ -17,7 +25,7 @@ test('posts OpenAI-compatible chat completions to pwm', async () => {
   const out = await client.complete([{ role: 'user', content: 'hi' }], { model: 'perplexity-auto' });
   assert.equal(out.text, 'FINAL: ok');
   assert.equal(calls[0].url, 'http://pwm.test/v1/chat/completions');
-  assert.equal(JSON.parse(calls[0].init.body).model, 'perplexity-auto');
+  assert.equal(JSON.parse(calls[0].init.body).model, 'auto');
   assert.equal(calls[0].init.headers.authorization, 'Bearer test-key');
 });
 

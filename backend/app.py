@@ -1093,6 +1093,12 @@ if config.FRONTEND_DIR.exists():
 
     app.mount("/static", StaticFiles(directory=str(config.FRONTEND_DIR)), name="static")
 
+if config.NEXT_DIR.is_dir():
+    # The /next parallel frontend (frontend-next/, hash-routed SPA): html=True
+    # serves its index.html at /next/, assets resolve under /next/assets/. If
+    # the Vite build output is absent the mount is skipped and / is unaffected.
+    app.mount("/next", StaticFiles(directory=str(config.NEXT_DIR), html=True), name="next")
+
     @app.get("/")
     async def index():
         return _spa_html("index.html")

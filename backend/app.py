@@ -1093,12 +1093,6 @@ if config.FRONTEND_DIR.exists():
 
     app.mount("/static", StaticFiles(directory=str(config.FRONTEND_DIR)), name="static")
 
-if config.NEXT_DIR.is_dir():
-    # The /next parallel frontend (frontend-next/, hash-routed SPA): html=True
-    # serves its index.html at /next/, assets resolve under /next/assets/. If
-    # the Vite build output is absent the mount is skipped and / is unaffected.
-    app.mount("/next", StaticFiles(directory=str(config.NEXT_DIR), html=True), name="next")
-
     @app.get("/")
     async def index():
         return _spa_html("index.html")
@@ -1133,3 +1127,11 @@ else:
             content={"error": f"frontend not found at {config.FRONTEND_DIR}. "
                               "Run scripts/sync-frontend.sh to copy Odysseus static/."},
         )
+
+if config.NEXT_DIR.is_dir():
+    # The /next parallel frontend (frontend-next/, hash-routed SPA): html=True
+    # serves its index.html at /next/, assets resolve under /next/assets/.
+    # Deliberately OUTSIDE the FRONTEND_DIR block above: the two frontends are
+    # independent — a missing Vite build only skips this mount, and a missing
+    # classic build must never take /next down (or vice versa).
+    app.mount("/next", StaticFiles(directory=str(config.NEXT_DIR), html=True), name="next")

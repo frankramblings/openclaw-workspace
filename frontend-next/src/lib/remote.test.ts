@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { loadInto } from './remote'
+import { loadInto, makeLoader } from './remote'
 import type { Remote } from './remote'
 
 test('loadInto: loading → ready with data and fetchedAt', async () => {
@@ -40,4 +40,38 @@ test('loadInto: stale survives chained refreshes through loading/error states', 
   await loadInto(async () => 7, (r) => { current = r }, current)
   if (current.status !== 'ready') throw new Error('expected ready')
   expect(current.data).toBe(7)
+})
+
+test('makeLoader: a superseded load cannot clobber the newer result (slow success loses)', async () => {
+  const load = makeLoader<string>()
+  const box: { current: Remote<string> } = { current: { status: 'idle' } }
+  const set = (r: Remote<string>) => { box.current = r }
+  let releaseSlow!: () => void
+  const slowDone = load(
+    () => new Promise<string>((res) => { releaseSlow = () => res('OLD') }),
+    set,
+  )
+  await load(async () => 'NEW', set)
+  releaseSlow()
+  await slowDone
+  const final = box.current
+  if (final.status !== 'ready') throw new Error('expected ready')
+  expect(final.data).toBe('NEW')
+})
+
+test('makeLoader: a superseded load\'s late FAILURE is discarded too', async () => {
+  const load = makeLoader<string>()
+  const box: { current: Remote<string> } = { current: { status: 'idle' } }
+  const set = (r: Remote<string>) => { box.current = r }
+  let failSlow!: () => void
+  const slowDone = load(
+    () => new Promise<string>((_res, rej) => { failSlow = () => rej(new Error('stale failure')) }),
+    set,
+  )
+  await load(async () => 'NEW', set)
+  failSlow()
+  await slowDone
+  const final = box.current
+  if (final.status !== 'ready') throw new Error(`expected ready, got ${final.status}`)
+  expect(final.data).toBe('NEW')
 })

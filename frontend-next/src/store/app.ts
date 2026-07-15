@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { apiGet } from '../api/client'
-import { loadInto, idle, type Remote } from '../lib/remote'
+import { makeLoader, idle, type Remote } from '../lib/remote'
 import type { AppConfig, Capabilities } from '../api/types'
 
 interface AppState {
@@ -10,11 +10,14 @@ interface AppState {
   loadCapabilities: () => Promise<void>
 }
 
+const configLoader = makeLoader<AppConfig>()
+const capsLoader = makeLoader<Capabilities>()
+
 export const useAppStore = create<AppState>((set, get) => ({
   config: idle,
   capabilities: idle,
   loadConfig: () =>
-    loadInto(() => apiGet<AppConfig>('/api/config'), (config) => set({ config }), get().config),
+    configLoader(() => apiGet<AppConfig>('/api/config'), (config) => set({ config }), get().config),
   loadCapabilities: () =>
-    loadInto(() => apiGet<Capabilities>('/api/capabilities'), (capabilities) => set({ capabilities }), get().capabilities),
+    capsLoader(() => apiGet<Capabilities>('/api/capabilities'), (capabilities) => set({ capabilities }), get().capabilities),
 }))

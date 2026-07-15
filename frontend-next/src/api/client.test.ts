@@ -24,20 +24,20 @@ function streamOf(chunks: string[]): Response {
 
 test('postStream parses frames split across chunks, filters id:/keepalive lines, ends with onDone', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => streamOf([
-    'data: {"type":"turn_start","turn_id":"t1","session_key":"k","ts":1}\n\n',
+    'data: {"type":"turn_start","turn_id":7,"session_key":"k","ts":1}\n\n',
     'data: {"del', 'ta":"He"}\n\n: keepalive\n\n',
     'id: ev-42\ndata: {"delta":"llo"}\n\n',
     'data: [DONE]\n\n',
   ])))
   const events: ChatEvent[] = []
-  const done = new Promise<void>((resolve, reject) => {
+  const done = new Promise<boolean>((resolve, reject) => {
     postStream('/api/chat_stream', new FormData(), {
       onEvent: (ev) => events.push(ev),
       onDone: resolve,
       onError: reject,
     })
   })
-  await done
+  await expect(done).resolves.toBe(true) // clean [DONE] → sawDone=true
   expect(events.map((e) => e.type)).toEqual(['turn_start', 'text', 'text', 'done'])
   expect(events.filter((e) => e.type === 'text').map((e) => (e as { delta: string }).delta)).toEqual(['He', 'llo'])
 })
@@ -52,6 +52,32 @@ test('postStream reports HTTP failure through onError, not onDone', async () => 
     })
   })
   await expect(outcome).resolves.toBe('error')
+})
+
+test('EOF without [DONE] reports sawDone=false so the caller reconciles', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => streamOf([
+    'data: {"delta":"partial"}\n\n', // stream cut before [DONE]
+  ])))
+  const sawDone = await new Promise<boolean>((resolve, reject) => {
+    postStream('/api/chat_stream', new FormData(), {
+      onEvent: () => {},
+      onDone: resolve,
+      onError: reject,
+    })
+  })
+  expect(sawDone).toBe(false)
+})
+
+test('an onDone that throws is not called a second time', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => streamOf(['data: [DONE]\n\n'])))
+  let calls = 0
+  postStream('/api/chat_stream', new FormData(), {
+    onEvent: () => {},
+    onDone: () => { calls++; throw new Error('render exploded') },
+    onError: () => { calls += 100 }, // must NOT be reached either
+  })
+  await new Promise((r) => setTimeout(r, 30))
+  expect(calls).toBe(1)
 })
 
 test('aborting the controller calls neither onDone nor onError', async () => {

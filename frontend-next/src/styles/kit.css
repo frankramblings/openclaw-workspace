@@ -8,7 +8,7 @@
 
 /* Modal */
 .next-modal-backdrop{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px}
-.next-modal{background:var(--panel);border:1px solid var(--bd);border-radius:14px;min-width:min(440px,92vw);max-width:min(680px,94vw);max-height:86vh;display:flex;flex-direction:column;box-shadow:0 18px 60px rgba(0,0,0,.5);outline:none}
+.next-modal{background:var(--panel);border:1px solid var(--bd);border-radius:14px;min-width:min(440px,92vw);max-width:min(680px,94vw);max-height:86vh;max-height:86dvh;display:flex;flex-direction:column;box-shadow:0 18px 60px rgba(0,0,0,.5);outline:none}
 .next-modal-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--bd2,var(--bd))}
 .next-modal-title{margin:0;font-size:14px;font-weight:600}
 .next-modal-body{padding:16px;overflow:auto}

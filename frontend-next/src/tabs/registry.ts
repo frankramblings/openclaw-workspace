@@ -16,6 +16,10 @@ export interface TabDef {
 
 const stub = (id: string): ComponentType => () => createElement(StubTab, { tab: id })
 
+/** The tab every unknown/empty route resolves to — shared by the router and
+ *  tabById so the two fallbacks can never drift apart. */
+export const DEFAULT_TAB = 'chat'
+
 export const TABS: TabDef[] = [
   { id: 'chat', label: 'Chat', icon: '💬', order: 1, Component: stub('chat') },
   { id: 'inbox', label: 'Inbox', icon: '📥', order: 2, Component: stub('inbox') },
@@ -32,5 +36,5 @@ export const TABS: TabDef[] = [
 ]
 
 export function tabById(id: string): TabDef {
-  return TABS.find((t) => t.id === id) ?? TABS[0]
+  return TABS.find((t) => t.id === id) ?? TABS.find((t) => t.id === DEFAULT_TAB)!
 }

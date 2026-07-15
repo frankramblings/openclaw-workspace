@@ -8,20 +8,26 @@
 // normalized here to {type:'text'} / {type:'image'}.
 
 export type ChatEvent =
-  | { type: 'turn_start'; turn_id: string; session_key: string; ts: number }
-  | { type: 'turn_end'; turn_id: string; status: 'ok' | 'error' | 'aborted'; ts: number }
-  | { type: 'hb'; turn_id: string; elapsed_ms: number }
+  // turn_id is an INT on the wire (backend/turn_state.py); tool_id can be
+  // absent or JSON null on bridge error cards — pairing code must tolerate it.
+  | { type: 'turn_start'; turn_id: number; session_key: string; ts: number }
+  | { type: 'turn_end'; turn_id: number; status: 'ok' | 'error' | 'aborted'; ts: number }
+  | { type: 'hb'; turn_id: number; elapsed_ms: number }
   | { type: 'reply_reset' }
   | { type: 'agent_step' }
   | { type: 'run_alive' }
-  | { type: 'tool_start'; tool: string; tool_id: string; command?: string; round?: number; input?: unknown }
-  | { type: 'tool_output'; tool: string; tool_id: string; output: string; exit_code: 0 | 1 }
+  | { type: 'tool_start'; tool: string; tool_id?: string | null; command?: string; round?: number; input?: unknown }
+  | { type: 'tool_output'; tool: string; tool_id?: string | null; output: string; exit_code: 0 | 1 }
   | { type: 'stall'; silent_for: number }
   | { type: 'stall_retry' }
-  | { type: 'model_fallback'; data: { old_model: string; new_model: string; reason: string; attempts: unknown[]; phase: 'active' | 'cleared' } }
+  | { type: 'model_fallback'; data: { old_model: string | null; new_model: string | null; reason: string | null; attempts: unknown[]; phase: 'active' | 'cleared' } }
   | { type: 'promise_warning'; phrase: string }
   | { type: 'metrics'; data: { response_time: number; agent_model_wait_time?: number; model?: string } }
-  | { type: 'doc_update'; doc_id: string; content: string }
+  | { type: 'doc_update'; doc_id: string; content: string; version?: number; title?: string; language?: string }
+  // Deferred-work tokens (backend/pending_tokens.py) ride the same event log
+  // and arrive on POST tails and resume streams.
+  | { type: 'token.added'; turn_id: number; token: string; token_id: string; payload?: unknown }
+  | { type: 'token.resolved'; turn_id: number; token_id: string; elapsed_ms?: number; payload?: unknown }
   | { type: 'text'; delta: string; thinking: boolean }
   | { type: 'image'; url: string; prompt?: string }
   | { type: 'done' }

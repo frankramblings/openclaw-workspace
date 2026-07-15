@@ -2,7 +2,13 @@ import { useEffect, useRef, type ReactNode } from 'react'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
 
-/** Focus-trapped modal. Esc and backdrop click close. */
+// Stack of open modals; only the TOP modal responds to Escape, so nested
+// modals close one layer at a time.
+const modalStack: symbol[] = []
+
+/** Focus-trapped modal. Esc (top of stack only) and backdrop click close.
+ *  Focus is captured once per open, not on rerenders, and restored to the
+ *  opener on close. */
 export function Modal({ open, onClose, title, children }: {
   open: boolean
   onClose: () => void
@@ -10,15 +16,30 @@ export function Modal({ open, onClose, title, children }: {
   children: ReactNode
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
+  // onClose lives in a ref so the trap effect is keyed on [open] only — an
+  // inline onClose prop must NOT re-run the effect (it yanked focus to the
+  // first focusable on every parent rerender; review gate 2026-07-15).
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  // Where a pointer gesture started, so drag-out (mousedown inside the box,
+  // mouseup on the backdrop) doesn't count as a backdrop click.
+  const pointerFrom = useRef<'backdrop' | 'box' | null>(null)
 
   useEffect(() => {
     if (!open) return
+    const id = Symbol('modal')
+    modalStack.push(id)
     const box = boxRef.current
-    const prev = document.activeElement as HTMLElement | null
+    const opener = document.activeElement as HTMLElement | null
     const first = box?.querySelector<HTMLElement>(FOCUSABLE)
     ;(first ?? box)?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); return }
+      if (e.key === 'Escape') {
+        if (modalStack[modalStack.length - 1] !== id) return // not topmost
+        e.stopPropagation()
+        onCloseRef.current()
+        return
+      }
       if (e.key !== 'Tab' || !box) return
       const items = Array.from(box.querySelectorAll<HTMLElement>(FOCUSABLE))
       if (!items.length) return
@@ -29,13 +50,23 @@ export function Modal({ open, onClose, title, children }: {
     document.addEventListener('keydown', onKey, true)
     return () => {
       document.removeEventListener('keydown', onKey, true)
-      prev?.focus()
+      const i = modalStack.indexOf(id)
+      if (i >= 0) modalStack.splice(i, 1)
+      opener?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
   return (
-    <div className="next-modal-backdrop" onClick={onClose} role="presentation">
+    <div
+      className="next-modal-backdrop"
+      role="presentation"
+      onPointerDown={(e) => { pointerFrom.current = e.target === e.currentTarget ? 'backdrop' : 'box' }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && pointerFrom.current === 'backdrop') onClose()
+        pointerFrom.current = null
+      }}
+    >
       <div
         ref={boxRef}
         className="next-modal"
@@ -43,7 +74,6 @@ export function Modal({ open, onClose, title, children }: {
         aria-modal="true"
         aria-label={title}
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
       >
         <header className="next-modal-head">
           <h3 className="next-modal-title">{title}</h3>

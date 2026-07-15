@@ -37,6 +37,16 @@ test('RemoteView: ready renders children with data; empty array renders empty no
   expect(screen.getByText('none')).toBeTruthy()
 })
 
+test('RemoteView: error WITH stale shows the error banner AND keeps stale data visible', () => {
+  render(
+    <RemoteView remote={{ status: 'error', error: 'HTTP 502: down', stale: ['kept'] }}>
+      {(d) => <ul>{d.map((x) => <li key={x}>{x}</li>)}</ul>}
+    </RemoteView>,
+  )
+  expect(screen.getByRole('alert').textContent).toContain('HTTP 502: down')
+  expect(screen.getByText('kept')).toBeTruthy()
+})
+
 test('RemoteView: loading with stale keeps data visible under aria-busy', () => {
   render(
     <RemoteView remote={{ status: 'loading', stale: ['old'] }}>

@@ -1,14 +1,14 @@
 import { useSyncExternalStore, useCallback } from 'react'
-import { TABS } from '../tabs/registry'
+import { TABS, DEFAULT_TAB } from '../tabs/registry'
 
 // Hash routing, same scheme as the classic app: '#/chat', '#/inbox', …
-// Unknown/empty hashes NORMALIZE to 'chat' here, at the route level, so the
-// route state always equals the rendered tab (rail highlight included).
+// Unknown/empty hashes NORMALIZE to DEFAULT_TAB here, at the route level, so
+// the route state always equals the rendered tab (rail highlight included).
 
 export function tabFromHash(hash: string): string {
   const m = /^#\/([a-z-]+)/.exec(hash || '')
-  const id = m ? m[1] : 'chat'
-  return TABS.some((t) => t.id === id) ? id : 'chat'
+  const id = m ? m[1] : DEFAULT_TAB
+  return TABS.some((t) => t.id === id) ? id : DEFAULT_TAB
 }
 
 function subscribe(cb: () => void): () => void {

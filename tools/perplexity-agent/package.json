@@ -1,0 +1,16 @@
+{
+  "name": "perplexity-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pplx-agent": "./src/cli.mjs",
+    "pplx-agent-mcp": "./src/server.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0"
+  }
+}

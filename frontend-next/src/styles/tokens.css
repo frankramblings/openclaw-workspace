@@ -1,0 +1,39 @@
+/* Self-hosted MonoLisa */
+@font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('/static/fonts/MonoLisa-normal.woff2') format('woff2'); }
+@font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: italic; font-display: swap; src: url('/static/fonts/MonoLisa-italic.woff2') format('woff2'); }
+
+/* Self-hosted Hanken Grotesk — prose face for chat message text (code/UI stay MonoLisa) */
+@font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('/static/fonts/HankenGrotesk-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('/static/fonts/HankenGrotesk-latin-ext.woff2') format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: italic; font-display: swap; src: url('/static/fonts/HankenGrotesk-latin-it.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: italic; font-display: swap; src: url('/static/fonts/HankenGrotesk-latin-ext-it.woff2') format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+
+/* =============================================================================
+   OpenClaw Workspace — Direction A ("Refined Charcoal") redesign
+   Parallel-entry prototype stylesheet. De-inlined from the design reference
+   (design_handoff_openclaw_workspace) into reusable classes.
+
+   This is the live app shell, served at /static/index.html (and /) since
+   2026-07. Tokens below mirror the handoff's :root; for
+   production integration they map onto the repo's Hermes vars
+   (--bg/--panel/--border/--fg/--accent…) and the accent becomes theme-driven.
+   ========================================================================== */
+
+:root {
+  --bg:#15161a; --panel:#1b1c21; --panel2:#212329; --elev:#262931;
+  --bd:#2d2f36; --bd2:#24262c;
+  /* aliases many rules already reference — defined so var() never falls back to inherit */
+  --border:#2d2f36; --chrome:#101115;
+  --fg:#dfe2e8; --mut:#9498a2; --faint:#5f636d;
+  --teal:#4fe3d1; --teal2:#2f8d83; --tealtint:rgba(79,227,209,.10);
+  --gold:#e8c268; --green:#5bd97f; --red:#f0726a; --violet:#a99bf5; --blue:#7bb6ff;
+  --amber:#d8a24a;
+  --ink:#0c1413;                 /* text/icon on teal fills */
+  --row-hover:#1d1f24;
+  --mono:'MonoLisa',ui-monospace,monospace;
+  --sans:'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif;
+  --prose:'Hanken Grotesk',ui-sans-serif,system-ui,sans-serif;
+  /* accent is overridable at runtime (Appearance swatches) via --accent */
+  --accent:var(--teal);
+}
+

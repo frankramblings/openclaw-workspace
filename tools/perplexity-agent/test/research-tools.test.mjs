@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createResearchTools, stripHtml } from '../src/research-tools.mjs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createResearchTools, discoverSerpApiKey, stripHtml } from '../src/research-tools.mjs';
 
 test('stripHtml removes scripts, tags, and repeated whitespace', () => {
   assert.equal(stripHtml('<html><script>bad()</script><body><h1>Title</h1><p>Hello   world</p></body></html>'), 'Title Hello world');
@@ -38,4 +41,32 @@ test('web_search maps SerpAPI organic results', async () => {
 test('web_search requires a key', async () => {
   const tools = createResearchTools({ fetchImpl: async () => null, serpApiKey: '' });
   await assert.rejects(() => tools.web_search({ query: 'test' }), /SerpAPI key/);
+});
+
+test('discoverSerpApiKey prefers env, then workspace settings, then OpenClaw config', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pplx-agent-search-'));
+  try {
+    const settingsPath = join(dir, 'settings.json');
+    const configPath = join(dir, 'openclaw.json');
+    await writeFile(settingsPath, JSON.stringify({ serpapi_api_key: 'settings-key' }));
+    await writeFile(configPath, JSON.stringify({ skills: { entries: { serpapi: { apiKey: 'config-key' } } } }));
+    assert.equal(discoverSerpApiKey({
+      env: { SERPAPI_API_KEY: 'env-key' },
+      settingsPath,
+      openclawConfigPath: configPath,
+    }), 'env-key');
+    assert.equal(discoverSerpApiKey({
+      env: {},
+      settingsPath,
+      openclawConfigPath: configPath,
+    }), 'settings-key');
+    await writeFile(settingsPath, JSON.stringify({}));
+    assert.equal(discoverSerpApiKey({
+      env: {},
+      settingsPath,
+      openclawConfigPath: configPath,
+    }), 'config-key');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

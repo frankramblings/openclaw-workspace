@@ -1,3 +1,30 @@
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const SRC_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(SRC_DIR, '../../..');
+
+function readJson(path) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+export function discoverSerpApiKey({
+  env = process.env,
+  settingsPath = env.PPLX_AGENT_SETTINGS_PATH || env.WORKSPACE_SETTINGS_PATH || join(REPO_ROOT, '.data/settings.json'),
+  openclawConfigPath = env.OPENCLAW_CONFIG || join(homedir(), '.openclaw/openclaw.json'),
+} = {}) {
+  if (env.SERPAPI_API_KEY) return env.SERPAPI_API_KEY;
+  const settingsKey = readJson(settingsPath).serpapi_api_key;
+  if (settingsKey) return settingsKey;
+  return readJson(openclawConfigPath)?.skills?.entries?.serpapi?.apiKey || '';
+}
+
 export function stripHtml(html) {
   return String(html || '')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -7,7 +34,11 @@ export function stripHtml(html) {
     .trim();
 }
 
-export function createResearchTools({ fetchImpl = globalThis.fetch, serpApiKey = process.env.SERPAPI_API_KEY || '' } = {}) {
+export function createResearchTools(options = {}) {
+  const {
+    fetchImpl = globalThis.fetch,
+    serpApiKey = Object.prototype.hasOwnProperty.call(options, 'serpApiKey') ? options.serpApiKey : discoverSerpApiKey(),
+  } = options;
   return {
     async web_fetch({ url }) {
       const rawUrl = String(url || '');

@@ -202,6 +202,16 @@ try {
     await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
   }
 
+  // Global task feed: the registry may honestly be empty, but its initial
+  // snapshot and live SSE connection must both be present at each breakpoint.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.includes('Tasks')).click()`)
+    await waitFor(`document.querySelector('.next-task-panel') && document.querySelector('.next-task-panel .next-stream-status')?.textContent === 'live' && !document.querySelector('.next-task-panel .next-skeleton')`, 30_000)
+    await screenshot(`${viewport.name}-task-feed`)
+    await evaluate(`[...document.querySelectorAll('.next-task-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

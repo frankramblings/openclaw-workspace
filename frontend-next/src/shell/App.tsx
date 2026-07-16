@@ -8,6 +8,7 @@ import { useAppStore } from '../store/app'
 import { useChatStore } from '../tabs/chat/store'
 import { WorkspacePanel } from './workspace/WorkspacePanel'
 import { TerminalPanel } from './terminal/TerminalPanel'
+import { TaskPanel } from './tasks/TaskPanel'
 
 export function App() {
   const { tab, navigate } = useHashRoute()
@@ -39,6 +40,7 @@ export function App() {
       <ToastHost />
       <WorkspacePanel />
       <TerminalPanel />
+      <TaskPanel />
     </div>
   )
 }

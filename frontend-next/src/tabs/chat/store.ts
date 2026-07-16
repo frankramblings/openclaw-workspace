@@ -12,6 +12,14 @@ export interface SendOptions {
   attachments?: string[]
 }
 
+export interface BufferedSend {
+  sessionId: string
+  text: string
+  opts: SendOptions
+  bubble: Bubble
+  deadline: number
+}
+
 export interface ChatState {
   sessions: Remote<SessionRecord[]>
   activeSessionId: string | null
@@ -24,6 +32,8 @@ export interface ChatState {
   searchResults: Remote<SearchHit[]>
   searchQuery: string
   branchPrefix: Bubble[] | null
+  pendingSend: BufferedSend | null
+  queuedSends: Record<string, BufferedSend>
   pendingSessions: Record<string, string>
   sessionError: string | null
   loadSessions: () => Promise<void>
@@ -31,6 +41,11 @@ export interface ChatState {
   loadDefaultChat: () => Promise<void>
   searchSessions: (query: string) => Promise<void>
   branchFromMessage: (messageId: string) => Promise<boolean>
+  updatePending: (text: string) => void
+  flushPending: () => void
+  cancelPending: () => void
+  recallQueued: (sessionId: string) => BufferedSend | null
+  cancelQueued: (sessionId: string) => void
   selectSession: (id: string) => Promise<void>
   loadOlder: () => Promise<void>
   createSession: (name?: string) => Promise<SessionRecord | null>
@@ -59,6 +74,8 @@ let lastStreamProgress = 0
 let resumeWatch: ReturnType<typeof setInterval> | null = null
 let historyReload: ((sessionId: string) => Promise<void>) | null = null
 let bubbleSequence = 0
+let pendingTimer: ReturnType<typeof setTimeout> | null = null
+const SEND_GRACE_MS = 700
 
 function errorMessage(error: unknown): { error: string; httpStatus?: number } {
   return {
@@ -131,6 +148,72 @@ export const useChatStore = create<ChatState>((set, get) => {
   }
   historyReload = loadHistory
 
+  const isWorking = (): boolean => Boolean(get().liveTurn && ['sending', 'streaming', 'stalled'].includes(get().liveTurn!.status))
+
+  const startStream = (draft: BufferedSend): void => {
+    const { sessionId, text, opts } = draft
+    streamController?.abort()
+    const turn = { ...emptyTurn(), bubbles: [draft.bubble] }
+    set({ liveTurn: turn })
+
+    const form = new FormData()
+    form.append('message', text)
+    form.append('session', sessionId)
+    if (opts.allowWebSearch) form.append('allow_web_search', 'true')
+    if (opts.attachments?.length) form.append('attachments', JSON.stringify(opts.attachments))
+
+    streamController = postStream('/api/chat_stream', form, {
+      onEvent: (event) => {
+        if (get().activeSessionId !== sessionId) return
+        if (event.type === 'turn_start' && get().branchPrefix) {
+          localStorage.removeItem(branchStorageKey(sessionId))
+          set({ branchPrefix: null })
+        }
+        lastStreamProgress = Date.now()
+        set((state) => ({ liveTurn: applyEvent(state.liveTurn ?? turn, event) }))
+        if (event.type === 'turn_end') setTimeout(() => flushQueued(sessionId), 0)
+      },
+      onDone: (sawDone) => {
+        streamController = null
+        streamSessionId = null
+        if (get().activeSessionId !== sessionId) return
+        if (!sawDone) {
+          set((state) => ({ liveTurn: state.liveTurn ? { ...state.liveTurn, status: 'error' } : null }))
+        }
+        void loadHistory(sessionId)
+      },
+      onError: () => {
+        streamController = null
+        streamSessionId = null
+        if (get().activeSessionId !== sessionId) return
+        set((state) => ({ liveTurn: state.liveTurn ? { ...state.liveTurn, status: 'error' } : null }))
+      },
+    })
+    streamSessionId = sessionId
+    lastStreamProgress = Date.now()
+  }
+
+  const flushPending = (): void => {
+    if (pendingTimer) clearTimeout(pendingTimer)
+    pendingTimer = null
+    const pending = get().pendingSend
+    if (!pending) return
+    if (get().activeSessionId !== pending.sessionId || isWorking()) {
+      set((state) => ({ pendingSend: null, queuedSends: { ...state.queuedSends, [pending.sessionId]: pending } }))
+      return
+    }
+    set({ pendingSend: null })
+    startStream(pending)
+  }
+
+  const flushQueued = (sessionId: string): void => {
+    const queued = get().queuedSends[sessionId]
+    if (!queued || get().activeSessionId !== sessionId || isWorking() || get().pendingSend) return
+    const { [sessionId]: _sent, ...queuedSends } = get().queuedSends
+    set({ queuedSends })
+    startStream(queued)
+  }
+
   return {
     sessions: idle,
     activeSessionId: null,
@@ -143,6 +226,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     searchResults: idle,
     searchQuery: '',
     branchPrefix: null,
+    pendingSend: null,
+    queuedSends: {},
     pendingSessions: {},
     sessionError: null,
 
@@ -197,9 +282,40 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
     },
 
+    updatePending: (text) => set((state) => state.pendingSend ? {
+      pendingSend: { ...state.pendingSend, text, bubble: { ...state.pendingSend.bubble, text } },
+    } : {}),
+
+    flushPending,
+
+    cancelPending: () => {
+      if (pendingTimer) clearTimeout(pendingTimer)
+      pendingTimer = null
+      set({ pendingSend: null })
+    },
+
+    recallQueued: (sessionId) => {
+      const queued = get().queuedSends[sessionId] ?? null
+      if (!queued) return null
+      const { [sessionId]: _recalled, ...queuedSends } = get().queuedSends
+      set({ queuedSends })
+      return queued
+    },
+
+    cancelQueued: (sessionId) => {
+      const { [sessionId]: _cancelled, ...queuedSends } = get().queuedSends
+      set({ queuedSends })
+    },
+
     selectSession: async (id) => {
       // Detaching a reader does not stop its server-side turn. Task 1.5 will
       // reattach from the durable event log when this session is selected again.
+      const pending = get().pendingSend
+      if (pending && pending.sessionId !== id) {
+        if (pendingTimer) clearTimeout(pendingTimer)
+        pendingTimer = null
+        set((state) => ({ pendingSend: null, queuedSends: { ...state.queuedSends, [pending.sessionId]: pending } }))
+      }
       streamController?.abort()
       streamController = null
       streamSessionId = null
@@ -212,6 +328,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ activeSessionId: id, liveTurn: null, branchPrefix })
       await loadHistory(id)
       await reconcileSession(id, set, get)
+      flushQueued(id)
     },
 
     loadOlder: async () => {
@@ -308,51 +425,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       const sessionId = get().activeSessionId
       if (!sessionId) throw new Error('Select a chat before sending')
       if (!text.trim() && !(opts.attachments?.length)) return
-
-      streamController?.abort()
-      const turn = { ...emptyTurn(), bubbles: [userBubble(text)] }
-      set({ liveTurn: turn })
-
-      const form = new FormData()
-      form.append('message', text)
-      form.append('session', sessionId)
-      if (opts.allowWebSearch) form.append('allow_web_search', 'true')
-      if (opts.attachments?.length) form.append('attachments', JSON.stringify(opts.attachments))
-
-      streamController = postStream('/api/chat_stream', form, {
-        onEvent: (event) => {
-          if (get().activeSessionId !== sessionId) return
-          if (event.type === 'turn_start' && get().branchPrefix) {
-            localStorage.removeItem(branchStorageKey(sessionId))
-            set({ branchPrefix: null })
-          }
-          lastStreamProgress = Date.now()
-          set((state) => ({ liveTurn: applyEvent(state.liveTurn ?? turn, event) }))
-        },
-        onDone: (sawDone) => {
-          streamController = null
-          streamSessionId = null
-          if (get().activeSessionId !== sessionId) return
-          if (!sawDone) {
-            set((state) => ({
-              liveTurn: state.liveTurn ? { ...state.liveTurn, status: 'error' } : null,
-            }))
-          }
-          // The saved transcript is the authority; refresh rather than
-          // synthesizing history records from the optimistic user bubble.
-          void loadHistory(sessionId)
-        },
-        onError: () => {
-          streamController = null
-          streamSessionId = null
-          if (get().activeSessionId !== sessionId) return
-          set((state) => ({
-            liveTurn: state.liveTurn ? { ...state.liveTurn, status: 'error' } : null,
-          }))
-        },
-      })
-      streamSessionId = sessionId
-      lastStreamProgress = Date.now()
+      const buffered: BufferedSend = {
+        sessionId, text, opts, bubble: userBubble(text), deadline: Date.now() + SEND_GRACE_MS,
+      }
+      if (isWorking() || get().pendingSend) {
+        set((state) => ({ queuedSends: { ...state.queuedSends, [sessionId]: buffered } }))
+        return
+      }
+      set({ pendingSend: buffered })
+      pendingTimer = setTimeout(flushPending, SEND_GRACE_MS)
     },
 
     stop: async () => {

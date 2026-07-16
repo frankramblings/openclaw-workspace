@@ -26,6 +26,7 @@ const json = (body: unknown) => new Response(JSON.stringify(body), {
 })
 
 beforeEach(() => {
+  useChatStore.getState().cancelPending()
   useChatStore.setState({
     sessions: idle,
     activeSessionId: null,
@@ -38,6 +39,8 @@ beforeEach(() => {
     searchResults: idle,
     searchQuery: '',
     branchPrefix: null,
+    pendingSend: null,
+    queuedSends: {},
     pendingSessions: {},
     sessionError: null,
   })
@@ -148,6 +151,7 @@ test('feeds the POST stream through the reducer and refreshes authoritative hist
 
   await useChatStore.getState().selectSession('chat-1')
   useChatStore.getState().send('Hi')
+  useChatStore.getState().flushPending()
 
   await vi.waitFor(() => {
     expect(useChatStore.getState().liveTurn).toMatchObject({
@@ -160,4 +164,18 @@ test('feeds the POST stream through the reducer and refreshes authoritative hist
     })
     expect(historyLoads).toBe(2)
   })
+})
+
+test('buffers a send for editing and queues another prompt while a turn is working', () => {
+  useChatStore.setState({ activeSessionId: 'chat-1', liveTurn: null })
+  useChatStore.getState().send('first draft')
+  expect(useChatStore.getState().pendingSend).toMatchObject({ text: 'first draft', sessionId: 'chat-1' })
+  useChatStore.getState().updatePending('edited draft')
+  expect(useChatStore.getState().pendingSend).toMatchObject({ text: 'edited draft', bubble: { text: 'edited draft' } })
+
+  useChatStore.setState({ pendingSend: null, liveTurn: { status: 'streaming', bubbles: [] } })
+  useChatStore.getState().send('next prompt')
+  expect(useChatStore.getState().queuedSends['chat-1']).toMatchObject({ text: 'next prompt' })
+  expect(useChatStore.getState().recallQueued('chat-1')).toMatchObject({ text: 'next prompt' })
+  expect(useChatStore.getState().queuedSends['chat-1']).toBeUndefined()
 })

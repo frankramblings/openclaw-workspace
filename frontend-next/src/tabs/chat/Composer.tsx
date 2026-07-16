@@ -17,6 +17,9 @@ export function Composer() {
   const live = useChatStore((state) => state.liveTurn)
   const send = useChatStore((state) => state.send)
   const stop = useChatStore((state) => state.stop)
+  const queued = useChatStore((state) => sessionId ? state.queuedSends[sessionId] : undefined)
+  const recallQueued = useChatStore((state) => state.recallQueued)
+  const cancelQueued = useChatStore((state) => state.cancelQueued)
   const history = historyRemote.status === 'ready' ? historyRemote.data : []
   const { suggestion, clearSuggestion } = useSuggest({ sessionId, history, liveTurn: live, draft })
   const working = live && ['sending', 'streaming', 'stalled'].includes(live.status)
@@ -72,6 +75,7 @@ export function Composer() {
 
   return (
     <section className="composer" aria-label="Message composer">
+      {queued && sessionId && <div className="next-queued-message"><button type="button" onClick={() => { const recalled = recallQueued(sessionId); if (recalled) setDraft(recalled.text) }}>Queued · {queued.text.slice(0, 80) || 'attachment'} · edit</button><button type="button" aria-label="Cancel queued message" onClick={() => cancelQueued(sessionId)}>×</button></div>}
       {attachments.length > 0 && <div className="composer-attachments">
         {attachments.map((item) => <Chip key={item.id} onRemove={() => setAttachments((all) => all.filter((entry) => entry.id !== item.id))}>
           {item.name}{item.status ? ` · ${item.status}` : ''}

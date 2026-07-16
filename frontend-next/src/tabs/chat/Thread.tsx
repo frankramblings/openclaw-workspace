@@ -1,5 +1,6 @@
 import { Button, EmptyState, RemoteView } from '../../kit'
 import { Message } from './Message'
+import { PendingMessage } from './PendingMessage'
 import { useChatStore } from './store'
 
 export function Thread() {
@@ -25,6 +26,7 @@ export function Thread() {
       >
         {(bubbles) => <>{bubbles.map((bubble) => <Message key={bubble.id} bubble={bubble} />)}</>}
       </RemoteView>
+      <PendingMessage />
       {showLive && <div className="live-turn" aria-live="polite">
         {live.bubbles.map((bubble) => <Message key={`live-${bubble.id}`} bubble={bubble} />)}
         <p className="live-turn-status">

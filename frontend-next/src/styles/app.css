@@ -2365,3 +2365,8 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .msg-tool-status{align-self:center;color:var(--faint);font-size:11px;margin-left:4px}
 .next-branch-prefix{padding:10px 12px;margin-bottom:18px;border:1px dashed var(--bd);border-radius:12px;background:color-mix(in srgb,var(--panel) 70%,transparent);opacity:.78}
 .next-branch-prefix>.sect-label{display:block;margin-bottom:8px}
+.next-pending-message{border:1px solid color-mix(in srgb,var(--gold) 42%,var(--bd));border-radius:12px;padding:12px;background:color-mix(in srgb,var(--gold) 6%,transparent)}
+.next-pending-message textarea{width:100%;min-height:90px;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:9px;padding:10px;font:15px/1.5 var(--prose)}
+.next-pending-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
+.next-queued-message{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;padding:7px 10px;border-radius:9px;background:color-mix(in srgb,var(--gold) 10%,transparent);border:1px solid color-mix(in srgb,var(--gold) 32%,var(--bd));color:var(--gold);font-size:12px}
+.next-queued-message button{border:0;background:transparent;color:inherit;cursor:pointer;text-align:left}

@@ -14,10 +14,10 @@
 .next-modal-body{padding:16px;overflow:auto}
 
 /* Skeleton */
-.next-skel{display:flex;flex-direction:column;gap:9px;padding:12px 0}
-.next-skel-line{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--panel2) 25%,var(--elev) 50%,var(--panel2) 75%);background-size:200% 100%;animation:next-shimmer 1.2s linear infinite}
+.next-skeleton{display:flex;flex-direction:column;gap:9px;padding:12px 0}
+.next-skeleton-line{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--panel2) 25%,var(--elev) 50%,var(--panel2) 75%);background-size:200% 100%;animation:next-shimmer 1.2s linear infinite}
 @keyframes next-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
-@media (prefers-reduced-motion:reduce){.next-skel-line{animation:none}}
+@media (prefers-reduced-motion:reduce){.next-skeleton-line{animation:none}}
 
 /* Empty / error / stub */
 .next-empty{padding:34px 18px;text-align:center;color:var(--mut)}

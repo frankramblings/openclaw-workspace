@@ -98,3 +98,24 @@ Standing lesson for every row in this ledger: **a gate whose selector matches
 nothing is worse than no gate** — it converts "untested" into "verified". When
 adding a browser assertion, assert that the selector matches something before
 trusting what it implies.
+
+## Selector preflight added (2026-07-16, follow-up)
+
+Auditing the smoke script against React source turned up a second instance of
+the same defect the lesson above warned about: the `Skeleton` component
+rendered `.next-skel` while `frontend-next/scripts/smoke.mjs` polled for
+`.next-skeleton`. Four wait-fors keyed on `!document.querySelector('.next-skeleton')`
+had been silently passing instantly — the per-tab "wait for loading to finish"
+gate (all 12 tabs × 2 viewports = 24 checks), plus the inbox reader, cron
+detail, and task panel "not still loading" assertions. Fixed by renaming the
+component's class to `next-skeleton` (+`next-skeleton-line`).
+
+To convert the standing lesson from prose to enforcement, `smoke.mjs` now runs
+a **selector preflight** before the first gate: it extracts every `.next-*` /
+`.msg-*` / `.act-*` / `.composer` / `.chat-thread` token used anywhere in the
+script, fetches every stylesheet + script URL the app loaded, and requires
+each token to appear as a bare word. Rename or typo → the run fails at the
+preflight with the exact missing token(s), not several minutes later with a
+silent pass or an opaque timeout. It does NOT catch structural drift like a
+two-class selector where each class exists but never co-occurs; the gate
+authoring rule still applies to those.

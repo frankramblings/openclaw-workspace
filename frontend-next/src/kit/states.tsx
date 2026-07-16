@@ -4,9 +4,9 @@ import { Button } from './Button'
 
 export function Skeleton({ lines = 3 }: { lines?: number }) {
   return (
-    <div className="next-skel" role="status" aria-label="Loading">
+    <div className="next-skeleton" role="status" aria-label="Loading">
       {Array.from({ length: lines }, (_, i) => (
-        <div key={i} className="next-skel-line" style={{ width: `${88 - (i % 3) * 14}%` }} />
+        <div key={i} className="next-skeleton-line" style={{ width: `${88 - (i % 3) * 14}%` }} />
       ))}
     </div>
   )

@@ -68,6 +68,44 @@ const screenshot = async (name) => {
 try {
   await send('Page.enable')
   await send('Runtime.enable')
+
+  // Selector preflight. Every gate below leans on class names; a rename or
+  // typo turns a negative assertion into a silent pass and a positive one into
+  // a timeout with no root cause. Extract every next-/msg-/act- token and a
+  // handful of bare classes referenced in this file, then require each one to
+  // appear inside a CSS or JS file loaded by the running app. Catches renames
+  // and typos; does not catch structural drift like a two-class selector where
+  // each class exists in isolation but never co-occurs on one element.
+  //
+  // Read this file off disk so the extraction is honest about what will run.
+  const scriptSource = await (await import('node:fs/promises')).readFile(new URL(import.meta.url), 'utf8')
+  const selectorTokens = new Set()
+  for (const match of scriptSource.matchAll(/\.(next-[a-z0-9-]+|msg-[a-z0-9-]+|act-[a-z0-9-]+|composer|chat-thread)\b/g)) {
+    selectorTokens.add(match[1])
+  }
+  // Fetch every stylesheet + script the app actually loaded, concatenate the
+  // raw text, and require each token to appear as a bare word somewhere. This
+  // catches CSS-only classes (rename bugs like next-skel → next-skeleton) AND
+  // JS-only classes (className strings that no CSS styles but JSX assigns —
+  // e.g. .msg-role). It does NOT catch structural drift like `.a.b` where each
+  // class exists in isolation but never co-occurs; the gate authoring rule
+  // still applies.
+  const missingSelectors = await evaluate(`(async () => {
+    const tokens = ${JSON.stringify([...selectorTokens])}
+    const sources = [
+      ...[...document.styleSheets].map((s) => s.href).filter(Boolean),
+      ...[...document.scripts].map((s) => s.src).filter(Boolean),
+    ]
+    let corpus = ''
+    for (const url of sources) {
+      try { corpus += '\\n' + await (await fetch(url)).text() } catch { /* opaque cross-origin, skip */ }
+    }
+    return tokens.filter((t) => !new RegExp('\\\\b' + t.replace(/-/g, '\\\\-') + '\\\\b').test(corpus))
+  })()`)
+  if (missingSelectors.length) {
+    throw new Error(`Selector preflight failed - no loaded CSS or JS references: ${missingSelectors.join(', ')}. A gate keyed on one of these would silently pass or hang. Fix the typo/rename before trusting the run.`)
+  }
+
   await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`)
   await evaluate(`window.dispatchEvent(new CustomEvent('next:mutation',{detail:{ok:true,method:'PATCH',path:'/api/smoke',message:'Change saved'}}))`)
   await waitFor(`document.querySelector('#oc-toast-host .oc-toast')?.textContent.includes('Change saved')`)

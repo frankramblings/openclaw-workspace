@@ -13,6 +13,7 @@ import { DocumentsTab } from './documents'
 import { ResearchTab } from './research'
 import { LibraryTab } from './library'
 import { CronTab } from './cron'
+import { MemoryTab } from './memory'
 
 export interface TabDef {
   id: string
@@ -39,7 +40,7 @@ export const TABS: TabDef[] = [
   { id: 'research', label: 'Research', icon: '🔎', order: 7, Component: ResearchTab },
   { id: 'library', label: 'Library', icon: '📚', order: 8, Component: LibraryTab },
   { id: 'cron', label: 'Cron', icon: '⏰', order: 9, Component: CronTab },
-  { id: 'memory', label: 'Memory', icon: '🧠', order: 10, Component: stub('memory') },
+  { id: 'memory', label: 'Memory', icon: '🧠', order: 10, Component: MemoryTab },
   { id: 'skills', label: 'Skills', icon: '⚡', order: 11, Component: stub('skills') },
   { id: 'settings', label: 'Settings', icon: '⚙️', order: 12, Component: stub('settings') },
 ]

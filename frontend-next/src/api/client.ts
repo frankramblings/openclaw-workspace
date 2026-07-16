@@ -30,7 +30,7 @@ export async function apiJson<T>(method: 'POST' | 'PUT' | 'PATCH', path: string,
   }))
 }
 
-export async function apiForm<T>(path: string, fields: Record<string, string | Blob>, method: 'POST' | 'PATCH' = 'POST'): Promise<T> {
+export async function apiForm<T>(path: string, fields: Record<string, string | Blob>, method: 'POST' | 'PUT' | 'PATCH' = 'POST'): Promise<T> {
   const form = new FormData()
   for (const [k, v] of Object.entries(fields)) form.append(k, v)
   return handle<T>(await fetch(path, { method, body: form }))

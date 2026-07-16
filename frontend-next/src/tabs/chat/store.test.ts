@@ -35,9 +35,58 @@ beforeEach(() => {
     liveTurn: null,
     models: idle,
     defaultChat: idle,
+    searchResults: idle,
+    searchQuery: '',
+    branchPrefix: null,
     pendingSessions: {},
     sessionError: null,
   })
+  localStorage.clear()
+})
+
+test('semantic search publishes backend message hits', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => json([{
+    session_id: 'other', session_name: 'Other chat', role: 'assistant',
+    content_snippet: 'matched text', timestamp: '2026-07-16T00:00:00Z', score: .9,
+  }])))
+  await useChatStore.getState().searchSessions('matched')
+  expect(useChatStore.getState().searchResults).toMatchObject({
+    status: 'ready', data: [{ session_id: 'other', content_snippet: 'matched text' }],
+  })
+})
+
+test('branches through the selected bubble and rehydrates the echoed prefix', async () => {
+  const branchBodies: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === '/api/session/branch') {
+      branchBodies.push(JSON.parse(String(init?.body)))
+      return json({ session_id: 'branch-1', session_key: 'agent:main:branch-1', prefix: [
+        { id: 'u1', role: 'user', text: 'question' },
+        { id: 'a1', role: 'assistant', text: 'answer' },
+      ] })
+    }
+    if (path === '/api/sessions') return json([session, { ...session, id: 'branch-1' }])
+    if (path.startsWith('/api/history/branch-1')) return json({ history: [], model: 'openclaw', hasMore: false, nextCursor: null })
+    if (path.startsWith('/api/chat/turn')) return json({ active: false, events: [], last_event_id: null })
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  useChatStore.setState({
+    activeSessionId: 'chat-1',
+    history: { status: 'ready', fetchedAt: 1, data: [
+      { id: 'u1', role: 'user', text: 'question', thinking: '', cards: [], images: [] },
+      { id: 'a1', role: 'assistant', text: 'answer', thinking: '', cards: [], images: [] },
+      { id: 'u2', role: 'user', text: 'later', thinking: '', cards: [], images: [] },
+    ] },
+  })
+
+  expect(await useChatStore.getState().branchFromMessage('a1')).toBe(true)
+  expect(branchBodies[0]).toMatchObject({ source_session_id: 'chat-1', prefix: [
+    { id: 'u1', text: 'question' }, { id: 'a1', text: 'answer' },
+  ] })
+  expect(useChatStore.getState()).toMatchObject({ activeSessionId: 'branch-1', branchPrefix: [
+    { id: 'u1', text: 'question' }, { id: 'a1', text: 'answer' },
+  ] })
 })
 
 afterEach(() => vi.unstubAllGlobals())

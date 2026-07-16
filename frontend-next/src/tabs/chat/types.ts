@@ -51,6 +51,21 @@ export interface StopResponse {
   runIds: string[]
 }
 
+export interface SearchHit {
+  session_id: string
+  session_name: string
+  role: 'user' | 'assistant'
+  content_snippet: string
+  timestamp: string
+  score: number
+}
+
+export interface BranchResponse {
+  session_id: string
+  session_key: string
+  prefix: Array<{ id: string; role: 'user' | 'assistant'; text: string }>
+}
+
 export interface DefaultChat {
   endpoint_id: string
   endpoint_url: string

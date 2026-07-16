@@ -9,6 +9,7 @@ export function Thread() {
   const hasMore = useChatStore((state) => state.hasMore)
   const loadOlder = useChatStore((state) => state.loadOlder)
   const select = useChatStore((state) => state.selectSession)
+  const branchPrefix = useChatStore((state) => state.branchPrefix)
 
   if (!activeId) return <EmptyState title="Choose a conversation" hint="Select one from the sidebar or create a new chat." />
 
@@ -16,6 +17,7 @@ export function Thread() {
   return (
     <section className="chat-thread" aria-label="Conversation thread">
       {hasMore && <Button variant="ghost" onClick={() => void loadOlder()}>Load older messages</Button>}
+      {branchPrefix && <section className="next-branch-prefix" aria-label="Branched conversation context"><p className="sect-label">Branched context</p>{branchPrefix.map((bubble) => <Message key={`branch-${bubble.id}`} bubble={bubble} />)}</section>}
       <RemoteView
         remote={history}
         onRetry={() => void select(activeId)}

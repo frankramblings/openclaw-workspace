@@ -4,6 +4,7 @@ import { useChatStore } from './store'
 
 export function SessionList() {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
+  const [query, setQuery] = useState('')
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeSessionId)
   const pending = useChatStore((state) => state.pendingSessions)
@@ -14,8 +15,14 @@ export function SessionList() {
   const rename = useChatStore((state) => state.renameSession)
   const archive = useChatStore((state) => state.archiveSession)
   const toggleImportant = useChatStore((state) => state.toggleImportant)
+  const searchResults = useChatStore((state) => state.searchResults)
+  const search = useChatStore((state) => state.searchSessions)
 
   useEffect(() => { if (sessions.status === 'idle') void load() }, [load, sessions.status])
+  useEffect(() => {
+    const timer = setTimeout(() => { void search(query) }, 250)
+    return () => clearTimeout(timer)
+  }, [query, search])
 
   return (
     <section className="next-chat-sessions" aria-label="Conversations">
@@ -23,6 +30,10 @@ export function SessionList() {
         title="Conversations"
         actions={<Button variant="primary" disabled={Boolean(pending.new)} onClick={() => void createSession()}>New chat</Button>}
       />
+      <label className="next-chat-search">
+        <span className="sr-only">Search conversations</span>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations…" />
+      </label>
       {error && <p className="next-error-detail" role="alert">{error}</p>}
       <RemoteView
         remote={sessions}
@@ -30,10 +41,13 @@ export function SessionList() {
         empty={<EmptyState title="No conversations yet" hint="Create a chat to get started." />}
         isEmpty={(records) => records.every((record) => record.archived)}
       >
-        {(records) => [...records]
+        {(records) => {
+          const visible = [...records]
           .filter((record) => !record.archived)
+          .filter((record) => !query.trim() || record.name.toLowerCase().includes(query.trim().toLowerCase()))
           .sort((a, b) => Number(b.important) - Number(a.important) || b.updated - a.updated)
-          .map((record) => {
+          const shown = new Set(visible.map((record) => record.id))
+          return <>{visible.map((record) => {
             const pendingLabel = pending[record.id]
             return (
               <ListRow
@@ -59,7 +73,11 @@ export function SessionList() {
                 </>}
               />
             )
-          })}
+          })}{query.trim().length >= 2 && <RemoteView remote={searchResults}>{(hits) => {
+            const semantic = hits.filter((hit, index) => !shown.has(hit.session_id) && hits.findIndex((other) => other.session_id === hit.session_id) === index)
+            return semantic.length ? <section aria-label="Message matches"><p className="sect-label">Messages</p>{semantic.map((hit) => <ListRow key={hit.session_id} title={hit.session_name || 'Conversation'} meta={hit.content_snippet} onClick={() => void select(hit.session_id)} />)}</section> : null
+          }}</RemoteView>}</>
+        }}
       </RemoteView>
       <Modal open={editing !== null} onClose={() => setEditing(null)} title="Rename conversation">
         <form onSubmit={(event) => {

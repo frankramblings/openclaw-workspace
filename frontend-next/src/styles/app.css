@@ -2355,3 +2355,13 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-attach-row .m-attach-chip.uploading { opacity: .8; }
 .m-attach-row .m-attach-chip.uploading .fl-svg { color: var(--faint); flex: none; }
 .m-attach-row .m-attach-chip.failed { border-color: var(--red); color: var(--red); }
+
+/* frontend-next parity additions */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.next-chat-search{display:block;padding:0 14px 10px}
+.next-chat-search input{width:100%;height:34px;border-radius:9px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);padding:0 10px;font:13px var(--sans)}
+.next-chat-search input:focus{outline:1px solid var(--teal2);border-color:var(--teal2)}
+.msg:hover .msg-tools,.msg:focus-within .msg-tools{opacity:1;transform:none}
+.msg-tool-status{align-self:center;color:var(--faint);font-size:11px;margin-left:4px}
+.next-branch-prefix{padding:10px 12px;margin-bottom:18px;border:1px dashed var(--bd);border-radius:12px;background:color-mix(in srgb,var(--panel) 70%,transparent);opacity:.78}
+.next-branch-prefix>.sect-label{display:block;margin-bottom:8px}

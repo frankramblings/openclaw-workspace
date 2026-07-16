@@ -4,7 +4,8 @@ import { idle, makeLoader, type Remote } from '../../lib/remote'
 import { applyEvent, emptyTurn, type Bubble, type Turn } from './reducer'
 import { parseHistory } from './history'
 import { hydrateTurn, reconcileDecision, type TurnSnapshot } from './resume'
-import type { DefaultChat, HistoryResponse, ModelEndpoint, ModelsResponse, SessionRecord, StopResponse } from './types'
+import { branchStorageKey, sliceBranchPrefix } from './parity'
+import type { BranchResponse, DefaultChat, HistoryResponse, ModelEndpoint, ModelsResponse, SearchHit, SessionRecord, StopResponse } from './types'
 
 export interface SendOptions {
   allowWebSearch?: boolean
@@ -20,11 +21,16 @@ export interface ChatState {
   liveTurn: Turn | null
   models: Remote<ModelEndpoint[]>
   defaultChat: Remote<DefaultChat>
+  searchResults: Remote<SearchHit[]>
+  searchQuery: string
+  branchPrefix: Bubble[] | null
   pendingSessions: Record<string, string>
   sessionError: string | null
   loadSessions: () => Promise<void>
   loadModels: () => Promise<void>
   loadDefaultChat: () => Promise<void>
+  searchSessions: (query: string) => Promise<void>
+  branchFromMessage: (messageId: string) => Promise<boolean>
   selectSession: (id: string) => Promise<void>
   loadOlder: () => Promise<void>
   createSession: (name?: string) => Promise<SessionRecord | null>
@@ -42,6 +48,7 @@ export interface ChatState {
 const sessionsLoader = makeLoader<SessionRecord[]>()
 const modelsLoader = makeLoader<ModelEndpoint[]>()
 const defaultChatLoader = makeLoader<DefaultChat>()
+const searchLoader = makeLoader<SearchHit[]>()
 let historyEpoch = 0
 let streamController: AbortController | null = null
 let streamSessionId: string | null = null
@@ -76,6 +83,10 @@ function userBubble(text: string): Bubble {
     cards: [],
     images: [],
   }
+}
+
+function prefixBubbles(prefix: BranchResponse['prefix']): Bubble[] {
+  return prefix.map((message) => ({ ...message, thinking: '', cards: [], images: [] }))
 }
 
 async function fetchSessions(): Promise<SessionRecord[]> {
@@ -129,6 +140,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     liveTurn: null,
     models: idle,
     defaultChat: idle,
+    searchResults: idle,
+    searchQuery: '',
+    branchPrefix: null,
     pendingSessions: {},
     sessionError: null,
 
@@ -150,6 +164,39 @@ export const useChatStore = create<ChatState>((set, get) => {
       get().defaultChat,
     ),
 
+    searchSessions: async (query) => {
+      const trimmed = query.trim()
+      set({ searchQuery: query })
+      if (trimmed.length < 2) { set({ searchResults: idle }); return }
+      await searchLoader(
+        () => apiGet<SearchHit[]>(`/api/search?q=${encodeURIComponent(trimmed)}&limit=20`),
+        (searchResults) => set({ searchResults }),
+        get().searchResults,
+      )
+    },
+
+    branchFromMessage: async (messageId) => {
+      const { activeSessionId, history, liveTurn } = get()
+      if (!activeSessionId || history.status !== 'ready') return false
+      const thread = [...history.data, ...(liveTurn?.bubbles ?? [])]
+      const prefix = sliceBranchPrefix(thread, messageId)
+      if (!prefix) { set({ sessionError: "Couldn't find that message" }); return false }
+      set({ sessionError: null })
+      try {
+        const branched = await apiJson<BranchResponse>('POST', '/api/session/branch', {
+          source_session_id: activeSessionId,
+          prefix,
+        })
+        localStorage.setItem(branchStorageKey(branched.session_id), JSON.stringify(branched.prefix))
+        await get().loadSessions()
+        await get().selectSession(branched.session_id)
+        return true
+      } catch (error) {
+        set({ sessionError: errorMessage(error).error })
+        return false
+      }
+    },
+
     selectSession: async (id) => {
       // Detaching a reader does not stop its server-side turn. Task 1.5 will
       // reattach from the durable event log when this session is selected again.
@@ -157,7 +204,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       streamController = null
       streamSessionId = null
       closeResume()
-      set({ activeSessionId: id, liveTurn: null })
+      let branchPrefix: Bubble[] | null = null
+      try {
+        const raw = localStorage.getItem(branchStorageKey(id))
+        if (raw) branchPrefix = prefixBubbles(JSON.parse(raw) as BranchResponse['prefix'])
+      } catch { /* corrupt local branch display state is safely ignored */ }
+      set({ activeSessionId: id, liveTurn: null, branchPrefix })
       await loadHistory(id)
       await reconcileSession(id, set, get)
     },
@@ -270,6 +322,10 @@ export const useChatStore = create<ChatState>((set, get) => {
       streamController = postStream('/api/chat_stream', form, {
         onEvent: (event) => {
           if (get().activeSessionId !== sessionId) return
+          if (event.type === 'turn_start' && get().branchPrefix) {
+            localStorage.removeItem(branchStorageKey(sessionId))
+            set({ branchPrefix: null })
+          }
           lastStreamProgress = Date.now()
           set((state) => ({ liveTurn: applyEvent(state.liveTurn ?? turn, event) }))
         },

@@ -1,8 +1,9 @@
 import { create } from 'zustand'
-import { ApiError, apiDelete, apiForm, apiGet, apiJson, postStream } from '../../api/client'
+import { ApiError, apiDelete, apiForm, apiGet, apiJson, openSSE, postStream } from '../../api/client'
 import { idle, makeLoader, type Remote } from '../../lib/remote'
 import { applyEvent, emptyTurn, type Bubble, type Turn } from './reducer'
 import { parseHistory } from './history'
+import { hydrateTurn, reconcileDecision, type TurnSnapshot } from './resume'
 import type { DefaultChat, HistoryResponse, ModelEndpoint, ModelsResponse, SessionRecord, StopResponse } from './types'
 
 export interface SendOptions {
@@ -10,7 +11,7 @@ export interface SendOptions {
   attachments?: string[]
 }
 
-interface ChatState {
+export interface ChatState {
   sessions: Remote<SessionRecord[]>
   activeSessionId: string | null
   history: Remote<Bubble[]>
@@ -43,6 +44,13 @@ const modelsLoader = makeLoader<ModelEndpoint[]>()
 const defaultChatLoader = makeLoader<DefaultChat>()
 let historyEpoch = 0
 let streamController: AbortController | null = null
+let streamSessionId: string | null = null
+let resumeSource: EventSource | null = null
+let resumeSessionId: string | null = null
+let resumeLastEventId: string | null = null
+let lastStreamProgress = 0
+let resumeWatch: ReturnType<typeof setInterval> | null = null
+let historyReload: ((sessionId: string) => Promise<void>) | null = null
 let bubbleSequence = 0
 
 function errorMessage(error: unknown): { error: string; httpStatus?: number } {
@@ -110,6 +118,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       })
     }
   }
+  historyReload = loadHistory
 
   return {
     sessions: idle,
@@ -146,8 +155,11 @@ export const useChatStore = create<ChatState>((set, get) => {
       // reattach from the durable event log when this session is selected again.
       streamController?.abort()
       streamController = null
+      streamSessionId = null
+      closeResume()
       set({ activeSessionId: id, liveTurn: null })
       await loadHistory(id)
+      await reconcileSession(id, set, get)
     },
 
     loadOlder: async () => {
@@ -258,10 +270,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       streamController = postStream('/api/chat_stream', form, {
         onEvent: (event) => {
           if (get().activeSessionId !== sessionId) return
+          lastStreamProgress = Date.now()
           set((state) => ({ liveTurn: applyEvent(state.liveTurn ?? turn, event) }))
         },
         onDone: (sawDone) => {
           streamController = null
+          streamSessionId = null
           if (get().activeSessionId !== sessionId) return
           if (!sawDone) {
             set((state) => ({
@@ -274,12 +288,15 @@ export const useChatStore = create<ChatState>((set, get) => {
         },
         onError: () => {
           streamController = null
+          streamSessionId = null
           if (get().activeSessionId !== sessionId) return
           set((state) => ({
             liveTurn: state.liveTurn ? { ...state.liveTurn, status: 'error' } : null,
           }))
         },
       })
+      streamSessionId = sessionId
+      lastStreamProgress = Date.now()
     },
 
     stop: async () => {
@@ -291,6 +308,73 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
   }
 })
+
+function closeResume(): void {
+  resumeSource?.close()
+  resumeSource = null
+  resumeSessionId = null
+  resumeLastEventId = null
+  if (resumeWatch) clearInterval(resumeWatch)
+  resumeWatch = null
+}
+
+async function reconcileSession(
+  sessionId: string,
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+): Promise<void> {
+  let snapshot: TurnSnapshot
+  try {
+    snapshot = await apiGet<TurnSnapshot>(`/api/chat/turn?session=${encodeURIComponent(sessionId)}`)
+  } catch {
+    return
+  }
+  if (get().activeSessionId !== sessionId) return
+  const localSession = streamSessionId ?? resumeSessionId
+  const action = reconcileDecision({
+    active: snapshot.active,
+    lastTurnStatus: snapshot.last_turn?.status ?? null,
+    hasLocalLive: Boolean(streamController || resumeSource),
+    localSessionMatches: localSession === sessionId,
+    localFresh: Date.now() - lastStreamProgress <= 25_000,
+  })
+  if (action === 'none') return
+  if (action === 'finalize-interrupted' || action === 'finalize-stale') {
+    closeResume()
+    set((state) => ({
+      liveTurn: state.liveTurn ? {
+        ...state.liveTurn,
+        status: action === 'finalize-interrupted' ? 'error' : 'done',
+      } : null,
+    }))
+    return
+  }
+
+  streamController?.abort()
+  streamController = null
+  streamSessionId = null
+  closeResume()
+  const hydrated = hydrateTurn(snapshot.events)
+  set({ liveTurn: snapshot.active ? { ...hydrated, status: hydrated.status === 'sending' ? 'streaming' : hydrated.status } : hydrated })
+  resumeSessionId = sessionId
+  resumeLastEventId = snapshot.last_event_id
+  lastStreamProgress = Date.now()
+  if (typeof EventSource === 'undefined') return
+  const cursor = resumeLastEventId ? `&last_event_id=${encodeURIComponent(resumeLastEventId)}` : ''
+  resumeSource = openSSE(`/api/chat/stream?session=${encodeURIComponent(sessionId)}${cursor}`, (event, id) => {
+    if (get().activeSessionId !== sessionId) return
+    lastStreamProgress = Date.now()
+    if (id) resumeLastEventId = id
+    set((state) => ({ liveTurn: applyEvent(state.liveTurn ?? emptyTurn(), event) }))
+    if (event.type === 'turn_end') {
+      closeResume()
+      void historyReload?.(sessionId)
+    }
+  })
+  resumeWatch = setInterval(() => {
+    if (Date.now() - lastStreamProgress > 25_000) void reconcileSession(sessionId, set, get)
+  }, 5_000)
+}
 
 async function runSessionMutation(
   set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,

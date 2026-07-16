@@ -454,8 +454,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     selectSession: async (id) => {
-      // Detaching a reader does not stop its server-side turn. Task 1.5 will
-      // reattach from the durable event log when this session is selected again.
+      // Detaching a reader does not stop its server-side turn. Selecting the
+      // session again reattaches from the durable event log.
       const pending = get().pendingSend
       if (pending && pending.sessionId !== id) {
         if (pendingTimer) clearTimeout(pendingTimer)

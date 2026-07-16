@@ -49,8 +49,8 @@ workflow test match—not merely when an endpoint is wired.
 | --- | --- | --- |
 | Inbox source filters, rich cards, detail, snooze, undo and gestures | P0 | done |
 | Email account/folder/list/search/read caching and navigation | P0 | done |
-| Email reply/reply-all/forward, attachments, move, deployment-scheduled state and RSVP | P0 | done |
-| Calendar month/agenda navigation, CRUD, quick add and event detail | P1 | done |
+| Email reply/reply-all/forward, attachments, move, deployment-scheduled state and RSVP | P0 | done | Received attachments stream real MIME bytes; compose/draft uploads are embedded in outgoing MIME; missing uploads fail instead of silently sending |
+| Calendar month/week/agenda navigation, CRUD, quick add, sync confirmation and event detail | P1 | done | Server-confirmed sync state is shown with the local receipt time because the provider route returns no timestamp |
 | Calendar drag/resize and mobile agenda | P2 | done |
 | Notes cards, pin/archive/checklists/reminders/reorder | P1 | done |
 
@@ -60,7 +60,7 @@ workflow test match—not merely when an endpoint is wired.
 | --- | --- | --- |
 | Multi-document tabs, rename/reorder and session integration | P0 | done |
 | Rich markdown editor, save/version/restore/export | P0 | done |
-| Email-compose documents and recipient workflow | P0 | done |
+| Email-compose documents and recipient/attachment workflow | P0 | done |
 | PDF capability truthfulness | P1 | done | Deployment route returns explicit 501 and render/export routes are legacy stubs; `/next` exposes that limitation without fake controls |
 | Library search/filter/sort and deep selection | P1 | done |
 

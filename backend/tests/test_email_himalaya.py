@@ -1,7 +1,7 @@
 """Unit tests for the pure functions in email_himalaya (no himalaya/network)."""
 from backend.email_himalaya import (
     envelope_to_email, _norm_date, folders_from_himalaya, build_mime,
-    message_to_read, _strip_tags, _message_plain, _load_style, _save_style,
+    message_to_read, message_attachment, _strip_tags, _message_plain, _load_style, _save_style,
     _summary_prompt, _style_extract_prompt,
 )
 from backend import email_himalaya
@@ -34,6 +34,44 @@ def test_message_to_read_parses_rfc822():
     assert r["from_name"] == "Jane"
     assert r["message_id"] == "<m1@x>"
     assert "hello body" in r["body"]
+
+
+def test_message_attachment_uses_same_non_calendar_index_as_reader():
+    eml = (b'From: Jane <jane@x.com>\r\nSubject: Files\r\n'
+           b'Content-Type: multipart/mixed; boundary="b"\r\n\r\n'
+           b'--b\r\nContent-Type: text/plain\r\n\r\nhello\r\n'
+           b'--b\r\nContent-Type: text/calendar\r\n'
+           b'Content-Disposition: attachment; filename="invite.ics"\r\n\r\nBEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n'
+           b'--b\r\nContent-Type: text/plain\r\n'
+           b'Content-Disposition: attachment; filename="notes.txt"\r\n\r\nfile body\r\n--b--\r\n')
+    read = message_to_read(eml, uid="7")
+    assert read["attachments"] == [{"index": 0, "filename": "notes.txt", "size": 9}]
+    assert message_attachment(eml, 0) == (b"file body", "notes.txt", "text/plain")
+    assert message_attachment(eml, 1) is None
+
+
+def test_build_mime_attaches_safe_compose_upload(tmp_path, monkeypatch):
+    monkeypatch.setattr(email_himalaya, "ATTACH_DIR", tmp_path)
+    (tmp_path / "safe.txt").write_text("attached")
+    raw = build_mime(from_addr="me@x.com", to="a@b.com", cc=None, bcc=None,
+                     subject="Hi", body="hello", body_html=None,
+                     in_reply_to=None, references=None,
+                     attachments=[{"id": "safe.txt", "name": "brief.txt"}])
+    msg = email_himalaya.email.message_from_bytes(raw, policy=email_himalaya._email_policy)
+    parts = list(msg.iter_attachments())
+    assert len(parts) == 1
+    assert parts[0].get_filename() == "brief.txt"
+    assert parts[0].get_content().strip() == "attached"
+
+
+def test_build_mime_refuses_missing_or_unsafe_attachment(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setattr(email_himalaya, "ATTACH_DIR", tmp_path)
+    with pytest.raises(ValueError, match="missing or invalid"):
+        build_mime(from_addr="me@x.com", to="a@b.com", cc=None, bcc=None,
+                   subject="Hi", body="hello", body_html=None,
+                   in_reply_to=None, references=None,
+                   attachments=[{"id": "../secret", "name": "secret"}])
 
 
 def test_norm_date_space_to_iso():

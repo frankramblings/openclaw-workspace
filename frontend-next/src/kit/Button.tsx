@@ -12,16 +12,17 @@ const VARIANT_CLASS = {
 
 export type ButtonVariant = keyof typeof VARIANT_CLASS
 
-export function Button({ variant = 'plain', disabled, onClick, title, type = 'button', children }: {
+export function Button({ variant = 'plain', disabled, onClick, title, type = 'button', children, 'aria-label': ariaLabel }: {
   variant?: ButtonVariant
   disabled?: boolean
   onClick?: () => void
   title?: string
+  'aria-label'?: string
   type?: 'button' | 'submit'
   children: ReactNode
 }) {
   return (
-    <button type={type} className={VARIANT_CLASS[variant]} disabled={disabled} onClick={onClick} title={title}>
+    <button type={type} className={VARIANT_CLASS[variant]} disabled={disabled} onClick={onClick} title={title} aria-label={ariaLabel}>
       {children}
     </button>
   )

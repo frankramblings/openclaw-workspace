@@ -946,7 +946,6 @@ async def search_reindex(force: bool = False):
 #   classic (/classic only): fonts/custom, signatures, contacts/search,
 #     sessions/archived, chat/stream_status/{id}, model-endpoints/probe-local,
 #     document/{id}/export-pdf, document/{id}/render-pages,
-#     email/attachment/{uid}/{index}
 # (redesign (live) /api/export — Settings → Data Backup → Export — is now a
 # real route; see export_route.py.)
 @app.get("/api/fonts/custom")
@@ -957,7 +956,6 @@ async def search_reindex(force: bool = False):
 @app.get("/api/chat/stream_status/{session_id}")
 @app.get("/api/document/{doc_id}/export-pdf")
 @app.get("/api/document/{doc_id}/render-pages")
-@app.get("/api/email/attachment/{uid}/{index}")
 async def _legacy_get_stub(request: Request):
     _log.warning("legacy GET %s served as [] stub (deprecated; no backend route "
                  "— caller should be removed)", request.url.path)

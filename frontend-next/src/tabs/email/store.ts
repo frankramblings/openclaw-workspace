@@ -8,7 +8,7 @@ interface EmailState {
   folder: string; filter: 'all'|'unread'; offset: number; selectedUid: string | null; ai: Remote<string>; pending: string | null; error: string | null
   load(): Promise<void>; chooseFolder(folder: string): Promise<void>; read(uid: string): Promise<void>; search(q: string): Promise<void>
   mutate(uid: string, action: 'mark-read' | 'mark-unread' | 'archive' | 'delete'): Promise<void>
-  send(payload: Record<string, string>, draft?: boolean): Promise<void>; summarize(): Promise<void>; aiReply(): Promise<void>; cancelScheduled(id: string): Promise<void>
+  send(payload: Record<string, unknown>, draft?: boolean): Promise<void>; summarize(): Promise<void>; aiReply(): Promise<void>; cancelScheduled(id: string): Promise<void>
   setFilter(filter:'all'|'unread'):Promise<void>; page(delta:number):Promise<void>; move(uid:string,dest:string):Promise<void>; rsvp(uid:string,status:'accepted'|'tentative'|'declined'):Promise<void>
 }
 const foldersLoader = makeLoader<Folders>(), messagesLoader = makeLoader<EmailList>(), readerLoader = makeLoader<EmailRead>()

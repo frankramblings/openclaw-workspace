@@ -11,6 +11,7 @@ import asyncio
 import email
 import html as _html
 import json
+import mimetypes
 import os
 import re
 import tomllib
@@ -20,11 +21,12 @@ from email.utils import parseaddr
 from pathlib import Path
 
 from fastapi import APIRouter, Body
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from . import bridge, config, himalaya_cli
 from .calendar_invite import parse_ics_calendar
 from .inbox import calendar_invite
+from .uploads import ATTACH_DIR
 
 router = APIRouter()
 
@@ -230,6 +232,24 @@ def message_to_read(raw: bytes, uid: str = "") -> dict:
     }
 
 
+def message_attachment(raw: bytes, index: int) -> tuple[bytes, str, str] | None:
+    """Return one downloadable MIME attachment by the index used in read()."""
+    msg = email.message_from_bytes(raw, policy=_email_policy)
+    at = 0
+    for part in msg.walk():
+        if (part.get_content_maintype() == "multipart"
+                or part.get_content_type() == "text/calendar"
+                or part.get_content_disposition() != "attachment"):
+            continue
+        if at == index:
+            payload = part.get_payload(decode=True) or b""
+            filename = part.get_filename() or f"attachment-{index}"
+            content_type = part.get_content_type() or "application/octet-stream"
+            return payload, filename, content_type
+        at += 1
+    return None
+
+
 @router.get("/api/email/read/{uid}")
 async def email_read(uid: str, folder: str = "INBOX", mark_seen: bool = True):
     try:
@@ -244,6 +264,26 @@ async def email_read(uid: str, folder: str = "INBOX", mark_seen: bool = True):
         except himalaya_cli.HimalayaError:
             pass
     return message_to_read(raw, uid)
+
+
+@router.get("/api/email/attachment/{uid}/{index}")
+async def email_attachment(uid: str, index: int, folder: str = "INBOX"):
+    """Download the exact attachment advertised by /api/email/read/{uid}."""
+    if index < 0:
+        return JSONResponse(status_code=404, content={"error": "attachment not found"})
+    try:
+        raw = await himalaya_cli.run_raw(
+            ["message", "export", uid, "-F", "-f", folder])
+    except himalaya_cli.HimalayaError as exc:
+        return JSONResponse(status_code=502, content={"error": str(exc)})
+    found = message_attachment(raw, index)
+    if found is None:
+        return JSONResponse(status_code=404, content={"error": "attachment not found"})
+    payload, filename, content_type = found
+    safe_name = filename.replace('"', "'").replace("\r", "").replace("\n", "")
+    return Response(payload, media_type=content_type, headers={
+        "Content-Disposition": f'attachment; filename="{safe_name}"',
+    })
 
 
 # --- flags -------------------------------------------------------------------
@@ -366,8 +406,24 @@ async def email_search(folder: str = "INBOX", q: str = "", limit: int = 100):
 
 # --- send (compose / reply / forward all post here) --------------------------
 
+def _compose_attachment(value: object) -> tuple[Path, str] | None:
+    """Resolve a compose upload without allowing paths outside ATTACH_DIR."""
+    if isinstance(value, str):
+        file_id, filename = value, value
+    elif isinstance(value, dict):
+        file_id = str(value.get("id") or "")
+        filename = str(value.get("name") or file_id)
+    else:
+        return None
+    safe_id = "".join(char for char in file_id if char.isalnum() or char in "-_.")
+    if not safe_id or safe_id != file_id:
+        return None
+    path = ATTACH_DIR / safe_id
+    return (path, Path(filename).name or safe_id) if path.is_file() else None
+
+
 def build_mime(*, from_addr: str, to: str, cc, bcc, subject: str, body: str,
-               body_html, in_reply_to, references) -> bytes:
+               body_html, in_reply_to, references, attachments=None) -> bytes:
     """Assemble an RFC-822 message (text + optional HTML alt + threading hdrs)."""
     m = email.message.EmailMessage()
     m["From"] = from_addr
@@ -384,19 +440,32 @@ def build_mime(*, from_addr: str, to: str, cc, bcc, subject: str, body: str,
     m.set_content(body or "")
     if body_html:
         m.add_alternative(body_html, subtype="html")
+    for value in attachments or []:
+        resolved = _compose_attachment(value)
+        if resolved is None:
+            raise ValueError("an uploaded attachment is missing or invalid")
+        path, filename = resolved
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        maintype, subtype = content_type.split("/", 1)
+        m.add_attachment(path.read_bytes(), maintype=maintype, subtype=subtype,
+                         filename=filename)
     return m.as_bytes()
 
 
 @router.post("/api/email/send")
 async def email_send(payload: dict = Body(...)):
-    raw = build_mime(
-        from_addr=_from_header(),
-        to=payload.get("to") or "", cc=payload.get("cc"), bcc=payload.get("bcc"),
-        subject=payload.get("subject") or "", body=payload.get("body") or "",
-        body_html=payload.get("body_html"),
-        in_reply_to=payload.get("in_reply_to"),
-        references=payload.get("references"),
-    )
+    try:
+        raw = build_mime(
+            from_addr=_from_header(),
+            to=payload.get("to") or "", cc=payload.get("cc"), bcc=payload.get("bcc"),
+            subject=payload.get("subject") or "", body=payload.get("body") or "",
+            body_html=payload.get("body_html"),
+            in_reply_to=payload.get("in_reply_to"),
+            references=payload.get("references"),
+            attachments=payload.get("attachments"),
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     try:
         await himalaya_cli.run_raw(["message", "send"], stdin=raw)
     except himalaya_cli.HimalayaError as exc:
@@ -501,14 +570,19 @@ async def save_draft(payload: dict = Body(default=None)):
     Same MIME builder as /send; the frontend's #doc-email-draft-btn reads only
     {success, error}."""
     payload = payload or {}
-    raw = build_mime(
-        from_addr=_from_header(),
-        to=payload.get("to") or "", cc=payload.get("cc"), bcc=payload.get("bcc"),
-        subject=payload.get("subject") or "", body=payload.get("body") or "",
-        body_html=payload.get("body_html"),
-        in_reply_to=payload.get("in_reply_to"),
-        references=payload.get("references"),
-    )
+    try:
+        raw = build_mime(
+            from_addr=_from_header(),
+            to=payload.get("to") or "", cc=payload.get("cc"), bcc=payload.get("bcc"),
+            subject=payload.get("subject") or "", body=payload.get("body") or "",
+            body_html=payload.get("body_html"),
+            in_reply_to=payload.get("in_reply_to"),
+            references=payload.get("references"),
+            attachments=payload.get("attachments"),
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400,
+                            content={"success": False, "error": str(exc)})
     try:
         await _himalaya_with_retry(
             ["message", "save", "-f", DRAFTS_FOLDER], stdin=raw)

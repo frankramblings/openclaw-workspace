@@ -52,7 +52,7 @@ workflow test match—not merely when an endpoint is wired.
 | Email reply/reply-all/forward, attachments, move, schedule and RSVP | P0 | building |
 | Calendar month/agenda navigation, CRUD, quick add and event detail | P1 | thin |
 | Calendar drag/resize and mobile agenda | P2 | missing |
-| Notes cards, pin/archive/checklists/reminders/reorder | P1 | thin |
+| Notes cards, pin/archive/checklists/reminders/reorder | P1 | building |
 
 ## Documents and workspace content
 

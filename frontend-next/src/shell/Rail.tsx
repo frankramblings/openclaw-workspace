@@ -3,6 +3,8 @@ import { useAppStore } from '../store/app'
 import { useWorkspaceStore } from './workspace/store'
 import { useTerminalPanel } from './terminal/store'
 import { useTaskPanel } from './tasks/store'
+import { ResizeHandle } from './layout/ResizeHandle'
+import { useShellLayout } from './layout/store'
 
 export function Rail({ tab, navigate }: { tab: string; navigate: (tab: string) => void }) {
   const config = useAppStore((s) => s.config)
@@ -11,9 +13,10 @@ export function Rail({ tab, navigate }: { tab: string; navigate: (tab: string) =
   const showWorkspace = useWorkspaceStore((state) => state.show)
   const showTerminal = useTerminalPanel((state) => state.show)
   const showTasks = useTaskPanel((state) => state.show)
+  const layout = useShellLayout()
   return (
-    <nav className="next-rail" aria-label="Primary">
-      <div className="next-rail-brand" title={agentName}>{agentName}</div>
+    <nav className={`next-rail${layout.railCollapsed ? ' is-collapsed' : ''}`} aria-label="Primary" style={{ width: layout.railCollapsed ? 64 : layout.railWidth }}>
+      <div className="next-rail-brand" title={agentName}><span>{agentName}</span><button type="button" aria-label={layout.railCollapsed ? 'Expand navigation' : 'Collapse navigation'} onClick={layout.toggleRail}>{layout.railCollapsed ? '›' : '‹'}</button></div>
       <ul className="next-rail-list">
         {TABS.map((t) => (
           <li key={t.id}>
@@ -36,6 +39,7 @@ export function Rail({ tab, navigate }: { tab: string; navigate: (tab: string) =
         <button type="button" className="next-rail-tool" onClick={showTasks}>✓ Tasks</button>
         <a className="next-rail-classic" href="/" title="Open the classic app">classic app ↗</a>
       </div>
+      {!layout.railCollapsed && <ResizeHandle axis="x" value={layout.railWidth} onChange={layout.setRailWidth} label="Resize navigation" />}
     </nav>
   )
 }

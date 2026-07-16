@@ -42,10 +42,10 @@ function fileKind(path: string): OpenFile['kind'] {
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
-  open: false, rootKey: localStorage.getItem('next:workspace-root') || 'workspace', roots: idle, tree: idle, file: idle,
+  open: localStorage.getItem('next:workspace-open') === '1', rootKey: localStorage.getItem('next:workspace-root') || 'workspace', roots: idle, tree: idle, file: idle,
   selectedPath: null, error: null, pending: null,
-  show: () => { set({ open: true }); void get().load() },
-  close: () => set({ open: false }),
+  show: () => { localStorage.setItem('next:workspace-open', '1'); set({ open: true }); void get().load() },
+  close: () => { localStorage.setItem('next:workspace-open', '0'); set({ open: false }) },
   load: async (fresh = false) => {
     await Promise.all([
       rootsLoader(async () => (await apiGet<{ roots: WorkspaceRoot[] }>('/api/workspace/roots')).roots, (roots) => set({ roots }), get().roots),

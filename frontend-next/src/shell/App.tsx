@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { useHashRoute } from './router'
 import { Rail } from './Rail'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -11,6 +11,8 @@ import { TerminalPanel } from './terminal/TerminalPanel'
 import { TaskPanel } from './tasks/TaskPanel'
 import { PwaBanner } from './pwa/PwaBanner'
 import { usePwaStore } from './pwa/store'
+import { useShellLayout } from './layout/store'
+import { CompanionResizeHandles } from './layout/CompanionResizeHandles'
 
 export function App() {
   const { tab, navigate } = useHashRoute()
@@ -19,6 +21,7 @@ export function App() {
   const startActivityWatch = useChatStore((s) => s.startActivityWatch)
   const stopActivityWatch = useChatStore((s) => s.stopActivityWatch)
   const initPwa = usePwaStore((s) => s.init)
+  const layout = useShellLayout()
 
   useEffect(() => {
     void loadConfig()
@@ -35,7 +38,7 @@ export function App() {
   const { Component } = tabById(tab)
 
   return (
-    <div className="next-shell">
+    <div className="next-shell" style={{ '--next-workspace-width': `${layout.workspaceWidth}px`, '--next-terminal-height': `${layout.terminalHeight}px`, '--next-task-width': `${layout.taskWidth}px` } as CSSProperties}>
       <Rail tab={tab} navigate={navigate} />
       <main className="next-main">
         <ErrorBoundary resetKey={tab}>
@@ -46,6 +49,7 @@ export function App() {
       <WorkspacePanel />
       <TerminalPanel />
       <TaskPanel />
+      <CompanionResizeHandles />
       <PwaBanner />
     </div>
   )

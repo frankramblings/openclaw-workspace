@@ -8,8 +8,8 @@ const loader = makeLoader<TaskRecord[]>()
 let stream: EventSource | null = null
 
 export const useTaskPanel = create<TaskState>((set, get) => ({
-  open: false, tasks: idle, selected: null, streamStatus: 'idle',
-  show: () => set({ open: true }), close: () => set({ open: false }), select: selected => set({ selected }),
+  open: localStorage.getItem('next:tasks-open') === '1', tasks: idle, selected: null, streamStatus: 'idle',
+  show: () => { localStorage.setItem('next:tasks-open', '1'); set({ open: true }) }, close: () => { localStorage.setItem('next:tasks-open', '0'); set({ open: false }) }, select: selected => set({ selected }),
   load: () => loader(async () => (await apiGet<{ tasks: TaskRecord[] }>('/api/tasks')).tasks || [], tasks => set({ tasks }), get().tasks),
   watch: () => {
     stream?.close(); if (typeof EventSource === 'undefined') return () => undefined

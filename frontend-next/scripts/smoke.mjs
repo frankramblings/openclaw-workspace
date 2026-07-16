@@ -69,6 +69,20 @@ try {
   await send('Page.enable')
   await send('Runtime.enable')
   await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`)
+
+  // Durable shell layout: restore non-default geometry and an open companion
+  // through real reloads, then restore the expanded state for the main run.
+  await evaluate(`localStorage.setItem('next:layout:railWidth','248'); localStorage.setItem('next:layout:workspaceWidth','840'); localStorage.setItem('next:workspace-open','1'); location.reload()`)
+  await waitFor(`document.querySelector('.next-workspace-panel .next-ws-file')`, 30_000)
+  const restoredLayout = await evaluate(`({rail:Math.round(document.querySelector('.next-rail').getBoundingClientRect().width),workspace:Math.round(document.querySelector('.next-workspace-panel').getBoundingClientRect().width)})`)
+  if (restoredLayout.rail !== 248 || restoredLayout.workspace !== 840) throw new Error(`layout restore failed: ${JSON.stringify(restoredLayout)}`)
+  await screenshot('desktop-restored-layout')
+  await evaluate(`[...document.querySelectorAll('.next-workspace-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
+  await waitFor(`!document.querySelector('.next-workspace-panel')`)
+  await evaluate(`document.querySelector('[aria-label="Collapse navigation"]').click(); location.reload()`)
+  await waitFor(`document.querySelector('.next-rail.is-collapsed [aria-label="Expand navigation"]')`)
+  await evaluate(`document.querySelector('[aria-label="Expand navigation"]').click()`)
+
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
     for (const tab of tabs) {

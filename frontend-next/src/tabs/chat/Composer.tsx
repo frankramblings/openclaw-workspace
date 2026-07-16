@@ -28,6 +28,12 @@ export function Composer() {
   const cancelQueued = useChatStore((state) => state.cancelQueued)
   const enableNotifications = useChatStore((state) => state.enableNotifications)
   const usage = useChatStore((state) => state.usage)
+  // createSession is async (POST -> loadSessions -> selectSession), so the
+  // composer stays bound to the OUTGOING session until it settles. Sending in
+  // that window buffered the message against the old session, activeSessionId
+  // flipped mid-grace, and flushPending parked the text in the old session's
+  // queue while the new chat rendered "No messages yet" — a silent misdelivery.
+  const creatingSession = useChatStore((state) => Boolean(state.pendingSessions.new))
   const history = historyRemote.status === 'ready' ? historyRemote.data : []
   const { suggestion, clearSuggestion } = useSuggest({ sessionId, history, liveTurn: live, draft })
   const working = live && ['sending', 'streaming', 'stalled'].includes(live.status)
@@ -45,6 +51,7 @@ export function Composer() {
   }
 
   const submit = () => {
+    if (creatingSession) return // also covers Enter-to-send, not just the button
     const gate = uploadGate(attachments)
     if (gate !== 'ok') {
       setNotice(gate === 'uploading' ? 'Wait for attachments to finish uploading.' : 'Remove failed attachments before sending.')
@@ -149,7 +156,7 @@ export function Composer() {
         </div>}
         {working
           ? <Button variant="danger" onClick={() => void stop()}>Stop</Button>
-          : <Button variant="primary" disabled={!sessionId || (!draft.trim() && attachments.length === 0)} onClick={submit}>Send</Button>}
+          : <Button variant="primary" disabled={!sessionId || creatingSession || (!draft.trim() && attachments.length === 0)} onClick={submit}>Send</Button>}
       </div>
       {notice && <p role="alert" className="next-error-detail">{notice}</p>}
     </section>

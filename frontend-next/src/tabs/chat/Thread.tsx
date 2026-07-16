@@ -22,7 +22,7 @@ export function Thread() {
       <RemoteView
         remote={history}
         onRetry={() => void select(activeId)}
-        empty={showLive ? null : <EmptyState title="No messages yet" hint="The composer lands in the next task." />}
+        empty={showLive ? null : <EmptyState title="No messages yet" hint="Send a message to start this conversation." />}
       >
         {(bubbles) => <>{bubbles.map((bubble) => <Message key={bubble.id} bubble={bubble} />)}</>}
       </RemoteView>

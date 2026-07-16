@@ -321,10 +321,17 @@ try {
   const before = await evaluate(`fetch('/api/sessions').then(r => r.json()).then(x => (x.sessions || x).map(s => s.id))`)
   await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'New chat').click()`)
   await waitFor(`document.querySelector('.composer textarea') && !document.querySelector('.composer textarea').disabled`)
+  // Wait out the in-flight session creation: sending before it settles is now
+  // blocked (it used to silently re-home the message to the previous chat).
+  await waitFor(`(() => { const t=(document.querySelector('.chat-thread')?.innerText||''); return t.includes('No messages yet') })()`, 20_000)
   await evaluate(`(() => { const el=document.querySelector('.composer textarea'); const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set; setter.call(el,'ping'); el.dispatchEvent(new Event('input',{bubbles:true})); })()`)
   await waitFor(`[...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'Send' && !x.disabled)`)
   await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Send' && !x.disabled).click()`)
-  await waitFor(`document.querySelector('.msg.assistant') || document.querySelector('.activity-trail') || [...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'Stop')`, 60_000)
+  // Selectors must match what chat actually renders: assistant bubbles carry
+  // .msg-role, activity steps carry .act-step-head. The earlier `.msg.assistant`
+  // / `.activity-trail` selectors matched nothing, so this gate silently rested
+  // on the Stop button alone.
+  await waitFor(`[...document.querySelectorAll('.msg-role')].some(x => x.textContent.trim() === 'Gary') || document.querySelector('.act-step-head') || [...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'Stop')`, 60_000)
   await screenshot('desktop-chat-mid-stream')
   await evaluate(`(() => { const stop=[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Stop'); if(stop) stop.click() })()`)
   const after = await evaluate(`fetch('/api/sessions').then(r => r.json()).then(x => (x.sessions || x).map(s => s.id))`)

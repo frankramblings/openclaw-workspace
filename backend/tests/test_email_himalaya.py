@@ -1,4 +1,7 @@
 """Unit tests for the pure functions in email_himalaya (no himalaya/network)."""
+from unittest.mock import AsyncMock
+
+import pytest
 from backend.email_himalaya import (
     envelope_to_email, _norm_date, folders_from_himalaya, build_mime,
     message_to_read, message_attachment, _strip_tags, _message_plain, _load_style, _save_style,
@@ -65,13 +68,20 @@ def test_build_mime_attaches_safe_compose_upload(tmp_path, monkeypatch):
 
 
 def test_build_mime_refuses_missing_or_unsafe_attachment(tmp_path, monkeypatch):
-    import pytest
     monkeypatch.setattr(email_himalaya, "ATTACH_DIR", tmp_path)
     with pytest.raises(ValueError, match="missing or invalid"):
         build_mime(from_addr="me@x.com", to="a@b.com", cc=None, bcc=None,
                    subject="Hi", body="hello", body_html=None,
                    in_reply_to=None, references=None,
                    attachments=[{"id": "../secret", "name": "secret"}])
+
+
+@pytest.mark.asyncio
+async def test_email_search_treats_himalaya_null_as_empty(monkeypatch):
+    monkeypatch.setattr(email_himalaya.himalaya_cli, "run_raw",
+                        AsyncMock(return_value=b"null"))
+    response = await email_himalaya.email_search(folder="INBOX", q="no match")
+    assert response == {"emails": [], "total": 0}
 
 
 def test_norm_date_space_to_iso():

@@ -117,7 +117,7 @@ try {
     await evaluate(`document.querySelector('.next-email-messages .next-row').click()`)
     await waitFor(`document.querySelector('.next-email-reader iframe')`, 30_000)
     await evaluate(`[...document.querySelectorAll('.next-email-reader button')].find(x => x.textContent.trim() === 'Reply').click()`)
-    await waitFor(`document.querySelector('[role="dialog"][aria-label="Compose email"] input')`)
+    await waitFor(`document.querySelector('[role="dialog"][aria-label="Compose email"] input') && [...document.querySelectorAll('[role="dialog"][aria-label="Compose email"] label')].some(x => x.textContent.includes('Attach files'))`)
     await screenshot(`${viewport.name}-email-reply`)
     await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
   }
@@ -140,7 +140,7 @@ try {
     await evaluate(`document.querySelector('[aria-label="Document title"]').scrollIntoView({block:'start'})`)
     await screenshot(`${viewport.name}-documents-editor`)
     await evaluate(`[...document.querySelectorAll('.next-doc-actions button')].find(x => x.textContent.trim() === 'Email').click()`)
-    await waitFor(`document.querySelector('[role="dialog"][aria-label="Email document"]')`)
+    await waitFor(`document.querySelector('[role="dialog"][aria-label="Email document"]') && [...document.querySelectorAll('[role="dialog"][aria-label="Email document"] label')].some(x => x.textContent.includes('Attach files'))`)
     await screenshot(`${viewport.name}-documents-email`)
     await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
   }

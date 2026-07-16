@@ -142,7 +142,7 @@ async def email_list(folder: str = "INBOX", limit: int = 50,
         data = await himalaya_cli.run_json(args)
     except himalaya_cli.HimalayaError as exc:
         return JSONResponse({"emails": [], "total": 0, "error": str(exc)})
-    envs = data if isinstance(data, list) else (data.get("envelopes") or [])
+    envs = data if isinstance(data, list) else ((data or {}).get("envelopes") or [])
     emails = [envelope_to_email(e) for e in envs]
     if (filter or "all").lower() == "unread":
         emails = [e for e in emails if not e["is_read"]]
@@ -166,7 +166,7 @@ async def email_folders():
         raw = await himalaya_cli.run_json(["folder", "list"])
     except himalaya_cli.HimalayaError as exc:
         return {"folders": ["INBOX"], "error": str(exc)}
-    items = raw if isinstance(raw, list) else (raw.get("folders") or [])
+    items = raw if isinstance(raw, list) else ((raw or {}).get("folders") or [])
     # The UI's sortedFolders()/folderDisplayName() already role-map Gmail names.
     return {"folders": folders_from_himalaya(items)}
 
@@ -400,7 +400,7 @@ async def email_search(folder: str = "INBOX", q: str = "", limit: int = 100):
         data = json.loads(out.decode() or "null")
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"emails": [], "total": 0, "error": str(exc)})
-    envs = data if isinstance(data, list) else (data.get("envelopes") or [])
+    envs = data if isinstance(data, list) else ((data or {}).get("envelopes") or [])
     return {"emails": [envelope_to_email(e) for e in envs], "total": len(envs)}
 
 

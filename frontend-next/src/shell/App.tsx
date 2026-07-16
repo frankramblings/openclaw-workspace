@@ -6,6 +6,8 @@ import { ToastHost } from '../kit'
 import { tabById } from '../tabs/registry'
 import { useAppStore } from '../store/app'
 import { useChatStore } from '../tabs/chat/store'
+import { WorkspacePanel } from './workspace/WorkspacePanel'
+import { TerminalPanel } from './terminal/TerminalPanel'
 
 export function App() {
   const { tab, navigate } = useHashRoute()
@@ -35,6 +37,8 @@ export function App() {
         </ErrorBoundary>
       </main>
       <ToastHost />
+      <WorkspacePanel />
+      <TerminalPanel />
     </div>
   )
 }

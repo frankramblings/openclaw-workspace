@@ -81,6 +81,34 @@ try {
     }
   }
 
+  // Shared workspace explorer: open it at both breakpoints and require a real
+  // backend tree, not merely the panel shell.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/chat'`)
+    await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.includes('Workspace')).click()`)
+    await waitFor(`document.querySelector('.next-workspace-panel') && document.querySelector('.next-ws-file')`, 30_000)
+    await screenshot(`${viewport.name}-workspace`)
+    await evaluate(`[...document.querySelectorAll('.next-workspace-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
+  }
+
+  // Persistent PTY: require the vendored xterm runtime and a successful live
+  // WebSocket handshake at desktop and phone widths.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.includes('Terminal')).click()`)
+    const localPlain = /^http:\/\/(127\.0\.0\.1|localhost)/.test(base)
+    const terminalReady = `document.querySelector('.next-terminal-panel.is-open .next-terminal-mount')?.children.length > 0${localPlain ? '' : ` && document.querySelector('.next-term-status')?.textContent === 'connected'`}`
+    try {
+      await waitFor(terminalReady, 30_000)
+    } catch (error) {
+      const debug = await evaluate(`({panel:!!document.querySelector('.next-terminal-panel.is-open'),status:document.querySelector('.next-term-status')?.textContent,terminal:typeof window.Terminal,fit:typeof window.FitAddon,key:document.querySelector('[aria-label="Terminal conversation"]')?.value,scripts:[...document.scripts].map(x=>x.src).filter(x=>x.includes('xterm'))})`)
+      throw new Error(`${error.message}: ${JSON.stringify(debug)}; console=${consoleErrors.join(' | ')}`)
+    }
+    await screenshot(`${viewport.name}-terminal`)
+    await evaluate(`[...document.querySelectorAll('.next-terminal-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
+  }
+
   // One real chat turn, cleaned up afterward. This exercises POST streaming,
   // reducer rendering, the mid-stream view, and the server-side Stop route.
   if (process.env.NEXT_SMOKE_SKIP_CHAT !== '1') {

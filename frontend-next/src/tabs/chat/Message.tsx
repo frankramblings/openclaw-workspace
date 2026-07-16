@@ -5,11 +5,13 @@ import { ThinkBlock } from './ThinkBlock'
 import { safeDownloadSlug } from './parity'
 import type { Bubble } from './reducer'
 import { useChatStore } from './store'
+import { useWorkspaceStore } from '../../shell/workspace/store'
 
 /** The one sanctioned rendered-markdown boundary. renderMarkdown is an
  * escape-first pipeline covered by the shared markdown tests. */
 export function Md({ src }: { src: string }) {
-  return <div className="msg-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(src) }} />
+  const openPath = useWorkspaceStore((state) => state.openPath)
+  return <div className="msg-markdown" onClick={(event) => { const target = (event.target as HTMLElement).closest<HTMLElement>('[data-act="wsOpenFile"]'); if (target?.dataset.arg) void openPath(target.dataset.arg, target.dataset.root) }} dangerouslySetInnerHTML={{ __html: renderMarkdown(src) }} />
 }
 
 export function Message({ bubble }: { bubble: Bubble }) {

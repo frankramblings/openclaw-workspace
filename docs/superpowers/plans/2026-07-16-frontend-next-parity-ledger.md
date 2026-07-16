@@ -19,8 +19,8 @@ workflow test match—not merely when an endpoint is wired.
 | Mobile navigation/sheet history | P0 | missing | Browser Back closes transient layers in current-app order |
 | Global error/retry and pushed toasts | P0 | thin | Every failed load/mutation is recoverable without losing stale data |
 | Turn-completion notifications/unread state | P0 | building | Background sessions notify once and open the correct thread |
-| Workspace explorer | P0 | missing | Browse, preview, edit, create, rename, move, delete, upload/download, drag/drop |
-| Companion and persistent terminals | P0 | missing | Attach/reconnect, multiple terminals, cwd, pins, resize, image drop |
+| Workspace explorer | P0 | building | Browse, preview, edit, create, rename, move, delete, upload/download, drag/drop |
+| Companion and persistent terminals | P0 | building | Attach/reconnect, multiple terminals, cwd, pins, resize, image drop |
 | Live task feed | P1 | missing | Snapshot + SSE, terminal state, stalled state and task detail |
 | Installable/offline PWA lifecycle | P1 | missing | Manifest/SW/update/install behavior matches `/` without stale-shell traps |
 | Persisted layout/preferences | P1 | missing | Rail/pane widths and opened surfaces survive reload |

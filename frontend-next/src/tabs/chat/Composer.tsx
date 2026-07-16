@@ -20,6 +20,7 @@ export function Composer() {
   const queued = useChatStore((state) => sessionId ? state.queuedSends[sessionId] : undefined)
   const recallQueued = useChatStore((state) => state.recallQueued)
   const cancelQueued = useChatStore((state) => state.cancelQueued)
+  const enableNotifications = useChatStore((state) => state.enableNotifications)
   const history = historyRemote.status === 'ready' ? historyRemote.data : []
   const { suggestion, clearSuggestion } = useSuggest({ sessionId, history, liveTurn: live, draft })
   const working = live && ['sending', 'streaming', 'stalled'].includes(live.status)
@@ -31,6 +32,7 @@ export function Composer() {
       return
     }
     if (!draft.trim() && !attachments.length) return
+    void enableNotifications()
     send(draft.trim(), {
       allowWebSearch,
       attachments: sendableAttach(attachments).map((item) => item.id),

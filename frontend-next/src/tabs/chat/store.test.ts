@@ -26,6 +26,7 @@ const json = (body: unknown) => new Response(JSON.stringify(body), {
 })
 
 beforeEach(() => {
+  useChatStore.getState().stopActivityWatch()
   useChatStore.getState().cancelPending()
   useChatStore.setState({
     sessions: idle,
@@ -41,6 +42,8 @@ beforeEach(() => {
     branchPrefix: null,
     pendingSend: null,
     queuedSends: {},
+    sessionActivity: {},
+    notificationsEnabled: false,
     pendingSessions: {},
     sessionError: null,
   })
@@ -178,4 +181,16 @@ test('buffers a send for editing and queues another prompt while a turn is worki
   expect(useChatStore.getState().queuedSends['chat-1']).toMatchObject({ text: 'next prompt' })
   expect(useChatStore.getState().recallQueued('chat-1')).toMatchObject({ text: 'next prompt' })
   expect(useChatStore.getState().queuedSends['chat-1']).toBeUndefined()
+})
+
+test('activity snapshots mark background completions without inventing active work', async () => {
+  let call = 0
+  vi.stubGlobal('fetch', vi.fn(async () => json({ active: call++ === 0 ? ['other'] : [] })))
+  await useChatStore.getState().refreshActivity()
+  expect(useChatStore.getState().sessionActivity).toEqual({ other: 'working' })
+  await useChatStore.getState().refreshActivity()
+  expect(useChatStore.getState().sessionActivity).toEqual({ other: 'complete' })
+  useChatStore.setState({ activeSessionId: 'other' })
+  await useChatStore.getState().selectSession('other')
+  expect(useChatStore.getState().sessionActivity).toEqual({})
 })

@@ -5,16 +5,24 @@ import { ErrorBoundary } from './ErrorBoundary'
 import { ToastHost } from '../kit'
 import { tabById } from '../tabs/registry'
 import { useAppStore } from '../store/app'
+import { useChatStore } from '../tabs/chat/store'
 
 export function App() {
   const { tab, navigate } = useHashRoute()
   const loadConfig = useAppStore((s) => s.loadConfig)
   const loadCapabilities = useAppStore((s) => s.loadCapabilities)
+  const startActivityWatch = useChatStore((s) => s.startActivityWatch)
+  const stopActivityWatch = useChatStore((s) => s.stopActivityWatch)
 
   useEffect(() => {
     void loadConfig()
     void loadCapabilities()
   }, [loadConfig, loadCapabilities])
+
+  useEffect(() => {
+    startActivityWatch()
+    return stopActivityWatch
+  }, [startActivityWatch, stopActivityWatch])
 
   const { Component } = tabById(tab)
 

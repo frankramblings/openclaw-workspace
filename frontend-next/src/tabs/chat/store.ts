@@ -34,6 +34,8 @@ export interface ChatState {
   branchPrefix: Bubble[] | null
   pendingSend: BufferedSend | null
   queuedSends: Record<string, BufferedSend>
+  sessionActivity: Record<string, 'working' | 'complete'>
+  notificationsEnabled: boolean
   pendingSessions: Record<string, string>
   sessionError: string | null
   loadSessions: () => Promise<void>
@@ -46,6 +48,10 @@ export interface ChatState {
   cancelPending: () => void
   recallQueued: (sessionId: string) => BufferedSend | null
   cancelQueued: (sessionId: string) => void
+  refreshActivity: () => Promise<void>
+  startActivityWatch: () => void
+  stopActivityWatch: () => void
+  enableNotifications: () => Promise<void>
   selectSession: (id: string) => Promise<void>
   loadOlder: () => Promise<void>
   createSession: (name?: string) => Promise<SessionRecord | null>
@@ -76,6 +82,8 @@ let historyReload: ((sessionId: string) => Promise<void>) | null = null
 let bubbleSequence = 0
 let pendingTimer: ReturnType<typeof setTimeout> | null = null
 const SEND_GRACE_MS = 700
+let activityTimer: ReturnType<typeof setInterval> | null = null
+let knownActive: Set<string> | null = null
 
 function errorMessage(error: unknown): { error: string; httpStatus?: number } {
   return {
@@ -154,7 +162,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     const { sessionId, text, opts } = draft
     streamController?.abort()
     const turn = { ...emptyTurn(), bubbles: [draft.bubble] }
-    set({ liveTurn: turn })
+    set((state) => ({ liveTurn: turn, sessionActivity: { ...state.sessionActivity, [sessionId]: 'working' } }))
 
     const form = new FormData()
     form.append('message', text)
@@ -171,7 +179,11 @@ export const useChatStore = create<ChatState>((set, get) => {
         }
         lastStreamProgress = Date.now()
         set((state) => ({ liveTurn: applyEvent(state.liveTurn ?? turn, event) }))
-        if (event.type === 'turn_end') setTimeout(() => flushQueued(sessionId), 0)
+        if (event.type === 'turn_end') {
+          const { [sessionId]: _finished, ...sessionActivity } = get().sessionActivity
+          set({ sessionActivity })
+          setTimeout(() => flushQueued(sessionId), 0)
+        }
       },
       onDone: (sawDone) => {
         streamController = null
@@ -179,6 +191,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         if (get().activeSessionId !== sessionId) return
         if (!sawDone) {
           set((state) => ({ liveTurn: state.liveTurn ? { ...state.liveTurn, status: 'error' } : null }))
+          const { [sessionId]: _finished, ...sessionActivity } = get().sessionActivity
+          set({ sessionActivity })
         }
         void loadHistory(sessionId)
       },
@@ -187,6 +201,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         streamSessionId = null
         if (get().activeSessionId !== sessionId) return
         set((state) => ({ liveTurn: state.liveTurn ? { ...state.liveTurn, status: 'error' } : null }))
+        const { [sessionId]: _finished, ...sessionActivity } = get().sessionActivity
+        set({ sessionActivity })
       },
     })
     streamSessionId = sessionId
@@ -214,6 +230,40 @@ export const useChatStore = create<ChatState>((set, get) => {
     startStream(queued)
   }
 
+  const notifyCompletion = (sessionId: string): void => {
+    if (!get().notificationsEnabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    const sessions = get().sessions
+    const title = sessions.status === 'ready' ? sessions.data.find((session) => session.id === sessionId)?.name : null
+    const notification = new Notification('Reply finished', { body: title || 'A conversation finished working.', tag: `next-turn-${sessionId}` })
+    notification.onclick = () => {
+      window.focus()
+      location.hash = '#/chat'
+      void get().selectSession(sessionId)
+      notification.close()
+    }
+  }
+
+  const refreshActivity = async (): Promise<void> => {
+    try {
+      const response = await apiGet<{ active: string[] }>('/api/chat/active_sessions')
+      const active = new Set(Array.isArray(response.active) ? response.active : [])
+      if (knownActive === null) {
+        knownActive = active
+        set({ sessionActivity: Object.fromEntries([...active].map((id) => [id, 'working' as const])) })
+        return
+      }
+      const next = { ...get().sessionActivity }
+      for (const id of active) next[id] = 'working'
+      for (const id of knownActive) {
+        if (active.has(id)) continue
+        if (id === get().activeSessionId) delete next[id]
+        else { next[id] = 'complete'; notifyCompletion(id) }
+      }
+      knownActive = active
+      set({ sessionActivity: next })
+    } catch { /* the visible gateway status owns connection errors */ }
+  }
+
   return {
     sessions: idle,
     activeSessionId: null,
@@ -228,6 +278,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     branchPrefix: null,
     pendingSend: null,
     queuedSends: {},
+    sessionActivity: {},
+    notificationsEnabled: typeof Notification !== 'undefined' && Notification.permission === 'granted',
     pendingSessions: {},
     sessionError: null,
 
@@ -307,6 +359,26 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ queuedSends })
     },
 
+    refreshActivity,
+
+    startActivityWatch: () => {
+      if (activityTimer) return
+      void refreshActivity()
+      activityTimer = setInterval(() => void refreshActivity(), 10_000)
+    },
+
+    stopActivityWatch: () => {
+      if (activityTimer) clearInterval(activityTimer)
+      activityTimer = null
+      knownActive = null
+    },
+
+    enableNotifications: async () => {
+      if (typeof Notification === 'undefined') return
+      const permission = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
+      set({ notificationsEnabled: permission === 'granted' })
+    },
+
     selectSession: async (id) => {
       // Detaching a reader does not stop its server-side turn. Task 1.5 will
       // reattach from the durable event log when this session is selected again.
@@ -325,7 +397,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         const raw = localStorage.getItem(branchStorageKey(id))
         if (raw) branchPrefix = prefixBubbles(JSON.parse(raw) as BranchResponse['prefix'])
       } catch { /* corrupt local branch display state is safely ignored */ }
-      set({ activeSessionId: id, liveTurn: null, branchPrefix })
+      const { [id]: _cleared, ...sessionActivity } = get().sessionActivity
+      set({ activeSessionId: id, liveTurn: null, branchPrefix, sessionActivity })
       await loadHistory(id)
       await reconcileSession(id, set, get)
       flushQueued(id)
@@ -466,6 +539,7 @@ async function reconcileSession(
   } catch {
     return
   }
+  if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.events) || typeof snapshot.active !== 'boolean') return
   if (get().activeSessionId !== sessionId) return
   const localSession = streamSessionId ?? resumeSessionId
   const action = reconcileDecision({

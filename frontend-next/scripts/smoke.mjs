@@ -105,6 +105,25 @@ try {
     await evaluate(`[...document.querySelectorAll('.next-calendar-form button')].find(x => x.textContent.trim() === 'Cancel').click()`)
   }
 
+  // Unified inbox: wait for the real collector merge, filter to Gmail, open a
+  // sandboxed in-place reader, and exercise the snooze chooser without firing
+  // a destructive or remote action.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/inbox'`)
+    await waitFor(`document.querySelector('.next-inbox-item')`, 90_000)
+    await evaluate(`[...document.querySelectorAll('.next-inbox-toolbar button')].find(x => x.textContent.trim().startsWith('gmail ')).click()`)
+    await waitFor(`document.querySelector('.next-inbox-item .next-inbox-main')`)
+    await evaluate(`document.querySelector('.next-inbox-item .next-inbox-main').click()`)
+    await waitFor(`document.querySelector('.next-inbox-reader iframe')`, 30_000)
+    await screenshot(`${viewport.name}-inbox-reader`)
+    await evaluate(`[...document.querySelectorAll('.next-inbox-reader button')].find(x => x.textContent.includes('Back')).click()`)
+    await evaluate(`[...document.querySelectorAll('.next-inbox-item .next-inbox-actions button')].find(x => x.textContent.trim() === 'Snooze').click()`)
+    await waitFor(`document.querySelector('[role="dialog"][aria-label="Snooze until"]')`)
+    await screenshot(`${viewport.name}-inbox-snooze`)
+    await evaluate(`document.querySelector('[role="dialog"][aria-label="Snooze until"] [aria-label="Close"]').click()`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

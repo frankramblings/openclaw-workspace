@@ -35,12 +35,12 @@ export function ageLabelFor(item: InboxItem, now = Date.now()): string {
 
 export function primaryActions(item: InboxItem): string[] {
   if (item.source === 'calendar' || item.actions.includes('rsvp')) return ['rsvp:accepted', 'rsvp:tentative', 'rsvp:declined']
-  const preferred = ['add_asana', 'archive', 'mark_read', 'complete', 'reviewed', 'delete']
-  return preferred.filter((action) => item.actions.includes(action)).slice(0, 2)
+  const preferred = ['confirm', 'reclassify', 'not_entity', 'add_asana', 'archive', 'mark_read', 'complete', 'reviewed', 'delete']
+  return preferred.filter((action) => item.actions.includes(action)).slice(0, item.source === 'entities' ? 3 : 2)
 }
 
 export function actionLabel(action: string): string {
-  const labels: Record<string, string> = { add_asana: 'Add to Asana', mark_read: 'Mark read', 'rsvp:accepted': 'Yes', 'rsvp:tentative': 'Maybe', 'rsvp:declined': 'No' }
+  const labels: Record<string, string> = { add_asana: 'Add to Asana', mark_read: 'Mark read', not_entity: 'Not an entity', reclassify: 'Change type', confirm: 'Confirm', reply: 'Draft reply', gary: 'Hand off', 'rsvp:accepted': 'Yes', 'rsvp:tentative': 'Maybe', 'rsvp:declined': 'No' }
   return labels[action] ?? action.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase())
 }
 
@@ -50,3 +50,7 @@ export function groupBySource(items: InboxItem[]): Array<[string, InboxItem[]]> 
   return [...groups.entries()]
 }
 
+export function swipeOutcome(dx: number, dy: number, threshold = 95): 'primary' | 'dismiss' | null {
+  if (Math.abs(dx) <= Math.abs(dy) || Math.abs(dx) < threshold) return null
+  return dx > 0 ? 'primary' : 'dismiss'
+}

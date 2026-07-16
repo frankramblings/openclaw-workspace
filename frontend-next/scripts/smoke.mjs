@@ -135,6 +135,18 @@ try {
     await screenshot(`${viewport.name}-research-report`)
   }
 
+  // Cron: require real scheduled jobs from the gateway, then select one and
+  // render its schedule metadata and run-history remote at both breakpoints.
+  // No run/enable action is fired by smoke.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/cron'`)
+    await waitFor(`document.querySelector('.next-cron-list article > button')`, 30_000)
+    await evaluate(`document.querySelector('.next-cron-list article > button').click()`)
+    await waitFor(`document.querySelector('.next-cron-detail dl') && !document.querySelector('.next-cron-detail .next-skeleton')`, 30_000)
+    await screenshot(`${viewport.name}-cron-detail`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

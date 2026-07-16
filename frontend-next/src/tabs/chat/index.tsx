@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Card } from '../../kit'
+import { Composer } from './Composer'
 import { ModelPicker } from './ModelPicker'
 import { SessionList } from './SessionList'
 import { Thread } from './Thread'
@@ -30,7 +31,7 @@ export function ChatTab() {
       <aside className="next-chat-sidebar"><SessionList /></aside>
       <main className="next-chat-main">
         <Thread />
-        <Card title="Composer"><p className="next-empty-hint">Sending controls land in Task 1.4.</p></Card>
+        <Card title="Composer"><Composer /></Card>
       </main>
       <aside className="next-chat-models"><ModelPicker /></aside>
     </div>

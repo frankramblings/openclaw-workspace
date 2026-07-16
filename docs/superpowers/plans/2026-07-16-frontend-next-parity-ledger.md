@@ -70,7 +70,7 @@ workflow test match—not merely when an endpoint is wired.
 | --- | --- | --- |
 | Research start/progress/resume/cancel/report/library | P1 | done |
 | Cron history/actions plus live jobs/logs | P1 | done |
-| Memory full edit/audit/extract/import flows | P2 | thin |
+| Memory full edit/audit/extract/import flows | P2 | done |
 | Skills detail/toggle/audit/install/delete truthfulness | P2 | thin |
 | Settings status plus typed editable forms/test actions | P1 | thin |
 

@@ -147,6 +147,18 @@ try {
     await screenshot(`${viewport.name}-cron-detail`)
   }
 
+  // Memory: load durable records and open the complete edit form. Tidy,
+  // extraction, import and mutations remain contract-tested, not fired here.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/memory'`)
+    await waitFor(`document.querySelector('.next-memory-list article .next-memory-content')`, 30_000)
+    await evaluate(`document.querySelector('.next-memory-list article .next-memory-content').click()`)
+    await waitFor(`document.querySelector('[role="dialog"] [aria-label="Memory text"]') && document.querySelector('[role="dialog"] [aria-label="Memory category"]')`)
+    await screenshot(`${viewport.name}-memory-editor`)
+    await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

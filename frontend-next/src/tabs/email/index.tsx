@@ -1,0 +1,18 @@
+import { useEffect, useState } from 'react'
+import { Button, Card, EmptyState, ListRow, Modal, RemoteView, SectionHeader } from '../../kit'
+import { displayDate } from './logic'
+import { useEmailStore } from './store'
+
+export function EmailTab() {
+  const store = useEmailStore(), [query, setQuery] = useState(''), [compose, setCompose] = useState(false)
+  const [fields, setFields] = useState({ to: '', subject: '', body: '' })
+  useEffect(() => { void store.load() }, [])
+  const submit = async (draft = false) => { await store.send(fields, draft); setCompose(false) }
+  return <main className="next-tab"><SectionHeader title="Email" actions={<><Button variant="ghost" onClick={() => void store.load()}>Refresh</Button><Button onClick={() => setCompose(true)}>Compose</Button></>} />
+    <div className="next-grid"><Card title="Folders"><RemoteView remote={store.folders} onRetry={store.load}>{(data) => data.folders.map((folder) => <ListRow key={folder} title={folder} selected={folder === store.folder} onClick={() => void store.chooseFolder(folder)} />)}</RemoteView></Card>
+      <Card title="Messages"><form onSubmit={(e) => { e.preventDefault(); void store.search(query) }}><input aria-label="Search mail" value={query} onChange={(e) => setQuery(e.target.value)} /><Button type="submit" variant="ghost">Search</Button></form><RemoteView remote={store.messages} onRetry={store.load} empty={<EmptyState title="No messages" />} isEmpty={(data) => data.emails.length === 0}>{(data) => <>{data.error && <p className="next-error">{data.error}</p>}{data.emails.map((mail) => <ListRow key={mail.uid} title={<span style={{ fontWeight: mail.is_read ? 400 : 700 }}>{mail.subject}</span>} meta={`${mail.from_name} · ${displayDate(mail.date)}`} selected={mail.uid === store.selectedUid} onClick={() => void store.read(mail.uid)} />)}</>}</RemoteView></Card>
+      <Card title="Reader"><RemoteView remote={store.reader}>{(mail) => <><h3>{mail.subject}</h3><p>{mail.from_name} &lt;{mail.from_address}&gt;</p><iframe title="Email body" sandbox="" srcDoc={mail.body_html} style={{ width: '100%', minHeight: 320, background: 'white' }} /><p><Button variant="ghost" onClick={() => void store.summarize()}>Summarize</Button><Button variant="ghost" onClick={() => void store.aiReply()}>Draft reply</Button><Button variant="ghost" disabled={store.pending === mail.uid} onClick={() => void store.mutate(mail.uid, mail.is_read ? 'mark-unread' : 'mark-read')}>{mail.is_read ? 'Mark unread' : 'Mark read'}</Button><Button variant="ghost" onClick={() => void store.mutate(mail.uid, 'archive')}>Archive</Button><Button variant="danger" onClick={() => void store.mutate(mail.uid, 'delete')}>Delete</Button></p><RemoteView remote={store.ai}>{(text) => <pre style={{ whiteSpace: 'pre-wrap' }}>{text}</pre>}</RemoteView></>}</RemoteView></Card></div>
+    <Modal open={compose} onClose={() => setCompose(false)} title="Compose"><label>To<input value={fields.to} onChange={(e) => setFields({ ...fields, to: e.target.value })} /></label><label>Subject<input value={fields.subject} onChange={(e) => setFields({ ...fields, subject: e.target.value })} /></label><label>Message<textarea value={fields.body} onChange={(e) => setFields({ ...fields, body: e.target.value })} /></label><Button disabled={Boolean(store.pending)} onClick={() => void submit(false)}>Send</Button><Button variant="ghost" disabled={Boolean(store.pending)} onClick={() => void submit(true)}>Save draft</Button></Modal>
+  </main>
+}
+

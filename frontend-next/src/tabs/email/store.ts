@@ -1,0 +1,63 @@
+import { create } from 'zustand'
+import { apiDelete, apiGet, apiJson } from '../../api/client'
+import { idle, makeLoader, type Remote } from '../../lib/remote'
+import type { EmailList, EmailRead, Folders, Mailbox, Urgency } from './types'
+
+interface EmailState {
+  accounts: Remote<Mailbox[]>; folders: Remote<Folders>; messages: Remote<EmailList>; reader: Remote<EmailRead>; urgency: Remote<Urgency>
+  folder: string; selectedUid: string | null; ai: Remote<string>; pending: string | null
+  load(): Promise<void>; chooseFolder(folder: string): Promise<void>; read(uid: string): Promise<void>; search(q: string): Promise<void>
+  mutate(uid: string, action: 'mark-read' | 'mark-unread' | 'archive' | 'delete'): Promise<void>
+  send(payload: Record<string, string>, draft?: boolean): Promise<void>; summarize(): Promise<void>; aiReply(): Promise<void>
+}
+const foldersLoader = makeLoader<Folders>(), messagesLoader = makeLoader<EmailList>(), readerLoader = makeLoader<EmailRead>()
+
+export const useEmailStore = create<EmailState>((set, get) => {
+  const loadMessages = async (path?: string) => messagesLoader(() => apiGet(path ?? `/api/email/list?folder=${encodeURIComponent(get().folder)}`), (messages) => set({ messages }), get().messages)
+  return {
+    accounts: idle, folders: idle, messages: idle, reader: idle, urgency: idle, folder: 'INBOX', selectedUid: null, ai: idle, pending: null,
+    load: async () => {
+      set({ accounts: { status: 'loading' }, urgency: { status: 'loading' } })
+      await Promise.all([
+        apiGet<Mailbox[]>('/api/email/accounts').then((data) => set({ accounts: { status: 'ready', data, fetchedAt: Date.now() } })).catch((e: Error) => set({ accounts: { status: 'error', error: e.message } })),
+        foldersLoader(() => apiGet('/api/email/folders'), (folders) => set({ folders }), get().folders),
+        loadMessages(),
+        apiGet<Urgency>('/api/email/urgency-state').then((data) => set({ urgency: { status: 'ready', data, fetchedAt: Date.now() } })).catch((e: Error) => set({ urgency: { status: 'error', error: e.message } })),
+      ])
+    },
+    chooseFolder: async (folder) => { set({ folder, selectedUid: null, reader: idle }); await loadMessages(`/api/email/list?folder=${encodeURIComponent(folder)}`) },
+    read: async (uid) => { set({ selectedUid: uid, ai: idle }); await readerLoader(() => apiGet(`/api/email/read/${encodeURIComponent(uid)}?folder=${encodeURIComponent(get().folder)}`), (reader) => set({ reader }), get().reader); await loadMessages() },
+    search: async (q) => { await loadMessages(q.trim() ? `/api/email/search?folder=${encodeURIComponent(get().folder)}&q=${encodeURIComponent(q)}` : undefined) },
+    mutate: async (uid, action) => {
+      set({ pending: uid })
+      try {
+        const suffix = `/${encodeURIComponent(uid)}?folder=${encodeURIComponent(get().folder)}`
+        const response = action === 'delete' ? await apiDelete<{ ok: boolean }>(`/api/email/delete${suffix}`) : await apiJson<{ ok: boolean }>('POST', `/api/email/${action}${suffix}`)
+        if (!response.ok) throw new Error(`${action} failed`)
+        set({ selectedUid: null, reader: idle }); await loadMessages()
+      } finally { set({ pending: null }) }
+    },
+    send: async (payload, draft = false) => {
+      set({ pending: draft ? 'draft' : 'send' })
+      try {
+        const result = await apiJson<Record<string, unknown>>('POST', draft ? '/api/email/draft' : '/api/email/send', payload)
+        if (result.error || result.success === false) throw new Error(String(result.error ?? 'Email operation failed'))
+        await loadMessages()
+      } finally { set({ pending: null }) }
+    },
+    summarize: async () => {
+      const reader = get().reader
+      if (reader.status !== 'ready') return
+      const mail = reader.data
+      set({ ai: { status: 'loading' } })
+      try { const result = await apiJson<{ success: boolean; summary?: string; error?: string }>('POST', '/api/email/summarize', { subject: mail.subject, from: mail.from_address, body: mail.body_html }); if (!result.success) throw new Error(result.error); set({ ai: { status: 'ready', data: result.summary ?? '', fetchedAt: Date.now() } }) } catch (e) { set({ ai: { status: 'error', error: e instanceof Error ? e.message : String(e) } }) }
+    },
+    aiReply: async () => {
+      const reader = get().reader
+      if (reader.status !== 'ready') return
+      const mail = reader.data
+      set({ ai: { status: 'loading' } })
+      try { const result = await apiJson<{ reply: string }>('POST', '/api/email/ai-reply', { subject: mail.subject, from_address: mail.from_address, original_body: mail.body_html }); set({ ai: { status: 'ready', data: result.reply, fetchedAt: Date.now() } }) } catch (e) { set({ ai: { status: 'error', error: e instanceof Error ? e.message : String(e) } }) }
+    },
+  }
+})

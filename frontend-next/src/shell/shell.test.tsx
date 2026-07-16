@@ -11,6 +11,10 @@ beforeEach(() => {
     if (String(url).includes('/api/config')) {
       return Response.json({ agent_name: 'TestAgent', accent: '#4fe3d1', workspace_root: '/w', source_url: 'x' })
     }
+    if (String(url).includes('/api/email/accounts')) return Response.json([])
+    if (String(url).includes('/api/email/folders')) return Response.json({ folders: [] })
+    if (String(url).includes('/api/email/list')) return Response.json({ emails: [], total: 0 })
+    if (String(url).includes('/api/email/urgency-state')) return Response.json({ per_uid: {} })
     return Response.json({})
   }))
 })
@@ -43,9 +47,7 @@ test('hash change switches the rendered tab; unknown hash falls back to chat', a
   })
   expect(screen.getByRole('navigation', { name: 'Primary' }).querySelector('[aria-current="page"]')?.textContent)
     .toContain('Email')
-  // Stubbed tab body links to the classic app for that tab.
-  expect((screen.getByRole('link', { name: /open email there/ }) as HTMLAnchorElement).getAttribute('href'))
-    .toBe('/#/email')
+  expect(screen.getByRole('heading', { name: 'Email' })).toBeTruthy()
   await act(async () => {
     window.location.hash = '#/nonsense-tab'
     fireEvent(window, new HashChangeEvent('hashchange'))

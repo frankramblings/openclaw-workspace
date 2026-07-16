@@ -79,3 +79,22 @@ workflow test match—not merely when an endpoint is wired.
 `/next` cannot replace `/` until all P0 rows are `done`, their browser workflows
 pass at desktop and phone viewports, and normal work has run through `/next` for
 one week with `/` retained as rollback.
+
+## Verification hole found after the campaign (2026-07-16, main@dbee40e)
+
+The chat "real-turn browser gate" backing the P0 send/stream row was passing on
+**dead selectors**: `.msg.assistant` and `.activity-trail` exist nowhere in the
+React DOM (the components render `.msg-role` and `.act-step-head`), so the gate
+had silently degraded to checking the Stop button alone.
+
+Behind that hole was a real defect: sending immediately after `New chat`
+silently re-homed the message to the *previous* conversation, because
+`createSession` is async and the composer stayed bound to the outgoing session
+until it settled. Reproduced 3/3 headless; the new chat showed "No messages yet"
+while the text sat in another session's queue behind a 6px dot. Fixed by
+blocking sends while a session creation is in flight; smoke selectors corrected.
+
+Standing lesson for every row in this ledger: **a gate whose selector matches
+nothing is worse than no gate** — it converts "untested" into "verified". When
+adding a browser assertion, assert that the selector matches something before
+trusting what it implies.

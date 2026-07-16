@@ -50,3 +50,9 @@ export interface StopResponse {
   ok: boolean
   runIds: string[]
 }
+
+export interface DefaultChat {
+  endpoint_id: string
+  endpoint_url: string
+  model: string
+}

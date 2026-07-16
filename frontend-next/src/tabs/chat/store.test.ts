@@ -34,6 +34,9 @@ beforeEach(() => {
     nextCursor: null,
     liveTurn: null,
     models: idle,
+    defaultChat: idle,
+    pendingSessions: {},
+    sessionError: null,
   })
 })
 
@@ -61,7 +64,7 @@ test('loads sessions and a selected session history from their responses', async
   expect(useChatStore.getState()).toMatchObject({
     sessions: { status: 'ready', data: [session] },
     activeSessionId: 'chat-1',
-    history: { status: 'ready', data: [{ role: 'assistant', content: 'hello' }] },
+    history: { status: 'ready', data: [expect.objectContaining({ role: 'assistant', text: 'hello' })] },
     hasMore: true,
     nextCursor: 'older-1',
   })

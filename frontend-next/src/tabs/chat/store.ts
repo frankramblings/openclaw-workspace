@@ -1,8 +1,9 @@
 import { create } from 'zustand'
-import { ApiError, apiGet, apiJson, postStream } from '../../api/client'
+import { ApiError, apiDelete, apiForm, apiGet, apiJson, postStream } from '../../api/client'
 import { idle, makeLoader, type Remote } from '../../lib/remote'
 import { applyEvent, emptyTurn, type Bubble, type Turn } from './reducer'
-import type { HistoryItem, HistoryResponse, ModelEndpoint, ModelsResponse, SessionRecord, StopResponse } from './types'
+import { parseHistory } from './history'
+import type { DefaultChat, HistoryResponse, ModelEndpoint, ModelsResponse, SessionRecord, StopResponse } from './types'
 
 export interface SendOptions {
   allowWebSearch?: boolean
@@ -12,21 +13,34 @@ export interface SendOptions {
 interface ChatState {
   sessions: Remote<SessionRecord[]>
   activeSessionId: string | null
-  history: Remote<HistoryItem[]>
+  history: Remote<Bubble[]>
   hasMore: boolean
   nextCursor: string | null
   liveTurn: Turn | null
   models: Remote<ModelEndpoint[]>
+  defaultChat: Remote<DefaultChat>
+  pendingSessions: Record<string, string>
+  sessionError: string | null
   loadSessions: () => Promise<void>
   loadModels: () => Promise<void>
+  loadDefaultChat: () => Promise<void>
   selectSession: (id: string) => Promise<void>
   loadOlder: () => Promise<void>
+  createSession: (name?: string) => Promise<SessionRecord | null>
+  renameSession: (id: string, name: string) => Promise<boolean>
+  setSessionModel: (id: string, model: string, endpointId?: string) => Promise<boolean>
+  setSessionSpeed: (id: string, speed: SessionRecord['speed']) => Promise<boolean>
+  deleteSession: (id: string) => Promise<boolean>
+  archiveSession: (id: string) => Promise<boolean>
+  toggleImportant: (id: string, important: boolean) => Promise<boolean>
+  setDefaultModel: (model: string, endpointId: string) => Promise<boolean>
   send: (text: string, opts?: SendOptions) => void
   stop: () => Promise<void>
 }
 
 const sessionsLoader = makeLoader<SessionRecord[]>()
 const modelsLoader = makeLoader<ModelEndpoint[]>()
+const defaultChatLoader = makeLoader<DefaultChat>()
 let historyEpoch = 0
 let streamController: AbortController | null = null
 let bubbleSequence = 0
@@ -38,7 +52,7 @@ function errorMessage(error: unknown): { error: string; httpStatus?: number } {
   }
 }
 
-function staleHistory(remote: Remote<HistoryItem[]>): HistoryItem[] | undefined {
+function staleHistory(remote: Remote<Bubble[]>): Bubble[] | undefined {
   if (remote.status === 'ready') return remote.data
   if (remote.status === 'loading' || remote.status === 'error') return remote.stale
   return undefined
@@ -69,7 +83,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       const page = await apiGet<HistoryResponse>(`/api/history/${encodeURIComponent(sessionId)}?limit=200`)
       if (epoch !== historyEpoch || get().activeSessionId !== sessionId) return
       set({
-        history: { status: 'ready', data: page.history, fetchedAt: Date.now() },
+        history: { status: 'ready', data: parseHistory(page.history), fetchedAt: Date.now() },
         hasMore: page.hasMore,
         nextCursor: page.nextCursor,
       })
@@ -91,6 +105,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     nextCursor: null,
     liveTurn: null,
     models: idle,
+    defaultChat: idle,
+    pendingSessions: {},
+    sessionError: null,
 
     loadSessions: () => sessionsLoader(
       () => apiGet<SessionRecord[]>('/api/sessions'),
@@ -102,6 +119,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       async () => (await apiGet<ModelsResponse>('/api/models')).items,
       (models) => set({ models }),
       get().models,
+    ),
+
+    loadDefaultChat: () => defaultChatLoader(
+      () => apiGet<DefaultChat>('/api/default-chat'),
+      (defaultChat) => set({ defaultChat }),
+      get().defaultChat,
     ),
 
     selectSession: async (id) => {
@@ -125,13 +148,81 @@ export const useChatStore = create<ChatState>((set, get) => {
         )
         if (epoch !== historyEpoch || get().activeSessionId !== activeSessionId) return
         set({
-          history: { status: 'ready', data: [...page.history, ...current], fetchedAt: Date.now() },
+          history: { status: 'ready', data: [...parseHistory(page.history), ...current], fetchedAt: Date.now() },
           hasMore: page.hasMore,
           nextCursor: page.nextCursor,
         })
       } catch (error) {
         if (epoch !== historyEpoch || get().activeSessionId !== activeSessionId) return
         set({ history: { status: 'error', ...errorMessage(error), stale: current } })
+      }
+    },
+
+    createSession: async (name = 'New chat') => {
+      set({ sessionError: null, pendingSessions: { ...get().pendingSessions, new: 'creating' } })
+      try {
+        const currentDefault = get().defaultChat
+        let defaults = currentDefault.status === 'ready' ? currentDefault.data : null
+        if (!defaults) defaults = await apiGet<DefaultChat>('/api/default-chat')
+        const created = await apiForm<SessionRecord>('/api/session', {
+          name,
+          model: defaults.model,
+          endpoint_url: defaults.endpoint_url,
+          endpoint_id: defaults.endpoint_id,
+        })
+        await get().loadSessions()
+        await get().selectSession(created.id)
+        return created
+      } catch (error) {
+        set({ sessionError: errorMessage(error).error })
+        return null
+      } finally {
+        const { new: _new, ...pendingSessions } = get().pendingSessions
+        set({ pendingSessions })
+      }
+    },
+
+    renameSession: (id, name) => runSessionMutation(set, get, id, 'renaming', () =>
+      apiForm<SessionRecord>(`/api/session/${encodeURIComponent(id)}`, { name }, 'PATCH')),
+
+    setSessionModel: (id, model, endpointId = '') => runSessionMutation(set, get, id, 'changing model', () =>
+      apiForm<SessionRecord>(`/api/session/${encodeURIComponent(id)}`, {
+        model,
+        ...(endpointId ? { endpoint_id: endpointId } : {}),
+      }, 'PATCH')),
+
+    setSessionSpeed: (id, speed) => runSessionMutation(set, get, id, 'changing speed', () =>
+      apiForm<SessionRecord>(`/api/session/${encodeURIComponent(id)}`, { speed }, 'PATCH')),
+
+    deleteSession: (id) => runSessionMutation(set, get, id, 'deleting', async () => {
+      await apiDelete<{ ok: boolean }>(`/api/session/${encodeURIComponent(id)}`)
+      if (get().activeSessionId === id) {
+        set({ activeSessionId: null, history: idle, liveTurn: null, hasMore: false, nextCursor: null })
+      }
+    }),
+
+    archiveSession: (id) => runSessionMutation(set, get, id, 'archiving', async () => {
+      await apiJson<{ ok: boolean }>('POST', `/api/session/${encodeURIComponent(id)}/archive`)
+      if (get().activeSessionId === id) {
+        set({ activeSessionId: null, history: idle, liveTurn: null, hasMore: false, nextCursor: null })
+      }
+    }),
+
+    toggleImportant: (id, important) => runSessionMutation(set, get, id, 'updating favorite', () =>
+      apiForm<{ ok: boolean; important: boolean }>(
+        `/api/session/${encodeURIComponent(id)}/important`,
+        { important: String(important) },
+      )),
+
+    setDefaultModel: async (model, endpointId) => {
+      set({ sessionError: null })
+      try {
+        await apiJson('POST', '/api/default-chat', { model, endpoint_id: endpointId })
+        await get().loadDefaultChat()
+        return true
+      } catch (error) {
+        set({ sessionError: errorMessage(error).error })
+        return false
       }
     },
 
@@ -186,3 +277,24 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
   }
 })
+
+async function runSessionMutation(
+  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
+  get: () => ChatState,
+  id: string,
+  label: string,
+  mutate: () => Promise<unknown>,
+): Promise<boolean> {
+  set({ sessionError: null, pendingSessions: { ...get().pendingSessions, [id]: label } })
+  try {
+    await mutate()
+    await get().loadSessions()
+    return true
+  } catch (error) {
+    set({ sessionError: errorMessage(error).error })
+    return false
+  } finally {
+    const { [id]: _finished, ...pendingSessions } = get().pendingSessions
+    set({ pendingSessions })
+  }
+}

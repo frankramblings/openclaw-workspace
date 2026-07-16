@@ -23,7 +23,14 @@ export function ChatTab() {
   }, [loadDefault, loadModels, loadSessions])
 
   useEffect(() => {
-    if (activeId || sessions.status !== 'ready') return
+    if (sessions.status !== 'ready') return
+    const requested = sessionStorage.getItem('next:chat')
+    if (requested) {
+      sessionStorage.removeItem('next:chat')
+      if (sessions.data.some((record) => record.id === requested && !record.archived)) void select(requested)
+      return
+    }
+    if (activeId) return
     const first = sessions.data.find((record) => !record.archived)
     if (first) void select(first.id)
   }, [activeId, select, sessions])

@@ -46,7 +46,7 @@ export function NotesTab() {
   const store = useNotesStore()
   const [query, setQuery] = useState('')
   const [type, setType] = useState<'all' | NoteType>('all')
-  useEffect(() => { void (async () => { await store.load(); const state = useNotesStore.getState(); if (!state.selected && state.notes.status === 'ready' && state.notes.data.notes[0]) state.select(state.notes.data.notes[0]) })() }, [])
+  useEffect(() => { void (async () => { await store.load(); let state = useNotesStore.getState(); const requested = sessionStorage.getItem('next:note'); if (requested) { sessionStorage.removeItem('next:note'); let note = state.notes.status === 'ready' ? state.notes.data.notes.find(value => value.id === requested) : undefined; if (!note) { await state.load(true); state = useNotesStore.getState(); note = state.notes.status === 'ready' ? state.notes.data.notes.find(value => value.id === requested) : undefined } if (note) state.select(note); return } if (!state.selected && state.notes.status === 'ready' && state.notes.data.notes[0]) state.select(state.notes.data.notes[0]) })() }, [])
   const rows = store.notes.status === 'ready' ? store.notes.data.notes : []
   const filtered = useMemo(() => rows.filter(note => {
     const haystack = `${note.title} ${note.content} ${note.label ?? ''} ${(note.items ?? []).map(item => item.text).join(' ')}`.toLowerCase()

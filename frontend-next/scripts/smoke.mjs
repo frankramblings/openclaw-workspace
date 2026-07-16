@@ -135,6 +135,19 @@ try {
     await screenshot(`${viewport.name}-research-report`)
   }
 
+  // Unified Library: require heterogeneous real artifacts, filter to research,
+  // and render the selected report natively before any cross-tab navigation.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/library'`)
+    await waitFor(`document.querySelector('.next-library-grid article') && document.querySelectorAll('.next-library-filters button').length === 7`, 45_000)
+    await evaluate(`[...document.querySelectorAll('.next-library-filters button')].find(x => x.textContent.startsWith('Research')).click()`)
+    await waitFor(`document.querySelector('.next-library-grid article button')`, 30_000)
+    await evaluate(`document.querySelector('.next-library-grid article button').click()`)
+    await waitFor(`document.querySelector('.next-library-detail .next-library-markdown .md') || document.querySelector('.next-library-detail .next-library-markdown p')`, 30_000)
+    await screenshot(`${viewport.name}-library-report`)
+  }
+
   // Cron: require real scheduled jobs from the gateway, then select one and
   // render its schedule metadata and run-history remote at both breakpoints.
   // No run/enable action is fired by smoke.

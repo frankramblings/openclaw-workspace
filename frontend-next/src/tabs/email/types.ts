@@ -4,4 +4,4 @@ export interface EmailList { emails: EmailRow[]; total: number; error?: string }
 export interface EmailRead extends EmailRow { to: string; cc: string; body_html: string; message_id: string; references: string; attachments: Array<{ index: number; filename: string; size: number }> }
 export interface Folders { folders: string[]; error?: string }
 export interface Urgency { per_uid: Record<string, string> }
-
+export interface ScheduledEmail { id?: string; sid?: string; subject?: string; send_at?: string; [key: string]: unknown }

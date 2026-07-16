@@ -1,2 +1,19 @@
-import{useEffect,useMemo,useState}from'react';import{Button,Card,EmptyState,ListRow,Modal,RemoteView,SectionHeader}from'../../kit';import{useMemoryStore}from'./store';import type{MemoryItem}from'./types';export function MemoryTab(){const s=useMemoryStore(),[q,setQ]=useState(''),[edit,setEdit]=useState<MemoryItem|null|undefined>(undefined),[text,setText]=useState(''),[cat,setCat]=useState('User Curated');useEffect(()=>{void s.load()},[]);const rows=useMemo(()=>s.memory.status==='ready'?s.memory.data.filter(x=>`${x.text} ${x.category}`.toLowerCase().includes(q.toLowerCase())):[],[s.memory,q]);const open=(x:MemoryItem|null)=>{setEdit(x);setText(x?.text??'');setCat(x?.category??'User Curated')};const save=async()=>{if(edit)await s.save(edit,text,cat);else await s.add(text,cat);setEdit(undefined)};return <main className="next-tab"><SectionHeader title="Memory" actions={<Button onClick={()=>open(null)}>Add memory</Button>}/><Card><input aria-label="Search memory" value={q} onChange={e=>setQ(e.target.value)}/><RemoteView remote={s.memory} onRetry={s.load} empty={<EmptyState title="No memories"/>}>{()=>rows.map(x=><ListRow key={x.id} title={`${x.pinned?'★ ':''}${x.text}`} meta={x.category} onClick={()=>open(x)} actions={<><Button variant="ghost" onClick={()=>void s.pin(x)}>{x.pinned?'Unpin':'Pin'}</Button><Button variant="danger" onClick={()=>{if(confirm('Delete this memory?'))void s.remove(x.id)}}>Delete</Button></>}/>)}</RemoteView><p>Audit, extract, and import are available in the current app and are not built in /next yet.</p></Card><Modal open={edit!==undefined} onClose={()=>setEdit(undefined)} title={edit?'Edit memory':'Add memory'}><textarea value={text} onChange={e=>setText(e.target.value)}/><input value={cat} onChange={e=>setCat(e.target.value)}/><Button disabled={!text.trim()} onClick={()=>void save()}>Save</Button></Modal></main>}
+import { useEffect, useMemo, useState } from 'react'
+import { Button, Card, EmptyState, ListRow, Modal, RemoteView, SectionHeader } from '../../kit'
+import { useMemoryStore } from './store'
+import type { MemoryItem } from './types'
+
+export function MemoryTab() {
+  const store = useMemoryStore()
+  const [query, setQuery] = useState('')
+  const [editing, setEditing] = useState<MemoryItem | null | undefined>(undefined)
+  const [text, setText] = useState('')
+  const [category, setCategory] = useState('User Curated')
+  useEffect(() => { void store.load() }, [])
+  const rows = useMemo(() => store.memory.status === 'ready' && Array.isArray(store.memory.data)
+    ? store.memory.data.filter((item) => `${item.text} ${item.category}`.toLowerCase().includes(query.toLowerCase())) : [], [store.memory, query])
+  const open = (item: MemoryItem | null) => { setEditing(item); setText(item?.text ?? ''); setCategory(item?.category ?? 'User Curated') }
+  const save = async () => { if (editing) await store.save(editing, text, category); else await store.add(text, category); setEditing(undefined) }
+  return <main className="next-tab"><SectionHeader title="Memory" actions={<Button onClick={() => open(null)}>Add memory</Button>} /><Card><input aria-label="Search memory" value={query} onChange={(e) => setQuery(e.target.value)} /><RemoteView remote={store.memory} onRetry={store.load} empty={<EmptyState title="No memories" />}>{() => rows.map((item) => <ListRow key={item.id} title={`${item.pinned ? '★ ' : ''}${item.text}`} meta={item.category} onClick={() => open(item)} actions={<><Button variant="ghost" onClick={() => void store.pin(item)}>{item.pinned ? 'Unpin' : 'Pin'}</Button><Button variant="danger" onClick={() => { if (confirm('Delete this memory?')) void store.remove(item.id) }}>Delete</Button></>} />)}</RemoteView><p>Audit, extract, and import are available in the current app and are not built in /next yet.</p></Card><Modal open={editing !== undefined} onClose={() => setEditing(undefined)} title={editing ? 'Edit memory' : 'Add memory'}><textarea value={text} onChange={(e) => setText(e.target.value)} /><input value={category} onChange={(e) => setCategory(e.target.value)} /><Button disabled={!text.trim()} onClick={() => void save()}>Save</Button></Modal></main>
+}
 

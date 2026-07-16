@@ -15,6 +15,8 @@ beforeEach(() => {
     if (String(url).includes('/api/email/folders')) return Response.json({ folders: [] })
     if (String(url).includes('/api/email/list')) return Response.json({ emails: [], total: 0 })
     if (String(url).includes('/api/email/urgency-state')) return Response.json({ per_uid: {} })
+    if (String(url).includes('/api/email/scheduled')) return Response.json([])
+    if (String(url).includes('/api/memory')) return Response.json({ memory: [] })
     return Response.json({})
   }))
 })

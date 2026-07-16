@@ -17,6 +17,8 @@ export function Md({ src }: { src: string }) {
 export function Message({ bubble }: { bubble: Bubble }) {
   const [notice, setNotice] = useState('')
   const branch = useChatStore((state) => state.branchFromMessage)
+  const regenerate = useChatStore((state) => state.regenerate)
+  const continueFrom = useChatStore((state) => state.continueFrom)
   const copy = async () => {
     try { await navigator.clipboard.writeText(bubble.text); setNotice('Copied') }
     catch { setNotice('Copy failed') }
@@ -67,6 +69,7 @@ export function Message({ bubble }: { bubble: Bubble }) {
         <button className="msg-tool" type="button" title="Branch conversation here" onClick={() => void branch(bubble.id)} aria-label="Branch here"><span aria-hidden="true">↳</span></button>
         <button className="msg-tool" type="button" title="Download Markdown" onClick={download} aria-label="Download message"><span aria-hidden="true">↓</span></button>
         <button className="msg-tool" type="button" title="Download PDF" onClick={() => void pdf()} aria-label="Download message as PDF"><span aria-hidden="true">PDF</span></button>
+        {bubble.role === 'assistant' && <><button className="msg-tool" type="button" title="Regenerate response" onClick={() => void regenerate(bubble.id)} aria-label="Regenerate response"><span aria-hidden="true">↻</span></button><button className="msg-tool" type="button" title="Continue response" onClick={() => continueFrom(bubble.id)} aria-label="Continue response"><span aria-hidden="true">▸</span></button></>}
         {notice && <span role="status" className="msg-tool-status">{notice}</span>}
       </div>}
     </article>

@@ -96,6 +96,33 @@ test('branches through the selected bubble and rehydrates the echoed prefix', as
   ] })
 })
 
+test('regenerate truncates at the preceding user and replays its attachments', async () => {
+  let body: Record<string, unknown> | null = null
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    expect(String(input)).toBe('/api/session/chat-1/truncate')
+    body = JSON.parse(String(init?.body))
+    return json({ ok: true })
+  }))
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+    { id: 'a1', role: 'assistant', text: 'old', thinking: '', cards: [], images: [] },
+    { id: 'u2', role: 'user', text: 'look', thinking: '', cards: [], images: [], attachments: [{ id: 'photo-1', name: 'photo.png' }] },
+    { id: 'a2', role: 'assistant', text: 'replace me', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().regenerate('a2')).toBe(true)
+  expect(body).toEqual({ keep_count: 2 })
+  expect(useChatStore.getState().history).toMatchObject({ data: [{ id: 'u1' }, { id: 'a1' }] })
+  expect(useChatStore.getState().pendingSend).toMatchObject({ text: 'look', opts: { attachments: [{ id: 'photo-1' }] } })
+})
+
+test('continue creates an explicit cutoff-aware follow-up', () => {
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'a1', role: 'assistant', text: 'partial answer', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(useChatStore.getState().continueFrom('a1')).toBe(true)
+  expect(useChatStore.getState().pendingSend?.text).toContain('partial answer')
+})
+
 afterEach(() => vi.unstubAllGlobals())
 
 test('loads sessions and a selected session history from their responses', async () => {
@@ -135,14 +162,16 @@ test('loads sessions and a selected session history from their responses', async
 
 test('feeds the POST stream through the reducer and refreshes authoritative history', async () => {
   let historyLoads = 0
+  let streamForm: FormData | null = null
   const encoder = new TextEncoder()
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     if (path.startsWith('/api/history/chat-1')) {
       historyLoads += 1
       return json({ history: [], model: 'openclaw', hasMore: false, nextCursor: null })
     }
     if (path === '/api/chat_stream') {
+      streamForm = init?.body as FormData
       const frames = [
         'data: {"type":"turn_start","turn_id":7,"session_key":"agent:main:web-chat-1","ts":1}\n\n',
         'data: {"delta":"Hello","thinking":false}\n\n',
@@ -161,7 +190,7 @@ test('feeds the POST stream through the reducer and refreshes authoritative hist
   vi.stubGlobal('fetch', fetchMock)
 
   await useChatStore.getState().selectSession('chat-1')
-  useChatStore.getState().send('Hi')
+  useChatStore.getState().send('Hi', { useResearch: true })
   useChatStore.getState().flushPending()
 
   await vi.waitFor(() => {
@@ -174,6 +203,7 @@ test('feeds the POST stream through the reducer and refreshes authoritative hist
       ],
     })
     expect(historyLoads).toBe(2)
+    expect(streamForm?.get('use_research')).toBe('true')
   })
 })
 
@@ -190,6 +220,7 @@ test('buffers a send for editing and preserves multiple queued prompts while a t
   expect(useChatStore.getState().queuedSends['chat-1']).toMatchObject([{ text: 'next prompt' }, { text: 'then another' }])
   expect(useChatStore.getState().recallQueued('chat-1')).toMatchObject({ text: 'next prompt' })
   expect(useChatStore.getState().queuedSends['chat-1']).toMatchObject([{ text: 'then another' }])
+  expect(JSON.parse(localStorage.getItem('next:chat-queues') || '{}')['chat-1']).toMatchObject([{ text: 'then another' }])
 })
 
 test('activity snapshots mark background completions without inventing active work', async () => {

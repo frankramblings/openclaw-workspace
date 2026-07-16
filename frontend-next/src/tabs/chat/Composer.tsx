@@ -12,6 +12,7 @@ export function Composer() {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [notice, setNotice] = useState('')
   const [allowWebSearch, setAllowWebSearch] = useState(false)
+  const [useResearch, setUseResearch] = useState(false)
   const [slashForced, setSlashForced] = useState(false)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
@@ -53,6 +54,7 @@ export function Composer() {
     void enableNotifications()
     send(draft.trim(), {
       allowWebSearch,
+      useResearch,
       attachments: sendableAttach(attachments),
     })
     setDraft('')
@@ -136,6 +138,10 @@ export function Composer() {
         <label className="composer-web-search">
           <input type="checkbox" checked={allowWebSearch} onChange={(event) => setAllowWebSearch(event.target.checked)} />
           Web search
+        </label>
+        <label className="composer-web-search">
+          <input type="checkbox" checked={useResearch} onChange={(event) => setUseResearch(event.target.checked)} />
+          Deep research
         </label>
         {contextPct !== null && <div className="ctx-meter" title={`${context!.usedTokens.toLocaleString()} of ${context!.windowTokens.toLocaleString()} context tokens`}>
           <span className="track"><span className="fill" style={{ width: `${contextPct}%` }} /></span>

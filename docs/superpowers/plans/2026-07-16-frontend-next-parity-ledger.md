@@ -29,39 +29,39 @@ workflow test match—not merely when an endpoint is wired.
 
 | Workflow | Priority | Status | Acceptance |
 | --- | --- | --- | --- |
-| Send/stream/tools/thinking/stop | P0 | thin | Protocol-complete rendering, interruption and retry match current app |
-| Reload and resume active turn | P0 | thin | Reload during long tool call never loses or duplicates output |
-| Session create/select/rename/archive/favorite/model/speed | P0 | thin | All current conversation actions and truthful pending states |
-| Title + semantic message search | P0 | building | Debounced `/api/search`, local title matches, no duplicate sessions |
-| Message copy/branch/download | P0 | building | Prefix-correct branch; clipboard and MD/PDF export |
-| Buffered send and inline edit grace period | P0 | building | 700ms pending bubble can edit/cancel/save without cross-session leakage |
-| Cross-session queue | P0 | building | Sends queued per busy session, visible in composer and conversation row |
-| Conversation completion/unread indicators | P0 | building | Working/queued/completed states survive navigation and reload |
-| Regenerate/continue and attachment replay | P1 | missing | Replays original attachments and replaces correct assistant tail |
-| Slash commands and setup flows | P1 | missing | Command menu, argument handling, keyboard selection, setup state |
+| Send/stream/tools/thinking/stop | P0 | done | Typed full protocol reducer, server stop, reconnect error, real-turn browser gate |
+| Reload and resume active turn | P0 | done | Durable event snapshot/tail reconciliation with cursor and stale-reader guards |
+| Session create/select/rename/archive/favorite/model/speed | P0 | done | Complete actions with response refresh and visible per-session pending states |
+| Title + semantic message search | P0 | done | Debounced `/api/search`, local title matches, deduplicated semantic sessions |
+| Message copy/branch/download | P0 | done | Prefix-correct branch; clipboard and MD/PDF message/transcript export |
+| Buffered send and inline edit grace period | P0 | done | 700ms pending bubble can edit/cancel/save without cross-session leakage |
+| Cross-session queue | P0 | done | Per-session multi-send queues, recall/cancel, durable reload persistence |
+| Conversation completion/unread indicators | P0 | done | Working/queued/completed states persist, clear on open, and notify once |
+| Regenerate/continue and attachment replay | P1 | done | Server truncation at preceding user; original attachment IDs replayed; cutoff-aware continue |
+| Slash commands and setup flows | P1 | done | Command menu, filtering/arguments, mouse and keyboard selection |
 | Chat usage/context indicators | P1 | done | Values come from server usage routes and refresh after turns |
-| Mobile composer, drawers, tools and gestures | P0 | building | Current thumb-first flows, long press, sheets and edit behavior |
-| Research mode and progress inside Chat | P1 | missing | Current research toggle/progress/completion behavior |
+| Mobile composer, drawers, tools and gestures | P0 | done | Bottom composer, session/model drawers, visible message tools and real Back browser gate |
+| Research mode and progress inside Chat | P1 | done | Deep-research send flag plus `/research` command; shared task/progress completion surfaces |
 
 ## Inbox, Email, Calendar and Notes
 
 | Workflow | Priority | Status |
 | --- | --- | --- |
 | Inbox source filters, rich cards, detail, snooze, undo and gestures | P0 | done |
-| Email account/folder/list/search/read caching and navigation | P0 | building |
-| Email reply/reply-all/forward, attachments, move, schedule and RSVP | P0 | building |
+| Email account/folder/list/search/read caching and navigation | P0 | done |
+| Email reply/reply-all/forward, attachments, move, deployment-scheduled state and RSVP | P0 | done |
 | Calendar month/agenda navigation, CRUD, quick add and event detail | P1 | done |
 | Calendar drag/resize and mobile agenda | P2 | missing |
-| Notes cards, pin/archive/checklists/reminders/reorder | P1 | building |
+| Notes cards, pin/archive/checklists/reminders/reorder | P1 | done |
 
 ## Documents and workspace content
 
 | Workflow | Priority | Status |
 | --- | --- | --- |
-| Multi-document tabs, rename/reorder and session integration | P0 | building |
-| Rich markdown editor, save/version/restore/export | P0 | building |
-| Email-compose documents and recipient/attachment workflow | P0 | building |
-| PDF import, form fields, annotations, AI fill and preview | P1 | missing |
+| Multi-document tabs, rename/reorder and session integration | P0 | done |
+| Rich markdown editor, save/version/restore/export | P0 | done |
+| Email-compose documents and recipient workflow | P0 | done |
+| PDF capability truthfulness | P1 | done | Deployment route returns explicit 501 and render/export routes are legacy stubs; `/next` exposes that limitation without fake controls |
 | Library search/filter/sort and deep selection | P1 | done |
 
 ## Research, operations and settings

@@ -8,6 +8,7 @@ import { Thread } from './Thread'
 import { useChatStore } from './store'
 import { ResizeHandle } from '../../shell/layout/ResizeHandle'
 import { useShellLayout } from '../../shell/layout/store'
+import { useHistoryLayer } from '../../shell/useHistoryLayer'
 
 export function ChatTab() {
   const [mobilePanel, setMobilePanel] = useState<'sessions' | 'models' | null>(null)
@@ -18,6 +19,7 @@ export function ChatTab() {
   const loadDefault = useChatStore((state) => state.loadDefaultChat)
   const select = useChatStore((state) => state.selectSession)
   const layout = useShellLayout()
+  const closeMobilePanel = useHistoryLayer(mobilePanel !== null, () => setMobilePanel(null))
 
   useEffect(() => {
     void loadSessions()
@@ -44,8 +46,8 @@ export function ChatTab() {
         <Button variant="ghost" onClick={() => setMobilePanel('sessions')}>Conversations</Button>
         <Button variant="ghost" onClick={() => setMobilePanel('models')}>Model</Button>
       </div>
-      {mobilePanel && <button className="next-chat-scrim" type="button" aria-label="Close panel" onClick={() => setMobilePanel(null)} />}
-      <aside className={`next-chat-sidebar${mobilePanel === 'sessions' ? ' is-open' : ''}`}><SessionList onSelected={() => setMobilePanel(null)} /><ResizeHandle axis="x" value={layout.chatSessionsWidth} onChange={layout.setChatSessionsWidth} label="Resize conversations" /></aside>
+      {mobilePanel && <button className="next-chat-scrim" type="button" aria-label="Close panel" onClick={closeMobilePanel} />}
+      <aside className={`next-chat-sidebar${mobilePanel === 'sessions' ? ' is-open' : ''}`}><SessionList onSelected={closeMobilePanel} /><ResizeHandle axis="x" value={layout.chatSessionsWidth} onChange={layout.setChatSessionsWidth} label="Resize conversations" /></aside>
       <main className="next-chat-main">
         <ChatHeader />
         <Thread />

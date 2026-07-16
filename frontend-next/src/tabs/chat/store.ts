@@ -9,6 +9,7 @@ import type { BranchResponse, DefaultChat, HistoryResponse, ModelEndpoint, Model
 
 export interface SendOptions {
   allowWebSearch?: boolean
+  useResearch?: boolean
   attachments?: Array<{ id: string; name: string; url?: string }>
 }
 
@@ -45,6 +46,8 @@ export interface ChatState {
   loadUsage: (sessionId?: string) => Promise<void>
   searchSessions: (query: string) => Promise<void>
   branchFromMessage: (messageId: string) => Promise<boolean>
+  regenerate: (messageId: string) => Promise<boolean>
+  continueFrom: (messageId: string) => boolean
   updatePending: (text: string) => void
   flushPending: () => void
   cancelPending: () => void
@@ -87,6 +90,18 @@ let pendingTimer: ReturnType<typeof setTimeout> | null = null
 const SEND_GRACE_MS = 700
 let activityTimer: ReturnType<typeof setInterval> | null = null
 let knownActive: Set<string> | null = null
+
+function stored<T>(key: string, fallback: T): T {
+  try { const value = JSON.parse(localStorage.getItem(key) || 'null'); return value ?? fallback } catch { return fallback }
+}
+
+function initialQueues(): Record<string, BufferedSend[]> {
+  const queues = stored<Record<string, BufferedSend[]>>('next:chat-queues', {})
+  const pending = stored<BufferedSend | null>('next:chat-pending', null)
+  localStorage.removeItem('next:chat-pending')
+  if (pending?.sessionId) queues[pending.sessionId] = [...(queues[pending.sessionId] ?? []), pending]
+  return queues
+}
 
 function errorMessage(error: unknown): { error: string; httpStatus?: number } {
   return {
@@ -172,6 +187,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     form.append('message', text)
     form.append('session', sessionId)
     if (opts.allowWebSearch) form.append('allow_web_search', 'true')
+    if (opts.useResearch) form.append('use_research', 'true')
     if (opts.attachments?.length) form.append('attachments', JSON.stringify(opts.attachments.map((attachment) => attachment.id)))
 
     streamController = postStream('/api/chat_stream', form, {
@@ -257,7 +273,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       const active = new Set(Array.isArray(response.active) ? response.active : [])
       if (knownActive === null) {
         knownActive = active
-        set({ sessionActivity: Object.fromEntries([...active].map((id) => [id, 'working' as const])) })
+        set(state => {
+          const sessionActivity = { ...state.sessionActivity }
+          for (const [id, status] of Object.entries(sessionActivity)) if (status === 'working' && !active.has(id)) sessionActivity[id] = 'complete'
+          for (const id of active) sessionActivity[id] = 'working'
+          return { sessionActivity }
+        })
         return
       }
       const next = { ...get().sessionActivity }
@@ -286,8 +307,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     searchQuery: '',
     branchPrefix: null,
     pendingSend: null,
-    queuedSends: {},
-    sessionActivity: {},
+    queuedSends: initialQueues(),
+    sessionActivity: stored<Record<string, 'working' | 'complete'>>('next:chat-activity', {}),
     notificationsEnabled: typeof Notification !== 'undefined' && Notification.permission === 'granted',
     pendingSessions: {},
     sessionError: null,
@@ -350,6 +371,34 @@ export const useChatStore = create<ChatState>((set, get) => {
         set({ sessionError: errorMessage(error).error })
         return false
       }
+    },
+
+    regenerate: async (messageId) => {
+      const { activeSessionId, history, liveTurn } = get()
+      if (!activeSessionId || history.status !== 'ready' || (liveTurn && ['sending', 'streaming', 'stalled'].includes(liveTurn.status))) return false
+      const assistantIndex = history.data.findIndex(bubble => bubble.id === messageId && bubble.role === 'assistant')
+      if (assistantIndex < 0) return false
+      let userIndex = assistantIndex - 1
+      while (userIndex >= 0 && history.data[userIndex].role !== 'user') userIndex -= 1
+      const user = history.data[userIndex]
+      if (!user || (!user.text.trim() && !user.attachments?.length)) return false
+      try {
+        await apiJson('POST', `/api/session/${encodeURIComponent(activeSessionId)}/truncate`, { keep_count: userIndex })
+        set({ history: { status: 'ready', data: history.data.slice(0, userIndex), fetchedAt: Date.now() }, liveTurn: null })
+        get().send(user.text, { attachments: user.attachments })
+        return true
+      } catch (error) { set({ sessionError: errorMessage(error).error }); return false }
+    },
+
+    continueFrom: (messageId) => {
+      const { history, liveTurn } = get()
+      if (liveTurn && ['sending', 'streaming', 'stalled'].includes(liveTurn.status)) return false
+      const bubbles = history.status === 'ready' ? history.data : []
+      const assistant = bubbles.find(bubble => bubble.id === messageId && bubble.role === 'assistant')
+      if (!assistant) return false
+      const cutoff = assistant.text.trim().slice(-500)
+      get().send(`Your previous response was interrupted. It ended with:\n\n${cutoff}\n\nDo not repeat what you already said. Continue exactly from where you were cut off.`)
+      return true
     },
 
     updatePending: (text) => set((state) => state.pendingSend ? {
@@ -632,3 +681,10 @@ async function runSessionMutation(
     set({ pendingSessions })
   }
 }
+
+useChatStore.subscribe(state => {
+  localStorage.setItem('next:chat-queues', JSON.stringify(state.queuedSends))
+  localStorage.setItem('next:chat-activity', JSON.stringify(state.sessionActivity))
+  if (state.pendingSend) localStorage.setItem('next:chat-pending', JSON.stringify(state.pendingSend))
+  else localStorage.removeItem('next:chat-pending')
+})

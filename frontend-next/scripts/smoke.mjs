@@ -95,6 +95,39 @@ try {
     }
   }
 
+  // Chat's mobile drawers participate in the same browser Back stack as
+  // modals and companions.
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
+  await evaluate(`location.hash = '#/chat'`)
+  await waitFor(`[...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'Conversations')`)
+  await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Conversations').click()`)
+  await waitFor(`document.querySelector('.next-chat-sidebar.is-open')`)
+  await evaluate(`history.back()`)
+  await waitFor(`!document.querySelector('.next-chat-sidebar.is-open')`)
+
+  // Email: traverse real folders/messages/reader and open reply composition
+  // without sending or mutating the mailbox.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/email'`)
+    await waitFor(`document.querySelector('.next-email-folders .next-row') && document.querySelector('.next-email-messages .next-row')`, 90_000)
+    await evaluate(`document.querySelector('.next-email-messages .next-row').click()`)
+    await waitFor(`document.querySelector('.next-email-reader iframe')`, 30_000)
+    await evaluate(`[...document.querySelectorAll('.next-email-reader button')].find(x => x.textContent.trim() === 'Reply').click()`)
+    await waitFor(`document.querySelector('[role="dialog"][aria-label="Compose email"] input')`)
+    await screenshot(`${viewport.name}-email-reply`)
+    await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
+  }
+
+  // Notes: require an existing durable note and the complete autosaving editor.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/notes'`)
+    await waitFor(`document.querySelector('.next-note-card') && document.querySelector('[aria-label="Note title"]')`, 30_000)
+    await waitFor(`document.querySelector('[aria-label="Note content"], .next-note-checklist')`, 30_000)
+    await screenshot(`${viewport.name}-notes-editor`)
+  }
+
   // Documents must progress beyond a library-shaped shell: require a real
   // selected document, editable title/body, tab state, and version request.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
@@ -103,6 +136,10 @@ try {
     await waitFor(`document.querySelector('.next-doc-tab[aria-selected="true"], .next-doc-tab.is-active') && document.querySelector('[aria-label="Document title"]') && document.querySelector('[aria-label="Document content"]')`, 30_000)
     await evaluate(`document.querySelector('[aria-label="Document title"]').scrollIntoView({block:'start'})`)
     await screenshot(`${viewport.name}-documents-editor`)
+    await evaluate(`[...document.querySelectorAll('.next-doc-actions button')].find(x => x.textContent.trim() === 'Email').click()`)
+    await waitFor(`document.querySelector('[role="dialog"][aria-label="Email document"]')`)
+    await screenshot(`${viewport.name}-documents-email`)
+    await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
   }
 
   // Calendar: a real provider window must render (the Google account can be

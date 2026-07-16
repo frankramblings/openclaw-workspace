@@ -18,10 +18,10 @@ export function MemoryTab() {
   const [category, setCategory] = useState('User Curated')
   const [session, setSession] = useState('')
   useEffect(() => { void store.load() }, [])
-  const all = store.memory.status === 'ready' ? store.memory.data : []
+  const all = store.memory.status === 'ready' && Array.isArray(store.memory.data) ? store.memory.data : []
   const categories = useMemo(() => [...new Set(all.map(item => item.category || 'fact'))].sort(), [all])
   const rows = useMemo(() => all.filter(item => `${item.text} ${item.category} ${item.source}`.toLowerCase().includes(query.toLowerCase()) && (categoryFilter === 'all' || item.category === categoryFilter)).sort((a, b) => sort === 'oldest' ? a.timestamp - b.timestamp : sort === 'alpha' ? a.text.localeCompare(b.text) : sort === 'uses' ? b.uses - a.uses : b.timestamp - a.timestamp), [all, query, categoryFilter, sort])
-  const sessions = store.sessions.status === 'ready' ? store.sessions.data : []
+  const sessions = store.sessions.status === 'ready' && Array.isArray(store.sessions.data) ? store.sessions.data : []
   const open = (item: MemoryItem | null) => { setEditing(item); setText(item?.text ?? ''); setCategory(item?.category ?? 'User Curated') }
   const save = async () => { const ok = editing ? await store.save(editing, text, category) : await store.add(text, category); if (ok) setEditing(undefined) }
   const toggle = (id: string) => setSelected(value => { const next = new Set(value); next.has(id) ? next.delete(id) : next.add(id); return next })

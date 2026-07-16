@@ -159,6 +159,23 @@ try {
     await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
   }
 
+  // Skills: select a real workspace-owned skill and require writable SKILL.md
+  // detail. Also open the create form without persisting a new skill.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/skills'`)
+    await waitFor(`document.querySelector('.next-skills-list article .next-skill-main')`, 30_000)
+    await evaluate(`(() => { const input=document.querySelector('[aria-label="Search skills"]'); const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set; setter.call(input,'adhd-task-triage'); input.dispatchEvent(new Event('input',{bubbles:true})); })()`)
+    await waitFor(`document.querySelectorAll('.next-skills-list article').length === 1`)
+    await evaluate(`document.querySelector('.next-skills-list article .next-skill-main').click()`)
+    await waitFor(`document.querySelector('.next-skill-detail [aria-label="Skill markdown"]:not([readonly])')`, 30_000)
+    await screenshot(`${viewport.name}-skill-detail`)
+    await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Add skill').click()`)
+    await waitFor(`document.querySelector('[role="dialog"][aria-label="Add skill"]')`)
+    await screenshot(`${viewport.name}-skill-create`)
+    await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

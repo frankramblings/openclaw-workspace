@@ -5,22 +5,46 @@ with name/description/source/filePath/emoji/disabled/eligible/... We map that
 onto the shape the skills.js panel renders, and serve each skill's SKILL.md
 from its on-disk `filePath` for the expand-to-read view.
 
-Read-only except enable/disable (gateway skills.update); list + view markdown.
-The panel's audit/add actions still ack cleanly without mutating.
+Enable/disable delegates to gateway skills.update. Workspace-owned skills can
+also be created, edited, and deleted; bundled/plugin skills are deliberately
+read-only. Capability flags keep unsupported audit/publish/built-in mutations
+honest in clients.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
+from . import config
 from .bridge import gateway_call
+from .fsutil import atomic_write_text
 
 router = APIRouter()
 
 # name -> raw skills.status entry (for filePath lookup on markdown reads).
 _by_name: dict[str, dict] = {}
+SKILLS_ROOT = config.OPENCLAW_HOME / "workspace" / "skills"
+_SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,79}$")
+
+
+def _workspace_skill_path(name: str) -> Path | None:
+    """Return a writable workspace SKILL.md, never a bundled/plugin path."""
+    entry = _by_name.get(name)
+    raw = Path(str((entry or {}).get("filePath") or "")) if entry else None
+    try:
+        root = SKILLS_ROOT.resolve()
+        if raw and raw.resolve().is_relative_to(root):
+            return raw.resolve()
+    except (OSError, RuntimeError):
+        return None
+    candidate = SKILLS_ROOT / name / "SKILL.md"
+    try:
+        return candidate.resolve() if candidate.resolve().is_relative_to(SKILLS_ROOT.resolve()) else None
+    except (OSError, RuntimeError):
+        return None
 
 
 def _map_skill(s: dict) -> dict:
@@ -84,16 +108,45 @@ async def _markdown_for(name: str) -> str | None:
 @router.get("/api/skills")
 async def get_skills():
     try:
-        return {"skills": await fetch_skills()}
+        return {"skills": await fetch_skills(), "capabilities": {
+            "add": True, "delete_workspace": True, "edit_workspace": True,
+            "toggle": True, "audit": False, "publish": False,
+            "builtin_edit": False,
+        }}
     except Exception as exc:  # noqa: BLE001
         return {"skills": [], "error": f"skills unavailable: {exc!r}"}
 
 
 @router.post("/api/skills/add")
 async def add_skill(body: dict = Body(default=None)):
-    # Creating on-disk skills is out of scope; ack without error.
-    return JSONResponse(status_code=501,
-                        content={"detail": "adding skills not supported here"})
+    body = body or {}
+    name = str(body.get("name") or "").strip().lower()
+    if not name:
+        words = re.findall(r"[a-z0-9]+", str(body.get("description") or "").lower())
+        name = "-".join(words[:8])[:80].strip("-")
+    if not _SAFE_NAME.fullmatch(name):
+        return JSONResponse(status_code=400, content={"detail": "name must be a lowercase slug"})
+    description = str(body.get("description") or "").strip()
+    if not description:
+        return JSONResponse(status_code=400, content={"detail": "description is required"})
+    path = SKILLS_ROOT / name / "SKILL.md"
+    if path.exists():
+        return JSONResponse(status_code=409, content={"detail": "skill already exists"})
+    when = str(body.get("when_to_use") or "").strip()
+    procedure = [str(value).strip() for value in (body.get("procedure") or []) if str(value).strip()]
+    tags = [str(value).strip() for value in (body.get("tags") or []) if str(value).strip()]
+    quoted_description = description.replace('"', '\\"')
+    lines = ["---", f"name: {name}", f'description: "{quoted_description}"']
+    if tags:
+        lines.append("tags: [" + ", ".join(tags) + "]")
+    lines.extend(["---", "", f"# {name}", ""])
+    if when:
+        lines.extend(["## When to use", "", when, ""])
+    if procedure:
+        lines.extend(["## Procedure", "", *[f"{index}. {step}" for index, step in enumerate(procedure, 1)], ""])
+    path.parent.mkdir(parents=True, exist_ok=False)
+    atomic_write_text(path, "\n".join(lines))
+    return {"ok": True, "name": name}
 
 
 @router.post("/api/skills/audit-all")
@@ -131,6 +184,19 @@ async def skill_markdown(name: str):
     return {"markdown": md, "text": md}
 
 
+@router.post("/api/skills/{name}/markdown")
+async def save_skill_markdown(name: str, body: dict = Body(default=None)):
+    path = _workspace_skill_path(name)
+    if path is None or not path.exists():
+        return JSONResponse(status_code=403,
+                            content={"detail": "only workspace skills are editable"})
+    markdown = (body or {}).get("markdown")
+    if not isinstance(markdown, str) or not markdown.strip():
+        return JSONResponse(status_code=400, content={"detail": "markdown is required"})
+    atomic_write_text(path, markdown)
+    return {"ok": True}
+
+
 @router.post("/api/skills/{name}/enabled")
 async def set_skill_enabled(name: str, body: dict = Body(default=None)):
     """Enable/disable one skill via the gateway. Verified: skills.update
@@ -163,5 +229,14 @@ async def set_skill_enabled(name: str, body: dict = Body(default=None)):
 
 @router.delete("/api/skills/{name}")
 async def delete_skill(name: str):
-    return JSONResponse(status_code=501,
-                        content={"detail": "deleting skills not supported here"})
+    path = _workspace_skill_path(name)
+    if path is None or not path.exists():
+        return JSONResponse(status_code=403,
+                            content={"detail": "only workspace skills can be deleted"})
+    path.unlink()
+    try:
+        path.parent.rmdir()
+    except OSError:
+        pass
+    _by_name.pop(name, None)
+    return {"ok": True}

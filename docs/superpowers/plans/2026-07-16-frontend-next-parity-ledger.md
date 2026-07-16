@@ -68,7 +68,7 @@ workflow test match—not merely when an endpoint is wired.
 
 | Workflow | Priority | Status |
 | --- | --- | --- |
-| Research start/progress/resume/cancel/report/library | P1 | thin |
+| Research start/progress/resume/cancel/report/library | P1 | done |
 | Cron history/actions plus live jobs/logs | P1 | thin |
 | Memory full edit/audit/extract/import flows | P2 | thin |
 | Skills detail/toggle/audit/install/delete truthfulness | P2 | thin |

@@ -124,6 +124,17 @@ try {
     await evaluate(`document.querySelector('[role="dialog"][aria-label="Snooze until"] [aria-label="Close"]').click()`)
   }
 
+  // Research library: open a persisted report through result-peek and require
+  // rendered report content (without starting a costly live research run).
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/research'`)
+    await waitFor(`document.querySelector('.next-research-list article > button')`, 30_000)
+    await evaluate(`document.querySelector('.next-research-list article > button').click()`)
+    await waitFor(`document.querySelector('.next-research-report .md') || document.querySelector('.next-research-report h1') || document.querySelector('.next-research-report p')`, 30_000)
+    await screenshot(`${viewport.name}-research-report`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

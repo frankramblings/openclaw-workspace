@@ -1,0 +1,109 @@
+import { spawn } from 'node:child_process'
+import { mkdir, writeFile } from 'node:fs/promises'
+
+const base = process.env.NEXT_SMOKE_URL || 'http://127.0.0.1:8800/next/'
+const out = process.env.NEXT_SMOKE_OUT || `/tmp/frontend-next-smoke-${new Date().toISOString().slice(0, 10)}`
+const port = Number(process.env.NEXT_CDP_PORT || 9333)
+const tabs = ['chat', 'inbox', 'email', 'calendar', 'notes', 'documents', 'research', 'library', 'cron', 'memory', 'skills', 'settings']
+await mkdir(out, { recursive: true })
+
+const chrome = spawn(process.env.CHROME || '/usr/bin/google-chrome', [
+  '--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars',
+  `--remote-debugging-port=${port}`, `--user-data-dir=/tmp/frontend-next-cdp-${process.pid}`,
+  '--window-size=1440,900', base,
+], { stdio: 'ignore' })
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+let target
+for (let attempt = 0; attempt < 80; attempt++) {
+  try {
+    const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()
+    target = list.find((item) => item.type === 'page')
+    if (target) break
+  } catch { /* Chrome is still starting. */ }
+  await pause(100)
+}
+if (!target) { chrome.kill(); throw new Error('Chrome DevTools endpoint did not start') }
+
+const ws = new WebSocket(target.webSocketDebuggerUrl)
+await new Promise((resolve, reject) => { ws.onopen = resolve; ws.onerror = reject })
+let sequence = 0
+const pending = new Map()
+const consoleErrors = []
+ws.onmessage = ({ data }) => {
+  const message = JSON.parse(data)
+  if (message.id && pending.has(message.id)) {
+    const { resolve, reject } = pending.get(message.id)
+    pending.delete(message.id)
+    message.error ? reject(new Error(message.error.message)) : resolve(message.result)
+  }
+  if (message.method === 'Runtime.exceptionThrown') consoleErrors.push(message.params.exceptionDetails.text)
+  if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') {
+    consoleErrors.push(message.params.args.map((arg) => arg.value || arg.description || '').join(' '))
+  }
+}
+const send = (method, params = {}) => new Promise((resolve, reject) => {
+  const id = ++sequence
+  pending.set(id, { resolve, reject })
+  ws.send(JSON.stringify({ id, method, params }))
+})
+const evaluate = async (expression) => {
+  const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text)
+  return result.result.value
+}
+const waitFor = async (expression, timeout = 20_000) => {
+  const started = Date.now()
+  while (Date.now() - started < timeout) {
+    if (await evaluate(`Boolean(${expression})`)) return
+    await pause(150)
+  }
+  throw new Error(`Timed out waiting for ${expression}`)
+}
+const screenshot = async (name) => {
+  const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })
+  await writeFile(`${out}/${name}.png`, Buffer.from(shot.data, 'base64'))
+}
+
+try {
+  await send('Page.enable')
+  await send('Runtime.enable')
+  await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`)
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    for (const tab of tabs) {
+      await evaluate(`location.hash = '#/${tab}'`)
+      await pause(300)
+      try { await waitFor(`!document.querySelector('.next-skeleton')`, 45_000) } catch { /* A slow route remains honestly loading in its screenshot. */ }
+      const state = await evaluate(`({tab: location.hash, shell: !!document.querySelector('.next-shell'), crashed: !![...document.querySelectorAll('[role="alert"]')].find(x => x.textContent.includes('This tab crashed')), body: document.querySelector('.next-main')?.innerText?.slice(0,200)})`)
+      if (!state.shell || state.crashed || !state.body) throw new Error(`${viewport.name}/${tab} failed: ${JSON.stringify(state)}`)
+      await screenshot(`${viewport.name}-${tab}`)
+    }
+  }
+
+  // One real chat turn, cleaned up afterward. This exercises POST streaming,
+  // reducer rendering, the mid-stream view, and the server-side Stop route.
+  if (process.env.NEXT_SMOKE_SKIP_CHAT !== '1') {
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+  await evaluate(`location.hash = '#/chat'`)
+  await waitFor(`document.querySelector('button') && [...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'New chat')`)
+  const before = await evaluate(`fetch('/api/sessions').then(r => r.json()).then(x => (x.sessions || x).map(s => s.id))`)
+  await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'New chat').click()`)
+  await waitFor(`document.querySelector('.composer textarea') && !document.querySelector('.composer textarea').disabled`)
+  await evaluate(`(() => { const el=document.querySelector('.composer textarea'); const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set; setter.call(el,'ping'); el.dispatchEvent(new Event('input',{bubbles:true})); })()`)
+  await waitFor(`[...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'Send' && !x.disabled)`)
+  await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Send' && !x.disabled).click()`)
+  await waitFor(`document.querySelector('.msg.assistant') || document.querySelector('.activity-trail') || [...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'Stop')`, 60_000)
+  await screenshot('desktop-chat-mid-stream')
+  await evaluate(`(() => { const stop=[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Stop'); if(stop) stop.click() })()`)
+  const after = await evaluate(`fetch('/api/sessions').then(r => r.json()).then(x => (x.sessions || x).map(s => s.id))`)
+  const created = after.find((id) => !before.includes(id))
+  if (created) await evaluate(`fetch('/api/session/${encodeURIComponent(created)}',{method:'DELETE'})`)
+  }
+
+  if (consoleErrors.length) throw new Error(`Console errors:\n${consoleErrors.join('\n')}`)
+  console.log(JSON.stringify({ ok: true, screenshots: out, tabs: tabs.length, consoleErrors: 0 }))
+} finally {
+  ws.close()
+  chrome.kill('SIGTERM')
+}

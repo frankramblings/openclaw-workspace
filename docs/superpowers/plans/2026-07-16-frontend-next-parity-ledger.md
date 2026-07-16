@@ -48,8 +48,8 @@ workflow test match—not merely when an endpoint is wired.
 | Workflow | Priority | Status |
 | --- | --- | --- |
 | Inbox source filters, rich cards, detail, snooze, undo and gestures | P0 | thin |
-| Email account/folder/list/search/read caching and navigation | P0 | thin |
-| Email reply/reply-all/forward, attachments, move, schedule and RSVP | P0 | missing |
+| Email account/folder/list/search/read caching and navigation | P0 | building |
+| Email reply/reply-all/forward, attachments, move, schedule and RSVP | P0 | building |
 | Calendar month/agenda navigation, CRUD, quick add and event detail | P1 | thin |
 | Calendar drag/resize and mobile agenda | P2 | missing |
 | Notes cards, pin/archive/checklists/reminders/reorder | P1 | thin |

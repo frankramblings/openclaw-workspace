@@ -30,3 +30,11 @@ test('uses the final non-empty round and reconstructs completed tool cards', () 
     expect.objectContaining({ tool: 'bash', state: 'error', exitCode: 1 }),
   ])
 })
+
+test('rehydrates valid persisted user attachments', () => {
+  const [bubble] = parseHistory([{ role: 'user', content: 'look', attachments: [
+    { id: 'photo.png', name: 'Photo', url: '/api/upload/photo.png' },
+    { nope: true },
+  ] }])
+  expect(bubble.attachments).toEqual([{ id: 'photo.png', name: 'Photo', url: '/api/upload/photo.png' }])
+})

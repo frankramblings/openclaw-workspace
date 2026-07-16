@@ -17,6 +17,7 @@ export interface Bubble {
   thinking: string
   cards: ToolCard[]
   images: { url: string; prompt?: string }[]
+  attachments?: { id: string; name: string; url?: string }[]
 }
 
 export interface Turn {

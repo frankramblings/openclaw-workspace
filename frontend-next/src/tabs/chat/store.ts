@@ -9,7 +9,7 @@ import type { BranchResponse, DefaultChat, HistoryResponse, ModelEndpoint, Model
 
 export interface SendOptions {
   allowWebSearch?: boolean
-  attachments?: string[]
+  attachments?: Array<{ id: string; name: string; url?: string }>
 }
 
 export interface BufferedSend {
@@ -34,7 +34,7 @@ export interface ChatState {
   searchQuery: string
   branchPrefix: Bubble[] | null
   pendingSend: BufferedSend | null
-  queuedSends: Record<string, BufferedSend>
+  queuedSends: Record<string, BufferedSend[]>
   sessionActivity: Record<string, 'working' | 'complete'>
   notificationsEnabled: boolean
   pendingSessions: Record<string, string>
@@ -101,7 +101,7 @@ function staleHistory(remote: Remote<Bubble[]>): Bubble[] | undefined {
   return undefined
 }
 
-function userBubble(text: string): Bubble {
+function userBubble(text: string, attachments: SendOptions['attachments'] = []): Bubble {
   bubbleSequence += 1
   return {
     id: `user-${bubbleSequence}`,
@@ -110,6 +110,7 @@ function userBubble(text: string): Bubble {
     thinking: '',
     cards: [],
     images: [],
+    attachments,
   }
 }
 
@@ -171,7 +172,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     form.append('message', text)
     form.append('session', sessionId)
     if (opts.allowWebSearch) form.append('allow_web_search', 'true')
-    if (opts.attachments?.length) form.append('attachments', JSON.stringify(opts.attachments))
+    if (opts.attachments?.length) form.append('attachments', JSON.stringify(opts.attachments.map((attachment) => attachment.id)))
 
     streamController = postStream('/api/chat_stream', form, {
       onEvent: (event) => {
@@ -219,7 +220,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     const pending = get().pendingSend
     if (!pending) return
     if (get().activeSessionId !== pending.sessionId || isWorking()) {
-      set((state) => ({ pendingSend: null, queuedSends: { ...state.queuedSends, [pending.sessionId]: pending } }))
+      set((state) => ({ pendingSend: null, queuedSends: { ...state.queuedSends, [pending.sessionId]: [...(state.queuedSends[pending.sessionId] ?? []), pending] } }))
       return
     }
     set({ pendingSend: null })
@@ -227,9 +228,12 @@ export const useChatStore = create<ChatState>((set, get) => {
   }
 
   const flushQueued = (sessionId: string): void => {
-    const queued = get().queuedSends[sessionId]
-    if (!queued || get().activeSessionId !== sessionId || isWorking() || get().pendingSend) return
-    const { [sessionId]: _sent, ...queuedSends } = get().queuedSends
+    const queue = get().queuedSends[sessionId]
+    if (!queue?.length || get().activeSessionId !== sessionId || isWorking() || get().pendingSend) return
+    const [queued, ...remaining] = queue
+    const queuedSends = { ...get().queuedSends }
+    if (remaining.length) queuedSends[sessionId] = remaining
+    else delete queuedSends[sessionId]
     set({ queuedSends })
     startStream(queued)
   }
@@ -361,15 +365,22 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     recallQueued: (sessionId) => {
-      const queued = get().queuedSends[sessionId] ?? null
-      if (!queued) return null
-      const { [sessionId]: _recalled, ...queuedSends } = get().queuedSends
+      const queue = get().queuedSends[sessionId]
+      if (!queue?.length) return null
+      const [queued, ...remaining] = queue
+      const queuedSends = { ...get().queuedSends }
+      if (remaining.length) queuedSends[sessionId] = remaining
+      else delete queuedSends[sessionId]
       set({ queuedSends })
       return queued
     },
 
     cancelQueued: (sessionId) => {
-      const { [sessionId]: _cancelled, ...queuedSends } = get().queuedSends
+      const queue = get().queuedSends[sessionId]
+      if (!queue?.length) return
+      const queuedSends = { ...get().queuedSends }
+      if (queue.length > 1) queuedSends[sessionId] = queue.slice(1)
+      else delete queuedSends[sessionId]
       set({ queuedSends })
     },
 
@@ -400,7 +411,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (pending && pending.sessionId !== id) {
         if (pendingTimer) clearTimeout(pendingTimer)
         pendingTimer = null
-        set((state) => ({ pendingSend: null, queuedSends: { ...state.queuedSends, [pending.sessionId]: pending } }))
+        set((state) => ({ pendingSend: null, queuedSends: { ...state.queuedSends, [pending.sessionId]: [...(state.queuedSends[pending.sessionId] ?? []), pending] } }))
       }
       streamController?.abort()
       streamController = null
@@ -513,10 +524,10 @@ export const useChatStore = create<ChatState>((set, get) => {
       if (!sessionId) throw new Error('Select a chat before sending')
       if (!text.trim() && !(opts.attachments?.length)) return
       const buffered: BufferedSend = {
-        sessionId, text, opts, bubble: userBubble(text), deadline: Date.now() + SEND_GRACE_MS,
+        sessionId, text, opts, bubble: userBubble(text, opts.attachments), deadline: Date.now() + SEND_GRACE_MS,
       }
       if (isWorking() || get().pendingSend) {
-        set((state) => ({ queuedSends: { ...state.queuedSends, [sessionId]: buffered } }))
+        set((state) => ({ queuedSends: { ...state.queuedSends, [sessionId]: [...(state.queuedSends[sessionId] ?? []), buffered] } }))
         return
       }
       set({ pendingSend: buffered })

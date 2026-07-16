@@ -57,8 +57,8 @@ export function SessionList({ onSelected }: { onSelected?: () => void } = {}) {
             return (
               <ListRow
                 key={record.id}
-                title={<>{activity[record.id] === 'working' && <span className="next-conv-working" title="Working" aria-label="Working">● </span>}{activity[record.id] === 'complete' && <span className="next-conv-complete" title="Reply finished" aria-label="Reply finished">● </span>}{!activity[record.id] && queuedSends[record.id] && <span className="next-conv-queued" title="Message queued" aria-label="Message queued">● </span>}{record.important && <span aria-label="Favorite">★ </span>}{record.name || 'New chat'}</>}
-                meta={pendingLabel || <><Chip>{record.model}</Chip> · {record.speed}{queuedSends[record.id] ? ' · queued' : ''}</>}
+                title={<>{activity[record.id] === 'working' && <span className="next-conv-working" title="Working" aria-label="Working">● </span>}{activity[record.id] === 'complete' && <span className="next-conv-complete" title="Reply finished" aria-label="Reply finished">● </span>}{!activity[record.id] && queuedSends[record.id]?.length && <span className="next-conv-queued" title="Message queued" aria-label="Message queued">● </span>}{record.important && <span aria-label="Favorite">★ </span>}{record.name || 'New chat'}</>}
+                meta={pendingLabel || <><Chip>{record.model}</Chip> · {record.speed}{queuedSends[record.id]?.length ? ` · ${queuedSends[record.id].length} queued` : ''}</>}
                 selected={record.id === activeId}
                 onClick={() => void select(record.id).then(onSelected)}
                 actions={<Button variant="ghost" disabled={Boolean(pendingLabel)} title="Conversation actions" onClick={() => setActionsFor({ id: record.id, name: record.name, important: record.important })}>•••</Button>}

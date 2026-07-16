@@ -177,7 +177,7 @@ test('feeds the POST stream through the reducer and refreshes authoritative hist
   })
 })
 
-test('buffers a send for editing and queues another prompt while a turn is working', () => {
+test('buffers a send for editing and preserves multiple queued prompts while a turn is working', () => {
   useChatStore.setState({ activeSessionId: 'chat-1', liveTurn: null })
   useChatStore.getState().send('first draft')
   expect(useChatStore.getState().pendingSend).toMatchObject({ text: 'first draft', sessionId: 'chat-1' })
@@ -186,9 +186,10 @@ test('buffers a send for editing and queues another prompt while a turn is worki
 
   useChatStore.setState({ pendingSend: null, liveTurn: { status: 'streaming', bubbles: [] } })
   useChatStore.getState().send('next prompt')
-  expect(useChatStore.getState().queuedSends['chat-1']).toMatchObject({ text: 'next prompt' })
+  useChatStore.getState().send('then another')
+  expect(useChatStore.getState().queuedSends['chat-1']).toMatchObject([{ text: 'next prompt' }, { text: 'then another' }])
   expect(useChatStore.getState().recallQueued('chat-1')).toMatchObject({ text: 'next prompt' })
-  expect(useChatStore.getState().queuedSends['chat-1']).toBeUndefined()
+  expect(useChatStore.getState().queuedSends['chat-1']).toMatchObject([{ text: 'then another' }])
 })
 
 test('activity snapshots mark background completions without inventing active work', async () => {

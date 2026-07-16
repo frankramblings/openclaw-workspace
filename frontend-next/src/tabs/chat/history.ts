@@ -30,6 +30,20 @@ function historyCards(metadata: Record<string, unknown>, messageIndex: number): 
   })
 }
 
+function historyAttachments(raw: unknown): NonNullable<Bubble['attachments']> {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((value) => {
+    if (!value || typeof value !== 'object') return []
+    const record = value as Record<string, unknown>
+    if (typeof record.id !== 'string') return []
+    return [{
+      id: record.id,
+      name: typeof record.name === 'string' ? record.name : record.id,
+      ...(typeof record.url === 'string' ? { url: record.url } : {}),
+    }]
+  })
+}
+
 /** Normalize the gateway transcript into the same declarative shape used by
  * live turns. History is complete, so every reconstructed tool is terminal. */
 export function parseHistory(items: HistoryItem[]): Bubble[] {
@@ -46,6 +60,7 @@ export function parseHistory(items: HistoryItem[]): Bubble[] {
       thinking: '',
       cards: role === 'assistant' ? historyCards(metadata, index) : [],
       images: [],
+      attachments: role === 'user' ? historyAttachments(item.attachments) : [],
     }
   })
 }

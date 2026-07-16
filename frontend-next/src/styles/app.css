@@ -2380,4 +2380,6 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .next-chat-header-actions [role=status]{font-size:11px;color:var(--faint)}
 .next-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 .next-conversation-actions{display:grid;gap:8px}.next-conversation-actions .btn{text-align:left;justify-content:flex-start}
+.composer>.slash-menu{left:0;right:0;bottom:calc(100% + 8px);margin:0}.composer>.slash-menu .slash-cmd{width:100%;border:0;background:transparent;color:var(--fg);text-align:left}.composer>.slash-menu .slash-cmd.sel{background:var(--row-hover)}.composer>.slash-menu .glyph{width:24px}.composer>.slash-menu .name{font-family:var(--mono);font-size:13px;min-width:84px}.composer>.slash-menu .desc{font-size:12px;color:var(--mut)}
+.next-message-attachments{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.next-message-attachments a,.next-message-attachments span{display:inline-flex;padding:6px 9px;border:1px solid var(--bd);border-radius:8px;color:var(--mut);font-size:12px;text-decoration:none}.next-message-attachments a:hover{color:var(--teal);border-color:var(--teal2)}
 @media(max-width:720px){.next-chat-header{align-items:flex-start;flex-direction:column}.next-chat-header-actions{justify-content:flex-start}.next-chat-header-actions .btn{font-size:11px;padding-inline:8px}}

@@ -158,18 +158,22 @@ try {
     await screenshot(`${viewport.name}-calendar-workflow`)
     await evaluate(`[...document.querySelectorAll('.next-calendar-form button')].find(x => x.textContent.trim() === 'Cancel').click()`)
   }
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+  await evaluate(`location.hash = '#/calendar'; [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Week')?.click()`)
+  await waitFor(`document.querySelector('.next-calendar-week-event[draggable="true"] .next-calendar-event-resize')`, 90_000)
+  await screenshot('desktop-calendar-week-drag-resize')
 
-  // Unified inbox: wait for the real collector merge, filter to Gmail, open a
-  // sandboxed in-place reader, and exercise the snooze chooser without firing
-  // a destructive or remote action.
+  // Unified inbox: wait for the real collector merge, open the first available
+  // source detail, and exercise snooze without firing a remote action. Sources
+  // can honestly be empty (for example Gmail at inbox-zero), so don't pin the
+  // gate to one provider.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
     await evaluate(`location.hash = '#/inbox'`)
     await waitFor(`document.querySelector('.next-inbox-item')`, 90_000)
-    await evaluate(`[...document.querySelectorAll('.next-inbox-toolbar button')].find(x => x.textContent.trim().startsWith('gmail ')).click()`)
     await waitFor(`document.querySelector('.next-inbox-item .next-inbox-main')`)
     await evaluate(`document.querySelector('.next-inbox-item .next-inbox-main').click()`)
-    await waitFor(`document.querySelector('.next-inbox-reader iframe')`, 30_000)
+    await waitFor(`document.querySelector('.next-inbox-reader') && !document.querySelector('.next-inbox-reader .next-skeleton')`, 30_000)
     await screenshot(`${viewport.name}-inbox-reader`)
     await evaluate(`[...document.querySelectorAll('.next-inbox-reader button')].find(x => x.textContent.includes('Back')).click()`)
     await evaluate(`[...document.querySelectorAll('.next-inbox-item .next-inbox-actions button')].find(x => x.textContent.trim() === 'Snooze').click()`)

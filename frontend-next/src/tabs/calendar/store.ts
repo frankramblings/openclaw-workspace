@@ -13,6 +13,7 @@ interface CalendarState {
   pending: string | null
   error: string | null
   load(offset?: number): Promise<void>
+  loadRange(start: string, end: string): Promise<void>
   shift(delta: number): Promise<void>
   quick(text: string): Promise<void>
   save(event: Partial<CalendarEvent>): Promise<boolean>
@@ -43,6 +44,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => {
     pending: null,
     error: null,
     load,
+    loadRange: async (start, end) => {
+      await Promise.all([
+        get().calendars.status === 'idle' ? calLoader(() => apiGet('/api/calendar/calendars'), calendars => set({ calendars }), get().calendars) : Promise.resolve(),
+        eventLoader(() => apiGet(`/api/calendar/events?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`), events => set({ events }), get().events),
+      ])
+    },
     shift: delta => load(get().offset + delta),
     quick: async text => {
       if (!text.trim()) return

@@ -18,7 +18,7 @@ workflow test match—not merely when an endpoint is wired.
 | Responsive desktop rail and mobile tab bar | P0 | done | 12-tab IA, safe-area bottom rail, overflow, persisted desktop collapse/resize, desktop/phone browser gate |
 | Mobile navigation/sheet history | P0 | done | Shared modal/companion history stack; nested layers close in order; phone browser gate uses real Back |
 | Global error/retry and pushed toasts | P0 | done | Remote stale-data retry plus centralized success/failure mutation notices and inline recovery state |
-| Turn-completion notifications/unread state | P0 | building | Background sessions notify once and open the correct thread |
+| Turn-completion notifications/unread state | P0 | done | Active-session polling, durable completion dots, one transition notification and click-through selection |
 | Workspace explorer | P0 | done | Browse, preview/edit, CRUD, upload/download, drag/drop, roots, persisted width/open state, browser gate |
 | Companion and persistent terminals | P0 | done | Per-session persistent-cwd PTYs, reconnect, multi-pin grid, resize, clear/kill and image drop; desktop/phone live gates |
 | Live task feed | P1 | done | Snapshot + SSE, terminal state, stalled state and task detail |
@@ -51,7 +51,7 @@ workflow test match—not merely when an endpoint is wired.
 | Email account/folder/list/search/read caching and navigation | P0 | done |
 | Email reply/reply-all/forward, attachments, move, deployment-scheduled state and RSVP | P0 | done |
 | Calendar month/agenda navigation, CRUD, quick add and event detail | P1 | done |
-| Calendar drag/resize and mobile agenda | P2 | missing |
+| Calendar drag/resize and mobile agenda | P2 | done |
 | Notes cards, pin/archive/checklists/reminders/reorder | P1 | done |
 
 ## Documents and workspace content

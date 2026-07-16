@@ -14,6 +14,22 @@ test('apiJson returns parsed JSON on 200', async () => {
   await expect(apiJson('POST', '/api/x', { a: 1 })).resolves.toEqual({ ok: true })
 })
 
+test('mutations publish global success and recoverable failure notices', async () => {
+  const notices: unknown[] = []
+  const listener = (event: Event) => notices.push((event as CustomEvent).detail)
+  window.addEventListener('next:mutation', listener)
+  try {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ok: true })))
+    await apiJson('PATCH', '/api/item/1', { name: 'saved' })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"conflict"}', { status: 409 })))
+    await expect(apiJson('PUT', '/api/item/1', {})).rejects.toMatchObject({ status: 409 })
+    expect(notices).toEqual([
+      { ok: true, method: 'PATCH', path: '/api/item/1', message: 'Change saved' },
+      { ok: false, method: 'PUT', path: '/api/item/1', message: 'conflict' },
+    ])
+  } finally { window.removeEventListener('next:mutation', listener) }
+})
+
 function streamOf(chunks: string[]): Response {
   const enc = new TextEncoder()
   const body = new ReadableStream({

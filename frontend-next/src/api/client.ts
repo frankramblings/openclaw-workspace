@@ -18,12 +18,35 @@ async function handle<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export interface MutationNotice { ok: boolean; method: string; path: string; message: string }
+function mutationMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    try { const parsed = JSON.parse(error.body) as { error?: string; detail?: string }; return parsed.error || parsed.detail || error.message } catch { return error.body || error.message }
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+function announce(detail: MutationNotice) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<MutationNotice>('next:mutation', { detail }))
+}
+async function mutation<T>(method: string, path: string, request: () => Promise<Response>): Promise<T> {
+  try {
+    const result = await handle<T>(await request())
+    const record = result && typeof result === 'object' ? result as Record<string, unknown> : null
+    const semanticError = record && (record.success === false || record.ok === false || record.error) ? String(record.error || 'Operation failed') : null
+    announce({ ok: !semanticError, method, path, message: semanticError || (method === 'DELETE' ? 'Deleted' : 'Change saved') })
+    return result
+  } catch (error) {
+    announce({ ok: false, method, path, message: mutationMessage(error) })
+    throw error
+  }
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   return handle<T>(await fetch(path))
 }
 
 export async function apiJson<T>(method: 'POST' | 'PUT' | 'PATCH', path: string, body?: unknown): Promise<T> {
-  return handle<T>(await fetch(path, {
+  return mutation<T>(method, path, () => fetch(path, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -33,11 +56,11 @@ export async function apiJson<T>(method: 'POST' | 'PUT' | 'PATCH', path: string,
 export async function apiForm<T>(path: string, fields: Record<string, string | Blob>, method: 'POST' | 'PUT' | 'PATCH' = 'POST'): Promise<T> {
   const form = new FormData()
   for (const [k, v] of Object.entries(fields)) form.append(k, v)
-  return handle<T>(await fetch(path, { method, body: form }))
+  return mutation<T>(method, path, () => fetch(path, { method, body: form }))
 }
 
 export async function apiDelete<T>(path: string): Promise<T> {
-  return handle<T>(await fetch(path, { method: 'DELETE' }))
+  return mutation<T>('DELETE', path, () => fetch(path, { method: 'DELETE' }))
 }
 
 export interface StreamHandlers {

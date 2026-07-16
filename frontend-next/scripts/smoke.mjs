@@ -69,6 +69,9 @@ try {
   await send('Page.enable')
   await send('Runtime.enable')
   await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`)
+  await evaluate(`window.dispatchEvent(new CustomEvent('next:mutation',{detail:{ok:true,method:'PATCH',path:'/api/smoke',message:'Change saved'}}))`)
+  await waitFor(`document.querySelector('#oc-toast-host .oc-toast')?.textContent.includes('Change saved')`)
+  await evaluate(`document.querySelector('#oc-toast-host .oc-toast').click()`)
 
   // Durable shell layout: restore non-default geometry and an open companion
   // through real reloads, then restore the expanded state for the main run.
@@ -289,6 +292,16 @@ try {
     } catch (error) {
       const debug = await evaluate(`({panel:!!document.querySelector('.next-terminal-panel.is-open'),status:document.querySelector('.next-term-status')?.textContent,terminal:typeof window.Terminal,fit:typeof window.FitAddon,key:document.querySelector('[aria-label="Terminal conversation"]')?.value,scripts:[...document.scripts].map(x=>x.src).filter(x=>x.includes('xterm'))})`)
       throw new Error(`${error.message}: ${JSON.stringify(debug)}; console=${consoleErrors.join(' | ')}`)
+    }
+    if (!viewport.mobile) {
+      const terminalChoices = await evaluate(`document.querySelector('[aria-label="Terminal conversation"]')?.options.length || 0`)
+      if (terminalChoices > 1) {
+        await evaluate(`[...document.querySelectorAll('.next-terminal-global-head button')].find(x => x.textContent.trim() === 'Pin current').click()`)
+        await evaluate(`(() => { const el=document.querySelector('[aria-label="Terminal conversation"]'); el.value=el.options[1].value; el.dispatchEvent(new Event('change',{bubbles:true})) })()`)
+        await waitFor(`document.querySelectorAll('.next-terminal-instance').length === 2 && [...document.querySelectorAll('.next-terminal-mount')].every(x => x.children.length > 0)`, 30_000)
+        await screenshot('desktop-terminal-multiple')
+        await evaluate(`[...document.querySelectorAll('.next-terminal-instance button')].find(x => x.textContent.trim() === 'Unpin').click()`)
+      }
     }
     await screenshot(`${viewport.name}-terminal`)
     await evaluate(`[...document.querySelectorAll('.next-terminal-panel button')].find(x => x.textContent.trim() === 'Close').click()`)

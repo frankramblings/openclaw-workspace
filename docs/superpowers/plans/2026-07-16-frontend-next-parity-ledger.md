@@ -17,10 +17,10 @@ workflow test match—not merely when an endpoint is wired.
 | --- | --- | --- | --- |
 | Responsive desktop rail and mobile tab bar | P0 | done | 12-tab IA, safe-area bottom rail, overflow, persisted desktop collapse/resize, desktop/phone browser gate |
 | Mobile navigation/sheet history | P0 | done | Shared modal/companion history stack; nested layers close in order; phone browser gate uses real Back |
-| Global error/retry and pushed toasts | P0 | thin | Every failed load/mutation is recoverable without losing stale data |
+| Global error/retry and pushed toasts | P0 | done | Remote stale-data retry plus centralized success/failure mutation notices and inline recovery state |
 | Turn-completion notifications/unread state | P0 | building | Background sessions notify once and open the correct thread |
 | Workspace explorer | P0 | done | Browse, preview/edit, CRUD, upload/download, drag/drop, roots, persisted width/open state, browser gate |
-| Companion and persistent terminals | P0 | building | Attach/reconnect, multiple terminals, cwd, pins, resize, image drop |
+| Companion and persistent terminals | P0 | done | Per-session persistent-cwd PTYs, reconnect, multi-pin grid, resize, clear/kill and image drop; desktop/phone live gates |
 | Live task feed | P1 | done | Snapshot + SSE, terminal state, stalled state and task detail |
 | Installable/offline PWA lifecycle | P1 | done | Manifest/SW/update/install behavior matches `/` without stale-shell traps |
 | Persisted layout/preferences | P1 | done | Rail/chat/companion dimensions and opened surfaces survive reload; geometry asserted in browser gate |

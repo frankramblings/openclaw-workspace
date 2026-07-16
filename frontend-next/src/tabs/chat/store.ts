@@ -5,7 +5,7 @@ import { applyEvent, emptyTurn, type Bubble, type Turn } from './reducer'
 import { parseHistory } from './history'
 import { hydrateTurn, reconcileDecision, type TurnSnapshot } from './resume'
 import { branchStorageKey, sliceBranchPrefix } from './parity'
-import type { BranchResponse, DefaultChat, HistoryResponse, ModelEndpoint, ModelsResponse, SearchHit, SessionRecord, StopResponse } from './types'
+import type { BranchResponse, DefaultChat, HistoryResponse, ModelEndpoint, ModelsResponse, SearchHit, SessionRecord, SessionUsage, StopResponse } from './types'
 
 export interface SendOptions {
   allowWebSearch?: boolean
@@ -29,6 +29,7 @@ export interface ChatState {
   liveTurn: Turn | null
   models: Remote<ModelEndpoint[]>
   defaultChat: Remote<DefaultChat>
+  usage: Remote<SessionUsage>
   searchResults: Remote<SearchHit[]>
   searchQuery: string
   branchPrefix: Bubble[] | null
@@ -41,6 +42,7 @@ export interface ChatState {
   loadSessions: () => Promise<void>
   loadModels: () => Promise<void>
   loadDefaultChat: () => Promise<void>
+  loadUsage: (sessionId?: string) => Promise<void>
   searchSessions: (query: string) => Promise<void>
   branchFromMessage: (messageId: string) => Promise<boolean>
   updatePending: (text: string) => void
@@ -69,6 +71,7 @@ export interface ChatState {
 const sessionsLoader = makeLoader<SessionRecord[]>()
 const modelsLoader = makeLoader<ModelEndpoint[]>()
 const defaultChatLoader = makeLoader<DefaultChat>()
+const usageLoader = makeLoader<SessionUsage>()
 const searchLoader = makeLoader<SearchHit[]>()
 let historyEpoch = 0
 let streamController: AbortController | null = null
@@ -195,6 +198,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           set({ sessionActivity })
         }
         void loadHistory(sessionId)
+        void get().loadUsage(sessionId)
       },
       onError: () => {
         streamController = null
@@ -273,6 +277,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     liveTurn: null,
     models: idle,
     defaultChat: idle,
+    usage: idle,
     searchResults: idle,
     searchQuery: '',
     branchPrefix: null,
@@ -300,6 +305,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       (defaultChat) => set({ defaultChat }),
       get().defaultChat,
     ),
+
+    loadUsage: async (sessionId = get().activeSessionId ?? undefined) => {
+      if (!sessionId) { set({ usage: idle }); return }
+      await usageLoader(
+        () => apiGet<SessionUsage>(`/api/sessions/${encodeURIComponent(sessionId)}/usage`),
+        (usage) => { if (get().activeSessionId === sessionId) set({ usage }) },
+        get().usage,
+      )
+    },
 
     searchSessions: async (query) => {
       const trimmed = query.trim()
@@ -398,8 +412,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         if (raw) branchPrefix = prefixBubbles(JSON.parse(raw) as BranchResponse['prefix'])
       } catch { /* corrupt local branch display state is safely ignored */ }
       const { [id]: _cleared, ...sessionActivity } = get().sessionActivity
-      set({ activeSessionId: id, liveTurn: null, branchPrefix, sessionActivity })
-      await loadHistory(id)
+      set({ activeSessionId: id, liveTurn: null, branchPrefix, sessionActivity, usage: idle })
+      await Promise.all([loadHistory(id), get().loadUsage(id)])
       await reconcileSession(id, set, get)
       flushQueued(id)
     },
@@ -465,14 +479,14 @@ export const useChatStore = create<ChatState>((set, get) => {
     deleteSession: (id) => runSessionMutation(set, get, id, 'deleting', async () => {
       await apiDelete<{ ok: boolean }>(`/api/session/${encodeURIComponent(id)}`)
       if (get().activeSessionId === id) {
-        set({ activeSessionId: null, history: idle, liveTurn: null, hasMore: false, nextCursor: null })
+        set({ activeSessionId: null, history: idle, liveTurn: null, hasMore: false, nextCursor: null, usage: idle })
       }
     }),
 
     archiveSession: (id) => runSessionMutation(set, get, id, 'archiving', async () => {
       await apiJson<{ ok: boolean }>('POST', `/api/session/${encodeURIComponent(id)}/archive`)
       if (get().activeSessionId === id) {
-        set({ activeSessionId: null, history: idle, liveTurn: null, hasMore: false, nextCursor: null })
+        set({ activeSessionId: null, history: idle, liveTurn: null, hasMore: false, nextCursor: null, usage: idle })
       }
     }),
 

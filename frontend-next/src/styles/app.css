@@ -2373,3 +2373,11 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .next-conv-working{color:var(--teal);animation:pulse 1.6s ease-in-out infinite}
 .next-conv-complete{color:var(--blue)}
 .next-conv-queued{color:var(--gold)}
+.next-chat-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 18px;border-bottom:1px solid var(--bd);background:var(--panel)}
+.next-chat-header h2{margin:0;font-size:17px;color:var(--fg)}
+.next-chat-header p{margin:3px 0 0;font-size:12px;color:var(--faint)}
+.next-chat-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.next-chat-header-actions [role=status]{font-size:11px;color:var(--faint)}
+.next-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.next-conversation-actions{display:grid;gap:8px}.next-conversation-actions .btn{text-align:left;justify-content:flex-start}
+@media(max-width:720px){.next-chat-header{align-items:flex-start;flex-direction:column}.next-chat-header-actions{justify-content:flex-start}.next-chat-header-actions .btn{font-size:11px;padding-inline:8px}}

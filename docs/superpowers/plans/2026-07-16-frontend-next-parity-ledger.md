@@ -15,10 +15,10 @@ workflow test match—not merely when an endpoint is wired.
 
 | Workflow | Priority | Status | Acceptance |
 | --- | --- | --- | --- |
-| Responsive desktop rail and mobile tab bar | P0 | thin | Correct information architecture, safe areas, rotation, overflow and back behavior |
+| Responsive desktop rail and mobile tab bar | P0 | building | Correct information architecture, safe areas, rotation, overflow and back behavior |
 | Mobile navigation/sheet history | P0 | missing | Browser Back closes transient layers in current-app order |
 | Global error/retry and pushed toasts | P0 | thin | Every failed load/mutation is recoverable without losing stale data |
-| Turn-completion notifications/unread state | P0 | missing | Background sessions notify once and open the correct thread |
+| Turn-completion notifications/unread state | P0 | building | Background sessions notify once and open the correct thread |
 | Workspace explorer | P0 | missing | Browse, preview, edit, create, rename, move, delete, upload/download, drag/drop |
 | Companion and persistent terminals | P0 | missing | Attach/reconnect, multiple terminals, cwd, pins, resize, image drop |
 | Live task feed | P1 | missing | Snapshot + SSE, terminal state, stalled state and task detail |
@@ -34,13 +34,13 @@ workflow test match—not merely when an endpoint is wired.
 | Session create/select/rename/archive/favorite/model/speed | P0 | thin | All current conversation actions and truthful pending states |
 | Title + semantic message search | P0 | building | Debounced `/api/search`, local title matches, no duplicate sessions |
 | Message copy/branch/download | P0 | building | Prefix-correct branch; clipboard and MD/PDF export |
-| Buffered send and inline edit grace period | P0 | missing | 700ms pending bubble can edit/cancel/save without cross-session leakage |
-| Cross-session queue | P0 | missing | Sends queued per busy session, visible in composer and conversation row |
-| Conversation completion/unread indicators | P0 | missing | Working/queued/completed states survive navigation and reload |
+| Buffered send and inline edit grace period | P0 | building | 700ms pending bubble can edit/cancel/save without cross-session leakage |
+| Cross-session queue | P0 | building | Sends queued per busy session, visible in composer and conversation row |
+| Conversation completion/unread indicators | P0 | building | Working/queued/completed states survive navigation and reload |
 | Regenerate/continue and attachment replay | P1 | missing | Replays original attachments and replaces correct assistant tail |
 | Slash commands and setup flows | P1 | missing | Command menu, argument handling, keyboard selection, setup state |
-| Chat usage/context indicators | P1 | missing | Values come from server usage routes and refresh after turns |
-| Mobile composer, drawers, tools and gestures | P0 | missing | Current thumb-first flows, long press, sheets and edit behavior |
+| Chat usage/context indicators | P1 | done | Values come from server usage routes and refresh after turns |
+| Mobile composer, drawers, tools and gestures | P0 | building | Current thumb-first flows, long press, sheets and edit behavior |
 | Research mode and progress inside Chat | P1 | missing | Current research toggle/progress/completion behavior |
 
 ## Inbox, Email, Calendar and Notes
@@ -79,4 +79,3 @@ workflow test match—not merely when an endpoint is wired.
 `/next` cannot replace `/` until all P0 rows are `done`, their browser workflows
 pass at desktop and phone viewports, and normal work has run through `/next` for
 one week with `/` retained as rollback.
-

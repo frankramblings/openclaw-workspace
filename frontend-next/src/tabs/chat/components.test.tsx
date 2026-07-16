@@ -31,7 +31,7 @@ test('SessionList renders backend session metadata and pending state', () => {
 
   expect(screen.getByText(/Important chat/)).toBeTruthy()
   expect(screen.getByText('archiving')).toBeTruthy()
-  expect((screen.getByTitle('Remove favorite') as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByTitle('Conversation actions') as HTMLButtonElement).disabled).toBe(true)
 })
 
 test('ModelPicker renders observed model groups and saved chat speed', () => {

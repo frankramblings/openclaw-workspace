@@ -1,12 +1,14 @@
-import { useEffect } from 'react'
-import { Card } from '../../kit'
+import { useEffect, useState } from 'react'
+import { Button, Card } from '../../kit'
 import { Composer } from './Composer'
+import { ChatHeader } from './ChatHeader'
 import { ModelPicker } from './ModelPicker'
 import { SessionList } from './SessionList'
 import { Thread } from './Thread'
 import { useChatStore } from './store'
 
 export function ChatTab() {
+  const [mobilePanel, setMobilePanel] = useState<'sessions' | 'models' | null>(null)
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeSessionId)
   const loadSessions = useChatStore((state) => state.loadSessions)
@@ -28,12 +30,18 @@ export function ChatTab() {
 
   return (
     <div className="next-chat-layout">
-      <aside className="next-chat-sidebar"><SessionList /></aside>
+      <div className="next-chat-mobilebar">
+        <Button variant="ghost" onClick={() => setMobilePanel('sessions')}>Conversations</Button>
+        <Button variant="ghost" onClick={() => setMobilePanel('models')}>Model</Button>
+      </div>
+      {mobilePanel && <button className="next-chat-scrim" type="button" aria-label="Close panel" onClick={() => setMobilePanel(null)} />}
+      <aside className={`next-chat-sidebar${mobilePanel === 'sessions' ? ' is-open' : ''}`}><SessionList onSelected={() => setMobilePanel(null)} /></aside>
       <main className="next-chat-main">
+        <ChatHeader />
         <Thread />
         <Card title="Composer"><Composer /></Card>
       </main>
-      <aside className="next-chat-models"><ModelPicker /></aside>
+      <aside className={`next-chat-models${mobilePanel === 'models' ? ' is-open' : ''}`}><ModelPicker /></aside>
     </div>
   )
 }

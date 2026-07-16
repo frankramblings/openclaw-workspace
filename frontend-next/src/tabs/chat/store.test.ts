@@ -37,6 +37,7 @@ beforeEach(() => {
     liveTurn: null,
     models: idle,
     defaultChat: idle,
+    usage: idle,
     searchResults: idle,
     searchQuery: '',
     branchPrefix: null,
@@ -109,6 +110,12 @@ test('loads sessions and a selected session history from their responses', async
         nextCursor: 'older-1',
       })
     }
+    if (path === '/api/sessions/chat-1/usage') return json({
+      ok: true, sessionId: 'chat-1', model: 'openclaw', modelProvider: 'openclaw',
+      usage: { totalTokens: 1200, totalCost: 0, inputTokens: 1000, outputTokens: 200, messages: 4, toolCalls: 1, errors: 0 },
+      context: { usedTokens: 1200, windowTokens: 10000, usedPct: 12, contextWindowSource: 'model', live: false, systemPromptChars: 0, systemPromptTokens: 0, tokenEstimate: false },
+      updatedAt: '2026-07-16T00:00:00Z',
+    })
     throw new Error(`unexpected request: ${path}`)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -122,6 +129,7 @@ test('loads sessions and a selected session history from their responses', async
     history: { status: 'ready', data: [expect.objectContaining({ role: 'assistant', text: 'hello' })] },
     hasMore: true,
     nextCursor: 'older-1',
+    usage: { status: 'ready', data: { ok: true, context: { usedPct: 12 } } },
   })
 })
 

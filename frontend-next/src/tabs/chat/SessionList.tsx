@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { Button, Chip, EmptyState, ListRow, Modal, RemoteView, SectionHeader } from '../../kit'
 import { useChatStore } from './store'
 
-export function SessionList() {
+export function SessionList({ onSelected }: { onSelected?: () => void } = {}) {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
+  const [actionsFor, setActionsFor] = useState<{ id: string; name: string; important: boolean } | null>(null)
   const [query, setQuery] = useState('')
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeSessionId)
@@ -14,6 +16,7 @@ export function SessionList() {
   const createSession = useChatStore((state) => state.createSession)
   const rename = useChatStore((state) => state.renameSession)
   const archive = useChatStore((state) => state.archiveSession)
+  const remove = useChatStore((state) => state.deleteSession)
   const toggleImportant = useChatStore((state) => state.toggleImportant)
   const searchResults = useChatStore((state) => state.searchResults)
   const search = useChatStore((state) => state.searchSessions)
@@ -57,27 +60,13 @@ export function SessionList() {
                 title={<>{activity[record.id] === 'working' && <span className="next-conv-working" title="Working" aria-label="Working">● </span>}{activity[record.id] === 'complete' && <span className="next-conv-complete" title="Reply finished" aria-label="Reply finished">● </span>}{!activity[record.id] && queuedSends[record.id] && <span className="next-conv-queued" title="Message queued" aria-label="Message queued">● </span>}{record.important && <span aria-label="Favorite">★ </span>}{record.name || 'New chat'}</>}
                 meta={pendingLabel || <><Chip>{record.model}</Chip> · {record.speed}{queuedSends[record.id] ? ' · queued' : ''}</>}
                 selected={record.id === activeId}
-                onClick={() => void select(record.id)}
-                actions={<>
-                  <Button
-                    variant="ghost"
-                    disabled={Boolean(pendingLabel)}
-                    title={record.important ? 'Remove favorite' : 'Favorite'}
-                    onClick={() => void toggleImportant(record.id, !record.important)}
-                  >★</Button>
-                  <Button
-                    variant="ghost"
-                    disabled={Boolean(pendingLabel)}
-                    title="Rename"
-                    onClick={() => setEditing({ id: record.id, name: record.name })}
-                  >Rename</Button>
-                  <Button variant="ghost" disabled={Boolean(pendingLabel)} onClick={() => void archive(record.id)}>Archive</Button>
-                </>}
+                onClick={() => void select(record.id).then(onSelected)}
+                actions={<Button variant="ghost" disabled={Boolean(pendingLabel)} title="Conversation actions" onClick={() => setActionsFor({ id: record.id, name: record.name, important: record.important })}>•••</Button>}
               />
             )
           })}{query.trim().length >= 2 && <RemoteView remote={searchResults}>{(hits) => {
             const semantic = hits.filter((hit, index) => !shown.has(hit.session_id) && hits.findIndex((other) => other.session_id === hit.session_id) === index)
-            return semantic.length ? <section aria-label="Message matches"><p className="sect-label">Messages</p>{semantic.map((hit) => <ListRow key={hit.session_id} title={hit.session_name || 'Conversation'} meta={hit.content_snippet} onClick={() => void select(hit.session_id)} />)}</section> : null
+            return semantic.length ? <section aria-label="Message matches"><p className="sect-label">Messages</p>{semantic.map((hit) => <ListRow key={hit.session_id} title={hit.session_name || 'Conversation'} meta={hit.content_snippet} onClick={() => void select(hit.session_id).then(onSelected)} />)}</section> : null
           }}</RemoteView>}</>
         }}
       </RemoteView>
@@ -97,6 +86,21 @@ export function SessionList() {
           </label>
           <Button type="submit" variant="primary" disabled={!editing?.name.trim()}>Save</Button>
         </form>
+      </Modal>
+      <Modal open={actionsFor !== null} onClose={() => setActionsFor(null)} title={actionsFor?.name || 'Conversation actions'}>
+        <div className="next-conversation-actions">
+          <Button variant="ghost" onClick={() => { if (actionsFor) void toggleImportant(actionsFor.id, !actionsFor.important); setActionsFor(null) }}>{actionsFor?.important ? 'Remove favorite' : 'Add favorite'}</Button>
+          <Button variant="ghost" onClick={() => { if (actionsFor) setEditing({ id: actionsFor.id, name: actionsFor.name }); setActionsFor(null) }}>Rename</Button>
+          <Button variant="ghost" onClick={() => { if (actionsFor) void archive(actionsFor.id); setActionsFor(null) }}>Archive</Button>
+          <Button variant="danger" onClick={() => { if (actionsFor) setDeleting({ id: actionsFor.id, name: actionsFor.name }); setActionsFor(null) }}>Delete</Button>
+        </div>
+      </Modal>
+      <Modal open={deleting !== null} onClose={() => setDeleting(null)} title="Delete conversation">
+        <p>Delete “{deleting?.name || 'New chat'}” permanently? This cannot be undone.</p>
+        <div className="next-modal-actions">
+          <Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
+          <Button variant="danger" onClick={() => { if (deleting) void remove(deleting.id).then((ok) => { if (ok) setDeleting(null) }) }}>Delete</Button>
+        </div>
       </Modal>
     </section>
   )

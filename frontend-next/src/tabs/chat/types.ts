@@ -71,3 +71,30 @@ export interface DefaultChat {
   endpoint_url: string
   model: string
 }
+
+export interface SessionUsage {
+  ok: boolean
+  sessionId: string
+  model: string
+  modelProvider: string
+  usage: {
+    totalTokens: number
+    totalCost: number
+    inputTokens: number
+    outputTokens: number
+    messages: number
+    toolCalls: number
+    errors: number
+  }
+  context: {
+    usedTokens: number
+    windowTokens: number
+    usedPct: number
+    contextWindowSource: string
+    live: boolean
+    systemPromptChars: number
+    systemPromptTokens: number
+    tokenEstimate: boolean
+  }
+  updatedAt: string
+}

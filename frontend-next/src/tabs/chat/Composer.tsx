@@ -21,9 +21,12 @@ export function Composer() {
   const recallQueued = useChatStore((state) => state.recallQueued)
   const cancelQueued = useChatStore((state) => state.cancelQueued)
   const enableNotifications = useChatStore((state) => state.enableNotifications)
+  const usage = useChatStore((state) => state.usage)
   const history = historyRemote.status === 'ready' ? historyRemote.data : []
   const { suggestion, clearSuggestion } = useSuggest({ sessionId, history, liveTurn: live, draft })
   const working = live && ['sending', 'streaming', 'stalled'].includes(live.status)
+  const context = usage.status === 'ready' && usage.data.ok ? usage.data.context : null
+  const contextPct = context && Number.isFinite(context.usedPct) ? Math.max(0, Math.min(100, context.usedPct)) : null
 
   const submit = () => {
     const gate = uploadGate(attachments)
@@ -100,6 +103,10 @@ export function Composer() {
           <input type="checkbox" checked={allowWebSearch} onChange={(event) => setAllowWebSearch(event.target.checked)} />
           Web search
         </label>
+        {contextPct !== null && <div className="ctx-meter" title={`${context!.usedTokens.toLocaleString()} of ${context!.windowTokens.toLocaleString()} context tokens`}>
+          <span className="track"><span className="fill" style={{ width: `${contextPct}%` }} /></span>
+          <span className="pct">{Math.round(contextPct)}%</span>
+        </div>}
         {working
           ? <Button variant="danger" onClick={() => void stop()}>Stop</Button>
           : <Button variant="primary" disabled={!sessionId || (!draft.trim() && attachments.length === 0)} onClick={submit}>Send</Button>}

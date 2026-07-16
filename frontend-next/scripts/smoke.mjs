@@ -176,6 +176,19 @@ try {
     await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
   }
 
+  // Settings: require typed live status and editable default/search controls,
+  // then drill into a real MCP server's reported tools without reconnecting it.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/settings'`)
+    await waitFor(`document.querySelectorAll('.next-settings-overview .next-card').length === 4 && document.querySelector('[aria-label="Default model"]') && document.querySelector('[aria-label="Search provider"]')`, 45_000)
+    await waitFor(`document.querySelector('.next-mcp-list article > button:not(.btn)')`, 45_000)
+    await evaluate(`document.querySelector('.next-mcp-list article > button:not(.btn)').click()`)
+    await waitFor(`document.querySelector('[role="dialog"] .next-mcp-tools article')`, 30_000)
+    await screenshot(`${viewport.name}-settings-mcp-tools`)
+    await evaluate(`document.querySelector('[role="dialog"] [aria-label="Close"]').click()`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

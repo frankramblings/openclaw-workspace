@@ -9,6 +9,8 @@ import { useChatStore } from '../tabs/chat/store'
 import { WorkspacePanel } from './workspace/WorkspacePanel'
 import { TerminalPanel } from './terminal/TerminalPanel'
 import { TaskPanel } from './tasks/TaskPanel'
+import { PwaBanner } from './pwa/PwaBanner'
+import { usePwaStore } from './pwa/store'
 
 export function App() {
   const { tab, navigate } = useHashRoute()
@@ -16,6 +18,7 @@ export function App() {
   const loadCapabilities = useAppStore((s) => s.loadCapabilities)
   const startActivityWatch = useChatStore((s) => s.startActivityWatch)
   const stopActivityWatch = useChatStore((s) => s.stopActivityWatch)
+  const initPwa = usePwaStore((s) => s.init)
 
   useEffect(() => {
     void loadConfig()
@@ -26,6 +29,8 @@ export function App() {
     startActivityWatch()
     return stopActivityWatch
   }, [startActivityWatch, stopActivityWatch])
+
+  useEffect(() => initPwa(), [initPwa])
 
   const { Component } = tabById(tab)
 
@@ -41,6 +46,7 @@ export function App() {
       <WorkspacePanel />
       <TerminalPanel />
       <TaskPanel />
+      <PwaBanner />
     </div>
   )
 }

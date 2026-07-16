@@ -260,6 +260,25 @@ try {
   if (created) await evaluate(`fetch('/api/session/${encodeURIComponent(created)}',{method:'DELETE'})`)
   }
 
+  // PWA lifecycle: wait until /next's scoped worker controls this page, force
+  // the browser offline, reload from its cached hashed shell, then recover.
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+  await waitFor(`navigator.serviceWorker?.controller?.scriptURL.endsWith('/next/sw.js')`, 30_000)
+  const manifest = await evaluate(`fetch('/next/manifest.webmanifest').then(r => r.json())`)
+  if (manifest.scope !== '/next/' || manifest.start_url !== '/next/#/chat') throw new Error(`invalid /next manifest: ${JSON.stringify(manifest)}`)
+  await send('Network.enable')
+  await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 })
+  await evaluate(`location.reload()`)
+  await pause(900)
+  await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`, 20_000)
+  await evaluate(`window.dispatchEvent(new Event('offline'))`)
+  await waitFor(`document.querySelector('.next-pwa-banner.is-offline')`)
+  await screenshot('desktop-pwa-offline')
+  await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
+  await evaluate(`location.reload()`)
+  await pause(700)
+  await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`, 20_000)
+
   if (consoleErrors.length) throw new Error(`Console errors:\n${consoleErrors.join('\n')}`)
   console.log(JSON.stringify({ ok: true, screenshots: out, tabs: tabs.length, consoleErrors: 0 }))
 } finally {

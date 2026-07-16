@@ -22,7 +22,7 @@ workflow test match—not merely when an endpoint is wired.
 | Workspace explorer | P0 | building | Browse, preview, edit, create, rename, move, delete, upload/download, drag/drop |
 | Companion and persistent terminals | P0 | building | Attach/reconnect, multiple terminals, cwd, pins, resize, image drop |
 | Live task feed | P1 | done | Snapshot + SSE, terminal state, stalled state and task detail |
-| Installable/offline PWA lifecycle | P1 | missing | Manifest/SW/update/install behavior matches `/` without stale-shell traps |
+| Installable/offline PWA lifecycle | P1 | done | Manifest/SW/update/install behavior matches `/` without stale-shell traps |
 | Persisted layout/preferences | P1 | missing | Rail/pane widths and opened surfaces survive reload |
 
 ## Chat

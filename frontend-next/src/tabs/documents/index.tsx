@@ -1,27 +1,20 @@
-import { useEffect, useState } from 'react'
-import { Button, Card, EmptyState, ListRow, RemoteView, SectionHeader } from '../../kit'
-import { Md } from '../chat/Message'
-import { useDocumentsStore } from './store'
+import{useEffect,useMemo,useState}from'react'
+import{Button,Card,EmptyState,ListRow,Modal,RemoteView,SectionHeader}from'../../kit'
+import{Md}from'../chat/Message'
+import{useEmailStore}from'../email/store'
+import{useDocumentsStore}from'./store'
 
-export function DocumentsTab() {
-  const store = useDocumentsStore()
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [preview, setPreview] = useState(false)
-  useEffect(() => {
-    void store.load()
-    const id = sessionStorage.getItem('next:document')
-    if (id) { sessionStorage.removeItem('next:document'); void store.select(id) }
-  }, [])
-  useEffect(() => {
-    if (store.document.status === 'ready') {
-      setTitle(store.document.data.title)
-      setBody(store.document.data.current_content)
-    }
-  }, [store.document])
-  return <main className="next-tab"><SectionHeader title="Documents" actions={<Button onClick={() => void store.load()}>Refresh</Button>} />
-    <div className="next-grid"><Card title="Library"><RemoteView remote={store.library} onRetry={store.load} empty={<EmptyState title="No documents" />} isEmpty={(data) => data.documents.length === 0}>{(data) => data.documents.map((doc) => <ListRow key={doc.id} title={doc.title || 'Untitled'} meta={`${doc.language} · ${doc.updated_at}`} selected={store.selected === doc.id} onClick={() => void store.select(doc.id)} />)}</RemoteView></Card>
-      <Card title="Document"><RemoteView remote={store.document}>{() => <><input aria-label="Document title" value={title} onChange={(e) => setTitle(e.target.value)} />{preview ? <Md src={body} /> : <textarea aria-label="Document content" value={body} onChange={(e) => setBody(e.target.value)} style={{ minHeight: 420 }} />}<p>{store.saveState}</p><Button onClick={() => void store.save(body, title)}>Save</Button><Button variant="ghost" onClick={() => setPreview(!preview)}>{preview ? 'Edit' : 'Preview'}</Button>{store.selected && <a className="btn btn-ghost" href={`/api/document/${encodeURIComponent(store.selected)}/export?format=docx`}>Export</a>}<Button variant="ghost" onClick={() => void store.archive()}>Archive</Button><Button variant="danger" onClick={() => void store.remove()}>Delete</Button><RemoteView remote={store.versions}>{(versions) => versions.length ? <div><h4>Versions</h4>{versions.map((version) => <Button key={version.version} variant="ghost" onClick={() => void store.restore(version.version)}>Restore v{version.version}</Button>)}</div> : null}</RemoteView></>}</RemoteView></Card></div>
-  </main>
+export function DocumentsTab(){
+ const store=useDocumentsStore(),email=useEmailStore(),[title,setTitle]=useState(''),[body,setBody]=useState(''),[language,setLanguage]=useState('markdown'),[preview,setPreview]=useState(false),[emailOpen,setEmailOpen]=useState(false),[mail,setMail]=useState({to:'',cc:'',bcc:'',subject:''})
+ useEffect(()=>{void(async()=>{await store.load();const requested=sessionStorage.getItem('next:document');if(requested)sessionStorage.removeItem('next:document');const state=useDocumentsStore.getState(),id=requested||state.tabs[0]||(state.library.status==='ready'?state.library.data.documents[0]?.id:null);if(id)await state.select(id)})()},[])
+ useEffect(()=>{if(store.document.status==='ready'){setTitle(store.document.data.title);setBody(store.document.data.current_content);setLanguage(store.document.data.language)}},[store.document])
+ const rows=store.library.status==='ready'?store.library.data.documents:[]
+ const tabRows=useMemo(()=>store.tabs.map(id=>store.cache[id]||rows.find(row=>row.id===id)).filter(Boolean),[rows,store.cache,store.tabs])
+ return <main className="next-tab next-documents-tab"><SectionHeader title="Documents" actions={<><Button variant="ghost" onClick={()=>void store.load()}>Refresh</Button><Button onClick={()=>void store.create()}>New document</Button></>}/>
+  <div className="next-doc-tabs" role="tablist">{tabRows.map((doc,index)=><div key={doc!.id} className={`next-doc-tab${store.selected===doc!.id?' is-active':''}`}><button role="tab" aria-selected={store.selected===doc!.id} onClick={()=>void store.select(doc!.id)}>{doc!.title||'Untitled'}</button><button title="Move tab left" disabled={index===0} onClick={()=>store.moveTab(doc!.id,-1)}>‹</button><button title="Move tab right" disabled={index===tabRows.length-1} onClick={()=>store.moveTab(doc!.id,1)}>›</button><button title="Close tab" onClick={()=>store.close(doc!.id)}>×</button></div>)}</div>
+  {store.error&&<div className="next-inline-error" role="alert">{store.error}</div>}<div className="next-doc-layout"><Card title="Library"><div className="next-doc-filters"><input aria-label="Search documents" placeholder="Search documents…" value={store.query} onChange={event=>void store.setFilters({query:event.target.value})}/><select aria-label="Sort documents" value={store.sort} onChange={event=>void store.setFilters({sort:event.target.value as 'recent'|'alpha'})}><option value="recent">Recent</option><option value="alpha">A–Z</option></select><select aria-label="Document language" value={store.language} onChange={event=>void store.setFilters({language:event.target.value})}><option value="">All formats</option>{store.library.status==='ready'&&Object.keys(store.library.data.languages).map(item=><option key={item}>{item}</option>)}</select><label><input type="checkbox" checked={store.archived} onChange={event=>void store.setFilters({archived:event.target.checked})}/> Archived</label></div><RemoteView remote={store.library} onRetry={store.load} empty={<EmptyState title="No documents"/>} isEmpty={data=>data.documents.length===0}>{data=>data.documents.map(doc=><ListRow key={doc.id} title={doc.title||'Untitled'} meta={`${doc.language} · ${doc.updated_at}${doc.session_name?` · ${doc.session_name}`:''}`} selected={store.selected===doc.id} onClick={()=>void store.select(doc.id)}/>)}</RemoteView></Card>
+   <Card title="Document"><RemoteView remote={store.document} empty={<EmptyState title="Choose or create a document"/>}>{()=> <><div className="next-doc-editor-head"><input aria-label="Document title" value={title} onChange={event=>setTitle(event.target.value)}/><select aria-label="Syntax" value={language} onChange={event=>setLanguage(event.target.value)}><option>markdown</option><option>text</option><option>json</option><option>javascript</option><option>typescript</option><option>python</option><option>html</option><option>css</option></select></div>{preview?<div className="next-doc-preview"><Md src={body}/></div>:<textarea aria-label="Document content" value={body} onChange={event=>setBody(event.target.value)}/>}<div className="next-doc-actions"><span>{store.saveState}</span><Button onClick={()=>void store.save(body,title,language)}>Save</Button><Button variant="ghost" onClick={()=>setPreview(!preview)}>{preview?'Edit':'Preview'}</Button>{store.selected&&<a className="btn btn-ghost" href={`/api/document/${encodeURIComponent(store.selected)}/export?format=docx`}>Export DOCX</a>}<Button variant="ghost" onClick={()=>{setMail({...mail,subject:title});setEmailOpen(true)}}>Email</Button><Button variant="ghost" onClick={()=>void store.archive()}>{store.archived?'Unarchive':'Archive'}</Button><Button variant="danger" onClick={()=>{if(confirm('Delete this document permanently?'))void store.remove()}}>Delete</Button></div><RemoteView remote={store.versions}>{versions=>versions.length?<details><summary>Version history · {versions.length}</summary>{versions.map(version=><Button key={version.version} variant="ghost" onClick={()=>{if(confirm(`Restore version ${version.version}?`))void store.restore(version.version)}}>Restore v{version.version} · {version.updated_at}</Button>)}</details>:null}</RemoteView></>}</RemoteView></Card></div>
+  <Card title="PDF workflows"><p>PDF import, form filling, annotations, and AI fill are unavailable because this deployment’s <code>/api/documents/import-pdf</code> route explicitly returns HTTP 501. The UI will not claim those operations succeeded.</p></Card>
+  <Modal open={emailOpen} onClose={()=>setEmailOpen(false)} title="Email document"><div className="next-email-compose"><label>To<input value={mail.to} onChange={event=>setMail({...mail,to:event.target.value})}/></label><label>CC<input value={mail.cc} onChange={event=>setMail({...mail,cc:event.target.value})}/></label><label>BCC<input value={mail.bcc} onChange={event=>setMail({...mail,bcc:event.target.value})}/></label><label>Subject<input value={mail.subject} onChange={event=>setMail({...mail,subject:event.target.value})}/></label><Button disabled={!mail.to.trim()||Boolean(email.pending)} onClick={()=>void email.send({...mail,body}).then(()=>setEmailOpen(false))}>Send</Button><Button variant="ghost" disabled={Boolean(email.pending)} onClick={()=>void email.send({...mail,body},true).then(()=>setEmailOpen(false))}>Save draft</Button></div></Modal>
+ </main>
 }
-

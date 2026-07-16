@@ -81,6 +81,16 @@ try {
     }
   }
 
+  // Documents must progress beyond a library-shaped shell: require a real
+  // selected document, editable title/body, tab state, and version request.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/documents'`)
+    await waitFor(`document.querySelector('.next-doc-tab[aria-selected="true"], .next-doc-tab.is-active') && document.querySelector('[aria-label="Document title"]') && document.querySelector('[aria-label="Document content"]')`, 30_000)
+    await evaluate(`document.querySelector('[aria-label="Document title"]').scrollIntoView({block:'start'})`)
+    await screenshot(`${viewport.name}-documents-editor`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

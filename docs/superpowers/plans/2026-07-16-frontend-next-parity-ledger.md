@@ -58,11 +58,11 @@ workflow test match—not merely when an endpoint is wired.
 
 | Workflow | Priority | Status |
 | --- | --- | --- |
-| Multi-document tabs, rename/reorder and session integration | P0 | missing |
-| Rich markdown editor, save/version/restore/export | P0 | thin |
-| Email-compose documents and recipient/attachment workflow | P0 | missing |
+| Multi-document tabs, rename/reorder and session integration | P0 | building |
+| Rich markdown editor, save/version/restore/export | P0 | building |
+| Email-compose documents and recipient/attachment workflow | P0 | building |
 | PDF import, form fields, annotations, AI fill and preview | P1 | missing |
-| Library search/filter/sort and deep selection | P1 | thin |
+| Library search/filter/sort and deep selection | P1 | building |
 
 ## Research, operations and settings
 

@@ -7,6 +7,7 @@ import { StubTab } from '../kit'
 import { ChatTab } from './chat'
 import { InboxTab } from './inbox'
 import { EmailTab } from './email'
+import { CalendarTab } from './calendar'
 
 export interface TabDef {
   id: string
@@ -27,7 +28,7 @@ export const TABS: TabDef[] = [
   { id: 'chat', label: 'Chat', icon: '💬', order: 1, Component: ChatTab },
   { id: 'inbox', label: 'Inbox', icon: '📥', order: 2, Component: InboxTab },
   { id: 'email', label: 'Email', icon: '✉️', order: 3, Component: EmailTab },
-  { id: 'calendar', label: 'Calendar', icon: '📅', order: 4, Component: stub('calendar') },
+  { id: 'calendar', label: 'Calendar', icon: '📅', order: 4, Component: CalendarTab },
   { id: 'notes', label: 'Notes', icon: '📝', order: 5, Component: stub('notes') },
   { id: 'documents', label: 'Documents', icon: '📄', order: 6, Component: stub('documents') },
   { id: 'research', label: 'Research', icon: '🔎', order: 7, Component: stub('research') },

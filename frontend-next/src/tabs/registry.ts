@@ -2,8 +2,6 @@
 // line: its tab's Component, from the StubTab placeholder to the real one.
 // Order = rail order = priority order from the plan.
 import type { ComponentType } from 'react'
-import { createElement } from 'react'
-import { StubTab } from '../kit'
 import { ChatTab } from './chat'
 import { InboxTab } from './inbox'
 import { EmailTab } from './email'
@@ -15,6 +13,7 @@ import { LibraryTab } from './library'
 import { CronTab } from './cron'
 import { MemoryTab } from './memory'
 import { SkillsTab } from './skills'
+import { SettingsTab } from './settings'
 
 export interface TabDef {
   id: string
@@ -24,8 +23,6 @@ export interface TabDef {
   order: number
   Component: ComponentType
 }
-
-const stub = (id: string): ComponentType => () => createElement(StubTab, { tab: id })
 
 /** The tab every unknown/empty route resolves to — shared by the router and
  *  tabById so the two fallbacks can never drift apart. */
@@ -43,7 +40,7 @@ export const TABS: TabDef[] = [
   { id: 'cron', label: 'Cron', icon: '⏰', order: 9, Component: CronTab },
   { id: 'memory', label: 'Memory', icon: '🧠', order: 10, Component: MemoryTab },
   { id: 'skills', label: 'Skills', icon: '⚡', order: 11, Component: SkillsTab },
-  { id: 'settings', label: 'Settings', icon: '⚙️', order: 12, Component: stub('settings') },
+  { id: 'settings', label: 'Settings', icon: '⚙️', order: 12, Component: SettingsTab },
 ]
 
 export function tabById(id: string): TabDef {

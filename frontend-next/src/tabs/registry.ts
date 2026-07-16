@@ -4,6 +4,7 @@
 import type { ComponentType } from 'react'
 import { createElement } from 'react'
 import { StubTab } from '../kit'
+import { ChatTab } from './chat'
 
 export interface TabDef {
   id: string
@@ -21,7 +22,7 @@ const stub = (id: string): ComponentType => () => createElement(StubTab, { tab: 
 export const DEFAULT_TAB = 'chat'
 
 export const TABS: TabDef[] = [
-  { id: 'chat', label: 'Chat', icon: '💬', order: 1, Component: stub('chat') },
+  { id: 'chat', label: 'Chat', icon: '💬', order: 1, Component: ChatTab },
   { id: 'inbox', label: 'Inbox', icon: '📥', order: 2, Component: stub('inbox') },
   { id: 'email', label: 'Email', icon: '✉️', order: 3, Component: stub('email') },
   { id: 'calendar', label: 'Calendar', icon: '📅', order: 4, Component: stub('calendar') },

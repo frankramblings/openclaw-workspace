@@ -70,6 +70,20 @@ function userBubble(text: string): Bubble {
   }
 }
 
+async function fetchSessions(): Promise<SessionRecord[]> {
+  const data = await apiGet<unknown>('/api/sessions')
+  if (!Array.isArray(data)) throw new Error('Invalid /api/sessions response: expected an array')
+  return data as SessionRecord[]
+}
+
+async function fetchModels(): Promise<ModelEndpoint[]> {
+  const data = await apiGet<unknown>('/api/models')
+  if (!data || typeof data !== 'object' || !Array.isArray((data as ModelsResponse).items)) {
+    throw new Error('Invalid /api/models response: expected {items: []}')
+  }
+  return (data as ModelsResponse).items
+}
+
 export const useChatStore = create<ChatState>((set, get) => {
   const loadHistory = async (sessionId: string): Promise<void> => {
     const epoch = ++historyEpoch
@@ -110,13 +124,13 @@ export const useChatStore = create<ChatState>((set, get) => {
     sessionError: null,
 
     loadSessions: () => sessionsLoader(
-      () => apiGet<SessionRecord[]>('/api/sessions'),
+      fetchSessions,
       (sessions) => set({ sessions }),
       get().sessions,
     ),
 
     loadModels: () => modelsLoader(
-      async () => (await apiGet<ModelsResponse>('/api/models')).items,
+      fetchModels,
       (models) => set({ models }),
       get().models,
     ),

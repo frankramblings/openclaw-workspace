@@ -10,6 +10,7 @@ import { EmailTab } from './email'
 import { CalendarTab } from './calendar'
 import { NotesTab } from './notes'
 import { DocumentsTab } from './documents'
+import { ResearchTab } from './research'
 
 export interface TabDef {
   id: string
@@ -33,7 +34,7 @@ export const TABS: TabDef[] = [
   { id: 'calendar', label: 'Calendar', icon: '📅', order: 4, Component: CalendarTab },
   { id: 'notes', label: 'Notes', icon: '📝', order: 5, Component: NotesTab },
   { id: 'documents', label: 'Documents', icon: '📄', order: 6, Component: DocumentsTab },
-  { id: 'research', label: 'Research', icon: '🔎', order: 7, Component: stub('research') },
+  { id: 'research', label: 'Research', icon: '🔎', order: 7, Component: ResearchTab },
   { id: 'library', label: 'Library', icon: '📚', order: 8, Component: stub('library') },
   { id: 'cron', label: 'Cron', icon: '⏰', order: 9, Component: stub('cron') },
   { id: 'memory', label: 'Memory', icon: '🧠', order: 10, Component: stub('memory') },

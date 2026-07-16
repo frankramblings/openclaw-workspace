@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Button, EmptyState, RemoteView } from '../../kit'
 import { useWorkspaceStore, type WorkspaceNode } from './store'
+import { useHistoryLayer } from '../useHistoryLayer'
 
 function Node({ node, depth = 0 }: { node: WorkspaceNode; depth?: number }) {
   const store = useWorkspaceStore()
@@ -19,12 +20,13 @@ function findNode(nodes: WorkspaceNode[], path: string | null): WorkspaceNode | 
 
 export function WorkspacePanel() {
   const store = useWorkspaceStore()
+  const close = useHistoryLayer(store.open, store.close)
   const upload = useRef<HTMLInputElement>(null)
   if (!store.open) return null
   const mutable = store.tree.status === 'ready' && store.tree.data.mutable
   const selectedNode = store.tree.status === 'ready' ? findNode(store.tree.data.tree, store.selectedPath) : null
   return <aside className="next-workspace-panel" aria-label="Workspace explorer">
-    <header className="next-ws-head"><strong>Workspace</strong><select aria-label="Workspace root" value={store.rootKey} onChange={(event) => void store.setRoot(event.target.value)}>{store.roots.status === 'ready' ? store.roots.data.filter((root) => root.available).map((root) => <option key={root.key} value={root.key}>{root.key}</option>) : <option value={store.rootKey}>{store.rootKey}</option>}</select><Button variant="ghost" onClick={() => void store.load(true)}>Refresh</Button><Button variant="ghost" onClick={store.close}>Close</Button></header>
+    <header className="next-ws-head"><strong>Workspace</strong><select aria-label="Workspace root" value={store.rootKey} onChange={(event) => void store.setRoot(event.target.value)}>{store.roots.status === 'ready' ? store.roots.data.filter((root) => root.available).map((root) => <option key={root.key} value={root.key}>{root.key}</option>) : <option value={store.rootKey}>{store.rootKey}</option>}</select><Button variant="ghost" onClick={() => void store.load(true)}>Refresh</Button><Button variant="ghost" onClick={close}>Close</Button></header>
     {store.error && <p className="next-error-detail" role="alert">{store.error}</p>}
     <div className="next-ws-tools">
       <Button variant="ghost" disabled={!mutable || Boolean(store.pending)} onClick={() => { const path = prompt('New file path', 'untitled.md')?.trim(); if (path) void store.createPath(path) }}>New file</Button>

@@ -3,6 +3,7 @@ import { apiJson } from '../../api/client'
 import { Button } from '../../kit'
 import { useChatStore } from '../../tabs/chat/store'
 import { useTerminalPanel } from './store'
+import { useHistoryLayer } from '../useHistoryLayer'
 
 interface XTerminal { open(el: HTMLElement): void; loadAddon(addon: unknown): void; onData(fn: (data: string) => void): void; write(data: string): void; reset(): void; cols: number; rows: number; focus(): void }
 interface FitAddonLike { fit(): void }
@@ -21,6 +22,7 @@ function loadAssets(): Promise<void> {
 
 export function TerminalPanel() {
   const panel = useTerminalPanel()
+  const close = useHistoryLayer(panel.open, panel.close)
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeSessionId)
   const mount = useRef<HTMLDivElement>(null), term = useRef<XTerminal | null>(null), fit = useRef<FitAddonLike | null>(null), socket = useRef<WebSocket | null>(null), retry = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -48,5 +50,5 @@ export function TerminalPanel() {
 
   const drop = async (event: DragEvent) => { event.preventDefault(); if (!key || !event.dataTransfer.files.length) return; const form = new FormData(); Array.from(event.dataTransfer.files).forEach((file) => form.append('files', file)); const response = await fetch('/api/upload', { method: 'POST', body: form }); if (!response.ok) return; const body = await response.json() as { files: Array<{ id: string; name: string }> }; for (const file of body.files ?? []) { const attached = await apiJson<{ token: string }>('POST', `/api/terminal/${encodeURIComponent(key)}/attach`, { file_id: file.id, name: file.name }); if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify({ type: 'input', data: attached.token })) } }
 
-  return <aside className={`next-terminal-panel${panel.open ? ' is-open' : ''}`} aria-label="Terminal"><header><strong>Terminal</strong><select aria-label="Terminal conversation" value={key || ''} onChange={(event) => panel.choose(event.target.value)}>{records.map((session) => <option key={session.id} value={session.sessionKey}>{session.name}</option>)}</select><span className={`next-term-status is-${status}`}>{status}</span><label><input type="checkbox" checked={persist} disabled={!key} onChange={(event) => { const enabled = event.target.checked; setPersist(enabled); if (key) void apiJson('POST', `/api/terminal/${encodeURIComponent(key)}/persist`, { enabled }) }} /> persist</label><Button variant="ghost" disabled={!key} onClick={() => { if (key && confirm('Clear saved terminal scrollback?')) { term.current?.reset(); void apiJson('POST', `/api/terminal/${encodeURIComponent(key)}/clear-history`, {}) } }}>Clear</Button><Button variant="danger" disabled={!key} onClick={() => { if (key && confirm('Close this terminal process?')) void apiJson('POST', `/api/terminal/${encodeURIComponent(key)}/close`, {}) }}>Kill</Button><Button variant="ghost" onClick={panel.close}>Close</Button></header><div ref={mount} className="next-terminal-mount" onDragOver={(event) => event.preventDefault()} onDrop={(event) => void drop(event)} /></aside>
+  return <aside className={`next-terminal-panel${panel.open ? ' is-open' : ''}`} aria-label="Terminal"><header><strong>Terminal</strong><select aria-label="Terminal conversation" value={key || ''} onChange={(event) => panel.choose(event.target.value)}>{records.map((session) => <option key={session.id} value={session.sessionKey}>{session.name}</option>)}</select><span className={`next-term-status is-${status}`}>{status}</span><label><input type="checkbox" checked={persist} disabled={!key} onChange={(event) => { const enabled = event.target.checked; setPersist(enabled); if (key) void apiJson('POST', `/api/terminal/${encodeURIComponent(key)}/persist`, { enabled }) }} /> persist</label><Button variant="ghost" disabled={!key} onClick={() => { if (key && confirm('Clear saved terminal scrollback?')) { term.current?.reset(); void apiJson('POST', `/api/terminal/${encodeURIComponent(key)}/clear-history`, {}) } }}>Clear</Button><Button variant="danger" disabled={!key} onClick={() => { if (key && confirm('Close this terminal process?')) void apiJson('POST', `/api/terminal/${encodeURIComponent(key)}/close`, {}) }}>Kill</Button><Button variant="ghost" onClick={close}>Close</Button></header><div ref={mount} className="next-terminal-mount" onDragOver={(event) => event.preventDefault()} onDrop={(event) => void drop(event)} /></aside>
 }

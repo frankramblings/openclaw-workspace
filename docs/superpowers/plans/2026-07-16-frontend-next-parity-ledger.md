@@ -16,7 +16,7 @@ workflow test match—not merely when an endpoint is wired.
 | Workflow | Priority | Status | Acceptance |
 | --- | --- | --- | --- |
 | Responsive desktop rail and mobile tab bar | P0 | building | Correct information architecture, safe areas, rotation, overflow and back behavior |
-| Mobile navigation/sheet history | P0 | missing | Browser Back closes transient layers in current-app order |
+| Mobile navigation/sheet history | P0 | done | Shared modal/companion history stack; nested layers close in order; phone browser gate uses real Back |
 | Global error/retry and pushed toasts | P0 | thin | Every failed load/mutation is recoverable without losing stale data |
 | Turn-completion notifications/unread state | P0 | building | Background sessions notify once and open the correct thread |
 | Workspace explorer | P0 | building | Browse, preview, edit, create, rename, move, delete, upload/download, drag/drop |

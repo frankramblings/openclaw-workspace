@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { useHistoryLayer } from '../shell/useHistoryLayer'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
 
@@ -16,11 +17,7 @@ export function Modal({ open, onClose, title, children }: {
   children: ReactNode
 }) {
   const boxRef = useRef<HTMLDivElement>(null)
-  // onClose lives in a ref so the trap effect is keyed on [open] only — an
-  // inline onClose prop must NOT re-run the effect (it yanked focus to the
-  // first focusable on every parent rerender; review gate 2026-07-15).
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  const close = useHistoryLayer(open, onClose)
   // Where a pointer gesture started, so drag-out (mousedown inside the box,
   // mouseup on the backdrop) doesn't count as a backdrop click.
   const pointerFrom = useRef<'backdrop' | 'box' | null>(null)
@@ -37,7 +34,7 @@ export function Modal({ open, onClose, title, children }: {
       if (e.key === 'Escape') {
         if (modalStack[modalStack.length - 1] !== id) return // not topmost
         e.stopPropagation()
-        onCloseRef.current()
+        close()
         return
       }
       if (e.key !== 'Tab' || !box) return
@@ -54,7 +51,7 @@ export function Modal({ open, onClose, title, children }: {
       if (i >= 0) modalStack.splice(i, 1)
       opener?.focus()
     }
-  }, [open])
+  }, [close, open])
 
   if (!open) return null
   return (
@@ -63,7 +60,7 @@ export function Modal({ open, onClose, title, children }: {
       role="presentation"
       onPointerDown={(e) => { pointerFrom.current = e.target === e.currentTarget ? 'backdrop' : 'box' }}
       onClick={(e) => {
-        if (e.target === e.currentTarget && pointerFrom.current === 'backdrop') onClose()
+        if (e.target === e.currentTarget && pointerFrom.current === 'backdrop') close()
         pointerFrom.current = null
       }}
     >
@@ -77,7 +74,7 @@ export function Modal({ open, onClose, title, children }: {
       >
         <header className="next-modal-head">
           <h3 className="next-modal-title">{title}</h3>
-          <button type="button" className="btn btn-ghost btn-sm" aria-label="Close" onClick={onClose}>✕</button>
+          <button type="button" className="btn btn-ghost btn-sm" aria-label="Close" onClick={close}>✕</button>
         </header>
         <div className="next-modal-body">{children}</div>
       </div>

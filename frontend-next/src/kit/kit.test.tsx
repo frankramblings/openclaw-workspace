@@ -1,5 +1,6 @@
 import { test, expect, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
+import { useState } from 'react'
 import { RemoteView } from './RemoteView'
 import { Modal } from './Modal'
 import { ToastHost, useToasts } from './Toast'
@@ -59,16 +60,32 @@ test('RemoteView: loading with stale keeps data visible under aria-busy', () => 
 
 test('Modal: Esc closes; focus lands inside on open', () => {
   const onClose = vi.fn()
-  render(
-    <Modal open onClose={onClose} title="Test modal">
+  function ControlledModal() {
+    const [open, setOpen] = useState(true)
+    return <Modal open={open} onClose={() => { onClose(); setOpen(false) }} title="Test modal">
       <button type="button">inner</button>
-    </Modal>,
+    </Modal>
+  }
+  render(
+    <ControlledModal />,
   )
   // First focusable in DOM order is the header close button — what matters is
   // that focus landed INSIDE the dialog.
   expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true)
   fireEvent.keyDown(document, { key: 'Escape' })
   expect(onClose).toHaveBeenCalledOnce()
+})
+
+test('Modal: browser Back closes the top history layer', () => {
+  function ControlledModal() {
+    const [open, setOpen] = useState(true)
+    return <Modal open={open} onClose={() => setOpen(false)} title="Back modal">content</Modal>
+  }
+  render(<ControlledModal />)
+  expect(screen.getByRole('dialog')).toBeTruthy()
+  history.replaceState({}, '', location.href)
+  fireEvent(window, new PopStateEvent('popstate', { state: history.state }))
+  expect(screen.queryByRole('dialog')).toBeNull()
 })
 
 test('Toast: push renders and auto-expires after 5s', () => {

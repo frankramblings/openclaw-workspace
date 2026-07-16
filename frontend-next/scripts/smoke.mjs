@@ -210,6 +210,7 @@ try {
     await waitFor(`document.querySelector('.next-task-panel') && document.querySelector('.next-task-panel .next-stream-status')?.textContent === 'live' && !document.querySelector('.next-task-panel .next-skeleton')`, 30_000)
     await screenshot(`${viewport.name}-task-feed`)
     await evaluate(`[...document.querySelectorAll('.next-task-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
+    await waitFor(`!document.querySelector('.next-task-panel')`)
   }
 
   // Shared workspace explorer: open it at both breakpoints and require a real
@@ -220,7 +221,9 @@ try {
     await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.includes('Workspace')).click()`)
     await waitFor(`document.querySelector('.next-workspace-panel') && document.querySelector('.next-ws-file')`, 30_000)
     await screenshot(`${viewport.name}-workspace`)
-    await evaluate(`[...document.querySelectorAll('.next-workspace-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
+    if (viewport.mobile) await evaluate(`history.back()`)
+    else await evaluate(`[...document.querySelectorAll('.next-workspace-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
+    await waitFor(`!document.querySelector('.next-workspace-panel')`)
   }
 
   // Persistent PTY: require the vendored xterm runtime and a successful live
@@ -238,6 +241,7 @@ try {
     }
     await screenshot(`${viewport.name}-terminal`)
     await evaluate(`[...document.querySelectorAll('.next-terminal-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
+    await waitFor(`!document.querySelector('.next-terminal-panel.is-open')`)
   }
 
   // One real chat turn, cleaned up afterward. This exercises POST streaming,

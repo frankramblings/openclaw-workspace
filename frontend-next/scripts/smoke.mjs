@@ -91,6 +91,20 @@ try {
     await screenshot(`${viewport.name}-documents-editor`)
   }
 
+  // Calendar: a real provider window must render (the Google account can be
+  // slower than the shell), and the complete event form must open at both
+  // breakpoints without creating or mutating an event.
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
+    await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
+    await evaluate(`location.hash = '#/calendar'`)
+    if (viewport.mobile) await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Agenda')?.click()`)
+    await waitFor(viewport.mobile ? `document.querySelector('.next-calendar-agenda section button')` : `document.querySelector('.next-calendar-grid section button')`, 90_000)
+    await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'New event').click()`)
+    await waitFor(`document.querySelector('.next-calendar-form input[type="datetime-local"]') && document.querySelector('.next-calendar-form textarea')`)
+    await screenshot(`${viewport.name}-calendar-workflow`)
+    await evaluate(`[...document.querySelectorAll('.next-calendar-form button')].find(x => x.textContent.trim() === 'Cancel').click()`)
+  }
+
   // Shared workspace explorer: open it at both breakpoints and require a real
   // backend tree, not merely the panel shell.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {

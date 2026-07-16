@@ -1,3 +1,5 @@
-import { mondayIndex, monthWindow } from './logic'
+import { eventDays, localDateTime, mondayIndex, monthWindow, withLocalOffset } from './logic'
 test('calendar grid starts Monday and contains the month', () => { const w = monthWindow(new Date(2026, 6, 16)); expect(mondayIndex(w.gridStart)).toBe(0); expect(w.gridStart <= w.first).toBe(true); expect(w.gridEnd >= new Date(2026, 6, 31)).toBe(true) })
 test('DST months produce whole week grids', () => { const w = monthWindow(new Date(2025, 10, 2)); expect((w.gridEnd.getTime() - w.gridStart.getTime()) / 86_400_000).toBeGreaterThan(20) })
+test('multi-day all-day events omit their exclusive end date', () => { expect(eventDays('2026-07-16', '2026-07-18', true)).toEqual(['2026-07-16', '2026-07-17']); expect(eventDays('2026-07-16', '2026-07-16', true)).toEqual(['2026-07-16']) })
+test('datetime form values round-trip with an explicit local offset', () => { const input = localDateTime('2026-07-16T14:30:00-04:00'); expect(input).toMatch(/^2026-07-16T\d\d:30$/); expect(withLocalOffset(input)).toMatch(/^2026-07-16T\d\d:30:00[+-]\d\d:\d\d$/) })

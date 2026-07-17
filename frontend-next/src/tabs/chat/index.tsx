@@ -1,25 +1,17 @@
-import { useEffect, useState, type CSSProperties } from 'react'
-import { Button, Card } from '../../kit'
+import { useEffect } from 'react'
+import { Card } from '../../kit'
 import { Composer } from './Composer'
 import { ChatHeader } from './ChatHeader'
-import { ModelPicker } from './ModelPicker'
-import { SessionList } from './SessionList'
 import { Thread } from './Thread'
 import { useChatStore } from './store'
-import { ResizeHandle } from '../../shell/layout/ResizeHandle'
-import { useShellLayout } from '../../shell/layout/store'
-import { useHistoryLayer } from '../../shell/useHistoryLayer'
 
 export function ChatTab() {
-  const [mobilePanel, setMobilePanel] = useState<'sessions' | 'models' | null>(null)
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeSessionId)
   const loadSessions = useChatStore((state) => state.loadSessions)
   const loadModels = useChatStore((state) => state.loadModels)
   const loadDefault = useChatStore((state) => state.loadDefaultChat)
   const select = useChatStore((state) => state.selectSession)
-  const layout = useShellLayout()
-  const closeMobilePanel = useHistoryLayer(mobilePanel !== null, () => setMobilePanel(null))
 
   useEffect(() => {
     void loadSessions()
@@ -41,19 +33,10 @@ export function ChatTab() {
   }, [activeId, select, sessions])
 
   return (
-    <div className="next-chat-layout" style={{ '--next-chat-sessions': `${layout.chatSessionsWidth}px`, '--next-chat-models': `${layout.chatModelsWidth}px` } as CSSProperties}>
-      <div className="next-chat-mobilebar">
-        <Button variant="ghost" onClick={() => setMobilePanel('sessions')}>Conversations</Button>
-        <Button variant="ghost" onClick={() => setMobilePanel('models')}>Model</Button>
-      </div>
-      {mobilePanel && <button className="next-chat-scrim" type="button" aria-label="Close panel" onClick={closeMobilePanel} />}
-      <aside className={`next-chat-sidebar${mobilePanel === 'sessions' ? ' is-open' : ''}`}><SessionList onSelected={closeMobilePanel} /><ResizeHandle axis="x" value={layout.chatSessionsWidth} onChange={layout.setChatSessionsWidth} label="Resize conversations" /></aside>
-      <main className="next-chat-main">
-        <ChatHeader />
-        <Thread />
-        <Card title="Composer"><Composer /></Card>
-      </main>
-      <aside className={`next-chat-models${mobilePanel === 'models' ? ' is-open' : ''}`}><ResizeHandle axis="x" invert value={layout.chatModelsWidth} onChange={layout.setChatModelsWidth} label="Resize model panel" /><ModelPicker /></aside>
+    <div className="next-chat-main">
+      <ChatHeader />
+      <Thread />
+      <Card title="Composer"><Composer /></Card>
     </div>
   )
 }

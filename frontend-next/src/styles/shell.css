@@ -2,7 +2,19 @@
    viewport so the dock stays pinned; .next-main is the only scroller.
    Mobile: the top bar becomes a bottom tab strip and the dock is hidden. */
 .next-shell{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;background:linear-gradient(180deg,#141419 0%,#0c0c10 100%)}
-.next-shell-body{flex:1;min-height:0;display:flex;flex-direction:column}
+/* shell-body: flex col by default; 2-col grid when chat tab active */
+.next-shell-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.next-shell-body.has-rail{display:grid;grid-template-columns:280px minmax(420px,1fr)}
+/* Conversations rail */
+.next-shell-rail{display:flex;flex-direction:column;min-height:0;overflow:hidden;border-right:1px solid rgba(255,255,255,.05);background:rgba(16,15,20,.4)}
+.next-shell-rail .next-chat-sessions{flex:1;min-height:0;overflow-y:auto}
+/* Stage: right column (or full width without rail) */
+.next-shell-stage{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden}
+.next-shell-stage .next-main{flex:1;min-height:0;padding:0;overflow:hidden}
+/* Chat content fills the stage main directly */
+.next-main>.next-chat-main{height:100%}
+/* Non-chat tabs still get padding */
+.next-shell-body:not(.has-rail) .next-main{padding:18px 22px;overflow:auto}
 
 .next-topbar{flex:none;display:flex;align-items:center;gap:10px;height:48px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.05);background:rgba(18,17,22,.55);backdrop-filter:blur(30px) saturate(180%);-webkit-backdrop-filter:blur(30px) saturate(180%);z-index:20}
 .next-topbar-lights{display:flex;gap:7px;margin-right:4px}
@@ -30,6 +42,10 @@
 .next-topbar-util:hover{background:rgba(255,255,255,.07);color:var(--fg)}
 .next-topbar-classic{flex:none;font-size:11px;color:var(--faint);text-decoration:none;white-space:nowrap}
 .next-topbar-classic:hover{color:var(--mut)}
+.next-topbar-model{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.03);color:rgba(235,235,245,.75);font:12px var(--mono);cursor:pointer;transition:background .12s;white-space:nowrap}
+.next-topbar-model:hover{background:rgba(255,255,255,.07);color:var(--fg)}
+.next-topbar-model-dot{color:#10a37f;font-size:11px}
+.next-topbar-avatar{flex:none;width:26px;height:26px;border-radius:8px;background:linear-gradient(150deg,#6a6a72,#45454c);display:flex;align-items:center;justify-content:center;font:700 11px var(--sans);color:#fff}
 
 .next-dock{flex:none;display:flex;flex-direction:column;height:38px;overflow:hidden;border-top:1px solid rgba(255,255,255,.07);background:rgba(10,9,13,.7);transition:height .22s ease}
 /* Fixed: --next-terminal-height belongs to the floating panel, not the dock. */
@@ -96,6 +112,9 @@
      Do not add `order` here — it cancels the reversal and flips the strip
      back to the top. */
   .next-shell{flex-direction:column-reverse}
+  /* Rail is a desktop-only persistent sidebar; collapse to single column on mobile */
+  .next-shell-body.has-rail{display:flex;flex-direction:column}
+  .next-shell-rail{display:none}
   .next-topbar{height:auto;flex-wrap:nowrap;overflow-x:auto;padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));border-top:1px solid rgba(255,255,255,.07);border-bottom:0;z-index:30}
   .next-topbar-lights,.next-topbar-brand,.next-topbar-spacer,.next-topbar-status,.next-topbar-classic{display:none}
   .next-topbar-nav{flex:1}

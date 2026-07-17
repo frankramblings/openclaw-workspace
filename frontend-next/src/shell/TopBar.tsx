@@ -6,7 +6,7 @@ import { useTaskPanel } from './tasks/store'
 import { useChatStore } from '../tabs/chat/store'
 
 /** Primary tabs shown as labeled pills; the rest as icon-only overflow. */
-const PRIMARY_IDS = ['chat', 'inbox', 'email', 'calendar', 'notes', 'documents']
+const PRIMARY_IDS = ['chat', 'inbox', 'email', 'calendar']
 
 export function TopBar({ tab, navigate }: { tab: string; navigate: (tab: string) => void }) {
   const config = useAppStore((s) => s.config)
@@ -18,6 +18,11 @@ export function TopBar({ tab, navigate }: { tab: string; navigate: (tab: string)
   // Same rule for status: reflect the activity watch rather than assert "live".
   const activity = useChatStore((s) => s.sessionActivity)
   const working = Object.values(activity).some((state) => state === 'working')
+  const sessions = useChatStore((s) => s.sessions)
+  const activeSessionId = useChatStore((s) => s.activeSessionId)
+  const activeModel = sessions.status === 'ready' && activeSessionId
+    ? sessions.data.find((s) => s.id === activeSessionId)?.model ?? null
+    : null
 
   const primary = TABS.filter((t) => PRIMARY_IDS.includes(t.id))
   const secondary = TABS.filter((t) => !PRIMARY_IDS.includes(t.id))
@@ -66,6 +71,14 @@ export function TopBar({ tab, navigate }: { tab: string; navigate: (tab: string)
       </nav>
 
       <span className="next-topbar-spacer" />
+
+      {activeModel && (
+        <button type="button" className="next-topbar-model">
+          <span className="next-topbar-model-dot">●</span>
+          {activeModel}
+        </button>
+      )}
+      <div className="next-topbar-avatar">F</div>
 
       <span className={`next-topbar-status${working ? ' is-working' : ''}`}>
         <span className="next-topbar-dot" aria-hidden="true" />

@@ -147,15 +147,14 @@ try {
     }
   }
 
-  // Chat's mobile drawers participate in the same browser Back stack as
-  // modals and companions.
+  // Chat rail: the conversations rail is persistent on desktop (has-rail grid)
+  // and collapsed (hidden) on mobile so the stage fills the screen.
+  await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
+  await evaluate(`location.hash = '#/chat'`)
+  await waitFor(`document.querySelector('.next-shell-body.has-rail') && document.querySelector('.next-shell-rail')`)
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
   await evaluate(`location.hash = '#/chat'`)
-  await waitFor(`[...document.querySelectorAll('button')].some(x => x.textContent.trim() === 'Conversations')`)
-  await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Conversations').click()`)
-  await waitFor(`document.querySelector('.next-chat-sidebar.is-open')`)
-  await evaluate(`history.back()`)
-  await waitFor(`!document.querySelector('.next-chat-sidebar.is-open')`)
+  await waitFor(`document.querySelector('.next-shell-stage') && document.querySelector('.next-chat-main')`)
 
   // Email: traverse real folders/messages/reader and open reply composition
   // without sending or mutating the mailbox.

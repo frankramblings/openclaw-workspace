@@ -213,3 +213,140 @@
 .next-dock-files-icon{font-size:12px;flex:none}
 .next-dock-files-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .next-dock-files-size{font-size:10.5px;color:var(--faint);flex:none;margin-left:auto}
+
+/* ── Design cleanup pass ─────────────────────────────────────────────── */
+
+/* 1. Center the EmptyState vertically in the chat stage */
+.next-chat-main>.next-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+/* Ghost icon above "Choose a conversation" */
+.next-chat-main>.next-empty::before {
+  content: "💬";
+  font-size: 40px;
+  display: block;
+  margin-bottom: 14px;
+  opacity: 0.28;
+  line-height: 1;
+}
+/* Center empty state inside the thread too (no messages in active chat) */
+.next-chat-main .chat-thread .next-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+/* Make empty-title a little larger in the chat context */
+.next-chat-main .next-empty .next-empty-title {
+  font-size: 17px;
+  font-weight: 650;
+  color: rgba(235,235,245,.75);
+  letter-spacing: -.01em;
+}
+.next-chat-main .next-empty .next-empty-hint {
+  font-size: 13.5px;
+  color: var(--faint);
+}
+
+/* 2. Push send/stop button to the far right of composer-actions */
+.composer-actions > :last-child { margin-left: auto; }
+
+/* 3. Web-search and Deep-research pills: hide the checkbox, show toggle state */
+.composer-web-search input[type=checkbox] { display: none; }
+.composer-web-search:has(input:checked) {
+  background: color-mix(in srgb,var(--acc) 16%,transparent);
+  border-color: color-mix(in srgb,var(--acc) 50%,transparent);
+  color: var(--acc-txt);
+}
+
+/* 4. Rail section header: make "New chat" button more prominent */
+.next-shell-rail .next-section-head { padding:0 14px; margin-bottom: 6px; }
+.next-shell-rail .next-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--mut);
+  text-transform: uppercase;
+}
+.next-shell-rail .next-section-actions .btn {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: #fff;
+  font-size: 12px;
+  height: 26px;
+  padding: 0 12px;
+  font-weight: 600;
+}
+.next-shell-rail .next-section-actions .btn:hover {
+  background: var(--acc-d);
+  border-color: var(--acc-d);
+}
+.next-shell-rail .next-section-actions .btn:disabled {
+  background: color-mix(in srgb,var(--acc) 40%,var(--panel2));
+  border-color: transparent;
+  cursor: not-allowed;
+}
+
+/* 5. Slightly taller composer card for breathing room */
+.next-chat-main>.next-card { padding: 0; }
+.next-chat-main>.next-card .composer { padding: 16px 18px 12px; }
+
+/* 6. Dock placeholder text style */
+.next-dock-placeholder {
+  padding: 24px 18px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--faint);
+  margin: 0;
+}
+
+/* 7. Rail row: flex col so title+meta stack properly */
+.next-shell-rail .next-row-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+
+/* 8. Subtle stage background — very faint blue noise in the center stage */
+.next-shell-stage {
+  background: radial-gradient(ellipse 80% 60% at 50% 40%,
+    color-mix(in srgb,var(--acc) 3%,transparent) 0%,
+    transparent 70%);
+}
+
+/* 9. Row actions button — smaller so it doesn't dominate the row */
+.next-shell-rail .next-row-actions .btn {
+  font-size: 16px;
+  color: var(--faint);
+  padding: 0 4px;
+  height: 28px;
+}
+.next-shell-rail .next-row-actions .btn:hover { color: var(--fg); }
+
+/* ── Thread scroll fix + further refinements ─────────────────────────── */
+
+/* Thread must scroll when messages fill it (parent is overflow:hidden) */
+.next-chat-main>.chat-thread { overflow-y: auto; }
+
+/* Composer card: slightly less bottom margin for tighter dock spacing */
+.next-chat-main>.next-card { margin-bottom: 16px; }
+
+/* Dock body: show full height, no overflow cut */
+.next-dock-body { overflow: hidden; display: flex; flex-direction: column; }
+
+/* Empty state: don't let the ::before emoji break flow on narrow widths */
+.next-chat-main>.next-empty::before { user-select: none; pointer-events: none; }
+
+/* Rail search input: slightly tighter top padding */
+.next-shell-rail .next-chat-search { padding: 0 14px 8px; }
+
+/* Chip (model label in session row) — de-emphasize further */
+.next-shell-rail .next-row-meta .chip {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  opacity: .7;
+}

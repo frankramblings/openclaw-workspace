@@ -1,6 +1,7 @@
 import { useEffect, type CSSProperties } from 'react'
 import { useHashRoute } from './router'
-import { Rail } from './Rail'
+import { TopBar } from './TopBar'
+import { Dock } from './Dock'
 import { ErrorBoundary } from './ErrorBoundary'
 import { ToastHost } from '../kit'
 import { tabById } from '../tabs/registry'
@@ -41,12 +42,15 @@ export function App() {
 
   return (
     <div className="next-shell" style={{ '--next-workspace-width': `${layout.workspaceWidth}px`, '--next-terminal-height': `${layout.terminalHeight}px`, '--next-task-width': `${layout.taskWidth}px` } as CSSProperties}>
-      <Rail tab={tab} navigate={navigate} />
-      <main className="next-main">
-        <ErrorBoundary resetKey={tab}>
-          <Component />
-        </ErrorBoundary>
-      </main>
+      <TopBar tab={tab} navigate={navigate} />
+      <div className="next-shell-body">
+        <main className="next-main">
+          <ErrorBoundary resetKey={tab}>
+            <Component />
+          </ErrorBoundary>
+        </main>
+        <Dock />
+      </div>
       <ToastHost />
       <WorkspacePanel />
       <TerminalPanel />

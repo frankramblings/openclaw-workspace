@@ -28,12 +28,14 @@ test('tabFromHash: parses tab, defaults to chat on empty/unknown shapes', () => 
   expect(tabFromHash('#garbage')).toBe('chat')
 })
 
-test('rail renders all 12 tabs from the registry', async () => {
+test('top bar renders all 12 tabs from the registry, labelled or icon-only', async () => {
   await act(async () => { render(<App />) })
   const nav = screen.getByRole('navigation', { name: 'Primary' })
-  const buttons = nav.querySelectorAll('.next-rail-item')
+  const buttons = nav.querySelectorAll('.next-topbar-tab, .next-topbar-tab-sm')
   expect(buttons.length).toBe(TABS.length)
   expect(TABS.length).toBe(12)
+  // Every tab stays reachable by name even when it renders icon-only.
+  for (const tab of TABS) expect(screen.getByRole('button', { name: new RegExp(tab.label) })).toBeTruthy()
 })
 
 test('agent name comes from /api/config, not a hardcoded string', async () => {
@@ -58,7 +60,7 @@ test('hash change switches the rendered tab; unknown hash falls back to chat', a
     .toContain('Chat')
 })
 
-test('clicking a rail item navigates via the hash', async () => {
+test('clicking a top bar tab navigates via the hash', async () => {
   await act(async () => { render(<App />) })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Memory/ })) })
   expect(window.location.hash).toBe('#/memory')

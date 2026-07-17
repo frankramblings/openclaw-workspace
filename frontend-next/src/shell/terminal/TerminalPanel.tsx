@@ -11,7 +11,8 @@ export function TerminalPanel() {
   const activeId = useChatStore(state => state.activeSessionId)
   const loadSessions = useChatStore(state => state.loadSessions)
   const close = useHistoryLayer(panel.open, panel.close)
-  const records = sessions.status === 'ready' ? sessions.data.filter(session => !session.archived) : []
+  const loaded = sessions.status === 'ready' ? sessions.data : sessions.status === 'loading' || sessions.status === 'error' ? sessions.stale : undefined
+  const records = (loaded ?? []).filter(session => !session.archived)
   const activeKey = records.find(session => session.id === activeId)?.sessionKey
   const key = panel.sessionKey || activeKey || records[0]?.sessionKey || null
   useEffect(() => { if (panel.open && sessions.status === 'idle') void loadSessions() }, [loadSessions, panel.open, sessions.status])

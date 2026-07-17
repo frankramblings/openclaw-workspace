@@ -37,7 +37,14 @@ ws.onmessage = ({ data }) => {
     pending.delete(message.id)
     message.error ? reject(new Error(message.error.message)) : resolve(message.result)
   }
-  if (message.method === 'Runtime.exceptionThrown') consoleErrors.push(message.params.exceptionDetails.text)
+  // exceptionDetails.text is usually the bare word "Uncaught" — the actual
+  // error and its stack live on .exception. Reporting text alone makes a
+  // failure unactionable, so keep the description and origin too.
+  if (message.method === 'Runtime.exceptionThrown') {
+    const detail = message.params.exceptionDetails
+    const origin = detail.url ? `${detail.url}:${detail.lineNumber ?? '?'}` : ''
+    consoleErrors.push([detail.text, detail.exception?.description ?? detail.exception?.value, origin].filter(Boolean).join(' '))
+  }
   if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') {
     consoleErrors.push(message.params.args.map((arg) => arg.value || arg.description || '').join(' '))
   }
@@ -106,23 +113,27 @@ try {
     throw new Error(`Selector preflight failed - no loaded CSS or JS references: ${missingSelectors.join(', ')}. A gate keyed on one of these would silently pass or hang. Fix the typo/rename before trusting the run.`)
   }
 
-  await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`)
+  // The top bar splits the registry into labelled primary pills and icon-only
+  // overflow, so both classes have to be counted to gate on all 12 tabs.
+  await waitFor(`document.querySelectorAll('.next-topbar-tab, .next-topbar-tab-sm').length === 12`)
   await evaluate(`window.dispatchEvent(new CustomEvent('next:mutation',{detail:{ok:true,method:'PATCH',path:'/api/smoke',message:'Change saved'}}))`)
   await waitFor(`document.querySelector('#oc-toast-host .oc-toast')?.textContent.includes('Change saved')`)
   await evaluate(`document.querySelector('#oc-toast-host .oc-toast').click()`)
 
   // Durable shell layout: restore non-default geometry and an open companion
   // through real reloads, then restore the expanded state for the main run.
-  await evaluate(`localStorage.setItem('next:layout:railWidth','248'); localStorage.setItem('next:layout:workspaceWidth','840'); localStorage.setItem('next:workspace-open','1'); location.reload()`)
+  await evaluate(`localStorage.setItem('next:layout:workspaceWidth','840'); localStorage.setItem('next:workspace-open','1'); location.reload()`)
   await waitFor(`document.querySelector('.next-workspace-panel .next-ws-file')`, 30_000)
-  const restoredLayout = await evaluate(`({rail:Math.round(document.querySelector('.next-rail').getBoundingClientRect().width),workspace:Math.round(document.querySelector('.next-workspace-panel').getBoundingClientRect().width)})`)
-  if (restoredLayout.rail !== 248 || restoredLayout.workspace !== 840) throw new Error(`layout restore failed: ${JSON.stringify(restoredLayout)}`)
+  const restoredLayout = await evaluate(`({workspace:Math.round(document.querySelector('.next-workspace-panel').getBoundingClientRect().width)})`)
+  if (restoredLayout.workspace !== 840) throw new Error(`layout restore failed: ${JSON.stringify(restoredLayout)}`)
   await screenshot('desktop-restored-layout')
   await evaluate(`[...document.querySelectorAll('.next-workspace-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
   await waitFor(`!document.querySelector('.next-workspace-panel')`)
-  await evaluate(`document.querySelector('[aria-label="Collapse navigation"]').click(); location.reload()`)
-  await waitFor(`document.querySelector('.next-rail.is-collapsed [aria-label="Expand navigation"]')`)
-  await evaluate(`document.querySelector('[aria-label="Expand navigation"]').click()`)
+  // The dock's collapsed state is durable in place of the old rail collapse.
+  await evaluate(`document.querySelector('[aria-label="Collapse dock"]').click(); location.reload()`)
+  await waitFor(`document.querySelector('.next-dock:not(.is-open) [aria-label="Expand dock"]')`)
+  await evaluate(`document.querySelector('[aria-label="Expand dock"]').click()`)
+  await waitFor(`document.querySelector('.next-dock.is-open')`)
 
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
@@ -302,7 +313,7 @@ try {
   // snapshot and live SSE connection must both be present at each breakpoint.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
-    await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.includes('Tasks')).click()`)
+    await evaluate(`document.querySelector('.next-topbar-util[aria-label="Tasks"]').click()`)
     await waitFor(`document.querySelector('.next-task-panel') && document.querySelector('.next-task-panel .next-stream-status')?.textContent === 'live' && !document.querySelector('.next-task-panel .next-skeleton')`, 30_000)
     await screenshot(`${viewport.name}-task-feed`)
     await evaluate(`[...document.querySelectorAll('.next-task-panel button')].find(x => x.textContent.trim() === 'Close').click()`)
@@ -314,7 +325,7 @@ try {
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
     await evaluate(`location.hash = '#/chat'`)
-    await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.includes('Workspace')).click()`)
+    await evaluate(`document.querySelector('.next-topbar-util[aria-label="Workspace"]').click()`)
     await waitFor(`document.querySelector('.next-workspace-panel') && document.querySelector('.next-ws-file')`, 30_000)
     await screenshot(`${viewport.name}-workspace`)
     if (viewport.mobile) await evaluate(`history.back()`)
@@ -326,7 +337,9 @@ try {
   // WebSocket handshake at desktop and phone widths.
   for (const viewport of [{ name: 'desktop', width: 1440, height: 900, mobile: false }, { name: 'iphone', width: 390, height: 844, mobile: true }]) {
     await send('Emulation.setDeviceMetricsOverride', { width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile })
-    await evaluate(`[...document.querySelectorAll('button')].find(x => x.textContent.includes('Terminal')).click()`)
+    // Target the top bar explicitly: a bare "Terminal" text scan now also
+    // matches the dock's own Terminal tab, which never opens this panel.
+    await evaluate(`document.querySelector('.next-topbar-util[aria-label="Terminal"]').click()`)
     const localPlain = /^http:\/\/(127\.0\.0\.1|localhost)/.test(base)
     const terminalReady = `document.querySelector('.next-terminal-panel.is-open .next-terminal-mount')?.children.length > 0${localPlain ? '' : ` && document.querySelector('.next-term-status')?.textContent === 'connected'`}`
     try {
@@ -340,9 +353,10 @@ try {
       if (terminalChoices > 1) {
         await evaluate(`[...document.querySelectorAll('.next-terminal-global-head button')].find(x => x.textContent.trim() === 'Pin current').click()`)
         await evaluate(`(() => { const el=document.querySelector('[aria-label="Terminal conversation"]'); el.value=el.options[1].value; el.dispatchEvent(new Event('change',{bubbles:true})) })()`)
-        await waitFor(`document.querySelectorAll('.next-terminal-instance').length === 2 && [...document.querySelectorAll('.next-terminal-mount')].every(x => x.children.length > 0)`, 30_000)
+        // Scope to the panel: the dock hosts its own .next-terminal-instance.
+        await waitFor(`document.querySelectorAll('.next-terminal-panel .next-terminal-instance').length === 2 && [...document.querySelectorAll('.next-terminal-panel .next-terminal-mount')].every(x => x.children.length > 0)`, 30_000)
         await screenshot('desktop-terminal-multiple')
-        await evaluate(`[...document.querySelectorAll('.next-terminal-instance button')].find(x => x.textContent.trim() === 'Unpin').click()`)
+        await evaluate(`[...document.querySelectorAll('.next-terminal-panel .next-terminal-instance button')].find(x => x.textContent.trim() === 'Unpin').click()`)
       }
     }
     await screenshot(`${viewport.name}-terminal`)
@@ -387,14 +401,14 @@ try {
   await send('Network.emulateNetworkConditions', { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 })
   await evaluate(`location.reload()`)
   await pause(900)
-  await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`, 20_000)
+  await waitFor(`document.querySelectorAll('.next-topbar-tab, .next-topbar-tab-sm').length === 12`, 20_000)
   await evaluate(`window.dispatchEvent(new Event('offline'))`)
   await waitFor(`document.querySelector('.next-pwa-banner.is-offline')`)
   await screenshot('desktop-pwa-offline')
   await send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 })
   await evaluate(`location.reload()`)
   await pause(700)
-  await waitFor(`document.querySelectorAll('.next-rail-item').length === 12`, 20_000)
+  await waitFor(`document.querySelectorAll('.next-topbar-tab, .next-topbar-tab-sm').length === 12`, 20_000)
 
   if (consoleErrors.length) throw new Error(`Console errors:\n${consoleErrors.join('\n')}`)
   console.log(JSON.stringify({ ok: true, screenshots: out, tabs: tabs.length, consoleErrors: 0 }))

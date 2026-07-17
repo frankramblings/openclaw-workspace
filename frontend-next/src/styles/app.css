@@ -2393,18 +2393,18 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 /* Base article: spacing between turns */
 article.msg{margin-bottom:24px;max-width:100%}
 
-/* User message: right-aligned teal bubble */
+/* User message: right-aligned dark-blue bubble */
 article.msg.user{display:flex;flex-direction:column;align-items:flex-end}
-article.msg.user .msg-role{font-size:11px;font-weight:600;color:var(--teal);letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px;padding-right:4px}
-article.msg.user .msg-markdown{max-width:min(540px,80%);background:var(--tealtint);border:1px solid rgba(61,213,200,.2);border-radius:18px 18px 4px 18px;padding:12px 16px;font-size:15px;line-height:1.65}
-article.msg.user .msg-markdown p{margin:0 0 10px;color:var(--fg)}
+article.msg.user .msg-role{font-size:11px;font-weight:600;color:rgba(235,235,245,.45);letter-spacing:.02em;margin-bottom:5px;padding-right:4px}
+article.msg.user .msg-markdown{max-width:min(540px,78%);background:color-mix(in srgb,var(--acc) 11%,#18171e);border:1px solid color-mix(in srgb,var(--acc) 26%,transparent);border-radius:18px 18px 4px 18px;padding:13px 17px;font-size:15.5px;line-height:1.58;color:#f2f1f7;box-shadow:0 2px 10px rgba(0,0,0,.28)}
+article.msg.user .msg-markdown p{margin:0 0 10px;color:#f2f1f7}
 article.msg.user .msg-markdown p:last-child{margin-bottom:0}
 article.msg.user .msg-tools{margin-top:6px;padding-right:4px}
 
 /* Assistant message: left-aligned with name header */
 article.msg.assistant{display:flex;flex-direction:column;align-items:flex-start}
-article.msg.assistant .msg-role{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--fg);margin-bottom:8px}
-article.msg.assistant .msg-role::before{content:"🤖";display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:var(--teal);font-size:14px;flex:none;line-height:1}
+article.msg.assistant .msg-role{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650;color:var(--fg);margin-bottom:10px}
+article.msg.assistant .msg-role::before{content:"🤖";display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;background:color-mix(in srgb,var(--acc) 18%,var(--panel2));font-size:14px;flex:none;line-height:1}
 article.msg.assistant .msg-markdown{font-size:16px;line-height:1.75;color:var(--fg);max-width:760px}
 article.msg.assistant .msg-markdown p{margin:0 0 16px;letter-spacing:.005em}
 article.msg.assistant .msg-markdown p:last-child{margin-bottom:0}

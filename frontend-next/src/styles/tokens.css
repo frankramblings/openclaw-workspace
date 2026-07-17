@@ -43,6 +43,8 @@
   --amber:#ffd60a;
   --ink:#0c1413;
   --row-hover:rgba(255,255,255,.05);
+  /* Blue accent — the design's primary accent (#2f74e6 scheme) */
+  --acc:#2f74e6; --acc-d:#1a4bb5; --acc-txt:#8bb6f5;
   /* Typography — Apple system fonts */
   --sans:'Bear Sans UI',-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',system-ui,sans-serif;
   --prose:'Bear Sans UI',-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',system-ui,sans-serif;

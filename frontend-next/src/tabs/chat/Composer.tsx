@@ -156,7 +156,7 @@ export function Composer() {
         </div>}
         {working
           ? <Button variant="danger" onClick={() => void stop()}>Stop</Button>
-          : <Button variant="primary" disabled={!sessionId || creatingSession || (!draft.trim() && attachments.length === 0)} onClick={submit}>Send</Button>}
+          : <Button variant="send" aria-label="Send message" disabled={!sessionId || creatingSession || (!draft.trim() && attachments.length === 0)} onClick={submit}>↑</Button>}
       </div>
       {notice && <p role="alert" className="next-error-detail">{notice}</p>}
     </section>

@@ -199,3 +199,17 @@
 .next-shell-rail .next-conversation-actions .btn{width:100%;height:36px;border-radius:10px;background:color-mix(in srgb,var(--acc) 10%,transparent);border:1px solid color-mix(in srgb,var(--acc) 25%,transparent);color:var(--acc-txt);font-size:13.5px;font-weight:600;justify-content:center}
 .next-shell-rail .next-conversation-actions .btn:hover{background:color-mix(in srgb,var(--acc) 18%,transparent)}
 .next-shell-rail .next-chat-search input:focus{outline:1px solid color-mix(in srgb,var(--acc) 50%,transparent);border-color:color-mix(in srgb,var(--acc) 50%,transparent)!important}
+
+/* Strip inner .composer card chrome when inside the floating Card wrapper */
+.next-chat-main>.next-card .composer{border:none;background:transparent;border-radius:0;padding:14px 16px 10px}
+
+/* Dock Files pane */
+.next-dock-files{display:flex;flex-direction:column;height:100%;overflow:auto;padding:6px 0}
+.next-dock-files-root-label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding:4px 12px 6px}
+.next-dock-files-row{display:flex;align-items:center;gap:5px;width:100%;padding:4px 12px;border:none;background:transparent;color:var(--fg);font-size:13px;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:background .1s}
+.next-dock-files-row:hover{background:rgba(255,255,255,.05)}
+.next-dock-files-row.is-selected{background:color-mix(in srgb,var(--acc) 14%,transparent);color:var(--acc-txt)}
+.next-dock-files-chevron{font-size:9px;width:11px;flex:none;color:var(--faint)}
+.next-dock-files-icon{font-size:12px;flex:none}
+.next-dock-files-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.next-dock-files-size{font-size:10.5px;color:var(--faint);flex:none;margin-left:auto}

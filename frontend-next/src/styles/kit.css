@@ -2,20 +2,20 @@
    didn't already have as reusable classes. Everything derives from tokens. */
 
 /* Card */
-.next-card{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:14px 16px}
+.next-card{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.2)}
 .next-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .next-card-title{margin:0;font-size:13.5px;font-weight:600;color:var(--fg)}
 
 /* Modal */
 .next-modal-backdrop{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px}
-.next-modal{background:var(--panel);border:1px solid var(--bd);border-radius:14px;min-width:min(440px,92vw);max-width:min(680px,94vw);max-height:86vh;max-height:86dvh;display:flex;flex-direction:column;box-shadow:0 18px 60px rgba(0,0,0,.5);outline:none}
+.next-modal{background:var(--panel);border:1px solid var(--bd);border-radius:14px;min-width:min(440px,92vw);max-width:min(680px,94vw);max-height:86vh;max-height:86dvh;display:flex;flex-direction:column;box-shadow:0 4px 6px rgba(0,0,0,.3),0 24px 80px rgba(0,0,0,.6);outline:none}
 .next-modal-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--bd2,var(--bd))}
 .next-modal-title{margin:0;font-size:14px;font-weight:600}
 .next-modal-body{padding:16px;overflow:auto}
 
 /* Skeleton */
 .next-skeleton{display:flex;flex-direction:column;gap:9px;padding:12px 0}
-.next-skeleton-line{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--panel2) 25%,var(--elev) 50%,var(--panel2) 75%);background-size:200% 100%;animation:next-shimmer 1.2s linear infinite}
+.next-skeleton-line{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--panel2) 25%,var(--elev) 50%,var(--panel2) 75%);background-size:200% 100%;animation:next-shimmer 1.5s ease-in-out infinite}
 @keyframes next-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
 @media (prefers-reduced-motion:reduce){.next-skeleton-line{animation:none}}
 
@@ -32,10 +32,10 @@
 .next-refreshing{opacity:.72;transition:opacity .15s ease}
 
 /* Rows */
-.next-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:default}
+.next-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:default;transition:background .1s,box-shadow .1s}
 .next-row[role="button"]{cursor:pointer}
-.next-row:hover{background:var(--row-hover)}
-.next-row.is-selected{background:var(--tealtint);outline:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+.next-row:hover{background:rgba(255,255,255,.06)}
+.next-row.is-selected{background:var(--tealtint);outline:1px solid rgba(61,213,200,.25)}
 .next-row-main{flex:1;min-width:0}
 .next-row-title{font-size:13.5px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .next-row-meta{font-size:12px;color:var(--mut);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -43,7 +43,7 @@
 
 /* Section header */
 .next-section-head{display:flex;align-items:center;justify-content:space-between;margin:4px 0 12px}
-.next-section-title{margin:0;font-size:15px;font-weight:650;color:var(--fg)}
+.next-section-title{margin:0;font-size:15px;font-weight:700;letter-spacing:-0.01em;color:var(--fg)}
 .next-section-actions{display:flex;gap:8px}
 
 /* Buttons/chips not in the ported language */

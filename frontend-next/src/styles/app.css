@@ -387,6 +387,10 @@ html.shell-mobile .oc-toast{max-width:none}
 .ctx-meter .track{width:54px;height:4px;border-radius:3px;background:#2a2d34;overflow:hidden}
 .ctx-meter .fill{height:100%;background:var(--teal)}
 .ctx-meter .pct{font-family:var(--mono);font-size:11px;color:var(--faint)}
+/* Microphone recorder button */
+button[data-mic-state="recording"]{animation:pulse 1.2s ease-in-out infinite;background:color-mix(in srgb,var(--red) 20%,transparent) !important;border-color:var(--red) !important;color:var(--red) !important}
+/* Composer drop target state */
+.composer-drop-active{border-color:var(--teal2) !important;background:color-mix(in srgb,var(--teal) 8%,transparent) !important}
 .pill-btn{height:32px;padding:0 12px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--mut);font-family:var(--sans);font-size:13px;cursor:pointer;flex:none;white-space:nowrap}
 .model-btn{height:32px;padding:0 11px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--fg);display:inline-flex;align-items:center;gap:7px;font-family:var(--sans);font-size:13px;cursor:pointer;white-space:nowrap;flex:none}
 .model-btn .glyph{font-family:var(--mono);color:var(--teal)}

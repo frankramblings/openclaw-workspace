@@ -1,8 +1,9 @@
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { Button, Chip } from '../../kit'
 import { beginUploads, failUploads, resolveUploads, sendableAttach, uploadGate, type PendingAttachment } from './attachments'
 import { useChatStore } from './store'
 import { useSuggest } from './useSuggest'
+import { useRecorder } from './useRecorder'
 import { filterSlashCommands } from './slash'
 
 let uploadSequence = 0
@@ -17,6 +18,7 @@ export function Composer() {
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const fileInput = useRef<HTMLInputElement>(null)
+  const { state: recorderState, error: recorderError, elapsedSeconds, supported: recorderSupported, start: startRecording, stop: stopRecording } = useRecorder()
   const sessionId = useChatStore((state) => state.activeSessionId)
   const historyRemote = useChatStore((state) => state.history)
   const live = useChatStore((state) => state.liveTurn)
@@ -70,9 +72,7 @@ export function Composer() {
     clearSuggestion()
   }
 
-  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    event.target.value = ''
+  const uploadFiles = async (files: File[]) => {
     if (!files.length) return
     const batch = beginUploads(attachments, files.map((file) => file.name), () => `upload-${++uploadSequence}`)
     setAttachments(batch.list)
@@ -86,6 +86,27 @@ export function Composer() {
     } catch {
       setAttachments((current) => failUploads(current, batch.ids))
       setNotice('One or more attachments failed to upload.')
+    }
+  }
+
+  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    await uploadFiles(files)
+  }
+
+  const toggleRecorder = async () => {
+    if (recorderState === 'idle') {
+      await startRecording()
+    } else if (recorderState === 'recording') {
+      const transcript = await stopRecording()
+      if (transcript) {
+        // Append transcript to draft with space separator
+        setDraft((current) => {
+          const trimmed = current.trim()
+          return trimmed ? `${trimmed} ${transcript}` : transcript
+        })
+      }
     }
   }
 
@@ -114,8 +135,75 @@ export function Composer() {
     }
   }
 
+  const composerRef = useRef<HTMLDivElement>(null)
+  const [dragActive, setDragActive] = useState(false)
+
+  const handlePaste = (event: ClipboardEvent) => {
+    const items = event.clipboardData?.items
+    if (!items) return
+
+    const files: File[] = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.kind === 'file') {
+        const file = item.getAsFile()
+        if (file) files.push(file)
+      }
+    }
+
+    if (files.length > 0) {
+      event.preventDefault()
+      void uploadFiles(files)
+    }
+  }
+
+  const handleDragOver = (event: DragEvent) => {
+    if (event.dataTransfer?.types.includes('Files')) {
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'copy'
+      setDragActive(true)
+    }
+  }
+
+  const handleDragLeave = () => {
+    setDragActive(false)
+  }
+
+  const handleDrop = (event: DragEvent) => {
+    event.preventDefault()
+    setDragActive(false)
+
+    const files = event.dataTransfer?.files
+    if (!files || files.length === 0) return
+
+    void uploadFiles(Array.from(files))
+  }
+
+  useEffect(() => {
+    const textarea = composerRef.current?.querySelector('textarea')
+    if (!textarea) return
+
+    textarea.addEventListener('paste', handlePaste)
+    return () => textarea.removeEventListener('paste', handlePaste)
+  }, [])
+
+  useEffect(() => {
+    const container = composerRef.current
+    if (!container) return
+
+    container.addEventListener('dragover', handleDragOver)
+    container.addEventListener('dragleave', handleDragLeave)
+    container.addEventListener('drop', handleDrop)
+
+    return () => {
+      container.removeEventListener('dragover', handleDragOver)
+      container.removeEventListener('dragleave', handleDragLeave)
+      container.removeEventListener('drop', handleDrop)
+    }
+  }, [])
+
   return (
-    <section className="composer" aria-label="Message composer">
+    <section ref={composerRef} className={`composer${dragActive ? ' composer-drop-active' : ''}`} aria-label="Message composer">
       {slashCommands.length > 0 && <div className="slash-menu" role="listbox" aria-label="Slash commands">
         <div className="hd">COMMANDS</div>
         {slashCommands.map((command, index) => <button type="button" role="option" aria-selected={index === slashIndex} className={`slash-cmd${index === slashIndex ? ' sel' : ''}`} key={command.name} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseSlash(index)}>
@@ -140,6 +228,17 @@ export function Composer() {
       />
       <input ref={fileInput} hidden type="file" multiple onChange={(event) => void upload(event)} />
       <div className="composer-actions">
+        {recorderSupported && <div style={{ display: 'contents' }}>
+          <Button
+            variant={recorderState === 'recording' ? 'danger' : 'ghost'}
+            disabled={!sessionId}
+            title={recorderState === 'recording' ? `Stop recording (${elapsedSeconds}s)` : 'Start recording'}
+            onClick={() => void toggleRecorder()}
+            data-mic-state={recorderState}
+          >
+            {recorderState === 'transcribing' ? '⟳' : '🎤'}
+          </Button>
+        </div>}
         <Button variant="ghost" disabled={!sessionId} title="Slash commands" onClick={() => { setSlashForced((open) => !open); setSlashDismissed(false); setSlashIndex(0) }}>/</Button>
         <Button variant="ghost" disabled={!sessionId} onClick={() => fileInput.current?.click()}>Attach</Button>
         <label className="composer-web-search">
@@ -158,7 +257,7 @@ export function Composer() {
           ? <Button variant="danger" onClick={() => void stop()}>Stop</Button>
           : <Button variant="send" aria-label="Send message" disabled={!sessionId || creatingSession || (!draft.trim() && attachments.length === 0)} onClick={submit}>↑</Button>}
       </div>
-      {notice && <p role="alert" className="next-error-detail">{notice}</p>}
+      {(notice || recorderError) && <p role="alert" className="next-error-detail">{recorderError || notice}</p>}
     </section>
   )
 }

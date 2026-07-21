@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Chip, EmptyState, ListRow, Modal, RemoteView, SectionHeader } from '../../kit'
 import { useChatStore } from './store'
+import { usePaletteStore } from '../../shell/palette/store'
 
 export function SessionList({ onSelected }: { onSelected?: () => void } = {}) {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
@@ -29,11 +30,16 @@ export function SessionList({ onSelected }: { onSelected?: () => void } = {}) {
     return () => clearTimeout(timer)
   }, [query, search])
 
+  const setPaletteOpen = usePaletteStore((state) => state.setOpen)
+
   return (
     <section className="next-chat-sessions" aria-label="Conversations">
       <SectionHeader
         title="Conversations"
-        actions={<Button variant="primary" disabled={Boolean(pending.new)} onClick={() => void createSession()}>New chat</Button>}
+        actions={<>
+          <Button variant="ghost" title="Search (⌘K)" onClick={() => setPaletteOpen(true)}>🔍</Button>
+          <Button variant="primary" disabled={Boolean(pending.new)} onClick={() => void createSession()}>New chat</Button>
+        </>}
       />
       <label className="next-chat-search">
         <span className="sr-only">Search conversations</span>

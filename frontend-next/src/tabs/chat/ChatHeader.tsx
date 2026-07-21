@@ -4,6 +4,7 @@ import { esc } from '../../lib/markdown'
 import { safeDownloadSlug } from './parity'
 import type { Bubble } from './reducer'
 import { useChatStore } from './store'
+import { renderThreadMarkdown, downloadMarkdown } from './exportMarkdown'
 
 function transcriptText(bubbles: Bubble[], markdown = false): string {
   return bubbles.map((bubble) => {
@@ -38,6 +39,19 @@ export function ChatHeader() {
   ], [history, live, prefix])
   if (!activeId) return null
 
+  // Export/copy affordances must be honestly gated on the CURRENT session's
+  // history being settled, not merely on `bubbles.length`. While switching
+  // sessions, loadHistory() sets history to {status:'loading', stale:
+  // <PREVIOUS session's already-loaded data>} for one or more render
+  // cycles before the new session's fetch resolves (see staleHistory() /
+  // loadHistory() in store.ts) — so bubbles.length can be > 0 (from the
+  // old session's stale data) while the header title already shows the
+  // NEW session's name. Without this guard, a fast click during that
+  // window exports the wrong session's transcript under the new session's
+  // filename/title.
+  const historyReady = history.status === 'ready'
+  const exportDisabled = !historyReady || !bubbles.length
+
   const title = active?.name || 'Conversation'
   const safe = safeDownloadSlug(title) || 'conversation'
   const copy = async () => {
@@ -45,7 +59,18 @@ export function ChatHeader() {
     catch { setNotice('Copy failed') }
   }
   const markdown = () => {
-    downloadBlob(new Blob([`# ${title}\n\n${transcriptText(bubbles, true)}`], { type: 'text/markdown' }), `${safe}.md`)
+    // Convert Bubble format to HistoryBubble format for export
+    const historyBubbles = bubbles.map(bubble => ({
+      role: bubble.role as 'user' | 'assistant',
+      text: bubble.text,
+      attachments: bubble.attachments?.map(att => ({
+        name: att.name,
+        path: att.url || att.id,
+      })),
+    }))
+
+    const markdown = renderThreadMarkdown(title, historyBubbles)
+    downloadMarkdown(safe, markdown)
     setNotice('Markdown downloaded')
   }
   const pdf = async () => {
@@ -68,9 +93,9 @@ export function ChatHeader() {
   return <header className="next-chat-header">
     <div><h2>{title}</h2><p>{active?.model || 'Chat'} · {bubbles.length} messages</p></div>
     <div className="next-chat-header-actions">
-      <Button variant="ghost" disabled={!bubbles.length} onClick={() => void copy()}>Copy transcript</Button>
-      <Button variant="ghost" disabled={!bubbles.length} onClick={markdown}>Markdown</Button>
-      <Button variant="ghost" disabled={!bubbles.length} onClick={() => void pdf()}>PDF</Button>
+      <Button variant="ghost" disabled={exportDisabled} onClick={() => void copy()}>Copy transcript</Button>
+      <Button variant="ghost" disabled={exportDisabled} onClick={markdown}>Markdown</Button>
+      <Button variant="ghost" disabled={exportDisabled} onClick={() => void pdf()}>PDF</Button>
       {notice && <span role="status">{notice}</span>}
     </div>
   </header>

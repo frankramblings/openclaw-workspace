@@ -57,6 +57,7 @@ from .strip_state import router as strip_state_router
 from .suggest import router as suggest_router
 from .tasks_route import router as tasks_router
 from .transcribe_routes import router as transcribe_router
+from .palette_routes import router as palette_router
 from . import workspace_files
 # Attachment subsystem (Task 19): image/text extraction, HEIC→JPEG, persistence.
 # app.py keeps the to_thread call sites (they dispatch the blocking work here off
@@ -290,6 +291,7 @@ app.include_router(strip_state_router)
 app.include_router(suggest_router)
 app.include_router(tasks_router)
 app.include_router(transcribe_router)
+app.include_router(palette_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
 # server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop

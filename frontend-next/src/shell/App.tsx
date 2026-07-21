@@ -16,6 +16,7 @@ import { usePwaStore } from './pwa/store'
 import { useShellLayout } from './layout/store'
 import { CompanionResizeHandles } from './layout/CompanionResizeHandles'
 import { useMutationToasts } from './useMutationToasts'
+import { Palette } from './palette/Palette'
 
 export function App() {
   const { tab, navigate } = useHashRoute()
@@ -65,6 +66,7 @@ export function App() {
       <TaskPanel />
       <CompanionResizeHandles />
       <PwaBanner />
+      <Palette />
     </div>
   )
 }

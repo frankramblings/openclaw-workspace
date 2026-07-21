@@ -40,13 +40,14 @@ export interface ChatState {
   notificationsEnabled: boolean
   pendingSessions: Record<string, string>
   sessionError: string | null
+  editingMessageId: string | null
   loadSessions: () => Promise<void>
   loadModels: () => Promise<void>
   loadDefaultChat: () => Promise<void>
   loadUsage: (sessionId?: string) => Promise<void>
   searchSessions: (query: string) => Promise<void>
   branchFromMessage: (messageId: string) => Promise<boolean>
-  regenerate: (messageId: string) => Promise<boolean>
+  regenerate: (messageId: string, opts?: { model?: string; endpointId?: string }) => Promise<boolean>
   continueFrom: (messageId: string) => boolean
   updatePending: (text: string) => void
   flushPending: () => void
@@ -67,6 +68,9 @@ export interface ChatState {
   archiveSession: (id: string) => Promise<boolean>
   toggleImportant: (id: string, important: boolean) => Promise<boolean>
   setDefaultModel: (model: string, endpointId: string) => Promise<boolean>
+  startEdit: (id: string) => void
+  cancelEdit: () => void
+  editMessage: (messageId: string, text: string) => Promise<boolean>
   send: (text: string, opts?: SendOptions) => void
   stop: () => Promise<void>
 }
@@ -312,6 +316,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     notificationsEnabled: typeof Notification !== 'undefined' && Notification.permission === 'granted',
     pendingSessions: {},
     sessionError: null,
+    editingMessageId: null,
 
     loadSessions: () => sessionsLoader(
       fetchSessions,
@@ -373,7 +378,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
     },
 
-    regenerate: async (messageId) => {
+    regenerate: async (messageId, opts) => {
       const { activeSessionId, history, liveTurn } = get()
       if (!activeSessionId || history.status !== 'ready' || (liveTurn && ['sending', 'streaming', 'stalled'].includes(liveTurn.status))) return false
       const assistantIndex = history.data.findIndex(bubble => bubble.id === messageId && bubble.role === 'assistant')
@@ -383,6 +388,10 @@ export const useChatStore = create<ChatState>((set, get) => {
       const user = history.data[userIndex]
       if (!user || (!user.text.trim() && !user.attachments?.length)) return false
       try {
+        if (opts?.model) {
+          const success = await get().setSessionModel(activeSessionId, opts.model, opts.endpointId)
+          if (!success) return false
+        }
         await apiJson('POST', `/api/session/${encodeURIComponent(activeSessionId)}/truncate`, { keep_count: userIndex })
         set({ history: { status: 'ready', data: history.data.slice(0, userIndex), fetchedAt: Date.now() }, liveTurn: null })
         get().send(user.text, { attachments: user.attachments })
@@ -399,6 +408,37 @@ export const useChatStore = create<ChatState>((set, get) => {
       const cutoff = assistant.text.trim().slice(-500)
       get().send(`Your previous response was interrupted. It ended with:\n\n${cutoff}\n\nDo not repeat what you already said. Continue exactly from where you were cut off.`)
       return true
+    },
+
+    startEdit: (id) => {
+      const { history, liveTurn } = get()
+      if (liveTurn && ['sending', 'streaming', 'stalled'].includes(liveTurn.status)) return
+      const bubbles = history.status === 'ready' ? history.data : []
+      const user = bubbles.find(bubble => bubble.id === id && bubble.role === 'user')
+      if (!user) return
+      set({ editingMessageId: id })
+    },
+
+    cancelEdit: () => {
+      set({ editingMessageId: null })
+    },
+
+    editMessage: async (messageId, text) => {
+      const { activeSessionId, history, liveTurn } = get()
+      if (!activeSessionId || history.status !== 'ready' || (liveTurn && ['sending', 'streaming', 'stalled'].includes(liveTurn.status))) return false
+      const userIndex = history.data.findIndex(bubble => bubble.id === messageId && bubble.role === 'user')
+      if (userIndex < 0) return false
+      const user = history.data[userIndex]
+      if (!text.trim() && !user.attachments?.length) return false
+      try {
+        await apiJson('POST', `/api/session/${encodeURIComponent(activeSessionId)}/truncate`, { keep_count: userIndex })
+        set({ history: { status: 'ready', data: history.data.slice(0, userIndex), fetchedAt: Date.now() }, liveTurn: null, editingMessageId: null })
+        get().send(text, { attachments: user.attachments })
+        return true
+      } catch (error) {
+        set({ sessionError: errorMessage(error).error })
+        return false
+      }
     },
 
     updatePending: (text) => set((state) => state.pendingSend ? {

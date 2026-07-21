@@ -299,6 +299,11 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-edit-bar .ocbtn{font-size:13px;padding:5px 12px;border-radius:7px;border:1px solid var(--bd);background:var(--panel2);color:var(--mut);cursor:pointer}
 .msg-edit-bar .msg-edit-save{border-color:color-mix(in srgb,var(--teal) 40%,transparent);color:var(--teal);font-weight:600}
 .msg-edit-bar .ocbtn:hover{color:var(--fg)}
+.msg-retry-menu{position:absolute;top:100%;right:0;margin-top:4px;min-width:180px;background:var(--panel,#1b1d22);border:1px solid var(--border,#2a2d33);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.35);z-index:60;padding:4px;display:flex;flex-direction:column}
+.msg-retry-item{display:block;width:100%;text-align:left;padding:6px 10px;font-size:13px;border-radius:6px;border:none;background:none;color:var(--mut);cursor:pointer;transition:color .1s ease,background .1s ease}
+.msg-retry-item:hover:not(:disabled){background:var(--row-hover);color:var(--fg)}
+.msg-retry-item:disabled{opacity:.5;cursor:not-allowed}
+.msg-retry-item.active{color:var(--teal);background:color-mix(in srgb,var(--teal) 12%,transparent)}
 .msg-attachments{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
 .msg-attach-img{max-width:100%;max-height:280px;border-radius:8px;display:block;object-fit:contain}
 .msg-attach-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.07);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent);border-radius:7px;padding:4px 10px;font-size:14.5px;color:var(--mut)}

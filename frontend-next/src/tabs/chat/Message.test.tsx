@@ -5,12 +5,55 @@ import type { Bubble } from './reducer'
 
 // Mock the store and workspace store
 vi.mock('./store', () => ({
-  useChatStore: vi.fn(() => ({
-    branchFromMessage: vi.fn(),
-    regenerate: vi.fn(),
-    continueFrom: vi.fn(),
-  })),
+  useChatStore: vi.fn((selector) => {
+    const mockState = {
+      branchFromMessage: vi.fn(),
+      regenerate: vi.fn(),
+      continueFrom: vi.fn(),
+      editingMessageId: null,
+      startEdit: vi.fn(),
+      cancelEdit: vi.fn(),
+      editMessage: vi.fn(),
+      models: { status: 'idle' as const },
+      activeSessionId: null,
+      sessions: { status: 'idle' as const },
+    }
+    return typeof selector === 'function' ? selector(mockState) : mockState
+  }),
 }))
+
+// Shape used by several tests below to override the mocked chat store per-test.
+type MockChatState = {
+  branchFromMessage: ReturnType<typeof vi.fn>
+  regenerate: ReturnType<typeof vi.fn>
+  continueFrom: ReturnType<typeof vi.fn>
+  editingMessageId: string | null
+  startEdit: ReturnType<typeof vi.fn>
+  cancelEdit: ReturnType<typeof vi.fn>
+  editMessage: ReturnType<typeof vi.fn>
+  models: { status: 'idle' } | { status: 'ready'; data: Array<{ endpoint_id: string; endpoint_name: string; url: string; category: string; model_type: string; offline: boolean; models: string[]; models_display: string[] }> }
+  activeSessionId: string | null
+  sessions: { status: 'idle' } | { status: 'ready'; data: Array<{ id: string; model: string }> }
+}
+
+async function mockStoreState(overrides: Partial<MockChatState>) {
+  const base: MockChatState = {
+    branchFromMessage: vi.fn(),
+    regenerate: vi.fn().mockResolvedValue(true),
+    continueFrom: vi.fn(),
+    editingMessageId: null,
+    startEdit: vi.fn(),
+    cancelEdit: vi.fn(),
+    editMessage: vi.fn().mockResolvedValue(true),
+    models: { status: 'idle' },
+    activeSessionId: null,
+    sessions: { status: 'idle' },
+  }
+  const state = { ...base, ...overrides }
+  const storeModule = await import('./store')
+  vi.mocked(storeModule.useChatStore).mockImplementation((selector: any) => (typeof selector === 'function' ? selector(state) : state))
+  return state
+}
 
 vi.mock('../../shell/workspace/store', () => ({
   useWorkspaceStore: vi.fn(() => ({
@@ -144,4 +187,173 @@ test('Message component passes streaming prop to Md', () => {
     <Message bubble={mockBubble} streaming={true} />
   )
   expect(container).not.toBeNull()
+})
+
+test('Message component shows pencil tool for user messages', () => {
+  const userBubble: Bubble = {
+    id: 'test-1',
+    role: 'user',
+    text: 'Test user message',
+    thinking: '',
+    cards: [],
+    images: [],
+  }
+  const { container } = render(
+    <Message bubble={userBubble} />
+  )
+  const editButton = Array.from(container.querySelectorAll('.msg-tool')).find(
+    el => el.getAttribute('title') === 'Edit message'
+  )
+  expect(editButton).not.toBeNull()
+})
+
+test('Message component does not show pencil tool for assistant messages', () => {
+  const { container } = render(
+    <Message bubble={mockBubble} />
+  )
+  const editButton = Array.from(container.querySelectorAll('.msg-tool')).find(
+    el => el.getAttribute('title') === 'Edit message'
+  )
+  expect(editButton).toBeUndefined()
+})
+
+test('Message component does not show a retry menu for user messages', () => {
+  const userBubble: Bubble = { id: 'u1', role: 'user', text: 'hi', thinking: '', cards: [], images: [] }
+  const { container } = render(<Message bubble={userBubble} />)
+  expect(container.querySelector('[title="Retry options"]')).toBeNull()
+  expect(container.querySelector('.msg-retry-menu')).toBeNull()
+})
+
+// ---- Edit mode (UNIT-201) ----
+
+test('edit mode: clicking the pencil swaps in a textarea prefilled with the bubble text', async () => {
+  const userBubble: Bubble = { id: 'u1', role: 'user', text: 'original text', thinking: '', cards: [], images: [] }
+  await mockStoreState({ editingMessageId: null })
+  const { container, rerender } = render(<Message bubble={userBubble} />)
+  const editButton = Array.from(container.querySelectorAll('.msg-tool')).find(el => el.getAttribute('title') === 'Edit message') as HTMLButtonElement
+  fireEvent.click(editButton)
+
+  // startEdit was invoked; simulate the store now reflecting edit mode active
+  await mockStoreState({ editingMessageId: 'u1' })
+  rerender(<Message bubble={userBubble} />)
+
+  const textarea = container.querySelector('.msg-edit-ta') as HTMLTextAreaElement
+  expect(textarea).not.toBeNull()
+  expect(textarea.value).toBe('original text')
+})
+
+test('edit mode: Save is disabled when text is empty and there are no attachments', async () => {
+  const userBubble: Bubble = { id: 'u1', role: 'user', text: 'original text', thinking: '', cards: [], images: [] }
+  await mockStoreState({ editingMessageId: 'u1' })
+  const { container } = render(<Message bubble={userBubble} />)
+  const textarea = container.querySelector('.msg-edit-ta') as HTMLTextAreaElement
+  fireEvent.change(textarea, { target: { value: '   ' } })
+  const saveBtn = container.querySelector('.msg-edit-save') as HTMLButtonElement
+  expect(saveBtn.disabled).toBe(true)
+})
+
+test('edit mode: Save is enabled (and calls editMessage with the typed text) when text is non-empty', async () => {
+  const userBubble: Bubble = { id: 'u1', role: 'user', text: 'original text', thinking: '', cards: [], images: [] }
+  const state = await mockStoreState({ editingMessageId: 'u1' })
+  const { container } = render(<Message bubble={userBubble} />)
+  const textarea = container.querySelector('.msg-edit-ta') as HTMLTextAreaElement
+  fireEvent.change(textarea, { target: { value: 'edited text' } })
+  const saveBtn = container.querySelector('.msg-edit-save') as HTMLButtonElement
+  expect(saveBtn.disabled).toBe(false)
+  fireEvent.click(saveBtn)
+  await vi.waitFor(() => expect(state.editMessage).toHaveBeenCalledWith('u1', 'edited text'))
+})
+
+test('edit mode: Cmd/Ctrl+Enter in the textarea saves', async () => {
+  const userBubble: Bubble = { id: 'u1', role: 'user', text: 'original text', thinking: '', cards: [], images: [] }
+  const state = await mockStoreState({ editingMessageId: 'u1' })
+  const { container } = render(<Message bubble={userBubble} />)
+  const textarea = container.querySelector('.msg-edit-ta') as HTMLTextAreaElement
+  fireEvent.change(textarea, { target: { value: 'edited via shortcut' } })
+  fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
+  await vi.waitFor(() => expect(state.editMessage).toHaveBeenCalledWith('u1', 'edited via shortcut'))
+})
+
+test('edit mode: Escape in the textarea cancels and restores original rendering (does not call editMessage)', async () => {
+  const userBubble: Bubble = { id: 'u1', role: 'user', text: 'original text', thinking: '', cards: [], images: [] }
+  const state = await mockStoreState({ editingMessageId: 'u1' })
+  const { container } = render(<Message bubble={userBubble} />)
+  const textarea = container.querySelector('.msg-edit-ta') as HTMLTextAreaElement
+  fireEvent.change(textarea, { target: { value: 'discard me' } })
+  fireEvent.keyDown(textarea, { key: 'Escape' })
+  expect(state.cancelEdit).toHaveBeenCalled()
+  expect(state.editMessage).not.toHaveBeenCalled()
+})
+
+test('edit mode: clicking Cancel calls cancelEdit without calling editMessage', async () => {
+  const userBubble: Bubble = { id: 'u1', role: 'user', text: 'original text', thinking: '', cards: [], images: [] }
+  const state = await mockStoreState({ editingMessageId: 'u1' })
+  const { container } = render(<Message bubble={userBubble} />)
+  const cancelBtn = Array.from(container.querySelectorAll('.msg-edit-bar .ocbtn')).find(el => el.textContent === 'Cancel') as HTMLButtonElement
+  fireEvent.click(cancelBtn)
+  expect(state.cancelEdit).toHaveBeenCalled()
+  expect(state.editMessage).not.toHaveBeenCalled()
+})
+
+// ---- Retry-with-model menu (UNIT-202) ----
+
+const modelsReady = {
+  status: 'ready' as const,
+  data: [{
+    endpoint_id: 'openai', endpoint_name: 'OpenAI', url: '', category: 'chat', model_type: 'chat',
+    offline: false, models: ['gpt-4', 'gpt-3.5'], models_display: ['GPT-4', 'GPT-3.5'],
+  }],
+}
+const sessionsReady = { status: 'ready' as const, data: [{ id: 'chat-1', model: 'gpt-4' }] }
+
+test('retry menu: closed by default, opens on clicking "Retry options", lists models from the same store.models source used by ModelPicker', async () => {
+  await mockStoreState({ models: modelsReady, sessions: sessionsReady, activeSessionId: 'chat-1' })
+  const { container } = render(<Message bubble={mockBubble} />)
+  expect(container.querySelector('.msg-retry-menu')).toBeNull()
+
+  const retryBtn = container.querySelector('[title="Retry options"]') as HTMLButtonElement
+  fireEvent.click(retryBtn)
+
+  const menu = container.querySelector('.msg-retry-menu')
+  expect(menu).not.toBeNull()
+  const items = Array.from(menu!.querySelectorAll('.msg-retry-item')).map(el => el.textContent)
+  expect(items).toEqual(['Retry', 'GPT-4', 'GPT-3.5'])
+})
+
+test('retry menu: plain "Retry" calls regenerate with no opts (single-arg, byte-compatible)', async () => {
+  const state = await mockStoreState({ models: modelsReady, sessions: sessionsReady, activeSessionId: 'chat-1' })
+  const { container } = render(<Message bubble={mockBubble} />)
+  fireEvent.click(container.querySelector('[title="Retry options"]') as HTMLButtonElement)
+  const retryItem = Array.from(container.querySelectorAll('.msg-retry-item')).find(el => el.textContent === 'Retry') as HTMLButtonElement
+  fireEvent.click(retryItem)
+  expect(state.regenerate).toHaveBeenCalledWith(mockBubble.id)
+  expect(state.regenerate).not.toHaveBeenCalledWith(mockBubble.id, expect.anything())
+})
+
+test('retry menu: selecting a model calls regenerate with {model, endpointId} and closes the menu', async () => {
+  const state = await mockStoreState({ models: modelsReady, sessions: sessionsReady, activeSessionId: 'chat-1' })
+  const { container } = render(<Message bubble={mockBubble} />)
+  fireEvent.click(container.querySelector('[title="Retry options"]') as HTMLButtonElement)
+  const modelItem = Array.from(container.querySelectorAll('.msg-retry-item')).find(el => el.textContent === 'GPT-3.5') as HTMLButtonElement
+  fireEvent.click(modelItem)
+  await vi.waitFor(() => expect(state.regenerate).toHaveBeenCalledWith(mockBubble.id, { model: 'gpt-3.5', endpointId: 'openai' }))
+  expect(container.querySelector('.msg-retry-menu')).toBeNull()
+})
+
+test('retry menu: outside click closes the menu', async () => {
+  await mockStoreState({ models: modelsReady, sessions: sessionsReady, activeSessionId: 'chat-1' })
+  const { container } = render(<Message bubble={mockBubble} />)
+  fireEvent.click(container.querySelector('[title="Retry options"]') as HTMLButtonElement)
+  expect(container.querySelector('.msg-retry-menu')).not.toBeNull()
+  fireEvent.mouseDown(document.body)
+  expect(container.querySelector('.msg-retry-menu')).toBeNull()
+})
+
+test('retry menu: Escape key closes the menu', async () => {
+  await mockStoreState({ models: modelsReady, sessions: sessionsReady, activeSessionId: 'chat-1' })
+  const { container } = render(<Message bubble={mockBubble} />)
+  fireEvent.click(container.querySelector('[title="Retry options"]') as HTMLButtonElement)
+  expect(container.querySelector('.msg-retry-menu')).not.toBeNull()
+  fireEvent.keyDown(document, { key: 'Escape' })
+  expect(container.querySelector('.msg-retry-menu')).toBeNull()
 })

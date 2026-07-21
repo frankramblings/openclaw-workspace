@@ -47,6 +47,7 @@ beforeEach(() => {
     notificationsEnabled: false,
     pendingSessions: {},
     sessionError: null,
+    editingMessageId: null,
   })
   localStorage.clear()
 })
@@ -115,12 +116,217 @@ test('regenerate truncates at the preceding user and replays its attachments', a
   expect(useChatStore.getState().pendingSend).toMatchObject({ text: 'look', opts: { attachments: [{ id: 'photo-1' }] } })
 })
 
+test('regenerate with model option calls setSessionModel before truncate', async () => {
+  const requests: string[] = []
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+    const path = String(input)
+    if (path === '/api/sessions') return json([{ id: 'chat-1', model: 'gpt-4', speed: 'normal', archived: false, important: false, sessionKey: 'key', endpoint_url: '', endpoint_id: 'openai', name: 'test', folder: null, created: 1, updated: 1, origin: null, gary_terminal: null }])
+    requests.push(path)
+    if (path === '/api/session/chat-1') return json({ id: 'chat-1', model: 'gpt-4', speed: 'normal', archived: false, important: false, sessionKey: 'key', endpoint_url: '', endpoint_id: 'openai', name: 'test', folder: null, created: 1, updated: 1, origin: null, gary_terminal: null })
+    if (path === '/api/session/chat-1/truncate') return json({ ok: true })
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  useChatStore.setState({ activeSessionId: 'chat-1', sessions: { status: 'ready', fetchedAt: 1, data: [{ id: 'chat-1', model: 'openclaw', speed: 'normal', archived: false, important: false, sessionKey: 'key', endpoint_url: '', endpoint_id: 'openclaw', name: 'test', folder: null, created: 1, updated: 1, origin: null, gary_terminal: null }] }, history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'question', thinking: '', cards: [], images: [] },
+    { id: 'a1', role: 'assistant', text: 'answer', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().regenerate('a1', { model: 'gpt-4', endpointId: 'openai' })).toBe(true)
+  expect(requests[0]).toContain('/api/session/chat-1')
+  expect(requests[1]).toBe('/api/session/chat-1/truncate')
+})
+
+test('regenerate with model fails if setSessionModel fails and never truncates', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/session/chat-1') return new Response('API error', { status: 500 })
+    throw new Error(`unexpected request: ${path}`)
+  }))
+  useChatStore.setState({ activeSessionId: 'chat-1', sessions: { status: 'ready', fetchedAt: 1, data: [] }, history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'question', thinking: '', cards: [], images: [] },
+    { id: 'a1', role: 'assistant', text: 'answer', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().regenerate('a1', { model: 'gpt-4', endpointId: 'openai' })).toBe(false)
+  expect(useChatStore.getState().history).toMatchObject({ data: [{ id: 'u1' }, { id: 'a1' }] })
+})
+
 test('continue creates an explicit cutoff-aware follow-up', () => {
   useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
     { id: 'a1', role: 'assistant', text: 'partial answer', thinking: '', cards: [], images: [] },
   ] } })
   expect(useChatStore.getState().continueFrom('a1')).toBe(true)
   expect(useChatStore.getState().pendingSend?.text).toContain('partial answer')
+})
+
+test('startEdit sets editingMessageId for user messages when idle', () => {
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+  ] } })
+  useChatStore.getState().startEdit('u1')
+  expect(useChatStore.getState().editingMessageId).toBe('u1')
+})
+
+test('startEdit does nothing for assistant messages', () => {
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'a1', role: 'assistant', text: 'answer', thinking: '', cards: [], images: [] },
+  ] } })
+  useChatStore.getState().startEdit('a1')
+  expect(useChatStore.getState().editingMessageId).toBe(null)
+})
+
+test('cancelEdit clears editingMessageId', () => {
+  useChatStore.setState({ editingMessageId: 'u1' })
+  useChatStore.getState().cancelEdit()
+  expect(useChatStore.getState().editingMessageId).toBe(null)
+})
+
+test('editMessage truncates at the message index and replays with edited text and original attachments', async () => {
+  let body: Record<string, unknown> | null = null
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/session/chat-1/truncate') {
+      body = JSON.parse(String(init?.body))
+      return json({ ok: true })
+    }
+    throw new Error(`unexpected request: ${String(input)}`)
+  }))
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+    { id: 'a1', role: 'assistant', text: 'answer', thinking: '', cards: [], images: [] },
+    { id: 'u2', role: 'user', text: 'second', thinking: '', cards: [], images: [], attachments: [{ id: 'doc-1', name: 'doc.pdf' }] },
+    { id: 'a2', role: 'assistant', text: 'old answer', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('u2', 'edited second')).toBe(true)
+  expect(body).toEqual({ keep_count: 2 })
+  expect(useChatStore.getState().history).toMatchObject({ data: [{ id: 'u1' }, { id: 'a1' }] })
+  expect(useChatStore.getState().pendingSend).toMatchObject({ text: 'edited second', opts: { attachments: [{ id: 'doc-1' }] } })
+  expect(useChatStore.getState().editingMessageId).toBe(null)
+})
+
+test('editMessage fails if truncate fails and keeps editingMessageId', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('API error', { status: 500 })))
+  useChatStore.setState({ activeSessionId: 'chat-1', editingMessageId: 'u1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('u1', 'edited first')).toBe(false)
+  expect(useChatStore.getState().editingMessageId).toBe('u1')
+  expect(useChatStore.getState().sessionError).toBeTruthy()
+})
+
+test('editMessage on a network failure (fetch rejects) also keeps edit mode + text, no partial state change', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+  useChatStore.setState({ activeSessionId: 'chat-1', editingMessageId: 'u1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('u1', 'edited first')).toBe(false)
+  expect(useChatStore.getState().editingMessageId).toBe('u1')
+  expect(useChatStore.getState().sessionError).toBeTruthy()
+  // history untouched — no optimistic slice happened before the network error
+  expect(useChatStore.getState().history).toMatchObject({ data: [{ id: 'u1' }] })
+})
+
+test('startEdit refuses while a turn is sending/streaming/stalled', () => {
+  for (const status of ['sending', 'streaming', 'stalled'] as const) {
+    useChatStore.setState({
+      editingMessageId: null,
+      activeSessionId: 'chat-1',
+      liveTurn: { status, bubbles: [] } as any,
+      history: { status: 'ready', fetchedAt: 1, data: [
+        { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+      ] },
+    })
+    useChatStore.getState().startEdit('u1')
+    expect(useChatStore.getState().editingMessageId).toBe(null)
+  }
+})
+
+test('editMessage refuses while a turn is streaming (no truncate attempted)', async () => {
+  const fetchMock = vi.fn(async () => { throw new Error('should not be called') })
+  vi.stubGlobal('fetch', fetchMock)
+  useChatStore.setState({
+    activeSessionId: 'chat-1',
+    liveTurn: { status: 'streaming', bubbles: [] } as any,
+    history: { status: 'ready', fetchedAt: 1, data: [
+      { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+    ] },
+  })
+  expect(await useChatStore.getState().editMessage('u1', 'edited')).toBe(false)
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('editMessage refuses for an assistant message id (no truncate attempted)', async () => {
+  const fetchMock = vi.fn(async () => { throw new Error('should not be called') })
+  vi.stubGlobal('fetch', fetchMock)
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'a1', role: 'assistant', text: 'answer', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('a1', 'edited')).toBe(false)
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('editMessage refuses for a stale id no longer in history (e.g. dropped by a background refetch)', async () => {
+  const fetchMock = vi.fn(async () => { throw new Error('should not be called') })
+  vi.stubGlobal('fetch', fetchMock)
+  useChatStore.setState({ activeSessionId: 'chat-1', editingMessageId: 'u1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u2', role: 'user', text: 'still here', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('u1', 'edited')).toBe(false)
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+test('editMessage at index 0 truncates the whole history (keep_count 0)', async () => {
+  let body: Record<string, unknown> | null = null
+  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    body = JSON.parse(String(init?.body))
+    return json({ ok: true })
+  }))
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+    { id: 'a1', role: 'assistant', text: 'answer', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('u1', 'edited first')).toBe(true)
+  expect(body).toEqual({ keep_count: 0 })
+  expect(useChatStore.getState().history).toMatchObject({ data: [] })
+})
+
+test('editMessage picks the exact message by id among consecutive user messages, unaffected by role adjacency', async () => {
+  let body: Record<string, unknown> | null = null
+  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    body = JSON.parse(String(init?.body))
+    return json({ ok: true })
+  }))
+  // u1, u2 back-to-back (no assistant turn between them — e.g. a queued follow-up)
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+    { id: 'u2', role: 'user', text: 'second', thinking: '', cards: [], images: [] },
+    { id: 'u3', role: 'user', text: 'third', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('u2', 'edited second')).toBe(true)
+  expect(body).toEqual({ keep_count: 1 })
+  expect(useChatStore.getState().history).toMatchObject({ data: [{ id: 'u1' }] })
+  expect(useChatStore.getState().pendingSend).toMatchObject({ text: 'edited second' })
+})
+
+test('editMessage allows empty text when the original message has attachments (OR-semantics: non-empty text OR attachments retained)', async () => {
+  let body: Record<string, unknown> | null = null
+  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    body = JSON.parse(String(init?.body))
+    return json({ ok: true })
+  }))
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'caption', thinking: '', cards: [], images: [], attachments: [{ id: 'photo-1', name: 'photo.png' }] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('u1', '')).toBe(true)
+  expect(body).toEqual({ keep_count: 0 })
+  expect(useChatStore.getState().pendingSend).toMatchObject({ text: '', opts: { attachments: [{ id: 'photo-1' }] } })
+})
+
+test('editMessage rejects empty text with no attachments (no truncate attempted)', async () => {
+  const fetchMock = vi.fn(async () => { throw new Error('should not be called') })
+  vi.stubGlobal('fetch', fetchMock)
+  useChatStore.setState({ activeSessionId: 'chat-1', history: { status: 'ready', fetchedAt: 1, data: [
+    { id: 'u1', role: 'user', text: 'first', thinking: '', cards: [], images: [] },
+  ] } })
+  expect(await useChatStore.getState().editMessage('u1', '   ')).toBe(false)
+  expect(fetchMock).not.toHaveBeenCalled()
 })
 
 afterEach(() => vi.unstubAllGlobals())

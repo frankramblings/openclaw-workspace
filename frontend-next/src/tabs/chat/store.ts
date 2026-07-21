@@ -476,6 +476,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       await Promise.all([loadHistory(id), get().loadUsage(id)])
       await reconcileSession(id, set, get)
       flushQueued(id)
+      // Acknowledge unseen followups for this session (fire-and-forget; ack failure never breaks chat)
+      fetch('/api/push/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: id }) }).catch(() => {})
     },
 
     loadOlder: async () => {

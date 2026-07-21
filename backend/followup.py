@@ -23,7 +23,7 @@ import threading
 import time
 import uuid
 
-from . import config, fsutil, task_registry, turn_state
+from . import config, fsutil, push, task_registry, turn_state
 
 _log = logging.getLogger(__name__)
 
@@ -220,8 +220,57 @@ def mark(pid: str, state: str, **fields) -> dict | None:
                 except Exception:  # noqa: BLE001
                     _log.warning("task_registry mirror failed for promise %s", pid,
                                 exc_info=True)
+                # Send push notification for followup completion
+                _notify_followup_completion(p, state)
                 return p
     return None
+
+
+def _notify_followup_completion(promise: dict, state: str) -> None:
+    """Schedule a push notification for followup completion (via fire-and-forget).
+    Never raises."""
+    try:
+        session_id = promise.get("session_id")
+        pid = promise.get("id")
+        if not session_id or not pid or not push.supported():
+            return
+
+        # Mark this followup as unseen and get the badge count
+        unseen_count = push.mark_unseen(pid, session_id)
+
+        # Build the notification payload
+        label = promise.get("label", "background task")[:60]  # truncate title
+        if state == "completed":
+            duration_s = promise.get("duration_s", 0)
+            body = f"done in {_fmt_duration(duration_s)}"
+        elif state == "failed":
+            body = f"failed: {promise.get('error', 'unknown error')}"
+        elif state == "overdue":
+            body = promise.get("error", "no response by deadline")
+        else:
+            body = f"changed to {state}"
+
+        payload = {
+            "title": label,
+            "body": body,
+            "kind": "followup",
+            "session_id": session_id,
+            "tag": f"session-{session_id}",
+            "badge": unseen_count,
+        }
+
+        # Spawn async send (fire-and-forget)
+        async def _send():
+            try:
+                await push.send(payload)
+            except Exception:  # noqa: BLE001 - push failure never breaks followup
+                _log.debug("push notification send failed for promise %s", pid,
+                          exc_info=True)
+
+        from . import app as app_module  # deferred: app imports this module
+        app_module._spawn(_send())
+    except Exception:  # noqa: BLE001 - push failures never break followup transitions
+        _log.debug("followup push notification setup failed", exc_info=True)
 
 
 def due_promises(now_ms: int) -> list[tuple[str, bool]]:

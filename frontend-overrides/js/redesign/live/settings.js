@@ -249,4 +249,66 @@ export const actions = {
     } catch (_) {}
     runtime.render();
   },
+
+  // Notifications → enable push subscriptions (request permission + subscribe)
+  enablePush: async () => {
+    if (!('serviceWorker' in navigator && 'PushManager' in window)) return;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') {
+        try { window.alert('Notification permission was denied. Enable in your browser settings.'); } catch (_) {}
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const status = await fetch('/api/push/status').then(r => r.json());
+      if (!status.publicKey) {
+        try { window.alert('Server does not support push notifications.'); } catch (_) {}
+        return;
+      }
+      // Convert b64url public key to Uint8Array
+      const base64String = status.publicKey;
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      const applicationServerKey = new Uint8Array([...rawData].map(c => c.charCodeAt(0)));
+      const sub = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey
+      });
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sub.toJSON())
+      });
+      try { window.alert('Notifications enabled!'); } catch (_) {}
+      runtime.render(); // re-render to show updated status
+    } catch (e) {
+      const msg = apiErrorMessage(e, 'Could not enable notifications.');
+      try { window.alert(msg); } catch (_) {}
+    }
+  },
+
+  // Notifications → disable push subscriptions
+  disablePush: async () => {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const sub = await registration.pushManager.getSubscription();
+      if (!sub) return;
+      const data = sub.toJSON();
+      await sub.unsubscribe();
+      if (data.endpoint) {
+        await fetch('/api/push/unsubscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: data.endpoint })
+        });
+      }
+      try { window.alert('Notifications disabled.'); } catch (_) {}
+      runtime.render();
+    } catch (e) {
+      const msg = apiErrorMessage(e, 'Could not disable notifications.');
+      try { window.alert(msg); } catch (_) {}
+    }
+  },
 };

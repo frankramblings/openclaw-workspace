@@ -14,6 +14,7 @@ export const TAB = {
   integrations: ['Integrations', 'All external service connections', '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'],
   email: ['Email', 'Accounts and background tasks', '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>'],
   reminders: ['Reminders', 'How fired reminders reach you', '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>'],
+  notifications: ['Notifications', 'Web push on your device', '<circle cx="9" cy="21" r="1"/><path d="M18 8a6 6 0 0 0-9-5.97"/><path d="M13 16h-3V6h3m4-1h.01"/><path d="M17 16h-2V9h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2z"/>'],
   brain: ['Brain', 'Long-term memory and skills', '<path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/>'],
   scheduled: ['Scheduled', 'Recurring jobs', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'],
   appearance: ['Appearance', 'Theme, sidebar, and chat visibility', '<circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 0 20 4 4 0 0 1 0-8 4 4 0 0 0 0-8z"/>'],
@@ -97,6 +98,11 @@ export const PANELS = {
     card({ title: 'Public App URL', icon: TAB.integrations[2], sub: 'Used to build clickable links back to __AGENT_NAME__ inside reminder / urgent-email emails. Leave blank to omit links.', rows: [inp('URL', 'https://chat.openclaw.local')] }),
     card({ title: 'Test', icon: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>', sub: 'Fire a test reminder using your current settings.', rows: [btns([{ label: 'Send Test Reminder', primary: true }])] }),
   ],
+  notifications: [
+    card({ title: 'Enable notifications on this device', icon: TAB.notifications[2], sub: 'Receive web push notifications when your followups complete and new messages arrive. Works when the app is installed to your home screen (iOS 16+).', rows: [
+      btns([{ label: 'Enable notifications', primary: true, act: 'enablePush' }, { label: 'Disable', act: 'disablePush' }]),
+    ] }),
+  ],
   brain: [card({ title: 'Brain', icon: TAB.brain[2], sub: "__AGENT_NAME__'s long-term memories and skills — browse, edit, pin, and audit them.", launcher: 'Open Brain', launcherAct: 'openBrain', brainPanel: true })],
   scheduled: [card({ title: 'Scheduled', icon: TAB.scheduled[2], sub: 'Recurring jobs — run now, enable/disable, and inspect run history.', launcher: 'Open Scheduled jobs', launcherAct: 'openScheduled', scheduledPanel: true })],
   appearance: [
@@ -150,7 +156,7 @@ export const PANELS = {
 // grouped section nav with dividers + ADMIN label
 export const NAV_GROUPS = [
   ['services', 'ai', 'search'], 'div',
-  ['integrations', 'email', 'reminders', 'brain', 'scheduled'], 'div',
+  ['integrations', 'email', 'reminders', 'notifications', 'brain', 'scheduled'], 'div',
   ['appearance', 'shortcuts'], 'div',
   ['account'], 'div',
   { label: 'ADMIN', ids: ['tools', 'users', 'system'] },

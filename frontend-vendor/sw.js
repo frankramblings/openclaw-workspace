@@ -113,3 +113,56 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 });
+
+// Web push notifications: display banner + badge + ack unseen followups
+self.addEventListener('push', e => {
+  e.waitUntil((async () => {
+    try {
+      const data = e.data?.json() || {};
+      const { title, body, kind, tag, badge } = data;
+      // Overlay deeplinks only support ?action= verbs (see js/deeplink.js) —
+      // sessions aren't URL-addressable, so land on the app root per contract.
+      const url = '/';
+
+      // Turn-kind: skip notification if app is visible
+      if (kind === 'turn') {
+        const clients = await self.clients.matchAll({ type: 'window' });
+        if (clients.some(c => c.visibilityState === 'visible')) {
+          if ('setAppBadge' in navigator) {
+            if (badge > 0) await navigator.setAppBadge(badge);
+            else await navigator.clearAppBadge();
+          }
+          return;
+        }
+      }
+
+      // Show notification
+      await self.registration.showNotification(title || 'Gary', { body, tag, data: { url } });
+
+      // Update badge
+      if ('setAppBadge' in navigator) {
+        if (badge > 0) await navigator.setAppBadge(badge);
+        else await navigator.clearAppBadge();
+      }
+    } catch (e) {
+      console.debug('Push event error:', e);
+    }
+  })());
+});
+
+// Notification click: focus existing client or open new window
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil((async () => {
+    const url = e.notification.data?.url || '/';
+    const clients = await self.clients.matchAll({ type: 'window' });
+    const existing = clients.find(c => c.url.includes('/'));
+    if (existing) {
+      await existing.focus();
+      if (typeof existing.navigate === 'function') await existing.navigate(url);
+      else await existing.postMessage({ type: 'navigate', url });
+    } else {
+      await self.clients.openWindow(url);
+    }
+  })());
+});

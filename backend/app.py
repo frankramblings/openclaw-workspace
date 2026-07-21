@@ -26,7 +26,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup, launch_sniffer,
-               monitor, pending_tokens, promise_guard, sessions_store, syschatter,
+               monitor, pending_tokens, promise_guard, push, sessions_store, syschatter,
                task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
@@ -176,6 +176,13 @@ async def _lifespan(_app: FastAPI):
                      len(interrupted_tasks))
     # Followup promises: deadline + crash-recovery backstop.
     followup_task = asyncio.create_task(followup.sweeper())
+    # Web push: VAPID keys must exist before any client subscribes. Only init if
+    # push is supported — degraded installs (pywebpush absent) skip this.
+    if push.supported():
+        try:
+            push.ensure_keys()
+        except Exception:  # noqa: BLE001 - push failure must never block boot
+            _log.warning("push key initialization failed", exc_info=True)
     # Progress-UX mirror loop: tmp/jobs/*.json + share/tasks/*/progress.json
     # into task_registry, once per process (see task_ingest.py).
     ingest_task = asyncio.create_task(task_ingest.ingest_loop())
@@ -864,6 +871,58 @@ async def set_default_chat(payload: dict = Body(default=None)):
     pref = {"model": model, "endpoint_id": (payload.get("endpoint_id") or "").strip()}
     websearch.save_settings({"default_chat_model": pref})
     return {"ok": True, **pref}
+
+
+# --- Web push notifications (app-icon badge, push on followup completion) ----
+
+@app.get("/api/push/status")
+async def push_status():
+    """Report push capability and current unseen count. Browser checks this
+    before subscribing; badge UI reads the count."""
+    return {
+        "supported": push.supported(),
+        "publicKey": push.public_key(),
+        "subscriptions": push.subscription_count(),
+        "unseen": push.unseen_count(),
+    }
+
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(payload: dict = Body(default=None)):
+    """Store a browser PushSubscription. Body = browser's PushSubscription.toJSON()
+    (must include `endpoint` and `keys`)."""
+    payload = payload or {}
+    if not payload.get("endpoint") or not payload.get("keys"):
+        return JSONResponse(status_code=400,
+                           content={"error": "endpoint and keys required"})
+    push.add_subscription(payload)
+    return {"ok": True}
+
+
+@app.post("/api/push/unsubscribe")
+async def push_unsubscribe(payload: dict = Body(default=None)):
+    """Unsubscribe a browser by endpoint."""
+    payload = payload or {}
+    endpoint = (payload.get("endpoint") or "").strip()
+    if not endpoint:
+        return JSONResponse(status_code=400, content={"error": "endpoint required"})
+    push.remove_subscription(endpoint)
+    return {"ok": True}
+
+
+@app.post("/api/push/ack")
+async def push_ack(payload: dict = Body(default=None)):
+    """Acknowledge unseen followups for a session (or all if all=true).
+    Returns the new unseen count."""
+    payload = payload or {}
+    if payload.get("all"):
+        unseen = push.ack_all()
+    else:
+        session_id = (payload.get("session_id") or "").strip()
+        if not session_id:
+            return JSONResponse(status_code=400, content={"error": "session_id or all required"})
+        unseen = push.ack_session(session_id)
+    return {"unseen": unseen}
 
 
 # Auth stubs: single-user/no-auth deployment behind Tailscale. Return a logged-in

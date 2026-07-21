@@ -234,3 +234,20 @@ test('activity snapshots mark background completions without inventing active wo
   await useChatStore.getState().selectSession('other')
   expect(useChatStore.getState().sessionActivity).toEqual({})
 })
+
+test('selectSession posts ack to /api/push/ack with session_id (fire-and-forget)', async () => {
+  const ackCalls: Array<{ path: string; body: unknown }> = []
+  vi.stubGlobal('fetch', vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (init?.body) ackCalls.push({ path, body: JSON.parse(String(init.body)) })
+    if (path === '/api/strip/state') return json({ tasks: [] })
+    if (path === '/api/sessions') return json([session])
+    if (path === '/api/turn/fetch') return json({ thread: [{ id: '1', role: 'user', text: 'Hi' }], title: 'Chat', subtitle: '', model: 'openclaw' })
+    if (path === '/api/push/ack') return json({ unseen: 0 })
+    return json({})
+  }))
+  await useChatStore.getState().selectSession('chat-1')
+  expect(ackCalls).toContainEqual({ path: '/api/push/ack', body: { session_id: 'chat-1' } })
+  vi.unstubAllGlobals()
+})
+afterEach(() => vi.unstubAllGlobals())

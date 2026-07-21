@@ -32,7 +32,7 @@ import logging
 import re
 import time
 
-from . import (bridge, config, draft_mode, event_store, promise_guard,
+from . import (bridge, config, draft_mode, event_store, promise_guard, push,
                sessions_store, terminals, turn_state, websearch)
 from .attachments import _terminal_attachments
 
@@ -305,6 +305,7 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
                          session_key, exc_info=True)
 
     end_emitted = False
+    response_text = ""  # Collect assistant response for push notification
 
     def _append_turn_end(status: str) -> None:
         nonlocal end_emitted
@@ -314,6 +315,9 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
         _append(bridge._sse({"type": "turn_end", "turn_id": turn_id,
                              "status": status,
                              "ts": int(time.time() * 1000)}))
+        # Send push notification for successful turns (not aborted)
+        if status == "ok":
+            _notify_turn_completion(session_key, response_text)
 
     _append(bridge._sse({"type": "turn_start", "turn_id": turn_id,
                          "session_key": session_key,
@@ -324,6 +328,13 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
     status = "ok"
     try:
         async for chunk in source:
+            # Collect response text for push notification
+            try:
+                frame = _sse_frame(chunk)
+                if isinstance(frame, dict) and frame.get("delta") and not frame.get("thinking"):
+                    response_text += frame.get("delta", "")
+            except Exception:  # noqa: BLE001 - text collection never breaks streaming
+                pass
             if _is_done_frame(chunk):
                 # turn_end must precede [DONE] so a tail that closes on
                 # [DONE] still sees the explicit boundary + status.
@@ -620,3 +631,50 @@ async def post_tail(*, session_key: str, cursor, queue):
                 return
     finally:
         event_store.unsubscribe(session_key, queue)
+
+
+def _notify_turn_completion(session_key: str, response_text: str) -> None:
+    """Schedule a push notification for turn completion (via fire-and-forget).
+    Never raises."""
+    try:
+        if not push.supported():
+            return
+
+        # Resolve session_key to session_id
+        session_id = sessions_store.id_for_session_key(session_key)
+        if not session_id:
+            return
+
+        # Get session name for title
+        session_rec = sessions_store.get(session_id)
+        title = (session_rec.get("name") if session_rec else None) or "Gary"
+        # Truncate title to ~30 chars to leave room for other info
+        title = title[:30]
+
+        # Extract first ~100 chars of response for body
+        body = (response_text or "").strip()[:100]
+        if not body:
+            body = "(assistant response)"
+
+        # Build payload
+        payload = {
+            "title": title,
+            "body": body,
+            "kind": "turn",
+            "session_id": session_id,
+            "tag": f"session-{session_id}",
+            "badge": push.unseen_count(),  # turn never increments badge
+        }
+
+        # Spawn async send (fire-and-forget)
+        async def _send():
+            try:
+                await push.send(payload)
+            except Exception:  # noqa: BLE001 - push failure never breaks turns
+                _log.debug("push notification send failed for session %s", session_id,
+                          exc_info=True)
+
+        from . import app as app_module  # deferred: app imports this module
+        app_module._spawn(_send())
+    except Exception:  # noqa: BLE001 - push failures never break turn completion
+        _log.debug("turn push notification setup failed", exc_info=True)

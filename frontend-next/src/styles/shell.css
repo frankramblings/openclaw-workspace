@@ -74,7 +74,7 @@
 /* Chat is an application workspace rather than a document page. It fills the
    scroller rather than the viewport, so the top bar and dock can claim height
    without pushing it off-screen. */
-.next-chat-layout{height:100%;display:grid;grid-template-columns:var(--next-chat-sessions,290px) minmax(360px,1fr) var(--next-chat-models,260px);overflow:hidden;border:1px solid var(--bd);border-radius:14px;background:var(--bg)}
+.next-chat-layout{height:100%;display:grid;grid-template-columns:var(--next-chat-sessions,290px) minmax(360px,1fr) var(--next-chat-models,260px);overflow:hidden;background:var(--bg)}
 .next-chat-sidebar,.next-chat-models{min-width:0;overflow:auto;background:var(--panel)}
 .next-chat-sidebar{border-right:1px solid var(--bd)}
 .next-chat-models{border-left:1px solid var(--bd);padding:14px}.next-chat-sidebar,.next-chat-models{position:relative}.next-chat-models>.next-resize-handle{left:-5px;right:auto}
@@ -244,7 +244,7 @@
 /* Header wraps: row 1 = CONVERSATIONS + search toggle, row 2 = the full-width
    "+ New conversation" button (classic .new-conv placement). */
 .next-shell-rail .next-section-head { padding: 0 14px; margin-bottom: 6px; flex-wrap: wrap; row-gap: 8px; }
-.next-shell-rail .next-section-actions { flex: 1; flex-wrap: wrap; justify-content: flex-end; }
+.next-shell-rail .next-section-actions { flex: 1 1 100%; }
 .next-shell-rail .next-section-actions .btn-teal { flex: 1 1 100%; height: 38px; border-radius: 10px; font-size: 14.5px; justify-content: center; }
 
 /* Dock placeholder text style */
@@ -284,8 +284,25 @@
 /* Empty state: don't let the ::before emoji break flow on narrow widths */
 .next-chat-main>.next-empty::before { user-select: none; pointer-events: none; }
 
-/* Rail search input: slightly tighter top padding */
-.next-shell-rail .next-chat-search { padding: 0 14px 8px; }
+/* Rail search input + ⌘K palette affordance (classic .oc-search .kbd idiom) */
+.next-shell-rail .next-chat-search { padding: 0 14px 8px; position: relative; display: block; }
+.next-shell-rail .next-chat-search .oc-kbd { position: absolute; right: 22px; top: 50%; transform: translateY(calc(-50% - 4px)); font-family: var(--mono); font-size: 11px; color: var(--faint); border: 1px solid var(--bd); border-radius: 5px; padding: 2px 5px; background: transparent; cursor: pointer; }
+.next-shell-rail .next-chat-search .oc-kbd:hover { color: var(--mut); border-color: var(--mut); }
+
+/* Row kebab: quiet, hover-revealed (classic .conv-kebab) */
+.next-shell-rail .next-row-actions .btn { opacity: 0; transition: opacity .12s ease, color .12s ease, background .12s ease; }
+.next-shell-rail .next-row:hover .next-row-actions .btn,
+.next-shell-rail .next-row.is-selected .next-row-actions .btn,
+.next-shell-rail .next-row:focus-within .next-row-actions .btn { opacity: 1; }
+
+/* Selected row: the rail border is the ring — kill kit's extra outline */
+.next-shell-rail .next-row.is-selected { outline: none; }
+
+/* Favorite star reads gold, like classic .conv-fav */
+.next-shell-rail .next-row-title [aria-label="Favorite"] { color: var(--gold); }
+
+/* Row meta: machine data in quiet mono (model id) */
+.next-shell-rail .next-row-meta .mono { font-size: 11px; color: var(--faint); }
 
 /* Chip (model label in session row) — de-emphasize further */
 .next-shell-rail .next-row-meta .chip {

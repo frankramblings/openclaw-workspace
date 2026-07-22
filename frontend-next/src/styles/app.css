@@ -2386,9 +2386,12 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .next-conv-working{color:var(--teal);animation:pulse 1.6s ease-in-out infinite}
 .next-conv-complete{color:var(--blue)}
 .next-conv-queued{color:var(--gold)}
-.next-chat-header{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px 18px;border-bottom:1px solid var(--bd);background:var(--panel)}
-.next-chat-header h2{margin:0;font-size:17px;color:var(--fg)}
-.next-chat-header p{margin:3px 0 0;font-size:12px;color:var(--faint)}
+.next-chat-header{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:50px;padding:0 18px;border-bottom:1px solid var(--bd2);background:transparent}
+.next-chat-header h2{margin:0;font-size:15px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.next-chat-header p{margin:1px 0 0;font-size:12.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.next-chat-header-actions .btn{height:26px;padding:0 10px;font-size:12.5px;color:var(--faint);border-radius:7px;background:transparent}
+.next-chat-header-actions .btn:hover:not(:disabled){color:var(--mut)}
+.next-chat-header-actions .btn:disabled{opacity:.4}
 .next-chat-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
 .next-chat-header-actions [role=status]{font-size:11px;color:var(--faint)}
 .next-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
@@ -2407,7 +2410,7 @@ article.msg{margin-bottom:30px;max-width:100%}
 
 /* User message: right-aligned teal-tint bubble (classic .msg-user) */
 article.msg.user{display:flex;flex-direction:column;align-items:flex-end}
-article.msg.user .msg-role{font-size:14px;font-weight:600;color:var(--teal);margin-bottom:5px;padding-right:4px}
+article.msg.user .msg-role{display:flex;gap:8px;align-items:baseline;font-size:14px;font-weight:600;color:var(--teal);margin-bottom:5px;padding-right:4px}
 article.msg.user .msg-markdown{max-width:min(520px,82%);background:var(--tealtint);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent);border-radius:12px 12px 4px 12px;padding:13px 16px;font-family:var(--prose);font-size:16px;line-height:1.58;color:#dfe4ea}
 article.msg.user .msg-markdown p{margin:0 0 10px;color:#dfe4ea}
 article.msg.user .msg-markdown p:last-child{margin-bottom:0}
@@ -2416,6 +2419,9 @@ article.msg.user .msg-tools{margin-top:6px;padding-right:4px}
 /* Assistant message: left-aligned, Gary avatar + name header (classic .msg-asst/.msg-meta) */
 article.msg.assistant{display:flex;flex-direction:column;align-items:flex-start}
 article.msg.assistant .msg-role{display:flex;align-items:center;gap:10px;font-family:var(--prose);font-size:14px;font-weight:600;letter-spacing:-.006em;color:var(--fg);margin-bottom:7px}
+/* classic .msg-meta chips: model pill + quiet mono time */
+article.msg .msg-role .model{font-family:var(--mono);font-size:11.5px;font-weight:400;color:var(--teal);background:var(--tealtint);padding:1px 7px;border-radius:999px}
+article.msg .msg-role .time{font-family:var(--mono);font-size:11.5px;font-weight:400;color:var(--faint)}
 article.msg.assistant .msg-role::before{content:'';display:inline-flex;width:30px;height:30px;border-radius:8px;background:var(--teal) var(--gary-avatar,none) center/contain no-repeat;flex:none}
 article.msg.assistant .msg-markdown{font-family:var(--prose);font-size:16.5px;line-height:1.72;color:#dfe3e8;max-width:760px;overflow-wrap:anywhere}
 article.msg.assistant .msg-markdown p{margin:0 0 16px;letter-spacing:0}
@@ -2447,6 +2453,17 @@ article.msg:hover .msg-tools,article.msg:focus-within .msg-tools{opacity:1;trans
 /* Live turn */
 .live-turn{margin-bottom:24px}
 .live-turn-status{font-size:12px;color:var(--faint);margin:8px 0 0;font-style:italic}
+
+/* ── Activity trail (details/summary flavor of classic .act-*) ── */
+.act-wrap summary{list-style:none;cursor:pointer}
+.act-wrap summary::-webkit-details-marker{display:none}
+.act-wrap{margin:0 0 14px}
+.act-wrap .act-chev{display:inline-flex;color:var(--faint);transition:transform .15s}
+details[open]>.act-summary .act-chev,details[open]>.act-group .act-chev{transform:rotate(90deg)}
+.act-wrap .act-row .file{max-width:560px}
+.act-tool>.act-row,.act-groupwrap>.act-group{border-radius:7px}
+.act-tool>.act-row:hover,.act-groupwrap>.act-group:hover{background:#1e2025}
+.act-wrap .act-detail{max-height:320px;overflow:auto}
 
 /* ── Code card enhancements (UNIT-103) ── */
 /* Language label */

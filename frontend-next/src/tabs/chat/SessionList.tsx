@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Chip, EmptyState, ListRow, Modal, RemoteView, SectionHeader } from '../../kit'
+import { Button, EmptyState, ListRow, Modal, RemoteView, SectionHeader } from '../../kit'
 import { Icon } from '../../kit/icons'
 import { useChatStore } from './store'
 import { usePaletteStore } from '../../shell/palette/store'
@@ -37,14 +37,12 @@ export function SessionList({ onSelected }: { onSelected?: () => void } = {}) {
     <section className="next-chat-sessions" aria-label="Conversations">
       <SectionHeader
         title="Conversations"
-        actions={<>
-          <Button variant="ghost" title="Search (⌘K)" aria-label="Search (⌘K)" onClick={() => setPaletteOpen(true)}><Icon name="search" size={14} /></Button>
-          <Button variant="primary" disabled={Boolean(pending.new)} onClick={() => void createSession()}><Icon name="plus" size={14} /> New conversation</Button>
-        </>}
+        actions={<Button variant="primary" disabled={Boolean(pending.new)} onClick={() => void createSession()}><Icon name="plus" size={14} /> New conversation</Button>}
       />
       <label className="next-chat-search">
         <span className="sr-only">Search conversations</span>
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations…" />
+        <button type="button" className="oc-kbd" title="Search everything (⌘K)" aria-label="Search everything (⌘K)" onClick={() => setPaletteOpen(true)}>⌘K</button>
       </label>
       {error && <p className="next-error-detail" role="alert">{error}</p>}
       <RemoteView
@@ -65,10 +63,10 @@ export function SessionList({ onSelected }: { onSelected?: () => void } = {}) {
               <ListRow
                 key={record.id}
                 title={<>{activity[record.id] === 'working' && <span className="next-conv-working" title="Working" aria-label="Working">● </span>}{activity[record.id] === 'complete' && <span className="next-conv-complete" title="Reply finished" aria-label="Reply finished">● </span>}{!activity[record.id] && queuedSends[record.id]?.length && <span className="next-conv-queued" title="Message queued" aria-label="Message queued">● </span>}{record.important && <span aria-label="Favorite">★ </span>}{record.name || 'New chat'}</>}
-                meta={pendingLabel || <><Chip>{record.model}</Chip> · {record.speed}{queuedSends[record.id]?.length ? ` · ${queuedSends[record.id].length} queued` : ''}</>}
+                meta={pendingLabel || <span className="mono">{record.model}{record.speed && record.speed !== 'normal' ? ` · ${record.speed}` : ''}{queuedSends[record.id]?.length ? ` · ${queuedSends[record.id].length} queued` : ''}</span>}
                 selected={record.id === activeId}
                 onClick={() => void select(record.id).then(onSelected)}
-                actions={<Button variant="ghost" disabled={Boolean(pendingLabel)} title="Conversation actions" onClick={() => setActionsFor({ id: record.id, name: record.name, important: record.important })}>•••</Button>}
+                actions={<Button variant="ghost" disabled={Boolean(pendingLabel)} title="Conversation actions" aria-label="Conversation actions" onClick={() => setActionsFor({ id: record.id, name: record.name, important: record.important })}><Icon name="dots" size={14} /></Button>}
               />
             )
           })}{query.trim().length >= 2 && <RemoteView remote={searchResults}>{(hits) => {

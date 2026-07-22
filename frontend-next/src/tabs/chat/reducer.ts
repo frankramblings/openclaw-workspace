@@ -18,6 +18,9 @@ export interface Bubble {
   cards: ToolCard[]
   images: { url: string; prompt?: string }[]
   attachments?: { id: string; name: string; url?: string }[]
+  /** Per-message model/timestamp from history metadata (classic meta row). */
+  model?: string
+  ts?: number
 }
 
 export interface Turn {

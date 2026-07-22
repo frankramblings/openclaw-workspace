@@ -61,6 +61,8 @@ export function parseHistory(items: HistoryItem[]): Bubble[] {
       cards: role === 'assistant' ? historyCards(metadata, index) : [],
       images: [],
       attachments: role === 'user' ? historyAttachments(item.attachments) : [],
+      ...(typeof metadata.model === 'string' && metadata.model ? { model: metadata.model } : {}),
+      ...(typeof metadata.timestamp === 'number' ? { ts: metadata.timestamp } : {}),
     }
   })
 }

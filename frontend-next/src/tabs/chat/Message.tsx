@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Icon } from '../../kit/icons'
 import { renderMarkdown } from '../../lib/markdown'
 import { enhanceMessageEl } from '../../lib/enhance'
 import { ActivityTrail } from './ActivityTrail'
@@ -218,7 +219,11 @@ export function Message({ bubble, streaming }: { bubble: Bubble; streaming?: boo
 
   return (
     <article className={`msg ${bubble.role}`} data-message-id={bubble.id}>
-      <div className="msg-role">{bubble.role === 'user' ? 'You' : 'Gary'}</div>
+      <div className="msg-role">
+        {bubble.role === 'user' ? 'You' : 'Gary'}
+        {bubble.role === 'assistant' && bubble.model && <span className="model">{bubble.model}</span>}
+        {bubble.ts && <span className="time">{new Date(bubble.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>}
+      </div>
       <ThinkBlock text={bubble.thinking} />
       <ActivityTrail cards={bubble.cards} />
       {bubble.text && <Md src={bubble.text} streaming={streaming} />}
@@ -232,13 +237,13 @@ export function Message({ bubble, streaming }: { bubble: Bubble; streaming?: boo
         ? <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer">📎 {attachment.name}</a>
         : <span key={attachment.id}>📎 {attachment.name}</span>)}</div>}
       {bubble.text && <div className="msg-tools" aria-label="Message actions">
-        <button className="msg-tool" type="button" title="Copy message" onClick={() => void copy()} aria-label="Copy message"><span aria-hidden="true">⧉</span></button>
-        <button className="msg-tool" type="button" title="Branch conversation here" onClick={() => void branch(bubble.id)} aria-label="Branch here"><span aria-hidden="true">↳</span></button>
-        <button className="msg-tool" type="button" title="Download Markdown" onClick={download} aria-label="Download message"><span aria-hidden="true">↓</span></button>
+        <button className="msg-tool" type="button" title="Copy message" onClick={() => void copy()} aria-label="Copy message"><Icon name="copy" size={13} /></button>
+        <button className="msg-tool" type="button" title="Branch conversation here" onClick={() => void branch(bubble.id)} aria-label="Branch here"><Icon name="branch" size={13} /></button>
+        <button className="msg-tool" type="button" title="Download Markdown" onClick={download} aria-label="Download message"><Icon name="download" size={13} /></button>
         <button className="msg-tool" type="button" title="Download PDF" onClick={() => void pdf()} aria-label="Download message as PDF"><span aria-hidden="true">PDF</span></button>
-        {bubble.role === 'user' && <button className="msg-tool" type="button" title="Edit message" onClick={handleEditStart} aria-label="Edit message"><span aria-hidden="true">✎</span></button>}
+        {bubble.role === 'user' && <button className="msg-tool" type="button" title="Edit message" onClick={handleEditStart} aria-label="Edit message"><Icon name="pencil" size={13} /></button>}
         {bubble.role === 'assistant' && <div style={{ position: 'relative' }} ref={retryMenuRef}>
-          <button className="msg-tool" type="button" title="Retry options" onClick={() => setRetryMenuOpen(!retryMenuOpen)} aria-label="Retry options"><span aria-hidden="true">↻</span></button>
+          <button className="msg-tool" type="button" title="Retry options" onClick={() => setRetryMenuOpen(!retryMenuOpen)} aria-label="Retry options"><Icon name="refresh" size={13} /></button>
           {retryMenuOpen && <div className="msg-retry-menu" role="menu">
             <button className="msg-retry-item" type="button" onClick={() => void regenerate(bubble.id)} role="menuitem">Retry</button>
             {modelChoices.map((choice) => (
@@ -254,7 +259,7 @@ export function Message({ bubble, streaming }: { bubble: Bubble; streaming?: boo
               </button>
             ))}
           </div>}
-          <button className="msg-tool" type="button" title="Continue response" onClick={() => continueFrom(bubble.id)} aria-label="Continue response"><span aria-hidden="true">▸</span></button>
+          <button className="msg-tool" type="button" title="Continue response" onClick={() => continueFrom(bubble.id)} aria-label="Continue response"><Icon name="play" size={12} /></button>
         </div>}
         {notice && <span role="status" className="msg-tool-status">{notice}</span>}
       </div>}

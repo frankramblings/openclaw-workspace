@@ -238,4 +238,35 @@ describe('theme', () => {
     expect(document.documentElement.style.getPropertyValue('--bg').trim()).toBe('#111111');
     expect(localStorage.getItem(THEME_CACHE_KEY)).toBeNull();
   });
+
+  it('case 10: device theme (odysseus-theme) WINS over the server pref — classic LS-first semantics', async () => {
+    // The device's classic LS holds the theme the user actually sees at /.
+    localStorage.setItem(CLASSIC_THEME_KEY, JSON.stringify({
+      name: 'midnight', colors: { bg: '#0d1117', fg: '#c9d1d9', panel: '#161b22', border: '#30363d', red: '#f85149' },
+    }));
+    // A stale/foreign server pref must NOT be fetched-and-applied over it.
+    const themeFetch = vi.fn((url: string) => {
+      if (url === '/api/prefs/theme') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ key: 'theme', value: { name: 'fortress', colors: { bg: '#07131f', fg: '#e7eef8', panel: '#0e2748', border: '#3b6d96' } } }) } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ accent: '#4fe3d1' }) } as Response);
+    });
+    vi.stubGlobal('fetch', themeFetch);
+
+    await initTheme();
+
+    expect(document.documentElement.style.getPropertyValue('--bg').trim()).toBe('#0d1117');
+    expect(themeFetch.mock.calls.map((call) => call[0])).not.toContain('/api/prefs/theme');
+    expect(localStorage.getItem(THEME_CACHE_KEY)).toBeNull();
+  });
+
+  it('case 11: classic device theme outranks the next-theme-cache mirror', async () => {
+    localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ name: 'fortress', colors: { bg: '#07131f', fg: '#e7eef8', panel: '#0e2748', border: '#3b6d96' } }));
+    localStorage.setItem(CLASSIC_THEME_KEY, JSON.stringify({ name: 'midnight', colors: { bg: '#0d1117', fg: '#c9d1d9', panel: '#161b22', border: '#30363d' } }));
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))));
+
+    await initTheme();
+
+    expect(document.documentElement.style.getPropertyValue('--bg').trim()).toBe('#0d1117');
+  });
 });

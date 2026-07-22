@@ -164,15 +164,18 @@ export function applyAccent(hex: string): void {
 }
 
 export async function initTheme(): Promise<void> {
+  // Classic-exact precedence (theme.js _initWithSync): the DEVICE's theme wins
+  // — classic LS first (what the user actually sees at /), then /next's own
+  // mirror for classic-never-ran devices. The server pref is a seed for blank
+  // devices only; it must never override a local choice.
+  let haveDeviceTheme = false
   try {
-    let cached = localStorage.getItem(THEME_CACHE_KEY)
-    if (!cached) {
-      cached = localStorage.getItem(CLASSIC_THEME_KEY)
-    }
+    const cached = localStorage.getItem(CLASSIC_THEME_KEY) ?? localStorage.getItem(THEME_CACHE_KEY)
     if (cached) {
       const pref = normalizeThemePref(JSON.parse(cached))
       if (pref) {
         applyTheme(pref)
+        haveDeviceTheme = true
       }
     }
   } catch (e) {}
@@ -184,7 +187,7 @@ export async function initTheme(): Promise<void> {
     }
   } catch (e) {}
 
-  const themePromise = (async () => {
+  const themePromise = haveDeviceTheme ? Promise.resolve() : (async () => {
     try {
       const response = await fetch('/api/prefs/theme')
       if (!response.ok) return

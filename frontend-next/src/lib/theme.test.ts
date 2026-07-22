@@ -6,7 +6,9 @@ import {
   normalizeThemePref,
   THEME_CACHE_KEY,
   CLASSIC_THEME_KEY,
-  ACCENT_KEY
+  ACCENT_KEY,
+  saveTheme,
+  persistAccent
 } from './theme';
 
 vi.mock('./constellations', () => ({
@@ -268,5 +270,43 @@ describe('theme', () => {
     await initTheme();
 
     expect(document.documentElement.style.getPropertyValue('--bg').trim()).toBe('#0d1117');
+  });
+
+  it('case 12: applyTheme derives readable secondary tokens from the theme colors', () => {
+    applyTheme({ colors: { bg: '#07131f', fg: '#e7eef8', panel: '#0e2748', border: '#3b6d96' } });
+    const get = (name: string) => document.documentElement.style.getPropertyValue(name).trim();
+    expect(get('--mut')).toBe('#9ba4ae');
+    expect(get('--faint')).toBe('#6a737e');
+    expect(get('--bd')).toBe('#222d39');
+    expect(get('--chrome')).toBe('#060f19');
+  });
+
+  it('case 13: saveTheme applies, writes both LS keys classic-shaped, and PUTs the server pref', () => {
+    localStorage.setItem(CLASSIC_THEME_KEY, JSON.stringify({ name: 'fortress', colors: { bg: '#07131f', fg: '#e7eef8', panel: '#0e2748', border: '#3b6d96' }, bgPattern: 'constellations' }));
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => { calls.push([url, init]); return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response) }));
+
+    const midnight = { bg: '#0d1117', fg: '#c9d1d9', panel: '#161b22', border: '#30363d', red: '#f85149' };
+    saveTheme('midnight', midnight);
+
+    expect(document.documentElement.style.getPropertyValue('--bg').trim()).toBe('#0d1117');
+    const stored = JSON.parse(localStorage.getItem(CLASSIC_THEME_KEY)!);
+    expect(stored).toEqual({ name: 'midnight', colors: midnight, bgPattern: 'constellations' });
+    expect(JSON.parse(localStorage.getItem(THEME_CACHE_KEY)!)).toEqual(stored);
+    const put = calls.find(([url]) => url === '/api/prefs/theme');
+    expect(put?.[1]?.method).toBe('PUT');
+    expect(JSON.parse(String(put?.[1]?.body)).value).toEqual(stored);
+  });
+
+  it('case 14: persistAccent applies, stores oc-accent, and syncs both server stores', () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn((url: string) => { calls.push(url); return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response) }));
+
+    persistAccent('#7bb6ff');
+
+    expect(document.documentElement.style.getPropertyValue('--accent').trim()).toBe('#7bb6ff');
+    expect(localStorage.getItem(ACCENT_KEY)).toBe('#7bb6ff');
+    expect(calls).toContain('/api/prefs/accent');
+    expect(calls).toContain('/api/auth/settings');
   });
 });

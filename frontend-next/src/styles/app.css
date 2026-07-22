@@ -2389,8 +2389,8 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .next-chat-header{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:50px;padding:0 18px;border-bottom:1px solid var(--bd2);background:transparent}
 .next-chat-header h2{margin:0;font-size:15px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .next-chat-header p{margin:1px 0 0;font-size:12.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.next-chat-header-actions .btn{height:26px;padding:0 10px;font-size:12.5px;color:var(--faint);border-radius:7px;background:transparent}
-.next-chat-header-actions .btn:hover:not(:disabled){color:var(--mut)}
+.next-chat-header-actions .btn{height:26px;padding:0 10px;font-size:12.5px;color:var(--mut);border-radius:7px;background:transparent}
+.next-chat-header-actions .btn:hover:not(:disabled){color:var(--fg)}
 .next-chat-header-actions .btn:disabled{opacity:.4}
 .next-chat-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
 .next-chat-header-actions [role=status]{font-size:11px;color:var(--faint)}
@@ -2453,6 +2453,19 @@ article.msg:hover .msg-tools,article.msg:focus-within .msg-tools{opacity:1;trans
 /* Live turn */
 .live-turn{margin-bottom:24px}
 .live-turn-status{font-size:12px;color:var(--faint);margin:8px 0 0;font-style:italic}
+
+/* ── Appearance editor (Settings) — classic .set-accents idiom ── */
+.next-appearance{display:flex;flex-direction:column;gap:12px}
+.next-appearance-preset{display:grid;gap:4px;max-width:260px}
+.next-appearance-colors{display:flex;gap:14px;flex-wrap:wrap}
+.next-appearance-colors label{display:grid;gap:4px;font-size:12px;color:var(--mut)}
+.next-appearance-colors input[type=color]{width:46px;height:30px;padding:2px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);cursor:pointer}
+.next-appearance-label{margin:0;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--faint);text-transform:uppercase}
+.next-appearance .set-accent{border:none;padding:0;cursor:pointer}
+.next-appearance .set-accent svg{stroke:var(--ink)}
+.next-appearance .set-accent-custom{position:relative;cursor:pointer}
+.next-appearance .set-accent-custom input{opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer}
+.next-appearance small{color:var(--faint);font-size:12px}
 
 /* ── Activity trail (details/summary flavor of classic .act-*) ── */
 .act-wrap summary{list-style:none;cursor:pointer}

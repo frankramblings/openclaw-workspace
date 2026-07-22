@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 // filled accent (primary), .btn-ghost the quiet variant. "danger" borrows the
 // base with the red token, matching classic destructive buttons.
 const VARIANT_CLASS = {
-  primary: 'btn btn-acc',
+  primary: 'btn btn-teal',
   ghost: 'btn btn-ghost',
   danger: 'btn btn-danger-next',
   plain: 'btn',

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Chip, EmptyState, ListRow, Modal, RemoteView, SectionHeader } from '../../kit'
+import { Icon } from '../../kit/icons'
 import { useChatStore } from './store'
 import { usePaletteStore } from '../../shell/palette/store'
 
@@ -37,8 +38,8 @@ export function SessionList({ onSelected }: { onSelected?: () => void } = {}) {
       <SectionHeader
         title="Conversations"
         actions={<>
-          <Button variant="ghost" title="Search (⌘K)" onClick={() => setPaletteOpen(true)}>🔍</Button>
-          <Button variant="primary" disabled={Boolean(pending.new)} onClick={() => void createSession()}>New chat</Button>
+          <Button variant="ghost" title="Search (⌘K)" aria-label="Search (⌘K)" onClick={() => setPaletteOpen(true)}><Icon name="search" size={14} /></Button>
+          <Button variant="primary" disabled={Boolean(pending.new)} onClick={() => void createSession()}><Icon name="plus" size={14} /> New conversation</Button>
         </>}
       />
       <label className="next-chat-search">

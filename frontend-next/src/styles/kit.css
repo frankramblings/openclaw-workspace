@@ -2,7 +2,7 @@
    didn't already have as reusable classes. Everything derives from tokens. */
 
 /* Card */
-.next-card{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.2)}
+.next-card{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:14px 16px}
 .next-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .next-card-title{margin:0;font-size:13.5px;font-weight:600;color:var(--fg)}
 
@@ -34,7 +34,7 @@
 /* Rows */
 .next-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:default;transition:background .1s,box-shadow .1s}
 .next-row[role="button"]{cursor:pointer}
-.next-row:hover{background:rgba(255,255,255,.06)}
+.next-row:hover{background:var(--row-hover)}
 .next-row.is-selected{background:var(--tealtint);outline:1px solid rgba(61,213,200,.25)}
 .next-row-main{flex:1;min-width:0}
 .next-row-title{font-size:13.5px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -1,3 +1,4 @@
+import { Icon } from './icons'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useHistoryLayer } from '../shell/useHistoryLayer'
 
@@ -74,7 +75,7 @@ export function Modal({ open, onClose, title, children }: {
       >
         <header className="next-modal-head">
           <h3 className="next-modal-title">{title}</h3>
-          <button type="button" className="btn btn-ghost btn-sm" aria-label="Close" onClick={close}>✕</button>
+          <button type="button" className="btn btn-ghost btn-sm" aria-label="Close" onClick={close}><Icon name="x" size={14} /></button>
         </header>
         <div className="next-modal-body">{children}</div>
       </div>

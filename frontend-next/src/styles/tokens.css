@@ -1,54 +1,40 @@
+/* Design tokens — verbatim from the classic redesign (frontend-overrides/redesign.css
+   working tree). /next must stay value-identical to classic here; runtime theming
+   (src/lib/theme.ts) overrides --bg/--fg/--panel/--border/--red and the accent
+   family on documentElement, exactly like classic's theme.js/settings.js. */
+
 /* Self-hosted MonoLisa */
 @font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('/static/fonts/MonoLisa-normal.woff2') format('woff2'); }
 @font-face { font-family: 'MonoLisa'; font-weight: 100 900; font-style: italic; font-display: swap; src: url('/static/fonts/MonoLisa-italic.woff2') format('woff2'); }
 
-/* Self-hosted Bear Sans UI — UI sans-serif face */
+/* Self-hosted Bear Sans UI — sans/prose face. MonoLisa stays reserved for code and machine data. */
 @font-face { font-family: 'Bear Sans UI'; font-weight: 400; font-style: normal; font-display: swap; src: url('/static/fonts/BearSansUI-Regular.otf') format('opentype'); }
-@font-face { font-family: 'Bear Sans UI'; font-weight: 500; font-style: normal; font-display: swap; src: url('/static/fonts/BearSansUI-Medium.otf') format('opentype'); }
-@font-face { font-family: 'Bear Sans UI'; font-weight: 700; font-style: normal; font-display: swap; src: url('/static/fonts/BearSansUI-Bold.otf') format('opentype'); }
 @font-face { font-family: 'Bear Sans UI'; font-weight: 400; font-style: italic; font-display: swap; src: url('/static/fonts/BearSansUI-Italic.otf') format('opentype'); }
+@font-face { font-family: 'Bear Sans UI'; font-weight: 500; font-style: normal; font-display: swap; src: url('/static/fonts/BearSansUI-Medium.otf') format('opentype'); }
 @font-face { font-family: 'Bear Sans UI'; font-weight: 500; font-style: italic; font-display: swap; src: url('/static/fonts/BearSansUI-MediumItalic.otf') format('opentype'); }
-@font-face { font-family: 'Bear Sans UI'; font-weight: 700; font-style: italic; font-display: swap; src: url('/static/fonts/BearSansUI-BoldItalic.otf') format('opentype'); }
-
-/* Self-hosted Hanken Grotesk — prose face for chat message text (code/UI stay MonoLisa) */
-@font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('/static/fonts/HankenGrotesk-latin.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: normal; font-display: swap; src: url('/static/fonts/HankenGrotesk-latin-ext.woff2') format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
-@font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: italic; font-display: swap; src: url('/static/fonts/HankenGrotesk-latin-it.woff2') format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: 'Hanken Grotesk'; font-weight: 100 900; font-style: italic; font-display: swap; src: url('/static/fonts/HankenGrotesk-latin-ext-it.woff2') format('woff2'); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
-
-/* =============================================================================
-   OpenClaw Workspace — Direction A ("Refined Charcoal") redesign
-   Parallel-entry prototype stylesheet. De-inlined from the design reference
-   (design_handoff_openclaw_workspace) into reusable classes.
-
-   This is the live app shell, served at /static/index.html (and /) since
-   2026-07. Tokens below mirror the handoff's :root; for
-   production integration they map onto the repo's Hermes vars
-   (--bg/--panel/--border/--fg/--accent…) and the accent becomes theme-driven.
-   ========================================================================== */
+@font-face { font-family: 'Bear Sans UI'; font-weight: 600 900; font-style: normal; font-display: swap; src: url('/static/fonts/BearSansUI-Bold.otf') format('opentype'); }
+@font-face { font-family: 'Bear Sans UI'; font-weight: 600 900; font-style: italic; font-display: swap; src: url('/static/fonts/BearSansUI-BoldItalic.otf') format('opentype'); }
 
 :root {
-  /* Backgrounds */
-  --bg:#1a1a1e; --panel:#232328; --panel2:#2c2c32; --elev:#36363d;
-  /* Sidebar chrome — semi-transparent for vibrancy */
-  --chrome:rgba(26,26,32,.78);
-  /* Borders — Apple uses near-invisible dividers, not hard lines */
-  --bd:rgba(255,255,255,.08); --bd2:rgba(255,255,255,.05);
-  --border:rgba(255,255,255,.08);
-  /* Text — Apple semantic labels */
-  --fg:#f5f5f7; --mut:rgba(235,235,245,.60); --faint:rgba(235,235,245,.30);
-  /* Accent */
-  --teal:#3dd5c8; --teal2:#2a9e95; --tealtint:rgba(61,213,200,.12);
-  --gold:#e8c268; --green:#32d74b; --red:#ff453a; --violet:#bf5af2; --blue:#0a84ff;
-  --amber:#ffd60a;
-  --ink:#0c1413;
-  --row-hover:rgba(255,255,255,.05);
-  /* Blue accent — the design's primary accent (#2f74e6 scheme) */
-  --acc:#2f74e6; --acc-d:#1a4bb5; --acc-txt:#8bb6f5;
-  /* Typography — Apple system fonts */
-  --sans:'Bear Sans UI',-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',system-ui,sans-serif;
-  --prose:'Bear Sans UI',-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',system-ui,sans-serif;
-  --mono:'MonoLisa',ui-monospace,'SF Mono',monospace;
+  --bg:#15161a; --panel:#1b1c21; --panel2:#212329; --elev:#262931;
+  --bd:#2d2f36; --bd2:#24262c;
+  /* aliases many rules already reference — defined so var() never falls back to inherit */
+  --border:#2d2f36; --chrome:#101115;
+  --fg:#dfe2e8; --mut:#9498a2; --faint:#5f636d;
+  --teal:#4fe3d1; --teal2:#2f8d83; --tealtint:rgba(79,227,209,.10);
+  --gold:#e8c268; --green:#5bd97f; --red:#f0726a; --violet:#a99bf5; --blue:#7bb6ff;
+  --amber:#d8a24a;
+  --ink:#0c1413;                 /* text/icon on teal fills */
+  --row-hover:#1d1f24;
+  --mono:'MonoLisa',ui-monospace,monospace;
+  --sans:'Bear Sans UI',ui-sans-serif,system-ui,sans-serif;
+  --prose:'Bear Sans UI',ui-sans-serif,system-ui,sans-serif;
+  /* accent is overridable at runtime (classic Appearance swatches) via --accent */
   --accent:var(--teal);
-}
+  /* Gary avatar (classic redesign asset; same origin serves /static) */
+  --gary-avatar:url('/static/redesign-assets/gary-outline.png');
 
+  /* LEGACY (Sonoma pass) aliases — every reference is being retired by the
+     classic-parity skin pass; delete this block when the last one goes. */
+  --acc:var(--accent); --acc-d:var(--teal2); --acc-txt:var(--accent);
+}

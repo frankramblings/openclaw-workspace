@@ -1,5 +1,6 @@
 import { useRef } from 'react'
-import { Button, EmptyState, RemoteView } from '../../kit'
+import { Button, RemoteView } from '../../kit'
+import { ChatWelcome } from './ChatWelcome'
 import { Message } from './Message'
 import { PendingMessage } from './PendingMessage'
 import { useStickToBottom } from './useStickToBottom'
@@ -17,7 +18,7 @@ export function Thread() {
 
   const { pinned, jumpToBottom } = useStickToBottom(threadRef)
 
-  if (!activeId) return <EmptyState title="Choose a conversation" hint="Select one from the sidebar or create a new chat." />
+  if (!activeId) return <ChatWelcome />
 
   const showLive = live && live.status !== 'done'
   // Pill is specifically "there's an active stream you're missing" (design
@@ -33,7 +34,7 @@ export function Thread() {
       <RemoteView
         remote={history}
         onRetry={() => void select(activeId)}
-        empty={showLive ? null : <EmptyState title="No messages yet" hint="Send a message to start this conversation." />}
+        empty={showLive ? null : <ChatWelcome />}
       >
         {(bubbles) => <>{bubbles.map((bubble) => <Message key={bubble.id} bubble={bubble} />)}</>}
       </RemoteView>

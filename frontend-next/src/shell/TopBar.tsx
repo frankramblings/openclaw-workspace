@@ -1,4 +1,5 @@
 import { TABS } from '../tabs/registry'
+import { Icon } from '../kit/icons'
 import { useAppStore } from '../store/app'
 import { useWorkspaceStore } from './workspace/store'
 import { useTerminalPanel } from './terminal/store'
@@ -29,12 +30,6 @@ export function TopBar({ tab, navigate }: { tab: string; navigate: (tab: string)
 
   return (
     <header className="next-topbar">
-      <div className="next-topbar-lights" aria-hidden="true">
-        <span className="next-topbar-light next-topbar-light-red" />
-        <span className="next-topbar-light next-topbar-light-yellow" />
-        <span className="next-topbar-light next-topbar-light-green" />
-      </div>
-
       <div className="next-topbar-brand" title={agentName}><span>{agentName}</span></div>
 
       <nav className="next-topbar-nav" aria-label="Primary">
@@ -47,7 +42,7 @@ export function TopBar({ tab, navigate }: { tab: string; navigate: (tab: string)
               aria-current={t.id === tab ? 'page' : undefined}
               onClick={() => navigate(t.id)}
             >
-              <span className="next-topbar-tab-icon" aria-hidden="true">{t.icon}</span>
+              <span className="next-topbar-tab-icon" aria-hidden="true"><Icon name={t.icon} size={16} /></span>
               <span className="next-topbar-tab-label">{t.label}</span>
             </button>
           ))}
@@ -64,7 +59,7 @@ export function TopBar({ tab, navigate }: { tab: string; navigate: (tab: string)
               title={t.label}
               onClick={() => navigate(t.id)}
             >
-              <span aria-hidden="true">{t.icon}</span>
+              <span aria-hidden="true"><Icon name={t.icon} size={16} /></span>
             </button>
           ))}
         </div>
@@ -85,9 +80,9 @@ export function TopBar({ tab, navigate }: { tab: string; navigate: (tab: string)
         <span>{working ? 'Working' : 'Idle'}</span>
       </span>
 
-      <button type="button" className="next-topbar-util" title="Terminal" aria-label="Terminal" onClick={() => showTerminal()}>⌘</button>
-      <button type="button" className="next-topbar-util" title="Workspace" aria-label="Workspace" onClick={showWorkspace}>📁</button>
-      <button type="button" className="next-topbar-util" title="Tasks" aria-label="Tasks" onClick={showTasks}>✓</button>
+      <button type="button" className="next-topbar-util" title="Terminal" aria-label="Terminal" onClick={() => showTerminal()}><Icon name="terminal" size={15} /></button>
+      <button type="button" className="next-topbar-util" title="Workspace" aria-label="Workspace" onClick={showWorkspace}><Icon name="folder" size={15} /></button>
+      <button type="button" className="next-topbar-util" title="Tasks" aria-label="Tasks" onClick={showTasks}><Icon name="check" size={15} /></button>
       <a className="next-topbar-classic" href="/" title="Open the classic app">classic ↗</a>
     </header>
   )

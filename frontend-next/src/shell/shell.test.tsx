@@ -40,7 +40,8 @@ test('top bar renders all 12 tabs from the registry, labelled or icon-only', asy
 
 test('agent name comes from /api/config, not a hardcoded string', async () => {
   await act(async () => { render(<App />) })
-  expect(await screen.findByText('TestAgent')).toBeTruthy()
+  // Appears in both the top-bar brand and the chat welcome (classic parity).
+  expect((await screen.findAllByText('TestAgent')).length).toBeGreaterThan(0)
 })
 
 test('hash change switches the rendered tab; unknown hash falls back to chat', async () => {

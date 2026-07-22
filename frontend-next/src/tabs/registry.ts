@@ -2,6 +2,7 @@
 // line: its tab's Component, from the StubTab placeholder to the real one.
 // Order = rail order = priority order from the plan.
 import type { ComponentType } from 'react'
+import type { IconName } from '../kit/icons'
 import { ChatTab } from './chat'
 import { InboxTab } from './inbox'
 import { EmailTab } from './email'
@@ -18,8 +19,8 @@ import { SettingsTab } from './settings'
 export interface TabDef {
   id: string
   label: string
-  /** Single glyph placeholder for the rail (icon set lands with each tab). */
-  icon: string
+  /** Classic line-icon key (src/kit/icons.tsx), rendered by the top bar. */
+  icon: IconName
   order: number
   Component: ComponentType
 }
@@ -29,18 +30,18 @@ export interface TabDef {
 export const DEFAULT_TAB = 'chat'
 
 export const TABS: TabDef[] = [
-  { id: 'chat', label: 'Chat', icon: '💬', order: 1, Component: ChatTab },
-  { id: 'inbox', label: 'Inbox', icon: '📥', order: 2, Component: InboxTab },
-  { id: 'email', label: 'Email', icon: '✉️', order: 3, Component: EmailTab },
-  { id: 'calendar', label: 'Calendar', icon: '📅', order: 4, Component: CalendarTab },
-  { id: 'notes', label: 'Notes', icon: '📝', order: 5, Component: NotesTab },
-  { id: 'documents', label: 'Documents', icon: '📄', order: 6, Component: DocumentsTab },
-  { id: 'research', label: 'Research', icon: '🔎', order: 7, Component: ResearchTab },
-  { id: 'library', label: 'Library', icon: '📚', order: 8, Component: LibraryTab },
-  { id: 'cron', label: 'Cron', icon: '⏰', order: 9, Component: CronTab },
-  { id: 'memory', label: 'Memory', icon: '🧠', order: 10, Component: MemoryTab },
-  { id: 'skills', label: 'Skills', icon: '⚡', order: 11, Component: SkillsTab },
-  { id: 'settings', label: 'Settings', icon: '⚙️', order: 12, Component: SettingsTab },
+  { id: 'chat', label: 'Chat', icon: 'chat', order: 1, Component: ChatTab },
+  { id: 'inbox', label: 'Inbox', icon: 'inbox', order: 2, Component: InboxTab },
+  { id: 'email', label: 'Email', icon: 'email', order: 3, Component: EmailTab },
+  { id: 'calendar', label: 'Calendar', icon: 'calendar', order: 4, Component: CalendarTab },
+  { id: 'notes', label: 'Notes', icon: 'notes', order: 5, Component: NotesTab },
+  { id: 'documents', label: 'Documents', icon: 'file', order: 6, Component: DocumentsTab },
+  { id: 'research', label: 'Research', icon: 'research', order: 7, Component: ResearchTab },
+  { id: 'library', label: 'Library', icon: 'library', order: 8, Component: LibraryTab },
+  { id: 'cron', label: 'Cron', icon: 'clock', order: 9, Component: CronTab },
+  { id: 'memory', label: 'Memory', icon: 'archive', order: 10, Component: MemoryTab },
+  { id: 'skills', label: 'Skills', icon: 'code', order: 11, Component: SkillsTab },
+  { id: 'settings', label: 'Settings', icon: 'settings', order: 12, Component: SettingsTab },
 ]
 
 export function tabById(id: string): TabDef {

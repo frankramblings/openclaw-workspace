@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Icon } from '../kit/icons'
 import { TerminalInstance } from './terminal/TerminalInstance'
 import { useChatStore } from '../tabs/chat/store'
 import { useWorkspaceStore, type WorkspaceNode } from './workspace/store'
@@ -21,7 +22,7 @@ function FileNode({ node, depth, onOpen }: { node: WorkspaceNode; depth: number;
           onClick={() => setExpanded((v) => !v)}
         >
           <span className="next-dock-files-chevron">{expanded ? '▾' : '▸'}</span>
-          <span className="next-dock-files-icon">📁</span>
+          <span className="next-dock-files-icon"><Icon name="folder" size={13} /></span>
           <span className="next-dock-files-name">{node.name}</span>
         </button>
         {expanded && node.children?.map((child) => (
@@ -38,7 +39,7 @@ function FileNode({ node, depth, onOpen }: { node: WorkspaceNode; depth: number;
       style={{ paddingLeft: `${8 + depth * 14 + 16}px` }}
       onClick={() => onOpen(node.path)}
     >
-      <span className="next-dock-files-icon">📄</span>
+      <span className="next-dock-files-icon"><Icon name="file" size={12} /></span>
       <span className="next-dock-files-name">{node.name}</span>
       {node.size != null && <span className="next-dock-files-size">{node.size < 1024 ? `${node.size}B` : node.size < 1048576 ? `${(node.size / 1024).toFixed(0)}K` : `${(node.size / 1048576).toFixed(1)}M`}</span>}
     </button>
@@ -115,9 +116,9 @@ export function Dock() {
         >
           {open ? '▾' : '▸'}
         </button>
-        <button type="button" className={`next-dock-tab${activeTab === 'terminal' ? ' is-active' : ''}`} onClick={() => pick('terminal')}>›_ Terminal</button>
-        <button type="button" className={`next-dock-tab${activeTab === 'files' ? ' is-active' : ''}`} onClick={() => pick('files')}>📁 Files</button>
-        <button type="button" className={`next-dock-tab${activeTab === 'problems' ? ' is-active' : ''}`} onClick={() => pick('problems')}>⚠ Problems</button>
+        <button type="button" className={`next-dock-tab${activeTab === 'terminal' ? ' is-active' : ''}`} onClick={() => pick('terminal')}><Icon name="terminal" size={13} /> Terminal</button>
+        <button type="button" className={`next-dock-tab${activeTab === 'files' ? ' is-active' : ''}`} onClick={() => pick('files')}><Icon name="folder" size={13} /> Files</button>
+        <button type="button" className={`next-dock-tab${activeTab === 'problems' ? ' is-active' : ''}`} onClick={() => pick('problems')}><Icon name="warning" size={13} /> Problems</button>
         <span className="next-dock-spacer" />
         {key && (
           <select

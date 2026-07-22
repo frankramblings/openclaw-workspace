@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { Button, Chip } from '../../kit'
+import { Icon } from '../../kit/icons'
 import { beginUploads, failUploads, resolveUploads, sendableAttach, uploadGate, type PendingAttachment } from './attachments'
+import { FILL_COMPOSER_EVENT } from './ChatWelcome'
 import { useChatStore } from './store'
 import { useSuggest } from './useSuggest'
 import { useRecorder } from './useRecorder'
@@ -42,6 +44,13 @@ export function Composer() {
   const context = usage.status === 'ready' && usage.data.ok ? usage.data.context : null
   const contextPct = context && Number.isFinite(context.usedPct) ? Math.max(0, Math.min(100, context.usedPct)) : null
   const slashCommands = slashDismissed ? [] : filterSlashCommands(draft, slashForced)
+
+  // Welcome-screen quick chips fill the draft (classic fillComposer semantics).
+  useEffect(() => {
+    const fill = (e: Event) => setDraft(String((e as CustomEvent).detail ?? ''))
+    window.addEventListener(FILL_COMPOSER_EVENT, fill)
+    return () => window.removeEventListener(FILL_COMPOSER_EVENT, fill)
+  }, [])
 
   const chooseSlash = (index: number) => {
     const command = slashCommands[index]
@@ -236,7 +245,7 @@ export function Composer() {
             onClick={() => void toggleRecorder()}
             data-mic-state={recorderState}
           >
-            {recorderState === 'transcribing' ? '⟳' : '🎤'}
+            {recorderState === 'transcribing' ? <Icon name="refresh" size={14} /> : <Icon name="mic" size={15} />}
           </Button>
         </div>}
         <Button variant="ghost" disabled={!sessionId} title="Slash commands" onClick={() => { setSlashForced((open) => !open); setSlashDismissed(false); setSlashIndex(0) }}>/</Button>
@@ -255,7 +264,7 @@ export function Composer() {
         </div>}
         {working
           ? <Button variant="danger" onClick={() => void stop()}>Stop</Button>
-          : <Button variant="send" aria-label="Send message" disabled={!sessionId || creatingSession || (!draft.trim() && attachments.length === 0)} onClick={submit}>↑</Button>}
+          : <Button variant="send" aria-label="Send message" disabled={!sessionId || creatingSession || (!draft.trim() && attachments.length === 0)} onClick={submit}><Icon name="send" /></Button>}
       </div>
       {(notice || recorderError) && <p role="alert" className="next-error-detail">{recorderError || notice}</p>}
     </section>

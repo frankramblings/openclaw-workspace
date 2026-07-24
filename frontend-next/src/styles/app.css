@@ -63,6 +63,13 @@ html.shell-mobile body.oc-doc-docked{padding-right:0}
 textarea,input{font-family:var(--sans);color:var(--fg);outline:none}
 textarea::placeholder,input::placeholder{color:var(--faint)}
 input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
+/* Baseline chrome for bare form controls (tab toolbars, modals) so nothing
+   ships browser-default white borders; components with their own classes
+   override normally. Special input types keep native rendering. */
+input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range]):not([type=file]),
+select,textarea{background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:7px 10px;font-size:13px;color:var(--fg)}
+select{font-family:var(--sans);cursor:pointer}
+select:focus{border-color:var(--teal2)}
 ::selection{background:color-mix(in srgb,var(--teal) 28%,transparent)}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:#2d2f36;border-radius:7px;border:2px solid transparent;background-clip:padding-box}
@@ -2398,7 +2405,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .next-conversation-actions{display:grid;gap:8px}.next-conversation-actions .btn{text-align:left;justify-content:flex-start}
 .composer>.slash-menu{left:0;right:0;bottom:calc(100% + 8px);margin:0}.composer>.slash-menu .slash-cmd{width:100%;border:0;background:transparent;color:var(--fg);text-align:left}.composer>.slash-menu .slash-cmd.sel{background:var(--row-hover)}.composer>.slash-menu .glyph{width:24px}.composer>.slash-menu .name{font-family:var(--mono);font-size:13px;min-width:84px}.composer>.slash-menu .desc{font-size:12px;color:var(--mut)}
 .next-message-attachments{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}.next-message-attachments a,.next-message-attachments span{display:inline-flex;padding:6px 9px;border:1px solid var(--bd);border-radius:8px;color:var(--mut);font-size:12px;text-decoration:none}.next-message-attachments a:hover{color:var(--teal);border-color:var(--teal2)}
-@media(max-width:720px){.next-chat-header{align-items:flex-start;flex-direction:column}.next-chat-header-actions{justify-content:flex-start}.next-chat-header-actions .btn{font-size:11px;padding-inline:8px}}
+
 
 /* ── Chat message rendering — classic redesign values on the /next DOM.
    Classic renders .msg-user/.msg-asst; /next renders article.msg.user/.assistant

@@ -31,7 +31,8 @@ test('tabFromHash: parses tab, defaults to chat on empty/unknown shapes', () => 
 test('top bar renders all 12 tabs from the registry, labelled or icon-only', async () => {
   await act(async () => { render(<App />) })
   const nav = screen.getByRole('navigation', { name: 'Primary' })
-  const buttons = nav.querySelectorAll('.next-topbar-tab, .next-topbar-tab-sm')
+  // The phone More button shares the tab class but is chrome, not a registry tab.
+  const buttons = nav.querySelectorAll('.next-topbar-tab:not(.next-topbar-more), .next-topbar-tab-sm')
   expect(buttons.length).toBe(TABS.length)
   expect(TABS.length).toBe(12)
   // Every tab stays reachable by name even when it renders icon-only.

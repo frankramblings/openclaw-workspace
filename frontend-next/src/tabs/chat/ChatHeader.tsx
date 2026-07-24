@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Button } from '../../kit'
+import { Icon } from '../../kit/icons'
 import { esc } from '../../lib/markdown'
 import { safeDownloadSlug } from './parity'
 import type { Bubble } from './reducer'
@@ -24,7 +25,7 @@ function downloadBlob(blob: Blob, name: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
-export function ChatHeader() {
+export function ChatHeader({ onOpenConversations }: { onOpenConversations?: () => void } = {}) {
   const [notice, setNotice] = useState('')
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeSessionId)
@@ -91,7 +92,12 @@ export function ChatHeader() {
   }
 
   return <header className="next-chat-header">
-    <div><h2>{title}</h2><p>{active?.model || 'Chat'} · {bubbles.length} messages</p></div>
+    {onOpenConversations && (
+      <button type="button" className="next-chat-header-menu" aria-label="Conversations" onClick={onOpenConversations}>
+        <Icon name="panelShow" size={16} />
+      </button>
+    )}
+    <div className="next-chat-header-title"><h2>{title}</h2><p>{active?.model || 'Chat'} · {bubbles.length} messages</p></div>
     <div className="next-chat-header-actions">
       <Button variant="ghost" disabled={exportDisabled} onClick={() => void copy()}>Copy transcript</Button>
       <Button variant="ghost" disabled={exportDisabled} onClick={markdown}>Markdown</Button>

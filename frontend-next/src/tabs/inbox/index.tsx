@@ -24,10 +24,14 @@ function SwipeCard({ item, children, primary, dismiss }: { item: InboxItem; chil
   const start = useRef<{ x: number; y: number } | null>(null)
   const drag = useRef({ x: 0, y: 0 })
   const [offset, setOffset] = useState(0)
+  const [dragging, setDragging] = useState(false)
   const down = (event: ReactPointerEvent) => { if (event.pointerType !== 'mouse') start.current = { x: event.clientX, y: event.clientY } }
-  const move = (event: ReactPointerEvent) => { if (!start.current) return; const x = event.clientX - start.current.x, y = event.clientY - start.current.y; drag.current = { x, y }; if (Math.abs(x) > Math.abs(y) && Math.abs(x) > 10) { event.currentTarget.setPointerCapture(event.pointerId); setOffset(Math.max(-130, Math.min(130, x))) } }
-  const up = () => { const outcome = swipeOutcome(drag.current.x, drag.current.y); if (outcome === 'primary') primary(); else if (outcome === 'dismiss') dismiss(); setOffset(0); drag.current = { x: 0, y: 0 }; start.current = null }
-  return <div className="next-inbox-swipe" data-key={keyOf(item)}><div className="next-inbox-swipe-under"><span>{actionLabel(primaryActions(item)[0] || 'dismiss')}</span><span>Dismiss</span></div><article className="next-inbox-item" style={{ transform: `translateX(${offset}px)` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>{children}</article></div>
+  const move = (event: ReactPointerEvent) => { if (!start.current) return; const x = event.clientX - start.current.x, y = event.clientY - start.current.y; drag.current = { x, y }; if (Math.abs(x) > Math.abs(y) && Math.abs(x) > 10) { event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); setOffset(Math.max(-130, Math.min(130, x))) } }
+  const up = () => { const outcome = swipeOutcome(drag.current.x, drag.current.y); if (outcome === 'primary') primary(); else if (outcome === 'dismiss') dismiss(); setDragging(false); setOffset(0); drag.current = { x: 0, y: 0 }; start.current = null }
+  // The transform transition must be OFF while the finger drives the card —
+  // easing against live drag frames is what reads as "janky" — and ON only
+  // for the release spring-back.
+  return <div className="next-inbox-swipe" data-key={keyOf(item)}><div className="next-inbox-swipe-under"><span>{actionLabel(primaryActions(item)[0] || 'dismiss')}</span><span>Dismiss</span></div><article className="next-inbox-item" style={{ transform: `translateX(${offset}px)`, transition: dragging ? 'none' : undefined }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>{children}</article></div>
 }
 
 export function InboxTab() {

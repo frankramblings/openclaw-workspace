@@ -588,11 +588,43 @@ async def sessions():
     return sessions_store.list_sessions()
 
 
+async def _model_pair_error(endpoint_id: str | None, model: str | None) -> str | None:
+    """Reject DEFINITE cross-pairs only: a model the catalog lists under a
+    different endpoint than the one given (claude-cli + gpt-5.5 → the gateway
+    bounces every turn with "model not allowed"). Everything uncertain fails
+    open — unknown models ([1m]-style catalog drift), endpoints hidden from
+    the catalog (anthropic), the openclaw placeholder, catalog outages — so
+    an odd-but-working ref is never blocked by a stale or unreachable list."""
+    model = (model or "").strip()
+    ep = (endpoint_id or "").strip()
+    if not model or not ep or "openclaw" in (model, ep):
+        return None
+    try:
+        catalog = await bridge.fetch_models()
+    except Exception:  # noqa: BLE001 - gateway down → can't judge, allow
+        return None
+    owners: dict[str, set[str]] = {}
+    endpoints: set[str] = set()
+    for it in catalog.get("items") or []:
+        eid = it.get("endpoint_id") or ""
+        endpoints.add(eid)
+        for mid in (it.get("models") or []) + (it.get("models_extra") or []):
+            owners.setdefault(mid, set()).add(eid)
+    if ep in endpoints and model in owners and ep not in owners[model]:
+        return (f"model {model!r} is not available on endpoint {ep!r} "
+                f"(offered by: {', '.join(sorted(owners[model]))})")
+    return None
+
+
 @app.post("/api/session")
 async def create_session(name: str = Form(default=""), model: str = Form(default=""),
                          endpoint_url: str = Form(default=""),
                          endpoint_id: str = Form(default=""),
                          speed: str = Form(default="")):
+    if model or endpoint_id:
+        err = await _model_pair_error(endpoint_id, model)
+        if err:
+            return JSONResponse(status_code=400, content={"detail": err})
     return sessions_store.create(name=name or None, model=model or None,
                                  endpoint_url=endpoint_url or None,
                                  endpoint_id=endpoint_id or None,
@@ -737,6 +769,19 @@ async def patch_session(session_id: str, name: str = Form(default=None),
         "endpoint_url": endpoint_url, "endpoint_id": endpoint_id,
         "speed": speed,
     }.items() if v is not None}
+    # Guard the RESULTING (endpoint, model) pair, not just the sent fields: a
+    # partial PATCH (model alone / endpoint alone) inheriting the record's
+    # other half is exactly how cross-paired refs like claude-cli/gpt-5.5 got
+    # written — see _model_pair_error.
+    if "model" in fields or "endpoint_id" in fields:
+        rec = sessions_store.get(session_id)
+        if rec is None:
+            return JSONResponse(status_code=404, content={"detail": "no such session"})
+        err = await _model_pair_error(
+            fields.get("endpoint_id", rec.get("endpoint_id")),
+            fields.get("model", rec.get("model")))
+        if err:
+            return JSONResponse(status_code=400, content={"detail": err})
     return sessions_store.update(session_id, **fields) or JSONResponse(
         status_code=404, content={"detail": "no such session"})
 

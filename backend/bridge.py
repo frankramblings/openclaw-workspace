@@ -219,9 +219,15 @@ async def _open_turn(message, session_key, model_ref, attachments, run_info,
                 res = await _request(ws, "sessions.patch",
                                      {"key": session_key, "model": model_ref})
                 if not res.get("ok"):
-                    await _request(ws, "sessions.create",
-                                   {"key": session_key, "model": model_ref})
-                _pinned[session_key] = model_ref
+                    res = await _request(ws, "sessions.create",
+                                         {"key": session_key, "model": model_ref})
+                # Pin ONLY on success. Recording a failed pin (e.g. the gateway
+                # rejected the ref with "model not allowed") made every later
+                # turn skip re-pinning and silently run on whatever model the
+                # gateway session last had — the 2026-07-24 stuck-on-perplexity
+                # failure. Leaving it unpinned retries next turn instead.
+                if res.get("ok"):
+                    _pinned[session_key] = model_ref
             except Exception:  # noqa: BLE001 - fall back to the default model
                 pass
 

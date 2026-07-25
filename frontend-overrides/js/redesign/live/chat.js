@@ -2464,11 +2464,15 @@ export const actions = {
   setDefaultModel: async (id) => {
     const state = runtime.state;
     if (!state || !id) return;
+    // Only ids that resolve in the loaded catalog: an unresolved id would
+    // persist a model with a blank endpoint, and /api/default-chat would
+    // back-fill a provider that may not actually serve it (cross-pair).
     const item = (state.live && state.live.modelList || []).find((m) => m.id === id);
+    if (!item) return;
     state.live = state.live || {};
     state.live.defaultModel = id;
     runtime.render();
-    try { await apiJson('/api/default-chat', { model: item ? item.mid : id, endpoint_id: item ? (item.endpointId || '') : '' }); } catch (_) {}
+    try { await apiJson('/api/default-chat', { model: item.mid, endpoint_id: item.endpointId || '' }); } catch (_) {}
   },
 
   // Pick the chat model. `id` is the composite endpoint·model id. For a NEW chat,
@@ -2477,16 +2481,20 @@ export const actions = {
   setModel: (id) => {
     const state = runtime.state;
     if (!state || !id) return;
-    const chat = ensureChat(state);
+    // Only ids that resolve in the loaded catalog. The old fallback (treat an
+    // unresolved id as a bare model name and KEEP the chat's endpointId) is
+    // how cross-paired records like claude-cli/gpt-5.5 got written — the
+    // gateway then bounces every turn with "model not allowed".
     const item = (state.live && state.live.modelList || []).find((m) => m.id === id);
-    const mid = item ? item.mid : id;
-    chat.model = mid;
-    chat.endpointId = item ? item.endpointId : chat.endpointId;
-    chat.subtitle = `${Array.isArray(chat.thread) ? chat.thread.length : 0} messages · ${item ? item.name : mid}`;
+    if (!item) return;
+    const chat = ensureChat(state);
+    chat.model = item.mid;
+    chat.endpointId = item.endpointId;
+    chat.subtitle = `${Array.isArray(chat.thread) ? chat.thread.length : 0} messages · ${item.name}`;
     state.modelMenuOpen = false;
     runtime.render();
     if (chat.activeId) {
-      const fields = { model: mid };
+      const fields = { model: item.mid };
       if (chat.endpointId) fields.endpoint_id = chat.endpointId;
       apiForm(`/api/session/${chat.activeId}`, fields, { method: 'PATCH' }).catch(() => {});
     }

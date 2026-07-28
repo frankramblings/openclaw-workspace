@@ -533,6 +533,10 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                         session_key,
                         (turn_state.inflight_for(session_key) or {}).get("turn_id"),
                         phrase[:80])
+                    # ...and don't stop at a passive card: schedule a turn that
+                    # brings Gary back on his own so the promise doesn't die
+                    # silently until Frank speaks again.
+                    promise_guard.schedule_self_wake(session_key, phrase)
             except Exception:  # noqa: BLE001 - guard never breaks the turn
                 _log.warning("promise_guard emission failed", exc_info=True)
         # Final turn metrics: the vendor SPA renders a footer time from a

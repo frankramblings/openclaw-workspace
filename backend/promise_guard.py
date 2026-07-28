@@ -64,6 +64,71 @@ def check_turn(session_key: str, final_text: str) -> str | None:
         return None
 
 
+_WAKE_MARKER = "[[promise-wake]]"
+
+
+def _wake_seed(phrase: str) -> str:
+    """The user-role message that seeds the self-wake turn. First line is the
+    marker followup.history_card keys on to render a compact card."""
+    return "\n".join([
+        _WAKE_MARKER,
+        f'Follow-through check: at the end of your last turn you told Frank '
+        f'"{phrase}", but no waker was registered — so nothing was going to '
+        f'bring you back and the promise would have died silently until he '
+        f'spoke again.',
+        "",
+        "You're back now, on your own. Make good on it for the ACTUAL horizon "
+        "of what you promised:",
+        "- Can finish it now? Do it and report the outcome to Frank.",
+        "- Depends on a background job? (Re)start it under bin/followup so its "
+        "completion pings you, then tell Frank it's running.",
+        "- Genuinely later (hours/days)? Set a cron/reminder for that time and "
+        "tell Frank the plan + ETA in one line.",
+        "- Already handled or needs nothing? Say so briefly and stop.",
+        "",
+        "Do NOT just re-promise into the void — register a real waker "
+        "(followup/cron) or complete it. This nudge is rate-limited and won't "
+        "fire again for a while.",
+    ])
+
+
+def schedule_self_wake(session_key: str, phrase: str) -> str | None:
+    """Schedule a turn that brings Gary back after a hollow promise, so the
+    follow-up doesn't stall until the user speaks again. Rides the followup
+    sweeper (deadline passes → fired as 'overdue'). Deduped + cooldown-bounded
+    so a re-promising wake turn can't loop. Returns the promise id or None.
+    Never raises — a failure here just leaves the amber card as the only signal."""
+    try:
+        from . import config, followup, sessions_store
+        if not config.PROMISE_WAKE_ENABLED:
+            return None
+        session_id = sessions_store.id_for_session_key(session_key)
+        if not session_id:
+            return None
+        now_ms = int(time.time() * 1000)
+        cooldown_ms = max(0, config.PROMISE_WAKE_COOLDOWN_S) * 1000
+        mine = [p for p in followup.list_promises()
+                if p.get("origin") == "promise_wake"
+                and p.get("session_key") == session_key]
+        # One outstanding wake at a time...
+        if any(p.get("state") == "pending" for p in mine):
+            return None
+        # ...and not another within the cooldown window (bounds re-promise loops).
+        last = max((p.get("created", 0) for p in mine), default=0)
+        if last and now_ms - last < cooldown_ms:
+            return None
+        rec = followup.create_promise(
+            session_id, session_key, label="follow-up you promised",
+            deadline_s=max(1, config.PROMISE_WAKE_DELAY_S),
+            origin="promise_wake", seed_override=_wake_seed(phrase))
+        log.info("promise_guard scheduled self-wake %s for %s (%r)",
+                 rec.get("id"), session_key, phrase[:60])
+        return rec.get("id")
+    except Exception:  # noqa: BLE001 - scheduling must never break the turn
+        log.warning("promise_guard.schedule_self_wake failed", exc_info=True)
+        return None
+
+
 # --- persisted warnings (the amber card must survive a reload) ---------------
 import threading  # noqa: E402
 import time  # noqa: E402

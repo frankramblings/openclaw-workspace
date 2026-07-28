@@ -28,6 +28,7 @@ from . import config, fsutil, push, task_registry, turn_state
 _log = logging.getLogger(__name__)
 
 _MARKER = "[[followup]]"
+_WAKE_MARKER = "[[promise-wake]]"
 _TAIL_CAP = 4096
 _LOCK = threading.Lock()
 
@@ -75,7 +76,8 @@ def _save(data: dict) -> None:
 
 def create_promise(session_id: str, session_key: str, label: str,
                    deadline_s: int, *, origin: str = "followup",
-                   turn_id: int | None = None) -> dict:
+                   turn_id: int | None = None,
+                   seed_override: str | None = None) -> dict:
     rec = {
         "id": uuid.uuid4().hex[:12],
         "session_id": session_id,
@@ -89,6 +91,9 @@ def create_promise(session_id: str, session_key: str, label: str,
         "pinged": 0, "exit_code": None, "duration_s": None, "tail": "",
         "fired": 0, "error": "",
         "origin": origin, "turn_id": turn_id,
+        # Non-followup wakes (e.g. the promise-guard self-wake) supply their own
+        # seed text; "" means fire_followup builds the background-task seed.
+        "seed_override": seed_override or "",
     }
     with _LOCK:
         data = _load()
@@ -377,6 +382,8 @@ def history_card(content) -> str | None:
     """Rewrite a stored seed message into the compact line the transcript
     shows (`⚙️ Background task · <label> — <result>`). None for anything that
     isn't a followup seed."""
+    if isinstance(content, str) and content.startswith(_WAKE_MARKER):
+        return "⏰ Follow-through nudge — you promised a follow-up with no waker"
     if not isinstance(content, str) or not content.startswith(_MARKER):
         return None
     label, result = "background task", ""
@@ -450,15 +457,20 @@ async def fire_followup(pid: str, *, overdue: bool = False,
         mark(pid, "failed", error="session missing or archived")
         return False
     session_key = rec["sessionKey"]
-    seed = seed_text(p["label"], exit_code=p.get("exit_code"),
-                     duration_s=p.get("duration_s"), tail=p.get("tail") or "",
-                     overdue=overdue)
-    if overdue:
+    seed = p.get("seed_override") or seed_text(
+        p["label"], exit_code=p.get("exit_code"),
+        duration_s=p.get("duration_s"), tail=p.get("tail") or "",
+        overdue=overdue)
+    if p.get("origin") == "promise_wake":
+        card_cmd = f"follow-through nudge · {p['label']}"
+        card_out = "you promised a follow-up with no waker — bringing you back"
+    elif overdue:
+        card_cmd = f"background task finished · {p['label']}"
         card_out = "no completion signal by the deadline — asking Gary to investigate"
     else:
+        card_cmd = f"background task finished · {p['label']}"
         card_out = (f"exit {p.get('exit_code')} after "
                     f"{_fmt_duration(p.get('duration_s'))} — asking Gary to report")
-    card_cmd = f"background task finished · {p['label']}"
 
     for attempt_delay in (0.0,) + _RETRY_DELAYS_S:
         if attempt_delay:

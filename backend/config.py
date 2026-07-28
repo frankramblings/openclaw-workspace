@@ -189,6 +189,15 @@ TURN_TIMEOUT_S = _env_float("WORKSPACE_TURN_TIMEOUT_S", 180.0)
 # WS relay. Notice → SSE "stall" frames; cap → abort + retry-once.
 STALL_NOTICE_S = _env_float("WORKSPACE_STALL_NOTICE", 45.0)
 STALL_CAP_S = _env_float("WORKSPACE_STALL_CAP", 240.0)
+
+# Promise self-wake (promise_guard): when a reply promises a follow-up with
+# no waker registered, schedule a turn that brings Gary back on his own so the
+# work doesn't stall until the user speaks again. ENABLED toggles the whole
+# behavior; DELAY is how long after the turn to wake; COOLDOWN bounds how often
+# a single session can self-wake so a re-promising turn can't loop.
+PROMISE_WAKE_ENABLED = os.environ.get("WORKSPACE_PROMISE_WAKE", "1") not in ("0", "false", "no", "")
+PROMISE_WAKE_DELAY_S = _env_int("WORKSPACE_PROMISE_WAKE_DELAY_S", 90)
+PROMISE_WAKE_COOLDOWN_S = _env_int("WORKSPACE_PROMISE_WAKE_COOLDOWN_S", 600)
 # Chat auto-titles run on a cheap model so they never race the user's real
 # turn through codex on the big one.
 TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL", "openai/gpt-5.4-mini")

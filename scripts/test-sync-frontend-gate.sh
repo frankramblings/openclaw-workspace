@@ -116,6 +116,56 @@ grep -q "^const CACHE_NAME = 'gary-" "$R/frontend/sw.js" \
 node --check "$R/frontend/sw.js" 2>/dev/null \
   && ok "generated sw.js parses" || bad "generated sw.js does not parse"
 
+# --- 6. unsafe agent names are refused before anything is written -----------
+# The name is pasted verbatim into JS strings, HTML text/attributes and JSON,
+# so any character that needs escaping in one of those is refused outright.
+# "O'Brien" is the motivating case: it used to rewrite `const who = 'Odysseus';`
+# into `const who = 'O'Brien';` and ship a dead app.
+while IFS= read -r nm; do
+  R="$TMP/badname"; mkroot "$R"
+  mkdir -p "$R/frontend"; printf 'sentinel\n' > "$R/frontend/LAST_GOOD"
+  out="$( cd "$R" && env ODYSSEUS_ALLOW_DRIFT=1 WORKSPACE_AGENT_NAME="$nm" \
+          bash "$R/scripts/sync-frontend.sh" 2>&1 )"; rc=$?
+  if [[ $rc -ne 0 ]] && grep -q 'cannot be safely' <<<"$out" && [[ ! -e "$R/frontend/js" ]]; then
+    ok "refuses unsafe agent name: $nm"
+  else
+    bad "did NOT refuse unsafe agent name: $nm (exit $rc)"
+  fi
+done <<'NAMES'
+O'Brien
+Say "Hi"
+Back`tick
+Doll$ar
+Angle<br>
+Amp&Co
+Back\slash
+NAMES
+
+R="$TMP/nlname"; mkroot "$R"
+out="$( cd "$R" && env ODYSSEUS_ALLOW_DRIFT=1 WORKSPACE_AGENT_NAME="$(printf 'Two\nLines')" \
+        bash "$R/scripts/sync-frontend.sh" 2>&1 )"; rc=$?
+[[ $rc -ne 0 ]] && grep -q 'control character' <<<"$out" \
+  && ok "refuses agent name with a newline" \
+  || bad "did NOT refuse agent name with a newline (exit $rc)"
+
+# --- 7. legitimate names still build, and actually get baked in -------------
+while IFS= read -r nm; do
+  R="$TMP/goodname"; mkroot "$R"
+  out="$( cd "$R" && env ODYSSEUS_ALLOW_DRIFT=1 WORKSPACE_AGENT_NAME="$nm" \
+          bash "$R/scripts/sync-frontend.sh" 2>&1 )"; rc=$?
+  if [[ $rc -eq 0 ]] && grep -qF "<title>$nm</title>" "$R/frontend/index.html" 2>/dev/null; then
+    ok "accepts and bakes in agent name: $nm"
+  else
+    bad "rejected legitimate agent name: $nm (exit $rc)"
+  fi
+done <<'NAMES'
+Gary
+Gary Workspace
+Gaëtan
+agent-7
+v1.2_beta
+NAMES
+
 echo "────────────────────────────────────────────────────────"
 [[ $fail -eq 0 ]] && echo "all cases passed" || echo "FAILURES above"
 exit $fail

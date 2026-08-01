@@ -29,8 +29,51 @@ if [[ -z "$AGENT_NAME" && -f "$ROOT/.data/branding.json" ]]; then
   AGENT_NAME="$(python3 -c 'import json,sys; print((json.load(open(sys.argv[1])).get("agent_name") or "").strip())' "$ROOT/.data/branding.json" 2>/dev/null || true)"
 fi
 AGENT_NAME="${AGENT_NAME:-Claw}"
+
+# --- Agent-name safety gate ---------------------------------------------------
+# The name is substituted VERBATIM into every one of these, often nested:
+#   JS single-quoted   js/slashCommands.js:  role.textContent = 'Odysseus';
+#   JS template + HTML js/redesign/app.js:   `<img alt="__AGENT_NAME__">`
+#   HTML text          newtab.html:          <div class="name">__AGENT_NAME__</div>
+#   HTML attribute     landing.html:         <meta content="__AGENT_NAME__ — ...">
+#   JSON value         manifest.json:        "name": "__AGENT_NAME__",
+#
+# No single escaping is correct across that set: HTML-escaping '&' is required
+# for the markup sites but would render a literal "&amp;" in the plain
+# textContent assignment, and quote-escaping that is right for a JS string is
+# wrong inside the HTML attribute nested in a JS template literal. Rather than
+# guess per call site, restrict the name to characters that need no escaping in
+# ANY target context and reject the rest here, before anything is written.
+#
+# Without this, WORKSPACE_AGENT_NAME="O'Brien" rewrote
+#     const who = 'Odysseus';   ->   const who = 'O'Brien';
+# a SyntaxError that blanks the whole app (see the JS syntax gate below — it
+# catches the damage, but this stops it being created in the first place).
+#
+# Letters (including non-ASCII — "Gaëtan" is fine), digits, space, and . _ -
+# are all safe verbatim everywhere above. Everything else is refused.
+# Newline/CR are matched in the shell, not by grep: grep splits ON newlines, so
+# [[:cntrl:]] can never see one. Without this a multi-line name reached sed and
+# died with an opaque "unterminated `s' command" instead of a useful message.
+if [[ "$AGENT_NAME" == *$'\n'* || "$AGENT_NAME" == *$'\r'* ]] \
+   || printf '%s' "$AGENT_NAME" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+  echo "FATAL: agent name contains a control character (newline/tab) — refusing to build" >&2
+  exit 1
+fi
+case "$AGENT_NAME" in
+  *[\'\"\`\\\<\>\&\$\{\}]* )
+    echo "FATAL: agent name \"$AGENT_NAME\" contains a character that cannot be safely" >&2
+    echo "       embedded in JS strings, HTML and JSON at once: one of  ' \" \` \\ < > & \$ { }" >&2
+    echo "       Use letters, digits, space, dot, underscore or hyphen." >&2
+    echo "       (set via WORKSPACE_AGENT_NAME or .data/branding.json)" >&2
+    exit 1 ;;
+esac
+
 echo "agent name: $AGENT_NAME"
-# sed-replacement-safe form (escape \, &, and the / delimiter)
+# sed-replacement-safe form (escape \, &, and the / delimiter). The gate above
+# already rejects \ and &, so in practice this now only guards the / delimiter —
+# kept as defence in depth so a future widening of the allowed set can't turn
+# straight into a sed-injection.
 AGENT_NAME_SED="$(printf '%s' "$AGENT_NAME" | sed -e 's/[\/&\\]/\\&/g')"
 
 # Portable in-place sed: GNU sed (Linux) takes `-i`; BSD sed (macOS) needs an

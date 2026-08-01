@@ -38,6 +38,96 @@ AGENT_NAME_SED="$(printf '%s' "$AGENT_NAME" | sed -e 's/[\/&\\]/\\&/g')"
 if sed --version >/dev/null 2>&1; then sedi() { sed -i "$@"; }
 else sedi() { sed -i '' "$@"; }; fi
 
+# --- JS syntax gate -----------------------------------------------------------
+# Parse-check every .js that will actually ship. ONE syntax error anywhere in
+# the redesign's static import graph silently blanks the WHOLE app: index.html
+# loads js/redesign/app.js as <script type="module">, and the browser parses the
+# entire import graph before executing anything — so a single bad token means
+# nothing boots, while the server still returns 200 for every file. That is a
+# server-looking outage with a client-side cause, and it shipped on 2026-07-31
+# (smart quotes used as string delimiters in js/redesign/live/chat.js).
+#
+# Files are checked as .mjs COPIES, not in place. This is load-bearing, not
+# fussiness: `node --check foo.js` is NOT a reliable parse check for our code.
+# When Node's CommonJS parse trips over a top-level `import`/`export` it hands
+# off to ESM detection and stops reporting, exiting 0 on genuinely broken input
+# — verified on node v22.22:
+#     export const x = ‘oops’;   --check as .js -> exit 0   as .mjs -> caught
+#     export const x = ;         --check as .js -> exit 0   as .mjs -> caught
+#     const x = ‘oops’;          --check as .js -> caught  (no `export`, so CJS
+#                                                           parse reports it)
+# i.e. it only catches errors that precede the first top-level export — which is
+# pure luck, and it is exactly the luck the 2026-07-31 outage happened to hit.
+# The .mjs extension removes the guesswork and parses every file as a module.
+# Confirmed safe for the classic non-module scripts too: all 219 shipping files
+# parse clean as ESM, so this adds no false failures.
+# __tests__/ is excluded: jest specs never reach $DEST.
+#
+# The gate SELF-TESTS before trusting itself — it asserts the checker both
+# rejects known-bad source and accepts known-good source. `node --check`
+# quietly changing its mind about what it validates is precisely the failure
+# this file already got bitten by; a gate that has silently stopped gating is
+# worse than no gate, so if the self-test doesn't behave, say so and set DRIFT
+# rather than printing a reassuring "ok".
+JS_CHECK=1
+if ! command -v node >/dev/null 2>&1; then
+  echo "js-syntax: SKIP (node not found — cannot parse-check the build)" >&2
+  JS_CHECK=0; DRIFT=1
+else
+  JS_PROBE="$(mktemp -d)"
+  printf 'export const _bad = ;\n'  > "$JS_PROBE/bad.mjs"
+  printf 'export const _good = 1;\n' > "$JS_PROBE/good.mjs"
+  if node --check "$JS_PROBE/bad.mjs" >/dev/null 2>&1; then
+    echo "js-syntax: SKIP (self-test: node $(node --version) accepted known-bad source — checker not trustworthy)" >&2
+    JS_CHECK=0; DRIFT=1
+  elif ! node --check "$JS_PROBE/good.mjs" >/dev/null 2>&1; then
+    echo "js-syntax: SKIP (self-test: node $(node --version) rejected known-good source — checker not trustworthy)" >&2
+    JS_CHECK=0; DRIFT=1
+  fi
+  rm -rf "$JS_PROBE"
+fi
+
+# js_syntax_check <dir> <label> — parse-check the shipping .js under <dir>.
+# Mirrors them into a temp tree as <relpath>.js.mjs, checks in parallel (node
+# startup dominates over hundreds of files), then rewrites the temp paths in
+# node's own SyntaxError output back to real relative paths so the operator
+# gets a straight file:line to fix.
+js_syntax_check() {
+  local dir="$1" label="$2" tmp rel f n rc=0
+  [[ "${JS_CHECK:-0}" = 1 ]] || return 0
+  [[ -d "$dir" ]] || return 0
+  n="$(find "$dir" -type f -name '*.js' ! -path '*/__tests__/*' | wc -l)"
+  [[ "$n" -gt 0 ]] || return 0
+  tmp="$(mktemp -d)"
+  while IFS= read -r -d '' f; do
+    rel="${f#"$dir"/}"
+    mkdir -p "$tmp/$(dirname "$rel")"
+    cp "$f" "$tmp/$rel.mjs"
+  done < <(find "$dir" -type f -name '*.js' ! -path '*/__tests__/*' -print0)
+  if ! find "$tmp" -type f -name '*.mjs' -print0 \
+       | xargs -0 -P "${JS_CHECK_JOBS:-8}" -n1 node --check 2>"$tmp/errors.txt"; then
+    sed "s|$tmp/||g; s|\.js\.mjs|.js|g" "$tmp/errors.txt" >&2
+    echo "js-syntax: FAIL ($label) — see the SyntaxError(s) above" >&2
+    rc=1
+  fi
+  rm -rf "$tmp"
+  [[ "$rc" -eq 0 ]] && echo "js-syntax: ok ($label, $n files)"
+  return "$rc"
+}
+
+# Pre-flight: validate the SOURCES before touching $DEST. frontend/ is served
+# live off disk with no atomic swap, so copying broken JS into it is an instant
+# outage — refuse to start and leave the last good build in place. Deliberately
+# NOT escapable via ODYSSEUS_ALLOW_DRIFT: unparseable JS isn't drift an operator
+# can eyeball and wave through, it's a guaranteed dead app.
+PREFLIGHT=0
+js_syntax_check "$SRC" "source: $(basename "$SRC")" || PREFLIGHT=1
+js_syntax_check "$OVERRIDES" "source: $(basename "$OVERRIDES")" || PREFLIGHT=1
+if [[ "$PREFLIGHT" = 1 ]]; then
+  echo "FATAL: JS syntax error(s) in the source tree — refusing to build ($DEST left untouched)" >&2
+  exit 1
+fi
+
 if [[ -d "$SRC" ]]; then
   mkdir -p "$DEST"
   # --exclude '__tests__': defensive — the vendored base doesn't currently ship
@@ -503,6 +593,20 @@ PYEOF
 else
   echo "precache: SKIP sw.js (missing — upstream changed; no offline app shell built)" >&2
   DRIFT=1
+fi
+
+# --- Post-build JS syntax gate ------------------------------------------------
+# The sources already passed pre-flight, so anything failing HERE was introduced
+# by this script's own sed/python rewrites — the agent-name bake, the Gary
+# easter-egg swaps, the rebrand pass, the serpapi patch, or the sw.js precache
+# injection and CACHE_NAME stamp. It runs after that whole chain (rather than
+# before the sw.js block) precisely so the generated service worker is parsed
+# too. $DEST is already written by now: a failure means the build on disk is
+# broken and must be fixed and re-run, never served. Like pre-flight, this is
+# not escapable via ODYSSEUS_ALLOW_DRIFT.
+if ! js_syntax_check "$DEST" "build: $(basename "$DEST")"; then
+  echo "FATAL: JS syntax error(s) in the built output — $DEST is BROKEN, do not serve it" >&2
+  exit 1
 fi
 
 # --- Vendor-drift gate --------------------------------------------------------

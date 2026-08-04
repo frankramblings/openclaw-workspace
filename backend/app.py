@@ -70,6 +70,7 @@ from .attachments import (
     _prepend_text_attachments,
     _resolve_attachments,
 )
+from .secret_scrub import scrub as _scrub_secrets, system_note as _scrub_note
 # Re-export the turn-engine helpers (extracted to chat_turn.py in Task 19) on the
 # app module so every existing import site and monkeypatch seam keeps resolving
 # them at backend.app.X: followup.py reads app._model_ref / app._sse_frame /
@@ -531,10 +532,17 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     text_files, skipped_files = await asyncio.to_thread(_extract_text_attachments, attachments)
     if text_files or skipped_files:
         message = _prepend_text_attachments(message, text_files, skipped_files)
+    # Scrub credential-shaped strings before persisting to disk. The model
+    # still receives the original `message` for this turn so Gary can act on
+    # a pasted credential; a system note is injected to suggest a better path.
+    scrubbed_message, _scrubbed_kinds = _scrub_secrets(message)
+    if _scrubbed_kinds:
+        message = message + "\n\n" + _scrub_note(_scrubbed_kinds)
+
     # Persist the image refs (keyed by the SPA session id) so they survive a
     # reload — the gateway transcript only keeps the user's text.
     if session and attachments:
-        _persist_msg_attachments(session, message, attachments)
+        _persist_msg_attachments(session, scrubbed_message, attachments)
 
     # Draft mode: chat.js posts active_doc_id whenever the document panel is
     # open (auto-saving the doc first). Snapshot now (the user's undo), wrap
@@ -588,6 +596,56 @@ async def sessions():
     return sessions_store.list_sessions()
 
 
+def _catalog_owners(catalog: dict) -> tuple[dict[str, set[str]], dict[str, dict]]:
+    owners: dict[str, set[str]] = {}
+    endpoints: dict[str, dict] = {}
+    for it in catalog.get("items") or []:
+        eid = it.get("endpoint_id") or ""
+        if not eid:
+            continue
+        endpoints[eid] = it
+        for mid in (it.get("models") or []) + (it.get("models_extra") or []):
+            owners.setdefault(mid, set()).add(eid)
+    return owners, endpoints
+
+
+def _first_online_model(catalog: dict) -> tuple[str, str] | None:
+    items = [it for it in catalog.get("items") or [] if isinstance(it, dict)]
+    rank = {"openai": 0, "google": 1, "perplexity-web": 2}
+    items.sort(key=lambda it: rank.get((it.get("endpoint_id") or "").strip(), 99))
+    model_rank = {
+        "gpt-5.5": 0,
+        "gpt-5.4-mini": 1,
+        "gpt-5.4": 2,
+        "gemini-3-flash-preview": 3,
+        "perplexity-auto": 4,
+    }
+    for it in items:
+        if it.get("offline"):
+            continue
+        eid = (it.get("endpoint_id") or "").strip()
+        models = it.get("models") or []
+        if eid and models:
+            model = sorted(models, key=lambda mid: model_rank.get(mid, 99))[0]
+            return eid, model
+    return None
+
+
+def _catalog_model_error(catalog: dict, endpoint_id: str | None,
+                         model: str | None) -> str | None:
+    model = (model or "").strip()
+    ep = (endpoint_id or "").strip()
+    if not model or not ep or "openclaw" in (model, ep):
+        return None
+    owners, endpoints = _catalog_owners(catalog)
+    if ep in endpoints and endpoints[ep].get("offline"):
+        return f"endpoint {ep!r} is offline or needs authentication"
+    if ep in endpoints and model in owners and ep not in owners[model]:
+        return (f"model {model!r} is not available on endpoint {ep!r} "
+                f"(offered by: {', '.join(sorted(owners[model]))})")
+    return None
+
+
 async def _model_pair_error(endpoint_id: str | None, model: str | None) -> str | None:
     """Reject DEFINITE cross-pairs only: a model the catalog lists under a
     different endpoint than the one given (claude-cli + gpt-5.5 → the gateway
@@ -600,20 +658,9 @@ async def _model_pair_error(endpoint_id: str | None, model: str | None) -> str |
     if not model or not ep or "openclaw" in (model, ep):
         return None
     try:
-        catalog = await bridge.fetch_models()
+        return _catalog_model_error(await bridge.fetch_models(), ep, model)
     except Exception:  # noqa: BLE001 - gateway down → can't judge, allow
         return None
-    owners: dict[str, set[str]] = {}
-    endpoints: set[str] = set()
-    for it in catalog.get("items") or []:
-        eid = it.get("endpoint_id") or ""
-        endpoints.add(eid)
-        for mid in (it.get("models") or []) + (it.get("models_extra") or []):
-            owners.setdefault(mid, set()).add(eid)
-    if ep in endpoints and model in owners and ep not in owners[model]:
-        return (f"model {model!r} is not available on endpoint {ep!r} "
-                f"(offered by: {', '.join(sorted(owners[model]))})")
-    return None
 
 
 @app.post("/api/session")
@@ -904,6 +951,14 @@ async def default_chat():
         model = pref["model"]
     else:
         provider, model = config.default_model()
+    try:
+        catalog = await bridge.fetch_models()
+        if _catalog_model_error(catalog, provider, model):
+            fallback = _first_online_model(catalog)
+            if fallback:
+                provider, model = fallback
+    except Exception:  # noqa: BLE001 - gateway/catalog trouble → preserve old path
+        pass
     return {"endpoint_id": provider, "endpoint_url": config.gateway_ws_url(),
             "model": model}
 
@@ -918,6 +973,9 @@ async def set_default_chat(payload: dict = Body(default=None)):
     if not model:
         return JSONResponse(status_code=400, content={"error": "model required"})
     pref = {"model": model, "endpoint_id": (payload.get("endpoint_id") or "").strip()}
+    err = await _model_pair_error(pref["endpoint_id"], pref["model"])
+    if err:
+        return JSONResponse(status_code=400, content={"detail": err})
     websearch.save_settings({"default_chat_model": pref})
     return {"ok": True, **pref}
 
@@ -1236,10 +1294,11 @@ else:
                               "Run scripts/sync-frontend.sh to copy Odysseus static/."},
         )
 
-if config.NEXT_DIR.is_dir():
-    # The /next parallel frontend (frontend-next/, hash-routed SPA): html=True
-    # serves its index.html at /next/, assets resolve under /next/assets/.
-    # Deliberately OUTSIDE the FRONTEND_DIR block above: the two frontends are
-    # independent — a missing Vite build only skips this mount, and a missing
-    # classic build must never take /next down (or vice versa).
-    app.mount("/next", StaticFiles(directory=str(config.NEXT_DIR), html=True), name="next")
+# ---------------------------------------------------------------------------
+# STATUS: the /next TS/Vite rewrite is ABANDONED and DELETED (decided 2026-08-03).
+# It plateaued at ~80% doing parity work against the classic frontend it was meant
+# to replace, and reaching for a clean stack stopped being worth it. The classic
+# frontend-overrides tree stays production. Do NOT re-recommend the cutover. The
+# frontend-next/ tree was removed from the repo (recoverable via git history at
+# the commit before this one) — there is no /next mount anymore.
+# ---------------------------------------------------------------------------

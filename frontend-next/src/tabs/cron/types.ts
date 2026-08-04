@@ -1,3 +1,0 @@
-export interface CronJob{id:string;name:string;enabled:boolean;schedule:string;schedule_expr?:string;tz?:string;agentId?:string|null;sessionTarget?:string;wakeMode?:string;nextWakeAtMs?:number|null;lastRunAtMs?:number|null;lastStatus?:string|null;message?:string}
-export interface CronRun{ts:number;status:string;durationMs?:number;summary?:string;error?:string;delivered?:boolean}
-export interface LiveJob{id:string;status:string;title?:string;name?:string;startedAt?:string;updatedAt?:string;progress?:number;pct?:number;detail?:string;command?:string;pid?:number;stalled?:number;[key:string]:unknown}

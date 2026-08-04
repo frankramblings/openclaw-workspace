@@ -65,8 +65,7 @@ OPENCLAW_CONFIG = OPENCLAW_HOME / "openclaw.json"
 BACKEND_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BACKEND_DIR.parent
 FRONTEND_DIR = Path(os.environ.get("WORKSPACE_FRONTEND_DIR", REPO_ROOT / "frontend"))
-# The /next parallel frontend (React/Vite build output). Mounted only if built.
-NEXT_DIR = Path(os.environ.get("WORKSPACE_NEXT_DIR", REPO_ROOT / "frontend-next" / "dist"))
+# (The /next parallel TS/Vite frontend was abandoned + deleted 2026-08-03; see app.py.)
 
 # Optional base path for hosting the app under a subpath (e.g. behind a reverse
 # proxy that mounts it at "/marissa"). Empty (default) = served at the origin

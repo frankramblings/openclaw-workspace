@@ -1985,7 +1985,8 @@ function ensureNotifyPermission() {
 }
 
 // Transient in-app toast appended to <body> (outside the render() root so it
-// survives re-renders); click to open the thread, auto-dismiss after 6s.
+// survives re-renders); click to open the thread, auto-dismiss after
+// TOAST_DWELL_MS (5s).
 function showChatToast(text, id) {
   try {
     let host = document.getElementById('oc-toast-host');

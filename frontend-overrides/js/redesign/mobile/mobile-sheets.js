@@ -17,7 +17,7 @@ function fileTree(s) {
       const pad = 16 + depth * 15;
       if (node.t === 'dir') {
         const open = !!s.fsOpen[path];
-        const chev = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="chev" style="transition:transform .12s;transform:rotate(${open ? '90deg' : '0deg'})"><path d="m9 18 6-6-6-6"/></svg>`;
+        const chev = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="chev" style="transition:transform var(--dur-micro);transform:rotate(${open ? '90deg' : '0deg'})"><path d="m9 18 6-6-6-6"/></svg>`;
         rows.push(`<div class="fs-dir ocfile" data-act="toggleFs" data-arg="${esc(path)}" style="padding-left:${pad}px;padding-right:14px">${chev}${I.folder(14)}<span class="nm">${esc(node.n)}</span>${node.meta ? `<span class="meta">${esc(node.meta)}</span>` : ''}</div>`);
         if (open && node.children) walk(node.children, depth + 1, path);
       } else {

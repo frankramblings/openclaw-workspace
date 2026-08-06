@@ -37,6 +37,11 @@
   --prose:'Bear Sans UI',ui-sans-serif,system-ui,sans-serif;
   /* accent is overridable at runtime (Appearance swatches) via --accent */
   --accent:var(--teal);
+  --dur-micro:120ms; --dur-panel:200ms; --dur-content:300ms;
+  --ease-standard:cubic-bezier(.4,0,.2,1);
+  --ease-decel:cubic-bezier(0,0,.2,1);
+  --ease-accel:cubic-bezier(.4,0,1,1);
+  --loop-fast:0.9s; --loop-slow:1.6s;
 }
 
 *{box-sizing:border-box}
@@ -95,6 +100,9 @@ html.shell-mobile body.oc-doc-docked{padding-right:0}
   100%{transform:translate(var(--dx),var(--dy)) scale(.15) rotate(50deg);opacity:0}
 }
 @media (prefers-reduced-motion:reduce){.fl-crystal,.fl-shard{animation:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  :root{--dur-micro:0ms;--dur-panel:0ms;--dur-content:0ms;--loop-fast:0ms;--loop-slow:0ms}
+}
 
 /* Full-screen boot loader: the fortress, centered, while #oc-root is hidden. */
 #app-loader{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;

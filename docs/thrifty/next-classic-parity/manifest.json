@@ -1,0 +1,30 @@
+{
+  "sprints": [
+    {
+      "id": "SPRINT-THEME",
+      "tier": "haiku",
+      "kind": "generate",
+      "cost_usd": 0.0,
+      "files": [],
+      "ok": false
+    },
+    {
+      "id": "SPRINT-FX",
+      "tier": "haiku",
+      "kind": "generate",
+      "cost_usd": 0.0,
+      "files": [],
+      "ok": false
+    },
+    {
+      "id": "SPRINT-ICONS",
+      "tier": "haiku",
+      "kind": "generate",
+      "cost_usd": 0.0,
+      "files": [],
+      "ok": false
+    }
+  ],
+  "dispatch_cost_usd": 0.0,
+  "all_ok": false
+}

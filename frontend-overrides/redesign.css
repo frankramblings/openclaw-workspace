@@ -56,7 +56,7 @@ body{background:var(--bg);font-family:var(--sans);color:var(--fg);-webkit-font-s
    html.shell-mobile (see mobile.css), not a live @media query, so a latched-
    mobile device rotated to landscape (>768px) can't disagree with the JS shell
    choice and reserve dead padding beside a dock that's actually full-screen. */
-body.oc-doc-docked{padding-right:var(--doc-dock-w,0px);transition:padding-right .16s ease}
+body.oc-doc-docked{padding-right:var(--doc-dock-w,0px);transition:padding-right var(--dur-panel) var(--ease-standard)}
 html.shell-mobile body.oc-doc-docked{padding-right:0}
 .oc-doc-grabber:hover{background:var(--teal,#4fe3d1);opacity:.35}
 
@@ -106,7 +106,7 @@ html.shell-mobile body.oc-doc-docked{padding-right:0}
 
 /* Full-screen boot loader: the fortress, centered, while #oc-root is hidden. */
 #app-loader{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;
-  background:var(--bg);color:#fff;opacity:.9;transition:opacity .3s}
+  background:var(--bg);color:#fff;opacity:.9;transition:opacity var(--dur-content) var(--ease-standard)}
 #app-loader.is-hiding{opacity:0;pointer-events:none}
 
 textarea,input{font-family:var(--sans);color:var(--fg);outline:none}
@@ -120,7 +120,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 
 /* ---- interaction feedback (120ms ease) ---------------------------------- */
 .ocnav,.ocrow,.octab,.ocbtn,.ocfile,.occhip{
-  transition:background .12s ease,color .12s ease,border-color .12s ease,filter .12s ease,box-shadow .12s ease;
+  transition:background var(--dur-micro) var(--ease-standard),color var(--dur-micro) var(--ease-standard),border-color var(--dur-micro) var(--ease-standard),filter var(--dur-micro) var(--ease-standard),box-shadow var(--dur-micro) var(--ease-standard);
 }
 .ocnav:hover{background:var(--row-hover)!important}
 .ocrow:hover{background:var(--row-hover)!important}
@@ -153,7 +153,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 /* =============================================================================
    LEFT RAIL
    ========================================================================== */
-.oc-rail{width:208px;flex:none;background:#101115;border-right:1px solid var(--bd2);display:flex;flex-direction:column;padding:12px 10px;overflow:hidden;transition:width .18s ease}
+.oc-rail{width:208px;flex:none;background:#101115;border-right:1px solid var(--bd2);display:flex;flex-direction:column;padding:12px 10px;overflow:hidden;transition:width var(--dur-panel) var(--ease-standard)}
 .oc-rail.collapsed{width:60px}
 .oc-rail-head{display:flex;align-items:center;gap:9px;margin-bottom:12px;min-height:30px}
 .oc-rail-head .oc-avatar{margin-left:4px}
@@ -166,7 +166,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .oc-online.offline .dot{background:var(--mut)}
 .oc-online.offline{color:var(--mut)}
 .oc-rail-collapse{width:28px;height:28px;border-radius:8px;border:1px solid var(--bd);background:transparent;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer}
-.oc-rail-collapse-ic{transition:transform .18s}
+.oc-rail-collapse-ic{transition:transform var(--dur-panel) var(--ease-standard)}
 
 .ocnav{display:flex;align-items:center;gap:11px;padding:9px;border-radius:9px;color:var(--mut);margin-bottom:3px;position:relative;cursor:pointer;background:transparent}
 .ocnav.active{background:var(--tealtint);color:var(--teal)}
@@ -188,14 +188,14 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .oc-rail.collapsed .ocnav .nav-pip{display:block;position:absolute;top:7px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--teal);flex:none}
 
 .conv-dot{flex:none;width:7px;height:7px;border-radius:50%}
-.conv-dot.notify{background:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 20%,transparent);animation:pulse 1.6s ease-in-out infinite}
+.conv-dot.notify{background:var(--blue);box-shadow:0 0 0 3px color-mix(in srgb,var(--blue) 20%,transparent);animation:pulse var(--loop-slow) ease-in-out infinite}
 /* M6: a queued (not-yet-sent) message waiting in a non-active session's row. */
 .conv-dot.queued{background:var(--gold);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 20%,transparent)}
 .conv-spin.working{flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--teal)}
 .conv-spin.working .fl-svg{display:block}
 /* In-app turn-finished toast (appended to <body>, outside the render root). */
 #oc-toast-host{position:fixed;z-index:9999;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
-.oc-toast{pointer-events:auto;display:flex;align-items:center;gap:10px;max-width:340px;padding:11px 14px;border-radius:12px;background:var(--panel2);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent);box-shadow:0 8px 28px rgba(0,0,0,.45);color:var(--fg);font-size:14px;cursor:pointer;transform:translateY(12px);opacity:0;transition:opacity .2s ease,transform .2s ease}
+.oc-toast{pointer-events:auto;display:flex;align-items:center;gap:10px;max-width:340px;padding:11px 14px;border-radius:12px;background:var(--panel2);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent);box-shadow:0 8px 28px rgba(0,0,0,.45);color:var(--fg);font-size:14px;cursor:pointer;transform:translateY(12px);opacity:0;transition:opacity var(--dur-panel) var(--ease-standard),transform var(--dur-panel) var(--ease-standard)}
 .oc-toast.in{opacity:1;transform:translateY(0)}
 .oc-toast-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 22%,transparent)}
 .oc-toast-msg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -214,7 +214,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .oc-user .uav{width:26px;height:26px;flex:none;border-radius:50%;background:#2a2d34;border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--mut);font-weight:600}
 .oc-user .uname{font-size:14px;color:var(--mut);white-space:nowrap}
 /* AGPL-3.0 source offer — quiet footer row in the expanded rail (icon-only when collapsed) */
-.oc-rail-source{display:flex;align-items:center;gap:11px;padding:6px 9px;margin-top:1px;color:var(--mut);opacity:.55;text-decoration:none;transition:opacity .15s,color .15s}
+.oc-rail-source{display:flex;align-items:center;gap:11px;padding:6px 9px;margin-top:1px;color:var(--mut);opacity:.55;text-decoration:none;transition:opacity var(--dur-micro) var(--ease-standard),color var(--dur-micro) var(--ease-standard)}
 .oc-rail-source:hover{opacity:1;color:var(--teal)}
 .oc-rail-source svg{flex:none}
 .oc-rail-source .label{font-size:12px;font-weight:500;white-space:nowrap}
@@ -372,7 +372,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-body .md-quote :last-child,.msg-user .md-quote :last-child{margin-bottom:0}
 .msg-body .md-hr,.msg-user .md-hr{border:none;border-top:1px solid var(--bd2);margin:16px 0}
 .msg-body .md-code,.msg-user .md-code{position:relative;margin:0 0 18px;padding:11px 13px;background:#121317;border:1px solid var(--bd);border-radius:10px;overflow-x:auto}
-.msg-body .md-code .md-copy-btn,.msg-user .md-code .md-copy-btn{position:absolute;top:6px;right:6px;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;background:rgba(30,32,38,.85);border:1px solid var(--bd);border-radius:6px;color:var(--faint,#9aa0a6);cursor:pointer;opacity:0;transition:opacity .12s ease,color .12s ease,background .12s ease;backdrop-filter:blur(4px)}
+.msg-body .md-code .md-copy-btn,.msg-user .md-code .md-copy-btn{position:absolute;top:6px;right:6px;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;background:rgba(30,32,38,.85);border:1px solid var(--bd);border-radius:6px;color:var(--faint,#9aa0a6);cursor:pointer;opacity:0;transition:opacity var(--dur-micro) var(--ease-standard),color var(--dur-micro) var(--ease-standard),background var(--dur-micro) var(--ease-standard);backdrop-filter:blur(4px)}
 .msg-body .md-code:hover .md-copy-btn,.msg-user .md-code:hover .md-copy-btn,.msg-body .md-code .md-copy-btn:focus-visible,.msg-user .md-code .md-copy-btn:focus-visible{opacity:1}
 .msg-body .md-code .md-copy-btn:hover,.msg-user .md-code .md-copy-btn:hover{color:var(--fg,#e6e8ec);background:rgba(45,48,56,.95)}
 .msg-body .md-code .md-copy-btn.is-copied,.msg-user .md-code .md-copy-btn.is-copied{opacity:1;color:#7ed492}
@@ -416,7 +416,7 @@ html.shell-mobile .oc-toast{max-width:none}
 /* Midturn "while you wait…" aside — inline italic ✦ at the tail of Gary's
    last assistant message, matching the mobile .m-ghost treatment. Tappable
    to accept (data-act="acceptSuggest" is on the span). */
-.msg-body .ghost-suggest.asst-ghost{position:static;display:block;left:auto;right:auto;top:auto;z-index:auto;margin:10px 0 2px;color:var(--violet);font-family:var(--prose);font-size:14px;font-style:italic;line-height:1.5;white-space:normal;overflow:visible;text-overflow:clip;pointer-events:auto;cursor:pointer;animation:ghost-in 300ms ease-out}
+.msg-body .ghost-suggest.asst-ghost{position:static;display:block;left:auto;right:auto;top:auto;z-index:auto;margin:10px 0 2px;color:var(--violet);font-family:var(--prose);font-size:14px;font-style:italic;line-height:1.5;white-space:normal;overflow:visible;text-overflow:clip;pointer-events:auto;cursor:pointer;animation:ghost-in var(--dur-content) var(--ease-decel)}
 @keyframes ghost-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.msg-body .ghost-suggest.asst-ghost{animation:none}}
 .msg-body .ghost-suggest.asst-ghost:hover{opacity:.75}
@@ -443,7 +443,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .model-name{font-family:var(--mono);font-size:13px;color:var(--fg);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .model-row.sel .model-name{color:var(--teal)}
 .model-check{flex:none}
-.mstar{font-size:14px;line-height:1;color:var(--faint);opacity:0;flex:none;padding:0 2px;transition:opacity .12s ease,transform .12s ease}
+.mstar{font-size:14px;line-height:1;color:var(--faint);opacity:0;flex:none;padding:0 2px;transition:opacity var(--dur-micro) var(--ease-standard),transform var(--dur-micro) var(--ease-standard)}
 .model-row:hover .mstar{opacity:.5}
 .mstar:hover{opacity:1 !important;transform:scale(1.15)}
 .mstar-def{opacity:1 !important;color:var(--gold)}
@@ -490,8 +490,8 @@ html.shell-mobile .oc-toast{max-width:none}
    CHAT ACTIVITY TRAIL (Cowork-style thinking + tool steps; live working state)
    ========================================================================== */
 @keyframes shimmer{to{background-position:-200% center}}
-.shimmer{background:linear-gradient(90deg,var(--faint) 0%,var(--faint) 35%,#eef1f5 50%,var(--faint) 65%,var(--faint) 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:shimmer 1.7s linear infinite}
-.ocact{transition:background .12s ease;border-radius:7px}
+.shimmer{background:linear-gradient(90deg,var(--faint) 0%,var(--faint) 35%,#eef1f5 50%,var(--faint) 65%,var(--faint) 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:shimmer var(--loop-slow) linear infinite}
+.ocact{transition:background var(--dur-micro) var(--ease-standard);border-radius:7px}
 .ocact:hover{background:#1e2025}
 .act-wrap{margin:0 0 14px}
 .rnd-txt{margin:0}
@@ -534,7 +534,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .act-group .lbl{font-size:13px;color:var(--mut);white-space:nowrap;flex:none}
 .act-group:hover .lbl{color:var(--fg)}
 .act-group .meta{font-family:var(--mono);font-size:12px;flex:none}
-.act-chev{transition:transform .15s;flex:none}
+.act-chev{transition:transform var(--dur-micro) var(--ease-standard);flex:none}
 .act-detail{margin:2px 0 8px 26px}
 .act-think{font-size:14px;line-height:1.6;color:var(--mut);font-style:italic;border-left:2px solid var(--bd);padding-left:11px}
 .act-code{border:1px solid var(--bd2);background:#121317;border-radius:8px;padding:9px 11px;font-family:var(--mono);font-size:12.5px;line-height:1.7;overflow-x:auto}
@@ -547,6 +547,13 @@ html.shell-mobile .oc-toast{max-width:none}
 .act-elapsed{font-family:var(--mono);font-size:12px;color:var(--faint)}
 .act-stop{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:7px;border:1px solid var(--bd);background:transparent;color:var(--mut);font-family:var(--sans);font-size:12.5px;cursor:pointer}
 .act-cursor{display:inline-block;width:7px;height:13px;background:var(--teal);vertical-align:-2px;margin-left:3px;animation:blink 1.1s step-end infinite}
+/* blink's 1.1s step-end rate is a distinct UX category from spin/pulse/shimmer
+   (a cursor blink cadence, not a fast/slow loop) so it stays a literal outside
+   the --loop-* tokens — but it's still decorative motion (unlike ring-drain's
+   functional countdown), so it gets an explicit reduced-motion stop here. */
+@media (prefers-reduced-motion:reduce){
+  .act-cursor,.term-cursor{animation:none}
+}
 /* mobile scale-down within the phone thread */
 .m-thread .act-wrap{margin-bottom:10px}
 .m-thread .act-summary{gap:6px;padding:3px 8px 3px 6px}
@@ -670,7 +677,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .cal-views{display:flex;gap:2px;background:var(--panel);border:1px solid var(--bd);border-radius:9px;padding:3px}
 .cal-views span{font-size:13px;color:var(--mut);padding:5px 11px;border-radius:6px;cursor:pointer}
 .cal-views span.active{color:var(--teal);background:var(--tealtint);font-weight:600}
-.cal-quick{border:1px solid var(--bd);background:var(--panel);border-radius:11px;padding:3px 4px 3px 14px;display:flex;align-items:center;gap:10px;transition:border-color .15s}
+.cal-quick{border:1px solid var(--bd);background:var(--panel);border-radius:11px;padding:3px 4px 3px 14px;display:flex;align-items:center;gap:10px;transition:border-color var(--dur-micro) var(--ease-standard)}
 .cal-quick.has{border-color:var(--teal2)}
 .cal-quick .star{font-size:14px;color:var(--gold)}
 .cal-quick input{flex:1;background:transparent;border:none;font-size:14.5px;padding:9px 0}
@@ -684,7 +691,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .cal-weekdays div{padding:7px 9px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--faint);border-right:1px solid var(--bd2)}
 .cal-weekdays div:last-child{border-right:none}
 .cal-grid{flex:1;display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr;min-height:0}
-.cal-cell{display:flex;flex-direction:column;gap:3px;padding:6px 7px;border-right:1px solid var(--bd2);border-bottom:1px solid var(--bd2);min-height:0;overflow:hidden;transition:background .12s}
+.cal-cell{display:flex;flex-direction:column;gap:3px;padding:6px 7px;border-right:1px solid var(--bd2);border-bottom:1px solid var(--bd2);min-height:0;overflow:hidden;transition:background var(--dur-micro) var(--ease-standard)}
 .cal-cell:hover{background:rgba(255,255,255,.018)}
 .cal-cell.last{border-right:none}
 .cal-cell.today{background:var(--tealtint);box-shadow:inset 0 0 0 1.5px var(--teal2)}
@@ -845,9 +852,9 @@ html.shell-mobile .oc-toast{max-width:none}
 .set-toggle-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--bd2);cursor:pointer}
 .set-toggle-row .lbl{font-size:14px;color:var(--fg)}
 .set-toggle-row .dsc{font-size:12.5px;color:var(--faint);margin-top:1px}
-.toggle{width:38px;height:22px;border-radius:999px;position:relative;flex:none;transition:background .15s;background:#33353a}
+.toggle{width:38px;height:22px;border-radius:999px;position:relative;flex:none;transition:background var(--dur-micro) var(--ease-standard);background:#33353a}
 .toggle.on{background:var(--accent)}
-.toggle .knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s}
+.toggle .knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left var(--dur-micro) var(--ease-standard)}
 .toggle.on .knob{left:18px}
 .toggle.sm{width:32px;height:19px}
 .toggle.sm .knob{width:15px;height:15px}
@@ -874,7 +881,7 @@ html.shell-mobile .oc-toast{max-width:none}
    ========================================================================== */
 .companion{width:372px;flex:none;background:var(--panel);border-left:1px solid var(--bd);display:flex;flex-direction:column;min-height:0;position:relative}
 .companion .grab{position:absolute;left:-3px;top:50%;transform:translateY(-50%);width:4px;height:42px;border-radius:3px;background:var(--bd)}
-.oc-resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:3px;height:40px;border-radius:3px;background:transparent;transition:background .15s}
+.oc-resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:3px;height:40px;border-radius:3px;background:transparent;transition:background var(--dur-micro) var(--ease-standard)}
 .oc-resize-handle:hover::after,.oc-resize-handle:active::after{background:var(--teal2)}
 .comp-tabs{height:50px;flex:none;display:flex;align-items:center;gap:4px;padding:0 10px;border-bottom:1px solid var(--bd2)}
 .comp-tab{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:8px;border:none;background:transparent;color:var(--mut);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer}
@@ -902,7 +909,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .files-subtabs .ws{font-family:var(--mono);font-size:11px;color:var(--faint);margin-left:auto}
 .files-body{flex:1;overflow:auto;min-height:0;padding:8px 0}
 .fs-dir{display:flex;align-items:center;gap:7px;height:28px;padding-right:14px;cursor:pointer}
-.fs-dir .chev{transition:transform .12s}
+.fs-dir .chev{transition:transform var(--dur-micro) var(--ease-standard)}
 .fs-dir .nm{font-size:13px;color:#cfd3da}
 .fs-dir .meta{font-size:11px;color:var(--faint);margin-left:auto}
 .fs-file{display:flex;align-items:center;gap:8px;height:28px;padding-right:14px;cursor:pointer}
@@ -959,7 +966,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .conv-fav{flex:none;display:inline-flex;align-items:center;color:var(--gold)}
 
 /* kebab — a quiet ⋯ that only surfaces on hover / focus / active row */
-.conv-kebab{margin-left:auto;flex:none;width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:var(--faint);border-radius:6px;opacity:0;transition:opacity .12s ease,color .12s ease,background .12s ease}
+.conv-kebab{margin-left:auto;flex:none;width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:var(--faint);border-radius:6px;opacity:0;transition:opacity var(--dur-micro) var(--ease-standard),color var(--dur-micro) var(--ease-standard),background var(--dur-micro) var(--ease-standard)}
 .conv-fav + .conv-kebab{margin-left:6px}
 .conv-row:hover .conv-kebab,.conv-row.active .conv-kebab,.conv-row.menu-open .conv-kebab,.conv-row:focus-within .conv-kebab{opacity:1}
 .conv-kebab:hover{color:var(--mut);background:var(--row-hover)}
@@ -967,9 +974,9 @@ html.shell-mobile .oc-toast{max-width:none}
 
 /* the dropdown reuses the slash-menu overlay language (--elev panel, hairline,
    soft drop shadow) and pops in subtly from the kebab */
-.conv-menu{position:absolute;right:8px;top:33px;z-index:40;min-width:150px;display:flex;flex-direction:column;background:var(--elev);border:1px solid var(--bd);border-radius:11px;box-shadow:0 16px 44px rgba(0,0,0,.5);padding:5px;animation:cm-pop .12s ease}
+.conv-menu{position:absolute;right:8px;top:33px;z-index:40;min-width:150px;display:flex;flex-direction:column;background:var(--elev);border:1px solid var(--bd);border-radius:11px;box-shadow:0 16px 44px rgba(0,0,0,.5);padding:5px;animation:cm-pop var(--dur-micro) var(--ease-decel)}
 @keyframes cm-pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-.cm-item{display:flex;align-items:center;width:100%;font-size:14px;line-height:1;color:var(--mut);padding:7px 9px;border-radius:6px;transition:background .1s ease,color .1s ease}
+.cm-item{display:flex;align-items:center;width:100%;font-size:14px;line-height:1;color:var(--mut);padding:7px 9px;border-radius:6px;transition:background var(--dur-micro) var(--ease-standard),color var(--dur-micro) var(--ease-standard)}
 .cm-item:hover,.cm-item:focus-visible{background:var(--row-hover);color:var(--fg);outline:none}
 /* leading glyph inherits the item's color, so it tracks hover + the red Delete */
 .cm-ic{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-right:9px;flex:none;color:inherit;opacity:.85}
@@ -978,10 +985,10 @@ html.shell-mobile .oc-toast{max-width:none}
 .cm-danger:hover,.cm-danger:focus-visible{background:rgba(240,114,106,.10);color:var(--red)}
 
 /* per-message hover toolbar — faint ghost icons that lift in on hover/focus */
-.msg-tools{display:flex;gap:1px;margin-top:5px;opacity:0;transform:translateY(2px);transition:opacity .12s ease,transform .12s ease}
+.msg-tools{display:flex;gap:1px;margin-top:5px;opacity:0;transform:translateY(2px);transition:opacity var(--dur-micro) var(--ease-standard),transform var(--dur-micro) var(--ease-standard)}
 .msg-asst:hover .msg-tools,.msg-asst:focus-within .msg-tools,.msg-user-wrap:hover .msg-tools,.msg-user-wrap:focus-within .msg-tools{opacity:1;transform:none}
 .msg-user-wrap .msg-tools{justify-content:flex-end}
-.msg-tool{width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:var(--faint);border-radius:6px;transition:color .1s ease,background .1s ease}
+.msg-tool{width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:var(--faint);border-radius:6px;transition:color var(--dur-micro) var(--ease-standard),background var(--dur-micro) var(--ease-standard)}
 .msg-tool:hover,.msg-tool:focus-visible{color:var(--mut);background:var(--row-hover);outline:none}
 .msg-tool:active{color:var(--fg)}
 .msg-tool.on{color:var(--fg);background:var(--row-hover)}
@@ -1017,10 +1024,10 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-dl-wrap{position:relative;display:flex}
 /* Opens UPWARD from the icon (the toolbar sits low, near the composer) and
    aligns to the icon's left edge. Same panel language as .conv-menu. */
-.msg-dl-menu{position:absolute;left:0;bottom:calc(100% + 6px);z-index:40;min-width:140px;display:flex;flex-direction:column;background:var(--elev);border:1px solid var(--bd);border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.5);padding:5px;animation:dl-pop .12s ease}
+.msg-dl-menu{position:absolute;left:0;bottom:calc(100% + 6px);z-index:40;min-width:140px;display:flex;flex-direction:column;background:var(--elev);border:1px solid var(--bd);border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.5);padding:5px;animation:dl-pop var(--dur-micro) var(--ease-decel)}
 .msg-user-wrap .msg-dl-menu{left:auto;right:0}
 @keyframes dl-pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-.msg-dl-item{display:flex;align-items:center;gap:9px;width:100%;font-size:13.5px;line-height:1;color:var(--mut);padding:7px 10px;border-radius:6px;white-space:nowrap;transition:background .1s ease,color .1s ease}
+.msg-dl-item{display:flex;align-items:center;gap:9px;width:100%;font-size:13.5px;line-height:1;color:var(--mut);padding:7px 10px;border-radius:6px;white-space:nowrap;transition:background var(--dur-micro) var(--ease-standard),color var(--dur-micro) var(--ease-standard)}
 .msg-dl-item:hover,.msg-dl-item:focus-visible{background:var(--row-hover);color:var(--fg);outline:none}
 .msg-dl-ic{display:inline-flex;align-items:center;justify-content:center;flex:none;color:inherit;opacity:.85}
 

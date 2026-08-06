@@ -772,15 +772,9 @@ function _ensureWorkingBanner() {
       'align-items:center;gap:6px;',
     ].join('');
     el.style.display = 'none'; // hidden until _showWorkingBanner()
-    el.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:var(--teal,#0dc);display:inline-block;animation:ocPulse 1s ease-in-out infinite"></span>'
+    el.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:var(--teal,#0dc);display:inline-block;animation:pulse var(--loop-slow) ease-in-out infinite"></span>'
       + '<span class="oc-wb-text">Gary is working…</span>'
       + '<span class="act-elapsed" style="margin-left:auto;font-family:var(--mono,monospace);font-size:11px;opacity:.65"></span>';
-    if (!document.getElementById('oc-wb-style')) {
-      const s = document.createElement('style');
-      s.id = 'oc-wb-style';
-      s.textContent = '@keyframes ocPulse{0%,100%{opacity:.4}50%{opacity:1}}';
-      document.head.appendChild(s);
-    }
     // Insert at the top of the thread container
     const thread = document.querySelector('.m-thread, .chat-thread, #chat-history');
     if (thread) thread.prepend(el);

@@ -560,9 +560,6 @@ html.shell-mobile .oc-toast{max-width:none}
    (a cursor blink cadence, not a fast/slow loop) so it stays a literal outside
    the --loop-* tokens — but it's still decorative motion (unlike ring-drain's
    functional countdown), so it gets an explicit reduced-motion stop here. */
-@media (prefers-reduced-motion:reduce){
-  .act-cursor,.term-cursor{animation:none}
-}
 /* mobile scale-down within the phone thread */
 .m-thread .act-wrap{margin-bottom:10px}
 .m-thread .act-summary{gap:6px;padding:3px 8px 3px 6px}
@@ -910,6 +907,16 @@ html.shell-mobile .oc-toast{max-width:none}
 .term-body{flex:1;padding:14px 15px;font-family:var(--mono);font-size:12.5px;line-height:1.9;color:#cfd3da;overflow:hidden;min-height:0}
 .term-body .host{color:var(--green)} .term-body .cwd2{color:var(--blue)} .term-body .ok{color:var(--green)} .term-body .dim{color:var(--faint)}
 .term-cursor{display:inline-block;width:8px;height:14px;background:var(--teal);vertical-align:-2px;animation:blink 1.1s step-end infinite}
+/* blink's 1.1s step-end rate is a distinct UX category from spin/pulse/shimmer
+   (a cursor blink cadence, not a fast/slow loop) so it stays a literal outside
+   the --loop-* tokens — but it's still decorative motion (unlike ring-drain's
+   functional countdown), so it gets an explicit reduced-motion stop here.
+   Placed AFTER both .act-cursor and .term-cursor's own declarations —
+   source order decides ties at equal specificity, so a block placed before
+   either target selector's own rule is silently overridden by it. */
+@media (prefers-reduced-motion:reduce){
+  .act-cursor,.term-cursor{animation:none}
+}
 
 .files-subtabs{flex:none;display:flex;align-items:center;gap:14px;padding:0 15px;border-bottom:1px solid var(--bd2);height:38px}
 .files-subtabs .ft{font-size:12.5px;font-weight:600;color:var(--teal);border-bottom:2px solid var(--teal);height:38px;display:flex;align-items:center}

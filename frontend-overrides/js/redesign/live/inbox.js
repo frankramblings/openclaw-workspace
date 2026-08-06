@@ -10,6 +10,7 @@ import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
 import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs, triageSummary, ageLabelFor } from './inbox-logic.js';
 import { detailEndpoint } from './inbox-detail.js';
+import { startClosingSheet } from '../mobile/sheet-close.js';
 
 // Pick a sensible primary CTA label from the backend's allowed actions list —
 // kept for the mobile mock fallback; desktop derives buttons from cardActions.
@@ -385,8 +386,11 @@ export const actions = {
     runtime.render();
   },
   closeSnooze: () => {
-    runtime.state.inboxSnoozeFor = null;
-    runtime.render();
+    const state = runtime.state;
+    startClosingSheet(state, 'inboxSnoozeFor', 'inboxSnoozeClosing');
+    // inboxSnoozeFor holds an id (truthy string), not a boolean — startClosingSheet's
+    // `if (!state[openFlag])` check still works (falsy id === already closed).
+    setTimeout(() => { state.inboxSnoozeFor = null; state.inboxSnoozeClosing = false; runtime.render(); }, 200);
   },
 
   // Commit a snooze preset: optimistic dismiss + POST + revert on failure.

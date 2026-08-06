@@ -56,8 +56,10 @@ html.shell-mobile #oc-root { height: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: none; }
   /* still pulse-free / slide-free for vestibular safety; the loading spinner
-     (.m-ptr .spin) stays — it conveys progress, freezing it reads as broken */
-.m-sheet { animation: none; }
+     (.m-ptr .spin) stays — it conveys progress, freezing it reads as broken.
+     .closing variants need their own entries here too (higher specificity
+     than the bare selector would otherwise win over animation:none). */
+.m-sheet, .m-sheet.closing, .m-scrim, .m-scrim.closing { animation: none; }
   .m-term-cursor { animation: none; }
 }
 /* Keyboard / switch-control focus ring. Pointer presses use :active (above);
@@ -483,9 +485,19 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-source-link svg { flex: none; }
 
 /* ---- sheets (companion + quick capture) ---------------------------------- */
-.m-scrim { position: absolute; inset: 0; background: rgba(8,9,11,.45); z-index: 40; }
-.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--panel); border-radius: 22px 22px 0 0; border-top: 1px solid var(--bd); box-shadow: 0 -16px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; animation: m-sheet-up .22s ease; }
+/* Entry/exit animation durations+eases are literal 200ms ease-in/ease-out for
+   now — Task 9 introduces --dur-panel/--ease-decel/--ease-accel as the shared
+   motion tokens, and Task 11's migration pass swaps these literals for the
+   var() references once that lands. Keep in sync with CLOSE_ANIM_MS in
+   mobile-app.js (the JS-side timer that actually detaches the sheet). */
+.m-scrim { position: absolute; inset: 0; background: rgba(8,9,11,.45); z-index: 40; animation: m-scrim-in 200ms ease-out; }
+.m-scrim.closing { animation: m-scrim-out 200ms ease-in forwards; }
+@keyframes m-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes m-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--panel); border-radius: 22px 22px 0 0; border-top: 1px solid var(--bd); box-shadow: 0 -16px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; animation: m-sheet-up 200ms ease-out; }
+.m-sheet.closing { animation: m-sheet-down 200ms ease-in forwards; }
 @keyframes m-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes m-sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
 .m-sheet.companion { height: 64%; }
 .m-sheet.capture { max-height: 88%; padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 26px); }
 .m-grab { flex: none; display: flex; justify-content: center; padding: 9px 0 5px; }

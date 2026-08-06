@@ -31,9 +31,10 @@ function fileTree(s) {
 
 export function renderCompanionSheet(s) {
   const onTerm = s.companionTab !== 'files';
+  const closing = !!s.companionSheetClosing;
   return `
-  <div class="m-scrim" data-act="closeCompanion" aria-hidden="true"></div>
-  <div class="m-sheet companion" role="dialog" aria-modal="true" aria-label="Companion tools">
+  <div class="m-scrim${closing ? ' closing' : ''}" data-act="closeCompanion" aria-hidden="true"></div>
+  <div class="m-sheet companion${closing ? ' closing' : ''}" role="dialog" aria-modal="true" aria-label="Companion tools">
     <div class="m-grab"><div class="h"></div></div>
     <div class="m-seg-row">
       <div class="seg">
@@ -56,9 +57,10 @@ export function renderCompanionSheet(s) {
 // because only the desktop rendered a compose surface.
 export function renderComposeSheet(s) {
   const busy = !!s.emailBusy;
+  const closing = !!s.composeClosing;
   return `
-  <div class="m-scrim" data-act="closeCompose" aria-hidden="true"></div>
-  <div class="m-sheet compose" role="dialog" aria-modal="true" aria-label="${s.composeInReplyTo ? 'Reply' : 'New message'}">
+  <div class="m-scrim${closing ? ' closing' : ''}" data-act="closeCompose" aria-hidden="true"></div>
+  <div class="m-sheet compose${closing ? ' closing' : ''}" role="dialog" aria-modal="true" aria-label="${s.composeInReplyTo ? 'Reply' : 'New message'}">
     <div class="m-grab"><div class="h"></div></div>
     <div class="m-cap-head"><span class="t">${s.composeInReplyTo ? 'Reply' : 'New message'}</span><div class="m-spacer"></div><button class="cancel" data-act="closeCompose">Cancel</button></div>
     <div class="m-compose-fields">
@@ -164,6 +166,9 @@ export function renderModelSheet(s) {
   const groups = s.live?.modelGroups || [];
   const curId = (chat.endpointId || '') + '·' + (chat.model || '');
   const defId = s.live?.defaultModel || '';
+  const closing = !!s.mModelSheetClosing;
+  const scrimCls = `m-scrim${closing ? ' closing' : ''}`;
+  const sheetCls = `m-sheet model-sheet${closing ? ' closing' : ''}`;
   if (!groups.length) {
     // openModelSheet (mobile-app.js) re-fires loadModelOptions on every open —
     // it only skips fetching once state.live.modelGroups is set — so reusing
@@ -172,7 +177,7 @@ export function renderModelSheet(s) {
     const body = s.live?.modelsFailed
       ? `<div class="m-model-retry ocrow" data-act="openModelSheet" role="button" tabindex="0" style="padding:20px;color:var(--faint);font-size:13px;cursor:pointer">Couldn't load models — tap to retry</div>`
       : `<div style="padding:20px;color:var(--faint);font-size:13px">Loading models…</div>`;
-    return `<div class="m-scrim" data-act="closeModelSheet" aria-hidden="true"></div><div class="m-sheet model-sheet" role="dialog" aria-modal="true" aria-label="Model"><div class="m-grab"><div class="h"></div></div><div class="m-cap-head"><span class="t">Model</span><div class="m-spacer"></div><button class="cancel" data-act="closeModelSheet">Close</button></div>${body}</div>`;
+    return `<div class="${scrimCls}" data-act="closeModelSheet" aria-hidden="true"></div><div class="${sheetCls}" role="dialog" aria-modal="true" aria-label="Model"><div class="m-grab"><div class="h"></div></div><div class="m-cap-head"><span class="t">Model</span><div class="m-spacer"></div><button class="cancel" data-act="closeModelSheet">Close</button></div>${body}</div>`;
   }
   const row = (m) => {
     const active = m.id === curId;
@@ -185,8 +190,8 @@ export function renderModelSheet(s) {
   };
   const group = (g) => `<div class="m-model-ep">${esc(g.ep)}</div>${map(g.models, row)}`;
   return `
-  <div class="m-scrim" data-act="closeModelSheet" aria-hidden="true"></div>
-  <div class="m-sheet model-sheet" role="dialog" aria-modal="true" aria-label="Model">
+  <div class="${scrimCls}" data-act="closeModelSheet" aria-hidden="true"></div>
+  <div class="${sheetCls}" role="dialog" aria-modal="true" aria-label="Model">
     <div class="m-grab"><div class="h"></div></div>
     <div class="m-cap-head"><span class="t">Model</span><div class="m-spacer"></div><button class="cancel" data-act="closeModelSheet">Close</button></div>
     <div class="m-model-list">${map(groups, group)}</div>
@@ -216,9 +221,10 @@ const SNOOZE_PRESETS = [
 export function renderSnoozeSheet(s) {
   const id = s && s.inboxSnoozeFor;
   if (!id) return '';
+  const closing = !!s.inboxSnoozeClosing;
   return `
-  <div class="m-scrim" data-act="closeSnooze" aria-hidden="true"></div>
-  <div class="m-sheet snooze" role="dialog" aria-modal="true" aria-label="Snooze">
+  <div class="m-scrim${closing ? ' closing' : ''}" data-act="closeSnooze" aria-hidden="true"></div>
+  <div class="m-sheet snooze${closing ? ' closing' : ''}" role="dialog" aria-modal="true" aria-label="Snooze">
     <div class="m-grab"><div class="h"></div></div>
     <div class="m-cap-head"><span class="t">Snooze</span><div class="m-spacer"></div><button class="cancel" data-act="closeSnooze">Cancel</button></div>
     <div class="m-snooze-list">
@@ -244,9 +250,10 @@ export function renderCaptureSheet(s) {
     const tag = meta ? `${meta.glyph} ${meta.label}` : esc(r.type || '');
     return `<div class="m-cap-recent"><span class="tx">${esc(String(r.text || '').slice(0, 80))}</span><span class="ty">${tag} · ${esc(captureAgeLabel(r.ts, Date.now()))}</span></div>`;
   };
+  const closing = !!s.quickCaptureClosing;
   return `
-  <div class="m-scrim" data-act="closeCapture" aria-hidden="true"></div>
-  <div class="m-sheet capture" role="dialog" aria-modal="true" aria-label="Quick capture">
+  <div class="m-scrim${closing ? ' closing' : ''}" data-act="closeCapture" aria-hidden="true"></div>
+  <div class="m-sheet capture${closing ? ' closing' : ''}" role="dialog" aria-modal="true" aria-label="Quick capture">
     <div class="m-grab"><div class="h"></div></div>
     <div class="m-cap-head"><div class="av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div><span class="t">Quick capture</span><div class="m-spacer"></div><button class="cancel" data-act="closeCapture">Cancel</button></div>
     <div class="m-cap-input"><textarea data-model="captureDraft" data-focus="mcapture" rows="2" placeholder="Remind me to send the Cannes deck to legal before Friday">${esc(draft)}</textarea></div>

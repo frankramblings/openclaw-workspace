@@ -6,6 +6,7 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
+import { startClosingSheet } from '../mobile/sheet-close.js';
 
 // Current reader email (live current, else the selected list row).
 function curEmail(state) {
@@ -279,7 +280,12 @@ export const actions = {
     }
     runtime.render();
   },
-  closeCompose: () => { const s = runtime.state; if (s) { s.composeOpen = false; runtime.render(); } },
+  closeCompose: () => {
+    const s = runtime.state;
+    if (!s) return;
+    startClosingSheet(s, 'composeOpen', 'composeClosing');
+    setTimeout(() => { s.composeOpen = false; s.composeClosing = false; runtime.render(); }, 200);
+  },
   sendEmail: async () => {
     const s = runtime.state;
     if (!s) return;

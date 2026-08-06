@@ -13,6 +13,27 @@ import { recordCapture, readRecentCaptures } from './mobile-data.js';
 import { cardActions, isInvite, swipeIntent } from '../live/inbox-logic.js';
 import { edgeSwipeBlocked } from './mobile-history.js';
 import { armSwallow, shouldSwallowClick, scheduleSwallowDisarm } from './longpress.js';
+import { startClosingSheet } from './sheet-close.js';
+
+// Matches the CSS exit-animation duration (mobile.css .m-sheet.closing /
+// .m-scrim.closing — literal 200ms until Task 9's --dur-panel token lands and
+// Task 11 migrates this constant to read it). Keep these two in sync.
+const CLOSE_ANIM_MS = 200;
+// Shared timed second half of an animated sheet close: startClosingSheet has
+// already flipped the closing flag (still rendered, exit class applied); once
+// the animation has had time to play, flip the open flag false and clear the
+// closing flag, then re-render to actually drop the sheet's markup. Reading
+// `runtime.render` at call time (not destructured above) since runtime.render
+// is only ever swapped once, at boot (app.js), but this keeps the helper
+// agnostic either way.
+function closeSheetAnimated(state, openFlag, closingFlag) {
+  startClosingSheet(state, openFlag, closingFlag);
+  setTimeout(() => {
+    state[openFlag] = false;
+    state[closingFlag] = false;
+    runtime.render();
+  }, CLOSE_ANIM_MS);
+}
 
 const PUSHED_SURFACES = new Set(['research', 'library', 'notes', 'settings']);
 
@@ -116,7 +137,7 @@ export function mobileActions(state) {
     mOpenReader: (i) => { state.selEmail = Number(i); state.mReader = true; state.mEmailOpened = true; },
     mCloseReader: () => { state.mReader = false; },
     openCompanion: () => { state.companionSheetOpen = true; },
-    closeCompanion: () => { state.companionSheetOpen = false; },
+    closeCompanion: () => { closeSheetAnimated(state, 'companionSheetOpen', 'companionSheetClosing'); },
     companionTab: (t) => { state.companionTab = t; },
     openCapture: () => {
       state.quickCaptureOpen = true;
@@ -125,7 +146,7 @@ export function mobileActions(state) {
       // from elsewhere (or a prior session) is picked up.
       try { state.captureRecents = readRecentCaptures(localStorage); } catch (_) { state.captureRecents = []; }
     },
-    closeCapture: () => { state.quickCaptureOpen = false; },
+    closeCapture: () => { closeSheetAnimated(state, 'quickCaptureOpen', 'quickCaptureClosing'); },
     // Opening the conversations list is exactly when you're looking for a thread
     // you just started — pull a fresh list so a newly-created (or out-of-band)
     // thread is always there, regardless of send-timing. Fire-and-forget: the
@@ -141,7 +162,7 @@ export function mobileActions(state) {
       state.mModelSheetOpen = true;
       if (runtime.actions && runtime.actions.loadModelOptions) await runtime.actions.loadModelOptions();
     },
-    closeModelSheet: () => { state.mModelSheetOpen = false; },
+    closeModelSheet: () => { closeSheetAnimated(state, 'mModelSheetOpen', 'mModelSheetClosing'); },
     mSetModel: (id) => { state.mModelSheetOpen = false; if (runtime.actions && runtime.actions.setModel) runtime.actions.setModel(id); },
     mSetDefaultModel: (id) => { if (runtime.actions && runtime.actions.setDefaultModel) runtime.actions.setDefaultModel(id); },
     setCaptureType: (t) => { state.captureType = t; },

@@ -42,6 +42,14 @@
   --ease-decel:cubic-bezier(0,0,.2,1);
   --ease-accel:cubic-bezier(.4,0,1,1);
   --loop-fast:0.9s; --loop-slow:1.6s;
+  /* z-index scale — named 1:1 from the ad hoc literals found across redesign.css
+     and mobile.css (see task-20 of the motion/interaction fix campaign). Pure
+     rename: values and relative order are unchanged from before this pass. */
+  --z-ghost:2; --z-ptr:5; --z-res-pop:20; --z-row-raised:30; --z-toast-mobile:39;
+  --z-dropdown:40; --z-sheet:41; --z-drawer-scrim:44; --z-drawer:45; --z-files-menu:60;
+  --z-msg-sheet-scrim:90; --z-msg-sheet:91; --z-install-hint:200; --z-threads-hint:201;
+  --z-threads-hint-btn:202; --z-drop-overlay:9998; --z-toast:9999; --z-imgview:10000;
+  --z-loader:99999;
 }
 
 *{box-sizing:border-box}
@@ -66,7 +74,7 @@ html.shell-mobile body.oc-doc-docked{padding-right:0}
 .ws-root-btn:hover{background:rgba(255,255,255,.04)}
 .ws-root-menu{position:absolute;top:100%;right:0;margin-top:4px;min-width:220px;
   background:var(--panel,#1b1d22);border:1px solid var(--border,#2a2d33);border-radius:8px;
-  box-shadow:0 12px 32px rgba(0,0,0,.35);z-index:60;padding:4px;display:flex;flex-direction:column;
+  box-shadow:0 12px 32px rgba(0,0,0,.35);z-index:var(--z-files-menu);padding:4px;display:flex;flex-direction:column;
   animation:cm-pop var(--dur-micro) var(--ease-decel)}
 .ws-root-item{display:flex;flex-direction:column;padding:6px 10px;border-radius:6px;cursor:pointer;gap:1px}
 .ws-root-item:hover{background:rgba(255,255,255,.05)}
@@ -106,7 +114,7 @@ html.shell-mobile body.oc-doc-docked{padding-right:0}
 }
 
 /* Full-screen boot loader: the fortress, centered, while #oc-root is hidden. */
-#app-loader{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;
+#app-loader{position:fixed;inset:0;z-index:var(--z-loader);display:flex;align-items:center;justify-content:center;
   background:var(--bg);color:#fff;opacity:.9;transition:opacity var(--dur-content) var(--ease-standard)}
 #app-loader.is-hiding{opacity:0;pointer-events:none}
 
@@ -195,7 +203,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
 .conv-spin.working{flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--teal)}
 .conv-spin.working .fl-svg{display:block}
 /* In-app turn-finished toast (appended to <body>, outside the render root). */
-#oc-toast-host{position:fixed;z-index:9999;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+#oc-toast-host{position:fixed;z-index:var(--z-toast);right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .oc-toast{pointer-events:auto;display:flex;align-items:center;gap:10px;max-width:340px;padding:11px 14px;border-radius:12px;background:var(--panel2);border:1px solid color-mix(in srgb,var(--teal) 32%,transparent);box-shadow:0 8px 28px rgba(0,0,0,.45);color:var(--fg);font-size:14px;cursor:pointer;transform:translateY(12px);opacity:0;transition:opacity var(--dur-panel) var(--ease-standard),transform var(--dur-panel) var(--ease-standard)}
 .oc-toast.in{opacity:1;transform:translateY(0)}
 .oc-toast-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 22%,transparent)}
@@ -207,7 +215,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--teal2)!important}
    mobile.css), not a live @media query — a latched-mobile device rotated to
    landscape (>768px) still gets the tab-bar-clearing placement, and a latched-
    desktop window narrowed below 768px correctly keeps the desktop corner toast. */
-html.shell-mobile #oc-toast-host{left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:39}
+html.shell-mobile #oc-toast-host{left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:var(--z-toast-mobile)}
 html.shell-mobile .oc-toast{max-width:none}
 .oc-rail-fill{flex:1}
 .oc-user{display:flex;align-items:center;gap:11px;padding:6px 9px}
@@ -409,7 +417,7 @@ html.shell-mobile .oc-toast{max-width:none}
    :not(:placeholder-shown) — no per-keystroke JS. A queued-message banner
    shifts the textarea down, so the ghost also hides while one is showing. */
 .composer{position:relative}
-.composer .ghost-suggest{position:absolute;left:16px;right:16px;top:14px;z-index:2;color:var(--faint);font-family:var(--prose);font-size:16.5px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.composer .ghost-suggest{position:absolute;left:16px;right:16px;top:14px;z-index:var(--z-ghost);color:var(--faint);font-family:var(--prose);font-size:16.5px;line-height:1.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .composer .ghost-suggest .tabhint{display:inline-block;margin-left:10px;font:600 10px/1 ui-monospace,SFMono-Regular,monospace;color:var(--mut);border:1px solid var(--bd);border-radius:4px;padding:2px 5px;vertical-align:2px}
 .composer:has(.ghost-suggest) textarea::placeholder{color:transparent}
 .composer:has(textarea:not(:placeholder-shown)) .ghost-suggest,
@@ -434,7 +442,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .model-btn-name{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* compact, endpoint-grouped model picker (design_handoff_model_selector) */
-.model-pop{position:absolute;right:22px;bottom:100%;margin-bottom:8px;width:300px;max-height:380px;overflow-y:auto;z-index:40;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:6px}
+.model-pop{position:absolute;right:22px;bottom:100%;margin-bottom:8px;width:300px;max-height:380px;overflow-y:auto;z-index:var(--z-dropdown);background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:6px}
 .model-grp{display:flex;align-items:center;gap:7px;padding:9px 9px 4px}
 .model-ep{font-size:11px;font-weight:700;letter-spacing:.09em;color:var(--faint)}
 .model-tag{font-size:11px;color:var(--faint);background:var(--bg);border:1px solid var(--bd);padding:1px 6px;border-radius:999px}
@@ -503,7 +511,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .shared-image img{display:block;max-width:100%;height:auto;border-radius:10px;
   border:1px solid var(--bd);background:#fff;cursor:zoom-in}
 /* Fullscreen image viewer (image-viewer.js). */
-.rnd-imgview{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;
+.rnd-imgview{position:fixed;inset:0;z-index:var(--z-imgview);display:flex;flex-direction:column;
   background:rgba(12,12,14,.9);backdrop-filter:blur(4px)}
 .rnd-imgview-bar{display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;color:#eee;
   font-size:13px;line-height:1.4}
@@ -722,7 +730,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .res-ctl.on{border-color:var(--teal2);background:var(--tealtint);color:var(--teal)}
 .res-ctl .ck{color:var(--faint)}
 .res-ctl b{font-weight:600}
-.res-pop{position:absolute;left:0;bottom:100%;margin-bottom:6px;min-width:148px;background:var(--elev);border:1px solid var(--bd);border-radius:10px;box-shadow:0 14px 40px rgba(0,0,0,.5);padding:5px;z-index:20}
+.res-pop{position:absolute;left:0;bottom:100%;margin-bottom:6px;min-width:148px;background:var(--elev);border:1px solid var(--bd);border-radius:10px;box-shadow:0 14px 40px rgba(0,0,0,.5);padding:5px;z-index:var(--z-res-pop)}
 .res-opt{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;cursor:pointer}
 .res-opt:hover{background:var(--row-hover)}
 .res-opt.sel{background:var(--tealtint)}
@@ -962,7 +970,7 @@ html.shell-mobile .oc-toast{max-width:none}
 /* lift the open row above its later siblings — every row is position:relative,
    so without this the menu's z-index stays trapped in this row's context and
    following rows paint over the (opaque) dropdown */
-.conv-row.menu-open{z-index:30}
+.conv-row.menu-open{z-index:var(--z-row-raised)}
 /* favorite star — the one warm accent in this whole feature */
 .conv-fav{flex:none;display:inline-flex;align-items:center;color:var(--gold)}
 
@@ -975,7 +983,7 @@ html.shell-mobile .oc-toast{max-width:none}
 
 /* the dropdown reuses the slash-menu overlay language (--elev panel, hairline,
    soft drop shadow) and pops in subtly from the kebab */
-.conv-menu{position:absolute;right:8px;top:33px;z-index:40;min-width:150px;display:flex;flex-direction:column;background:var(--elev);border:1px solid var(--bd);border-radius:11px;box-shadow:0 16px 44px rgba(0,0,0,.5);padding:5px;animation:cm-pop var(--dur-micro) var(--ease-decel)}
+.conv-menu{position:absolute;right:8px;top:33px;z-index:var(--z-dropdown);min-width:150px;display:flex;flex-direction:column;background:var(--elev);border:1px solid var(--bd);border-radius:11px;box-shadow:0 16px 44px rgba(0,0,0,.5);padding:5px;animation:cm-pop var(--dur-micro) var(--ease-decel)}
 @keyframes cm-pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .cm-item{display:flex;align-items:center;width:100%;font-size:14px;line-height:1;color:var(--mut);padding:7px 9px;border-radius:6px;transition:background var(--dur-micro) var(--ease-standard),color var(--dur-micro) var(--ease-standard)}
 .cm-item:hover,.cm-item:focus-visible{background:var(--row-hover);color:var(--fg);outline:none}
@@ -1025,7 +1033,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-dl-wrap{position:relative;display:flex}
 /* Opens UPWARD from the icon (the toolbar sits low, near the composer) and
    aligns to the icon's left edge. Same panel language as .conv-menu. */
-.msg-dl-menu{position:absolute;left:0;bottom:calc(100% + 6px);z-index:40;min-width:140px;display:flex;flex-direction:column;background:var(--elev);border:1px solid var(--bd);border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.5);padding:5px;animation:dl-pop var(--dur-micro) var(--ease-decel)}
+.msg-dl-menu{position:absolute;left:0;bottom:calc(100% + 6px);z-index:var(--z-dropdown);min-width:140px;display:flex;flex-direction:column;background:var(--elev);border:1px solid var(--bd);border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.5);padding:5px;animation:dl-pop var(--dur-micro) var(--ease-decel)}
 .msg-user-wrap .msg-dl-menu{left:auto;right:0}
 @keyframes dl-pop{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .msg-dl-item{display:flex;align-items:center;gap:9px;width:100%;font-size:13.5px;line-height:1;color:var(--mut);padding:7px 10px;border-radius:6px;white-space:nowrap;transition:background var(--dur-micro) var(--ease-standard),color var(--dur-micro) var(--ease-standard)}
@@ -1048,7 +1056,7 @@ html.shell-mobile .oc-toast{max-width:none}
 
 /* Drag-and-drop image attach overlay (chat). Toggled by app.js; pointer-events
    none so the drop lands on the chat underneath and bubbles to the root handler. */
-#oc-drop-overlay { position: fixed; inset: 0; z-index: 9998; /* below #oc-toast-host — no ambiguous tie */ display: flex; align-items: center; justify-content: center; background: rgba(8,9,11,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: none; opacity: 0; visibility: hidden; transition: opacity var(--dur-panel) var(--ease-standard), visibility 0s linear var(--dur-panel); }
+#oc-drop-overlay { position: fixed; inset: 0; z-index: var(--z-drop-overlay); /* below #oc-toast-host — no ambiguous tie */ display: flex; align-items: center; justify-content: center; background: rgba(8,9,11,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: none; opacity: 0; visibility: hidden; transition: opacity var(--dur-panel) var(--ease-standard), visibility 0s linear var(--dur-panel); }
 #oc-drop-overlay.show { opacity: 1; visibility: visible; transition-delay: 0s; }
 #oc-drop-overlay .oc-drop-card { border: 2px dashed var(--teal, #4fe3d1); color: var(--fg, #e8eaed); background: var(--panel, #1e2025); border-radius: 16px; padding: 22px 30px; font-size: 19px; font-weight: 600; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
 

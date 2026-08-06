@@ -235,7 +235,7 @@ html.native .m-tabbar {
    not the same as declaring `bottom` inline, so `bottom` itself is only
    ever set here in the stylesheet, and normal cascade/specificity decides
    between this rule and .kb-up's below. */
-.m-scroll-btm { position: absolute; right: 14px; z-index: 30; width: 38px; height: 38px; border-radius: 50%; background: var(--panel); border: 1px solid var(--bd); color: var(--fg); align-items: center; justify-content: center; box-shadow: 0 5px 16px rgba(0,0,0,.45); cursor: pointer; bottom: var(--m-scroll-btm-y, 20px); }
+.m-scroll-btm { position: absolute; right: 14px; z-index: var(--z-row-raised); width: 38px; height: 38px; border-radius: 50%; background: var(--panel); border: 1px solid var(--bd); color: var(--fg); align-items: center; justify-content: center; box-shadow: 0 5px 16px rgba(0,0,0,.45); cursor: pointer; bottom: var(--m-scroll-btm-y, 20px); }
 
 /* ---- composing layout (keyboard up) --------------------------------------
    Driven by a `.kb-up` class on .m-app toggled in app.js (setMobileKb) rather
@@ -306,7 +306,7 @@ html.native .m-tabbar {
      message (Gary talking to Frank, not composer text) */
 .m-composer .ta-wrap { flex: 1 1 auto; min-width: 0; position: relative; display: flex; }
 .m-composer .ta-wrap textarea { width: 100%; }
-.m-composer .ghost-suggest { position: absolute; left: 0; max-width: calc(100% - 36px); top: 50%; transform: translateY(-50%); color: var(--violet); background: rgba(169,155,245,.1); border: 1px solid rgba(169,155,245,.25); border-radius: 999px; padding: 5px 10px; font-size: 13px; font-weight: 400; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; z-index: 2; -webkit-tap-highlight-color: transparent; }
+.m-composer .ghost-suggest { position: absolute; left: 0; max-width: calc(100% - 36px); top: 50%; transform: translateY(-50%); color: var(--violet); background: rgba(169,155,245,.1); border: 1px solid rgba(169,155,245,.25); border-radius: 999px; padding: 5px 10px; font-size: 13px; font-weight: 400; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; z-index: var(--z-ghost); -webkit-tap-highlight-color: transparent; }
 .m-composer .ghost-suggest:active { opacity: .55; }
 .m-composer .ta-wrap:has(.ghost-suggest) textarea::placeholder { color: transparent; }
 .m-composer .ta-wrap:has(textarea:not(:placeholder-shown)) .ghost-suggest { display: none; }
@@ -357,7 +357,7 @@ html.native .m-tabbar {
 /* Sticky so a header/chrome pull shows feedback even when the thread is scrolled
    to the bottom (the indicator would otherwise sit scrolled out of view up top).
    At height:0 it's invisible during normal scrolling; it only reveals on pull. */
-.m-ptr { position: sticky; top: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; overflow: hidden; height: 0; transition: height var(--dur-panel) var(--ease-standard); box-sizing: border-box; }
+.m-ptr { position: sticky; top: 0; z-index: var(--z-ptr); background: var(--bg); display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; overflow: hidden; height: 0; transition: height var(--dur-panel) var(--ease-standard); box-sizing: border-box; }
 /* box-sizing:border-box floors the border-box at padding+border, so height:0 alone
    can't collapse these (they'd render ~18px tall — a permanent opaque bar pinned at
    the sticky top). Drop the padding while closed so the collapse is truly 0; the
@@ -373,7 +373,7 @@ html.native .m-tabbar {
    thread: as the pull grows its height and we re-pin the feed to the bottom, the
    newest message lifts and this reveals underneath — a rubber-band into refresh.
    height:0 keeps it invisible during normal scrolling. */
-.m-ptr-btm { z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 12px 0 6px; overflow: hidden; height: 0; transition: height var(--dur-panel) var(--ease-standard); box-sizing: border-box; }
+.m-ptr-btm { z-index: var(--z-ptr); background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 12px 0 6px; overflow: hidden; height: 0; transition: height var(--dur-panel) var(--ease-standard); box-sizing: border-box; }
 .m-ptr-btm .spin { display: inline-flex; align-items: center; color: var(--teal); line-height: 0; }
 .m-ptr-btm .lbl { font-size: 10.5px; color: var(--faint); }
 /* The crystal is only present while the indicator is OPEN (mid-pull or actively
@@ -525,11 +525,11 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
    --ease-accel motion tokens (Task 9's tokens; migrated onto them in Task 11).
    Keep in sync with CLOSE_ANIM_MS in mobile-app.js (the JS-side timer that
    actually detaches the sheet) — both resolve to 200ms today. */
-.m-scrim { position: absolute; inset: 0; background: rgba(8,9,11,.45); z-index: 40; animation: m-scrim-in var(--dur-panel) var(--ease-decel); }
+.m-scrim { position: absolute; inset: 0; background: rgba(8,9,11,.45); z-index: var(--z-dropdown); animation: m-scrim-in var(--dur-panel) var(--ease-decel); }
 .m-scrim.closing { animation: m-scrim-out var(--dur-panel) var(--ease-accel) forwards; }
 @keyframes m-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes m-scrim-out { from { opacity: 1; } to { opacity: 0; } }
-.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--panel); border-radius: 22px 22px 0 0; border-top: 1px solid var(--bd); box-shadow: 0 -16px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; animation: m-sheet-up var(--dur-panel) var(--ease-decel); }
+.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: var(--z-sheet); background: var(--panel); border-radius: 22px 22px 0 0; border-top: 1px solid var(--bd); box-shadow: 0 -16px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; animation: m-sheet-up var(--dur-panel) var(--ease-decel); }
 .m-sheet.closing { animation: m-sheet-down var(--dur-panel) var(--ease-accel) forwards; }
 @keyframes m-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes m-sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
@@ -639,11 +639,11 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
    Always mounted (off-screen when closed) so wireMobileGestures can finger-track
    transform without an innerHTML rebuild. `.dragging` kills the transition while
    the finger owns it; releasing re-enables the ease so open/close animates. */
-.m-drawer-scrim { position: absolute; inset: 0; z-index: 44; background: rgba(8,9,11,.45); opacity: 0; pointer-events: none; transition: opacity var(--dur-panel) var(--ease-standard); }
+.m-drawer-scrim { position: absolute; inset: 0; z-index: var(--z-drawer-scrim); background: rgba(8,9,11,.45); opacity: 0; pointer-events: none; transition: opacity var(--dur-panel) var(--ease-standard); }
 .m-drawer-scrim.open { opacity: 1; pointer-events: auto; }
 .m-drawer-scrim.dragging { transition: none; }
 .m-drawer {
-  position: absolute; top: 0; bottom: 0; z-index: 45; width: 86%; max-width: 340px;
+  position: absolute; top: 0; bottom: 0; z-index: var(--z-drawer); width: 86%; max-width: 340px;
   display: flex; flex-direction: column; background: var(--panel);
   padding-top: env(safe-area-inset-top, 0px); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   will-change: transform; transition: transform var(--dur-panel) cubic-bezier(.22,.61,.36,1);
@@ -677,7 +677,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-sheet.model-sheet .m-cap-head { padding: 0 16px 10px; margin-bottom: 0; }
 
 /* ---- First-run "Add to Home Screen" hint (mobile only) ------------------- */
-#pwa-install-hint { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+#pwa-install-hint { position: fixed; inset: 0; z-index: var(--z-install-hint); pointer-events: none; }
 #pwa-install-hint .pwa-hint-scrim {
   position: absolute; inset: 0; background: rgba(8,9,11,.28);
   opacity: 0; transition: opacity var(--dur-panel) var(--ease-standard); pointer-events: auto;
@@ -717,7 +717,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 #pwa-install-hint .pwa-hint-btn.primary:active { filter: brightness(.94); }
 
 /* ---- First-run "threads live behind the hamburger" hint (mobile only) ---- */
-#threads-hint { position: fixed; inset: 0; z-index: 201; pointer-events: none; }
+#threads-hint { position: fixed; inset: 0; z-index: var(--z-threads-hint); pointer-events: none; }
 #threads-hint .th-hint-scrim {
   position: absolute; inset: 0; background: rgba(8,9,11,.36);
   opacity: 0; transition: opacity var(--dur-panel) var(--ease-standard); pointer-events: auto;
@@ -770,7 +770,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 
 /* Attention pulse on the hamburger while the hint is up. */
 .m-nav-btn.threads-hint-pulse {
-  position: relative; z-index: 202;
+  position: relative; z-index: var(--z-threads-hint-btn);
   border-radius: 10px;
   animation: threads-hint-pulse var(--loop-slow) ease-out infinite;
 }
@@ -820,7 +820,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   border-radius: 10px;
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
   padding: 6px 0;
-  z-index: 60;
+  z-index: var(--z-files-menu);
 }
 .m-msg-dl-item {
   display: flex;
@@ -851,7 +851,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.42);
-  z-index: 90;
+  z-index: var(--z-msg-sheet-scrim);
   animation: mSheetFade var(--dur-panel) ease-out;
 }
 .m-msg-sheet {
@@ -859,7 +859,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 91;
+  z-index: var(--z-msg-sheet);
   background: var(--panel, #171a20);
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;

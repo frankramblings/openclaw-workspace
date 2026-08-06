@@ -66,7 +66,8 @@ html.shell-mobile body.oc-doc-docked{padding-right:0}
 .ws-root-btn:hover{background:rgba(255,255,255,.04)}
 .ws-root-menu{position:absolute;top:100%;right:0;margin-top:4px;min-width:220px;
   background:var(--panel,#1b1d22);border:1px solid var(--border,#2a2d33);border-radius:8px;
-  box-shadow:0 12px 32px rgba(0,0,0,.35);z-index:60;padding:4px;display:flex;flex-direction:column}
+  box-shadow:0 12px 32px rgba(0,0,0,.35);z-index:60;padding:4px;display:flex;flex-direction:column;
+  animation:cm-pop var(--dur-micro) var(--ease-decel)}
 .ws-root-item{display:flex;flex-direction:column;padding:6px 10px;border-radius:6px;cursor:pointer;gap:1px}
 .ws-root-item:hover{background:rgba(255,255,255,.05)}
 .ws-root-item.active{background:rgba(79,227,209,.08)}
@@ -455,7 +456,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .mode-toggle button.active-agent{background:var(--teal);color:var(--ink)}
 .mode-toggle button.active-chat{background:var(--elev);color:var(--fg)}
 
-.slash-menu{position:absolute;left:22px;right:22px;bottom:100%;margin-bottom:8px;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:7px}
+.slash-menu{position:absolute;left:22px;right:22px;bottom:100%;margin-bottom:8px;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:7px;animation:cm-pop var(--dur-micro) var(--ease-decel)}
 .slash-menu .hd{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--faint);padding:6px 9px 4px}
 .slash-cmd{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:9px;cursor:pointer}
 .slash-cmd:hover,.slash-cmd.sel{background:var(--row-hover)}
@@ -1034,7 +1035,7 @@ html.shell-mobile .oc-toast{max-width:none}
 @media (prefers-reduced-motion:reduce){
   .msg-tools{transition:none;transform:none}
   .conv-kebab,.cm-item,.msg-tool,.msg-dl-item{transition:none}
-  .conv-menu,.msg-dl-menu{animation:none}
+  .conv-menu,.msg-dl-menu,.ws-root-menu,.slash-menu{animation:none}
   .msg-pending-ring{animation:none;--pct:1}
 }
 

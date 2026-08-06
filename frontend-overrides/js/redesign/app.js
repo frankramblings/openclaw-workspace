@@ -312,6 +312,8 @@ function render() {
 
   const s = state;
   const sheetWasOpen = isMobile() && state.companionSheetOpen;
+  const convMenuWasOpen = !isMobile() && !!(state.live?.chat?.rowMenuOpen);
+  const dlMenuWasOpen = !isMobile() && !!(state.live?.chat?.msgMenuOpen);
   root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
 
   // Reflow-trick reconciler: snap each freshly-rebuilt [data-chev] element
@@ -334,6 +336,17 @@ function render() {
   if (sheetWasOpen) {
     const sheet = root.querySelector('.m-sheet.companion');
     if (sheet) sheet.style.animation = 'none';
+  }
+  // Same idea for the two desktop popovers (conv-menu / msg-dl-menu): a re-render
+  // while either is already open (e.g. typing with a kebab menu open) would
+  // otherwise replay its .12s pop-in animation on every keystroke.
+  if (convMenuWasOpen) {
+    const menu = root.querySelector('.conv-menu');
+    if (menu) menu.style.animation = 'none';
+  }
+  if (dlMenuWasOpen) {
+    const menu = root.querySelector('.msg-dl-menu');
+    if (menu) menu.style.animation = 'none';
   }
 
   if (!rootRevealed && Object.keys(state.live).length > 0) {

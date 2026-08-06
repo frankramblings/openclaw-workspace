@@ -227,7 +227,7 @@ function renderDesktop(s) {
 // and pinning the live stream above the fold so new output never came into view.
 const SCROLL_SELECTORS = [
   '.chat-thread', '.m-scroll', '.m-files',
-  '.inbox-scroll', '.list-scroll', '.lib-grid', '.set-scroll',
+  '.inbox-scroll', '.list-scroll', '.lib-wrap', '.set-scroll',
 ];
 
 // Track chat mount/session across renders so we can jump to the newest message

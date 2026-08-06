@@ -51,7 +51,7 @@ html.shell-mobile #oc-root { height: 100%; }
   -webkit-tap-highlight-color: transparent;
 }
 /* tactile: a subtle press-in on every interactive control */
-.m-round-btn, .m-send, .m-icon-btn, .m-tab, .m-add-btn, .m-pill, .m-chip, .m-triage, .m-back, .m-cap-type { transition: transform .1s ease; }
+.m-round-btn, .m-send, .m-icon-btn, .m-tab, .m-add-btn, .m-pill, .m-chip, .m-triage, .m-back, .m-cap-type { transition: transform var(--dur-micro) var(--ease-standard); }
 .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: scale(.93); }
 @media (prefers-reduced-motion: reduce) {
   .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: none; }
@@ -89,7 +89,7 @@ html.shell-mobile #oc-root { height: 100%; }
 .m-cap-input textarea:focus-visible { outline: none; }
 /* large tap targets: scaling a full-width card looks wrong, so settle the
    background instead — restores the press feedback the killed tap-highlight lost */
-.m-mail, .m-grid-card, .m-comp-handle .pill { transition: background-color .12s ease, border-color .12s ease; }
+.m-mail, .m-grid-card, .m-comp-handle .pill { transition: background-color var(--dur-micro) var(--ease-standard), border-color var(--dur-micro) var(--ease-standard); }
 .m-mail:active, .m-grid-card:active, .m-comp-handle .pill:active { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 /* Vertical scroll only: `overflow: auto` let a wide code card or message drag
    the whole surface sideways. Lock the X axis and kill horizontal rubber-band. */
@@ -129,7 +129,7 @@ html.shell-mobile #oc-root { height: 100%; }
 .m-model-chip .m-model-name { overflow: hidden; text-overflow: ellipsis; }
 
 /* Chat header refresh button: spin its icon while a refresh is in flight. */
-.m-icon-btn.spinning svg { animation: spin .8s linear infinite; }
+.m-icon-btn.spinning svg { animation: spin var(--loop-fast) linear infinite; }
 
 /* ---- bottom tab bar ------------------------------------------------------- */
 .m-tabbar {
@@ -262,7 +262,7 @@ html.native .m-tabbar {
 
 /* ---- chat composer -------------------------------------------------------- */
 .m-composer { flex: none; padding: 8px 12px; background: var(--bg); }
-.m-composer .bar { border: 1px solid var(--bd); background: var(--panel); border-radius: 22px; display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 14px; transition: border-color .18s ease, border-radius .18s ease, padding .18s ease; }
+.m-composer .bar { border: 1px solid var(--bd); background: var(--panel); border-radius: 22px; display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 14px; transition: border-color var(--dur-panel) var(--ease-standard), border-radius var(--dur-panel) var(--ease-standard), padding var(--dur-panel) var(--ease-standard); }
 .m-composer.focused .bar { border-color: color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
 /* font-size must be >= 16px: iOS Safari zooms the page when focusing an input
    smaller than that, which is the "it zooms in/out on the text field" bug. */
@@ -303,7 +303,7 @@ html.native .m-tabbar {
 .m-attach-row .m-attach-chip .x { position: relative; display: inline-flex; background: none; border: none; padding: 0; color: var(--faint); cursor: pointer; font-size: 13px; }
 .m-attach-row .m-attach-chip .x::after { content: ''; position: absolute; inset: -5px; }
 .m-round-btn.bordered { width: 30px; height: 30px; border: 1px solid var(--bd); }
-.m-send { width: 34px; height: 34px; border-radius: 50%; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; flex: none; border: none; cursor: pointer; transition: background .15s ease, color .15s ease, opacity .15s ease, transform .1s ease; }
+.m-send { width: 34px; height: 34px; border-radius: 50%; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; flex: none; border: none; cursor: pointer; transition: background var(--dur-micro) var(--ease-standard), color var(--dur-micro) var(--ease-standard), opacity var(--dur-micro) var(--ease-standard), transform var(--dur-micro) var(--ease-standard); }
 /* Send stays dim + inert until there's something to send; lights up live as you type. */
 .m-composer .bar:has(textarea:placeholder-shown) .m-send { background: var(--bd); color: var(--mut); opacity: .55; pointer-events: none; }
 
@@ -325,7 +325,7 @@ html.native .m-tabbar {
 /* Sticky so a header/chrome pull shows feedback even when the thread is scrolled
    to the bottom (the indicator would otherwise sit scrolled out of view up top).
    At height:0 it's invisible during normal scrolling; it only reveals on pull. */
-.m-ptr { position: sticky; top: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; overflow: hidden; transition: height .2s ease; box-sizing: border-box; }
+.m-ptr { position: sticky; top: 0; z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 0 12px; overflow: hidden; transition: height var(--dur-panel) var(--ease-standard); box-sizing: border-box; }
 /* box-sizing:border-box floors the border-box at padding+border, so height:0 alone
    can't collapse these (they'd render ~18px tall — a permanent opaque bar pinned at
    the sticky top). Drop the padding while closed so the collapse is truly 0; the
@@ -337,14 +337,14 @@ html.native .m-tabbar {
    thread: as the pull grows its height and we re-pin the feed to the bottom, the
    newest message lifts and this reveals underneath — a rubber-band into refresh.
    height:0 keeps it invisible during normal scrolling. */
-.m-ptr-btm { z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 12px 0 6px; overflow: hidden; height: 0; transition: height .2s ease; box-sizing: border-box; }
+.m-ptr-btm { z-index: 5; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 12px 0 6px; overflow: hidden; height: 0; transition: height var(--dur-panel) var(--ease-standard); box-sizing: border-box; }
 .m-ptr-btm .spin { display: inline-flex; align-items: center; color: var(--teal); line-height: 0; }
 .m-ptr-btm .lbl { font-size: 10.5px; color: var(--faint); }
 /* The crystal is only present while the indicator is OPEN (mid-pull or actively
    refreshing) — otherwise the ~18px the padding reserves at height:0 would show a
    permanently parked crystal. .open is added by render() when refreshing and by
    the pull handler while dragging. */
-.m-ptr .spin, .m-ptr-btm .spin { opacity: 0; transition: opacity .15s ease, transform .12s ease, color .12s ease; }
+.m-ptr .spin, .m-ptr-btm .spin { opacity: 0; transition: opacity var(--dur-micro) var(--ease-standard), transform var(--dur-micro) var(--ease-standard), color var(--dur-micro) var(--ease-standard); }
 .m-ptr.open .spin, .m-ptr-btm.open .spin { opacity: 1; }
 /* "release to refresh" cue — fires with the haptic tick once the pull crosses
    the trigger, on either the top or bottom indicator. */
@@ -393,7 +393,7 @@ html.native .m-tabbar {
 .m-swipe.dir-left .m-swipe-bg .act-left { display: flex; color: var(--red, #e5616a); }
 .m-swipe-card { position: relative; background: var(--panel); border: 1px solid var(--bd); border-radius: 13px; padding: 13px 14px; touch-action: pan-y; will-change: transform; }
 .m-swipe-card.swiping { box-shadow: -8px 0 18px rgba(0,0,0,.3); transition: none; }
-.m-swipe-card.snap { transition: transform .2s ease; }
+.m-swipe-card.snap { transition: transform var(--dur-panel) var(--ease-standard); }
 
 /* email list */
 .m-mail-list { padding: 8px 14px 24px; }
@@ -485,17 +485,16 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-source-link svg { flex: none; }
 
 /* ---- sheets (companion + quick capture) ---------------------------------- */
-/* Entry/exit animation durations+eases are literal 200ms ease-in/ease-out for
-   now — Task 9 introduces --dur-panel/--ease-decel/--ease-accel as the shared
-   motion tokens, and Task 11's migration pass swaps these literals for the
-   var() references once that lands. Keep in sync with CLOSE_ANIM_MS in
-   mobile-app.js (the JS-side timer that actually detaches the sheet). */
-.m-scrim { position: absolute; inset: 0; background: rgba(8,9,11,.45); z-index: 40; animation: m-scrim-in 200ms ease-out; }
-.m-scrim.closing { animation: m-scrim-out 200ms ease-in forwards; }
+/* Entry/exit animation durations+eases use the shared --dur-panel/--ease-decel/
+   --ease-accel motion tokens (Task 9's tokens; migrated onto them in Task 11).
+   Keep in sync with CLOSE_ANIM_MS in mobile-app.js (the JS-side timer that
+   actually detaches the sheet) — both resolve to 200ms today. */
+.m-scrim { position: absolute; inset: 0; background: rgba(8,9,11,.45); z-index: 40; animation: m-scrim-in var(--dur-panel) var(--ease-decel); }
+.m-scrim.closing { animation: m-scrim-out var(--dur-panel) var(--ease-accel) forwards; }
 @keyframes m-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes m-scrim-out { from { opacity: 1; } to { opacity: 0; } }
-.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--panel); border-radius: 22px 22px 0 0; border-top: 1px solid var(--bd); box-shadow: 0 -16px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; animation: m-sheet-up 200ms ease-out; }
-.m-sheet.closing { animation: m-sheet-down 200ms ease-in forwards; }
+.m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 41; background: var(--panel); border-radius: 22px 22px 0 0; border-top: 1px solid var(--bd); box-shadow: 0 -16px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; animation: m-sheet-up var(--dur-panel) var(--ease-decel); }
+.m-sheet.closing { animation: m-sheet-down var(--dur-panel) var(--ease-accel) forwards; }
 @keyframes m-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes m-sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
 .m-sheet.companion { height: 64%; }
@@ -574,7 +573,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-sheet.conv-sheet { max-height: 75%; padding: 0 0 calc(env(safe-area-inset-bottom,0px) + 16px); }
 .m-conv-list { flex: 1; overflow-y: auto; padding: 0 12px 8px; }
 .m-conv-grp { font-size: 9.5px; font-weight: 700; letter-spacing: .09em; color: var(--faint); padding: 10px 6px 4px; }
-.m-conv-row { display: flex; align-items: center; gap: 9px; padding: 10px 8px; border-radius: 10px; cursor: pointer; transition: background-color .12s ease; }
+.m-conv-row { display: flex; align-items: center; gap: 9px; padding: 10px 8px; border-radius: 10px; cursor: pointer; transition: background-color var(--dur-micro) var(--ease-standard); }
 .m-conv-row:active { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .m-conv-row.active { background: var(--tealtint); }
 .m-conv-badge { font-size: 9px; font-weight: 700; color: var(--teal); background: var(--tealtint); padding: 2px 6px; border-radius: 5px; flex: none; }
@@ -595,7 +594,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-conv-row-title { flex: 1; min-width: 0; font-size: 13px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Cross-session run state in the mobile chat list (parity with desktop conv-dot/conv-spin). */
 .m-conv-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
-.m-conv-dot.notify { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 20%, transparent); animation: pulse 1.6s ease-in-out infinite; }
+.m-conv-dot.notify { background: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 20%, transparent); animation: pulse var(--loop-slow) ease-in-out infinite; }
 .m-conv-spin.working { flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--teal); }
 .m-conv-spin.working .fl-svg { display: block; }
 .m-sheet.conv-sheet .m-cap-head { padding: 0 16px 10px; margin-bottom: 0; }
@@ -604,14 +603,14 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
    Always mounted (off-screen when closed) so wireMobileGestures can finger-track
    transform without an innerHTML rebuild. `.dragging` kills the transition while
    the finger owns it; releasing re-enables the ease so open/close animates. */
-.m-drawer-scrim { position: absolute; inset: 0; z-index: 44; background: rgba(8,9,11,.45); opacity: 0; pointer-events: none; transition: opacity .24s ease; }
+.m-drawer-scrim { position: absolute; inset: 0; z-index: 44; background: rgba(8,9,11,.45); opacity: 0; pointer-events: none; transition: opacity var(--dur-panel) var(--ease-standard); }
 .m-drawer-scrim.open { opacity: 1; pointer-events: auto; }
 .m-drawer-scrim.dragging { transition: none; }
 .m-drawer {
   position: absolute; top: 0; bottom: 0; z-index: 45; width: 86%; max-width: 340px;
   display: flex; flex-direction: column; background: var(--panel);
   padding-top: env(safe-area-inset-top, 0px); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-  will-change: transform; transition: transform .24s cubic-bezier(.22,.61,.36,1);
+  will-change: transform; transition: transform var(--dur-panel) cubic-bezier(.22,.61,.36,1);
 }
 .m-drawer.left { left: 0; transform: translateX(-100%); border-right: 1px solid var(--bd); box-shadow: 16px 0 40px rgba(0,0,0,.5); }
 .m-drawer.right { right: 0; transform: translateX(100%); border-left: 1px solid var(--bd); box-shadow: -16px 0 40px rgba(0,0,0,.5); }
@@ -634,7 +633,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-sheet.model-sheet { max-height: 75%; padding: 0 0 calc(env(safe-area-inset-bottom,0px) + 16px); }
 .m-model-list { flex: 1; overflow-y: auto; padding: 0 12px 8px; }
 .m-model-ep { font-size: 9.5px; font-weight: 700; letter-spacing: .09em; color: var(--faint); padding: 10px 6px 4px; }
-.m-model-row { display: flex; align-items: center; gap: 10px; padding: 11px 8px; border-radius: 10px; cursor: pointer; transition: background-color .12s ease; }
+.m-model-row { display: flex; align-items: center; gap: 10px; padding: 11px 8px; border-radius: 10px; cursor: pointer; transition: background-color var(--dur-micro) var(--ease-standard); }
 .m-model-row:hover { background: var(--row-hover); }
 .m-model-row:active { background: color-mix(in srgb, var(--fg) 7%, transparent); }
 .m-model-row.sel { background: var(--tealtint); }
@@ -645,7 +644,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 #pwa-install-hint { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
 #pwa-install-hint .pwa-hint-scrim {
   position: absolute; inset: 0; background: rgba(8,9,11,.28);
-  opacity: 0; transition: opacity .24s ease; pointer-events: auto;
+  opacity: 0; transition: opacity var(--dur-panel) var(--ease-standard); pointer-events: auto;
 }
 #pwa-install-hint.show .pwa-hint-scrim { opacity: 1; }
 #pwa-install-hint .pwa-hint-card {
@@ -654,7 +653,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   background: var(--panel); border: 1px solid var(--bd); border-radius: 18px;
   box-shadow: 0 -6px 30px rgba(0,0,0,.5); padding: 16px 16px 14px;
   transform: translateY(140%); opacity: 0;
-  transition: transform .26s cubic-bezier(.22,1,.36,1), opacity .26s ease;
+  transition: transform var(--dur-panel) cubic-bezier(.22,1,.36,1), opacity var(--dur-panel) ease;
   pointer-events: auto;
 }
 #pwa-install-hint.show .pwa-hint-card { transform: translateY(0); opacity: 1; }
@@ -685,7 +684,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 #threads-hint { position: fixed; inset: 0; z-index: 201; pointer-events: none; }
 #threads-hint .th-hint-scrim {
   position: absolute; inset: 0; background: rgba(8,9,11,.36);
-  opacity: 0; transition: opacity .24s ease; pointer-events: auto;
+  opacity: 0; transition: opacity var(--dur-panel) var(--ease-standard); pointer-events: auto;
 }
 #threads-hint.show .th-hint-scrim { opacity: 1; }
 /* Small caret pointing up at the hamburger button's rough location. */
@@ -697,7 +696,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   background: var(--panel);
   border-left: 1px solid var(--bd); border-top: 1px solid var(--bd);
   transform: translateY(6px) rotate(45deg); opacity: 0;
-  transition: opacity .26s ease, transform .26s cubic-bezier(.22,1,.36,1);
+  transition: opacity var(--dur-panel) ease, transform var(--dur-panel) cubic-bezier(.22,1,.36,1);
   pointer-events: none;
 }
 #threads-hint.show .th-hint-arrow { opacity: 1; transform: translateY(0) rotate(45deg); }
@@ -708,7 +707,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   background: var(--panel); border: 1px solid var(--bd); border-radius: 18px;
   box-shadow: 0 12px 40px rgba(0,0,0,.5); padding: 16px 16px 14px;
   transform: translateY(-16px); opacity: 0;
-  transition: transform .26s cubic-bezier(.22,1,.36,1), opacity .26s ease;
+  transition: transform var(--dur-panel) cubic-bezier(.22,1,.36,1), opacity var(--dur-panel) ease;
   pointer-events: auto;
 }
 #threads-hint.show .th-hint-card { transform: translateY(0); opacity: 1; }
@@ -737,7 +736,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-nav-btn.threads-hint-pulse {
   position: relative; z-index: 202;
   border-radius: 10px;
-  animation: threads-hint-pulse 1.6s ease-out infinite;
+  animation: threads-hint-pulse var(--loop-slow) ease-out infinite;
 }
 @keyframes threads-hint-pulse {
   0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--teal) 65%, transparent); }
@@ -817,7 +816,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   inset: 0;
   background: rgba(0, 0, 0, 0.42);
   z-index: 90;
-  animation: mSheetFade 160ms ease-out;
+  animation: mSheetFade var(--dur-panel) ease-out;
 }
 .m-msg-sheet {
   position: fixed;
@@ -830,7 +829,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   border-top-right-radius: 16px;
   padding: 10px 8px calc(env(safe-area-inset-bottom, 0px) + 10px);
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
-  animation: mSheetSlide 200ms ease-out;
+  animation: mSheetSlide var(--dur-panel) ease-out;
   max-height: 76vh;
   overflow: auto;
 }

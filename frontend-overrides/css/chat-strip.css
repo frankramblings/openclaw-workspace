@@ -88,11 +88,13 @@
 
 .cs-pill-todos .cs-ic { color: var(--accent, #7fb37f); }
 .cs-pill-plan  .cs-ic { color: var(--violet, #a48fff); }
-.cs-agent-run .cs-ic  { color: var(--accent, #7fb37f); animation: cs-spin 1.4s linear infinite; }
+/* cs-spin used to duplicate redesign.css's shared `spin` keyframe (also just
+   to+rotate(360deg)) at a different speed. chat-strip.css always loads
+   alongside redesign.css (see index.html link order), so reuse the shared
+   keyframe instead of keeping a second copy. */
+.cs-agent-run .cs-ic  { color: var(--accent, #7fb37f); animation: spin var(--loop-fast) linear infinite; }
 .cs-agent-done .cs-ic { color: var(--accent, #7fb37f); }
 .cs-agent-err .cs-ic  { color: var(--warn, #e5a06a); }
-
-@keyframes cs-spin { to { transform: rotate(360deg); } }
 
 .cs-body {
   overflow: auto;
@@ -209,4 +211,11 @@
   color: #b91c1c;
   font-style: italic;
   font-size: 13px;
+}
+
+/* Belt-and-suspenders alongside redesign.css's :root token-zeroing under
+   prefers-reduced-motion — an explicit override here since this stylesheet
+   had zero reduced-motion coverage of its own before this pass. */
+@media (prefers-reduced-motion: reduce) {
+  .cs-agent-run .cs-ic { animation: none; }
 }

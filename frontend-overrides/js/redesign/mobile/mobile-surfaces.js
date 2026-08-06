@@ -447,7 +447,7 @@ export function mCalendar(s) {
   const hlUid = s.calHighlightUid;
   const event = (e) => {
     const hl = !!(e.uid && e.uid === hlUid);
-    const style = `border-left-color:${e.tone}${hl ? ';animation:pulse 1.4s ease-in-out 2;box-shadow:0 0 0 2px var(--teal) inset' : ''}`;
+    const style = `border-left-color:${e.tone}${hl ? ';animation:pulse var(--loop-slow) ease-in-out 2;box-shadow:0 0 0 2px var(--teal) inset' : ''}`;
     return `
     <div class="m-ev"><span class="time ${e.time === 'all-day' ? 'dim' : 'lit'}">${esc(e.time)}</span>
       <div class="det${hl ? ' hl' : ''}" style="${style}"><div class="t">${esc(e.title)}</div>${e.sub ? `<div class="s">${esc(e.sub)}</div>` : ''}</div></div>`;

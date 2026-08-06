@@ -17,7 +17,7 @@
   font-size: 12.5px;
   line-height: 1.35;
   color: var(--fg, #cfd3da);
-  transition: border-color 0.4s ease, background 0.4s ease;
+  transition: border-color var(--dur-content) var(--ease-standard), background var(--dur-content) var(--ease-standard);
 }
 
 .task-row.task-done   { border-color: rgba(46, 213, 115, 0.30); background: rgba(46, 213, 115, 0.045); }
@@ -82,7 +82,7 @@
 .task-row .task-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--gold, #f5c518), var(--amber, #ffb03a));
-  transition: width 0.5s cubic-bezier(0.25, 0.9, 0.35, 1.0), background 0.4s ease;
+  transition: width var(--dur-content) cubic-bezier(0.25, 0.9, 0.35, 1.0), background var(--dur-content) var(--ease-standard);
   border-radius: 4px;
   position: relative;
   overflow: hidden;
@@ -104,7 +104,7 @@
     rgba(255,255,255,0)   100%
   );
   background-size: 200% 100%;
-  animation: task-bar-shim 1.8s linear infinite;
+  animation: task-bar-shim var(--loop-slow) linear infinite;
   pointer-events: none;
 }
 .task-row .task-fill.done   .task-fill-shimmer,
@@ -145,7 +145,7 @@
 .task-row .task-fill.indeterminate {
   width: 38% !important;
   background: linear-gradient(90deg, transparent, var(--blue, #4aa3ff), transparent);
-  animation: task-bar-indet 1.4s ease-in-out infinite;
+  animation: task-bar-indet var(--loop-slow) ease-in-out infinite;
   transition: none;
 }
 .task-row .task-fill.indeterminate .task-fill-shimmer { display: none; }
@@ -173,7 +173,7 @@
 .task-row .task-step.done    { color: var(--green, #2ed573); }
 .task-row .task-step.done    .task-step-dot { background: var(--green, #2ed573); }
 .task-row .task-step.active  { color: var(--gold, #f5c518); }
-.task-row .task-step.active  .task-step-dot { background: var(--gold, #f5c518); animation: task-step-pulse 1.3s ease-in-out infinite; }
+.task-row .task-step.active  .task-step-dot { background: var(--gold, #f5c518); animation: task-step-pulse var(--loop-slow) ease-in-out infinite; }
 .task-row .task-step.failed  { color: var(--red, #ff4757); }
 .task-row .task-step.failed  .task-step-dot { background: var(--red, #ff4757); }
 .task-row .task-step.skipped { color: var(--faint, #8f959d); opacity: 0.55; }
@@ -192,4 +192,16 @@
 @media (max-width: 640px) {
   .task-row { margin-left: 10px; font-size: 12px; padding: 8px 9px 9px; }
   .task-row .task-meta { font-size: 11px; gap: 8px; flex-wrap: wrap; }
+}
+
+/* Belt-and-suspenders alongside redesign.css's :root token-zeroing under
+   prefers-reduced-motion — an explicit override here since this stylesheet
+   had zero reduced-motion coverage of its own before this pass.
+   task-bar-shim/task-bar-indet/task-step-pulse are @keyframes names, not
+   classes on any element — target the actual animated selectors instead
+   (.task-fill-shimmer, .task-fill.indeterminate, .task-step.active
+   .task-step-dot) so this rule isn't a silent no-op. */
+@media (prefers-reduced-motion: reduce) {
+  .task-row, .task-fill { transition: none; }
+  .task-fill-shimmer, .task-fill.indeterminate, .task-step.active .task-step-dot { animation: none; }
 }

@@ -70,7 +70,7 @@ test('unordered and ordered lists with inline formatting', () => {
 });
 
 test('fenced code block keeps content literal and escaped', () => {
-  const html = renderMarkdown('```js\nconst a = 1 < 2 && 3;\n```');
+  const html = renderMarkdown('```\nconst a = 1 < 2 && 3;\n```');
   // The code content must be HTML-escaped (the security-critical property).
   assert.match(html, /<code>const a = 1 &lt; 2 &amp;&amp; 3;<\/code>/);
   // ...and no raw, unescaped form may leak through.
@@ -170,4 +170,23 @@ test('a code-span file path used as a link label renders a plain code span insid
 test('a code-span file path OUTSIDE any link still gets the clickable file-link code span', () => {
   const html = inline('see `src/app.py` for details');
   assert.match(html, /<code class="code-inline file-link" data-act="wsOpenFile" data-arg="src\/app\.py">src\/app\.py<\/code>/);
+});
+
+test('fenced code block with a language captures it as a label + hljs class', () => {
+  const html = renderMarkdown('```python\nprint(1)\n```');
+  assert.match(html, /<pre class="md-code" data-lang="python">/);
+  assert.match(html, /<span class="md-code-lang">python<\/span>/);
+  assert.match(html, /<code class="language-python">print\(1\)<\/code>/);
+});
+
+test('fenced code block with no language omits the label and hljs class', () => {
+  const html = renderMarkdown('```\nplain\n```');
+  assert.doesNotMatch(html, /data-lang=/);
+  assert.doesNotMatch(html, /md-code-lang/);
+  assert.match(html, /<code>plain<\/code>/);
+});
+
+test('fenced code block language token is HTML-escaped', () => {
+  const html = renderMarkdown('```"><script>\nx\n```');
+  assert.doesNotMatch(html, /<script>/);
 });

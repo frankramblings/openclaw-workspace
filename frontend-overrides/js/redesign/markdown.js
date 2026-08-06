@@ -249,11 +249,16 @@ export function renderMarkdown(src, topLevel = true) {
     const line = lines[i];
 
     if (RE.fence.test(line)) {            // fenced code block
+      const langMatch = line.match(/^```(\S*)/);
+      const lang = langMatch ? langMatch[1].trim() : '';
       i++;
       const buf = [];
       while (i < lines.length && !RE.fence.test(lines[i])) { buf.push(lines[i]); i++; }
       i++; // consume closing fence (if present)
-      out.push(`<pre class="md-code"><button type="button" class="md-copy-btn" data-act="copyCode" title="Copy" aria-label="Copy code"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H10"/></svg></button><code>${esc(buf.join('\n'))}</code></pre>`);
+      const preAttr = lang ? ` data-lang="${esc(lang)}"` : '';
+      const label = lang ? `<span class="md-code-lang">${esc(lang)}</span>` : '';
+      const codeAttr = lang ? ` class="language-${esc(lang)}"` : '';
+      out.push(`<pre class="md-code"${preAttr}>${label}<button type="button" class="md-copy-btn" data-act="copyCode" title="Copy" aria-label="Copy code"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H10"/></svg></button><code${codeAttr}>${esc(buf.join('\n'))}</code></pre>`);
       continue;
     }
     if (RE.blank.test(line)) { i++; continue; }

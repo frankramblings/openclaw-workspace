@@ -29,6 +29,7 @@ import { installErrorBoundary } from './error-boundary.js';
 import { trapOrder, nextFocus, pickModal } from './focus-trap.js';
 import './live/jobs.js'; // Live Jobs overlay — self-boots on import
 import { chevPatchPlan } from './chat-activity.js';
+import { enhanceChatEl } from './enhance.js';
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -532,6 +533,16 @@ function render() {
 
   // Wire drag-to-resize handles on desktop (no-op on mobile — the selectors won't match)
   if (!isMobile()) wireResizableSidebars(root);
+
+  // Syntax-highlight/math-render any new chat content. Idempotent (marker
+  // classes), so calling it after every render — not just chat renders — is
+  // cheap; it no-ops when the chat thread isn't mounted or has nothing new.
+  // Named `enhanceTarget` rather than `chatEl` (as in the plan) because a
+  // `const chatEl` is already bound earlier in this function (see the
+  // jump-to-bottom-button wiring above) with a narrower selector — reusing
+  // that name here would be an illegal duplicate `const` in the same scope.
+  const enhanceTarget = root.querySelector('.m-thread, .chat-thread, #chat-history');
+  if (enhanceTarget) enhanceChatEl(enhanceTarget);
 }
 
 // ---- actions --------------------------------------------------------------

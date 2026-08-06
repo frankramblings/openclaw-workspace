@@ -29,11 +29,7 @@ from .uploads import ATTACH_DIR
 _log = logging.getLogger(__name__)
 
 
-# Gateway rejects chat.send payloads over ~10 MB base64. Cap individual images
-# at 4 MB raw (~5.3 MB base64) to stay safely under that limit with multiple
-# attachments. HEIC/HEIF files are converted to JPEG first (models don't support
-# them natively and iPhone photos are often 7+ MB).
-_ATTACH_MAX_BYTES = 4 * 1024 * 1024  # 4 MB
+_ATTACH_MAX_BYTES = 6 * 1024 * 1024  # 6 MB — matches gateway MAX_IMAGE_BYTES hard cap
 
 
 def _heic_to_jpeg(src: Path) -> bytes | None:
@@ -187,6 +183,33 @@ def _extract_file_text(path: Path, mime: str) -> str | None:
                     notes = slide.notes_slide.notes_text_frame.text.strip()
                     if notes:
                         parts.append(f"[Speaker notes] {notes}")
+            return "\n".join(parts)
+        if ext == ".zip" or mime in ("application/zip", "application/x-zip-compressed"):
+            import zipfile as zf
+            _ZIP_MEMBER_CAP = 20  # max members to attempt
+            _ZIP_UNCOMPRESSED_CAP = 5 * 1024 * 1024  # 5 MB total
+            parts: list[str] = []
+            total_bytes = 0
+            with zf.ZipFile(str(path), "r") as z:
+                members = [m for m in z.infolist() if not m.is_dir()]
+                parts.append(f"## ZIP archive: {path.name} ({len(members)} files)")
+                for member in members[:_ZIP_MEMBER_CAP]:
+                    parts.append(f"\n### {member.filename} ({member.file_size:,} bytes)")
+                    mem_ext = Path(member.filename).suffix.lower()
+                    if total_bytes >= _ZIP_UNCOMPRESSED_CAP:
+                        parts.append("[Budget reached — remaining files listed but not extracted]")
+                        break
+                    if mem_ext in _TEXT_RAW_EXTS and member.file_size < 200_000:
+                        try:
+                            raw_bytes = z.read(member.filename)
+                            total_bytes += len(raw_bytes)
+                            parts.append(raw_bytes.decode("utf-8", errors="replace"))
+                        except Exception:
+                            parts.append("[Could not read]")
+                    else:
+                        parts.append(f"[{mem_ext or 'binary'} — not extracted inline]")
+                if len(members) > _ZIP_MEMBER_CAP:
+                    parts.append(f"\n… and {len(members) - _ZIP_MEMBER_CAP} more files not shown.")
             return "\n".join(parts)
     except Exception as e:  # noqa: BLE001
         _log.warning("Text extraction failed for %s (%s): %s", path.name, ext, e)

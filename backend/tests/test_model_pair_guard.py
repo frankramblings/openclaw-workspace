@@ -23,6 +23,21 @@ CATALOG = {"items": [
      "models_extra": []},
 ]}
 
+OFFLINE_CATALOG = {"items": [
+    {"endpoint_id": "claude-cli", "endpoint_name": "Claude CLI",
+     "offline": True,
+     "models": ["claude-opus-4-8", "claude-sonnet-4-6"],
+     "models_extra": []},
+    {"endpoint_id": "google", "endpoint_name": "Google",
+     "offline": False,
+     "models": ["gemini-3-flash-preview"],
+     "models_extra": []},
+    {"endpoint_id": "openai", "endpoint_name": "ChatGPT",
+     "offline": False,
+     "models": ["gpt-5.5", "gpt-5.4-mini"],
+     "models_extra": []},
+]}
+
 
 @pytest.fixture(autouse=True)
 def _isolated_store(tmp_path, monkeypatch):
@@ -145,6 +160,48 @@ def test_create_placeholder_untouched(monkeypatch):
     monkeypatch.setattr(app_module.bridge, "fetch_models", boom)
     resp = TestClient(app).post("/api/session", data={"name": "placeholder"})
     assert resp.status_code == 200
+
+
+def test_create_offline_endpoint_rejected(monkeypatch):
+    async def fake_fetch_models():
+        return OFFLINE_CATALOG
+    monkeypatch.setattr(app_module.bridge, "fetch_models", fake_fetch_models)
+
+    resp = TestClient(app).post(
+        "/api/session",
+        data={"name": "dead", "model": "claude-opus-4-8",
+              "endpoint_id": "claude-cli"})
+    assert resp.status_code == 400
+    assert "offline" in resp.json()["detail"]
+
+
+def test_default_chat_skips_offline_saved_default(monkeypatch):
+    async def fake_fetch_models():
+        return OFFLINE_CATALOG
+    monkeypatch.setattr(app_module.bridge, "fetch_models", fake_fetch_models)
+    monkeypatch.setattr(app_module.websearch, "load_settings", lambda: {
+        "default_chat_model": {
+            "model": "claude-opus-4-8",
+            "endpoint_id": "claude-cli",
+        }
+    })
+
+    resp = TestClient(app).get("/api/default-chat")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert (body["endpoint_id"], body["model"]) == ("openai", "gpt-5.5")
+
+
+def test_set_default_chat_rejects_offline_endpoint(monkeypatch):
+    async def fake_fetch_models():
+        return OFFLINE_CATALOG
+    monkeypatch.setattr(app_module.bridge, "fetch_models", fake_fetch_models)
+
+    resp = TestClient(app).post(
+        "/api/default-chat",
+        json={"model": "claude-opus-4-8", "endpoint_id": "claude-cli"})
+    assert resp.status_code == 400
+    assert "offline" in resp.json()["detail"]
 
 
 # --- bridge model pin -------------------------------------------------------

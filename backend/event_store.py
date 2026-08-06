@@ -50,6 +50,10 @@ _TURN_ACTIVE: dict[str, bool] = {}
 # client continue the "Working… Ns" clock from the true start (surfaced as
 # elapsed_ms in current_turn()) instead of restarting at 0 on re-attach.
 _TURN_START_MS: dict[str, float] = {}
+# session_key -> end status of the most recent turn ("ok" | "error" | "aborted").
+# Lets the resume snapshot expose whether the last turn died mid-stream so the
+# client can show a restart notice instead of a blank or stale response.
+_TURN_STATUS: dict[str, str] = {}
 
 
 def append(session_key: str, payload: str) -> str:
@@ -117,12 +121,17 @@ def begin_turn(session_key: str) -> None:
         _TURN_START_MS[session_key] = time.time() * 1000
 
 
-def end_turn(session_key: str) -> None:
+def end_turn(session_key: str, status: str = "ok") -> None:
     """Mark the current turn finished (flips the active flag; the boundary seq is
     retained so a late reload can still replay the just-finished turn until its
-    events age out). Called from chat_stream's finally."""
+    events age out). Called from chat_stream's finally.
+
+    `status` is "ok" (normal completion), "error" (bridge/gateway failure), or
+    "aborted" (user stop). Non-ok statuses are exposed in current_turn() so the
+    client can show a restart notice for partial responses."""
     with _LOCK:
         _TURN_ACTIVE[session_key] = False
+        _TURN_STATUS[session_key] = status
 
 
 def active_session_keys() -> list[str]:
@@ -155,8 +164,10 @@ def current_turn(session_key: str) -> dict:
         events = [{"id": str(seq), "data": payload}
                   for seq, payload in buf if seq >= start]
         last_id = str(buf[-1][0])
+    last_turn_status = _TURN_STATUS.get(session_key)
     return {"active": active, "turn_start_id": str(start), "events": events,
-            "last_event_id": last_id, "elapsed_ms": elapsed_ms}
+            "last_event_id": last_id, "elapsed_ms": elapsed_ms,
+            "last_turn_status": last_turn_status}
 
 
 def subscribe(session_key: str) -> "asyncio.Queue":
@@ -190,4 +201,5 @@ def drop_session(session_key: str) -> None:
         _TURN_START.pop(session_key, None)
         _TURN_ACTIVE.pop(session_key, None)
         _TURN_START_MS.pop(session_key, None)
+        _TURN_STATUS.pop(session_key, None)
         _SUBSCRIBERS.pop(session_key, None)

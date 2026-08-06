@@ -356,7 +356,7 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
         if not done_emitted:
             _append_turn_end(status)
             _append(_DONE_SSE)
-        event_store.end_turn(session_key)
+        event_store.end_turn(session_key, status)
         try:
             turn_state.turn_ended(session_key)
         except Exception:  # noqa: BLE001 - ledger I/O must never break the turn

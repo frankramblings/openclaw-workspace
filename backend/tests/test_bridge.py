@@ -329,3 +329,24 @@ def test_default_model_floats_to_front_of_its_provider(monkeypatch):
     assert openai_item["models_display"][0] == "GPT-5.5"
     # Non-default entries keep their relative order after the default.
     assert openai_item["models"][1:] == ["gpt-5.4", "gpt-5.4-mini"]
+
+
+def test_build_model_items_keeps_anthropic_setup_token_endpoint():
+    """The `anthropic` endpoint may be backed by Claude setup-token auth.
+    Hiding it forces the PWA onto `claude-cli`, whose OAuth access token shows
+    an 8h expiry even when Frank has a one-year setup token configured."""
+    from backend import bridge
+
+    payload = {"models": [
+        {"id": "claude-opus-4-8", "provider": "anthropic",
+         "name": "Claude Opus 4.8"},
+        {"id": "claude-opus-4-8", "provider": "claude-cli",
+         "name": "Claude Opus 4.8 (Claude CLI)"},
+    ]}
+    out = bridge._build_model_items(payload, {
+        "providers": [{"provider": "claude-cli", "status": "expiring"}]
+    })
+
+    endpoints = [item["endpoint_id"] for item in out["items"]]
+    assert "anthropic" in endpoints
+    assert "claude-cli" in endpoints

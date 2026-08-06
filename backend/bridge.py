@@ -880,12 +880,11 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
     return True  # no auth info for this provider → don't hide it
 
 
-# Endpoints hidden from the model picker. "anthropic" routes through the
-# anthropic:default API KEY profile (per-token billing); the Claude subscription
-# is the "claude-cli" endpoint (oauth, plan-billed). Frank uses the subscription
-# and doesn't want the metered API endpoint selectable — drop it here rather than
-# delete the gateway credential (reversible: remove "anthropic" from this set).
-_HIDDEN_ENDPOINTS = {"anthropic"}
+# Endpoints hidden from the model picker. Keep this empty by default: Anthropic's
+# `anthropic` endpoint can be backed by a long-lived setup-token, not only a
+# metered API key, so hiding it forces the PWA onto the short-lived Claude CLI
+# OAuth path even after setup-token auth is configured.
+_HIDDEN_ENDPOINTS = set()
 
 # Per-provider model ids to hide from the picker even if the gateway lists them.
 # `google/gemini-3.1-pro-preview` is present in the catalog but 429s on the free

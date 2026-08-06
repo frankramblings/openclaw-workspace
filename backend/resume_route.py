@@ -106,9 +106,16 @@ async def chat_current_turn(request: Request, session: str = ""):
         snap["turn_id"] = info["turn_id"] if info else None
     else:
         info = turn_state.interrupted_for(session_key)
+        last_turn_status = snap.get("last_turn_status")
         if info:
             snap["last_turn"] = {"turn_id": info["turn_id"],
                                  "status": "interrupted"}
+        elif last_turn_status and last_turn_status not in ("ok",):
+            # Turn ended abnormally in-process (gateway bridge died, error status)
+            # rather than via a full process restart. Expose as "interrupted" so
+            # the client replays partial delta frames from event_store instead of
+            # fetching a possibly-empty JSONL thread.
+            snap["last_turn"] = {"status": "interrupted"}
     return JSONResponse(snap)
 
 

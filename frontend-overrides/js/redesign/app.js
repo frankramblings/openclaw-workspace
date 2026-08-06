@@ -1036,7 +1036,16 @@ root.addEventListener('input', (e) => {
     // accumulated phrase on every update (the classic "H He Hel Hell…" pileup).
     // State is already synced above so send() sees the text; skip the
     // destructive re-render while composing. compositionend renders once after.
-    if (e.isComposing) return;
+    // Also cancel any slash-render timer a PRIOR plain keystroke already
+    // scheduled (Task 18 fix-round): that timer fires a real render() on a
+    // 150ms delay, so a composition session that starts within that window
+    // (e.g. macOS Fn-Fn dictation right after typing "/re") would otherwise
+    // still go off mid-composition with nothing to stop it, hitting the exact
+    // "H He Hel Hell…" corruption this guard exists to prevent. compositionend
+    // below does its own synchronous render() once composition ends, so the
+    // palette still catches up correctly — this just removes the stale,
+    // badly-timed one in between.
+    if (e.isComposing) { if (_slashRenderTimer) { clearTimeout(_slashRenderTimer); _slashRenderTimer = null; } return; }
     // The render() below exists ONLY to drive the slash-command palette as you
     // type. But render() rebuilds root.innerHTML wholesale, which re-runs
     // chatMsg→renderMarkdown for EVERY message in the thread — on a long
@@ -1047,7 +1056,14 @@ root.addEventListener('input', (e) => {
     // "/command", or a slash menu is currently open and must now close. (Mirrors
     // the mobile composer, which already skips render on every keystroke.)
     const slashRelevant = t.value.startsWith('/') || !!root.querySelector('.slash-menu');
-    if (!slashRelevant) return;
+    if (!slashRelevant) {
+      // A pending timer from an earlier "/x"-ish keystroke is now moot if a
+      // backspace made the draft non-slash-relevant again before it fired —
+      // not a correctness bug (render() is idempotent), but no reason to pay
+      // for a wasted re-render either.
+      if (_slashRenderTimer) { clearTimeout(_slashRenderTimer); _slashRenderTimer = null; }
+      return;
+    }
     // Task 18: even gated to slash-relevant keystrokes, render() still re-parses
     // the whole thread on EACH one — typing "/rename" fast used to mean 7 full
     // re-renders. Debounce to one render ~150ms after typing pauses (shorter

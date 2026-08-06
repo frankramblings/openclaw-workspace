@@ -339,8 +339,8 @@ function render() {
   }
 
   const s = state;
-  // Any of the 5 mobile bottom sheets (companion/capture/model/compose/snooze)
-  // share the same .m-scrim + .m-sheet entrance-animation replay bug: every
+  // Any of the 6 mobile modal surfaces (companion/capture/model/compose/snooze/
+  // inbox-reader) share the same .m-scrim + .m-sheet entrance-animation replay bug: every
   // data-act click dispatches a full render() (see the delegated click handler
   // below), even for clicks INSIDE an already-open sheet, so a sheet/scrim's
   // entrance keyframe would otherwise replay on every such re-render. This
@@ -348,7 +348,7 @@ function render() {
   // null-animation pass below, right after root.innerHTML is rebuilt.
   const anySheetWasOpen = isMobile() && !!(
     state.companionSheetOpen || state.quickCaptureOpen || state.mModelSheetOpen ||
-    state.composeOpen || state.inboxSnoozeFor
+    state.composeOpen || state.inboxSnoozeFor || state.inboxReader
   );
   const convMenuWasOpen = !isMobile() && !!(state.live?.chat?.rowMenuOpen);
   const dlMenuWasOpen = !isMobile() && !!(state.live?.chat?.msgMenuOpen);

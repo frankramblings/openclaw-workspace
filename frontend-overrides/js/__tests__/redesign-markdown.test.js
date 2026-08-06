@@ -190,3 +190,31 @@ test('fenced code block language token is HTML-escaped', () => {
   const html = renderMarkdown('```"><script>\nx\n```');
   assert.doesNotMatch(html, /<script>/);
 });
+
+test('block math: multi-line $$...$$ becomes a math-block div with raw LaTeX preserved', () => {
+  const html = renderMarkdown('$$\n\\int_0^1 x\\,dx\n$$');
+  assert.match(html, /<div class="math-block" data-math="\\int_0\^1 x\\,dx">/);
+});
+
+test('block math: multi-line \\[...\\] becomes a math-block div', () => {
+  const html = renderMarkdown('\\[\nE = mc^2\n\\]');
+  assert.match(html, /<div class="math-block" data-math="E = mc\^2">E = mc\^2<\/div>/);
+});
+
+test('block math: single-line $$...$$ on one line still renders as a block', () => {
+  const html = renderMarkdown('$$x^2 + y^2 = z^2$$');
+  assert.match(html, /<div class="math-block" data-math="x\^2 \+ y\^2 = z\^2">/);
+});
+
+test('block math: adjacent to a paragraph with no blank line still splits correctly', () => {
+  const html = renderMarkdown('Consider:\n$$x^2$$\nDone.');
+  assert.match(html, /<p>Consider:<\/p>/);
+  assert.match(html, /<div class="math-block" data-math="x\^2">/);
+  assert.match(html, /<p>Done\.<\/p>/);
+});
+
+test('block math content is HTML-escaped in both the attribute and fallback text', () => {
+  const html = renderMarkdown('$$\na < b & c\n$$');
+  assert.match(html, /data-math="a &lt; b &amp; c"/);
+  assert.match(html, />a &lt; b &amp; c<\/div>/);
+});

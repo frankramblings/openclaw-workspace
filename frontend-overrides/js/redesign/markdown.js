@@ -178,11 +178,14 @@ const RE = {
   ul: /^\s*[-*+]\s+/,
   ol: /^\s*(\d+)[.)]\s+/,
   blank: /^\s*$/,
+  mathDelim: /^\s*(\$\$|\\\[|\\\])\s*$/,
+  mathOneLine: /^\s*(?:\$\$(.+)\$\$|\\\[(.+)\\\])\s*$/,
 };
 
 function startsBlock(line) {
   return RE.fence.test(line) || RE.heading.test(line) || RE.hr.test(line)
-    || RE.quote.test(line) || RE.ul.test(line) || RE.ol.test(line);
+    || RE.quote.test(line) || RE.ul.test(line) || RE.ol.test(line)
+    || RE.mathDelim.test(line) || RE.mathOneLine.test(line);
 }
 
 // --- GFM pipe tables --------------------------------------------------------
@@ -259,6 +262,22 @@ export function renderMarkdown(src, topLevel = true) {
       const label = lang ? `<span class="md-code-lang">${esc(lang)}</span>` : '';
       const codeAttr = lang ? ` class="language-${esc(lang)}"` : '';
       out.push(`<pre class="md-code"${preAttr}>${label}<button type="button" class="md-copy-btn" data-act="copyCode" title="Copy" aria-label="Copy code"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H10"/></svg></button><code${codeAttr}>${esc(buf.join('\n'))}</code></pre>`);
+      continue;
+    }
+    const mathOneLine = line.match(RE.mathOneLine);
+    if (mathOneLine) {                    // single-line $$...$$ or \[...\]
+      const raw = (mathOneLine[1] != null ? mathOneLine[1] : mathOneLine[2]).trim();
+      out.push(`<div class="math-block" data-math="${esc(raw)}">${esc(raw)}</div>`);
+      i++;
+      continue;
+    }
+    if (RE.mathDelim.test(line)) {        // multi-line $$ ... $$ / \[ ... \]
+      i++;
+      const buf = [];
+      while (i < lines.length && !RE.mathDelim.test(lines[i])) { buf.push(lines[i]); i++; }
+      i++; // consume closing delimiter (if present)
+      const raw = buf.join('\n');
+      out.push(`<div class="math-block" data-math="${esc(raw)}">${esc(raw)}</div>`);
       continue;
     }
     if (RE.blank.test(line)) { i++; continue; }

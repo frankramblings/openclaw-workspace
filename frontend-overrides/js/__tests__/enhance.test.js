@@ -16,9 +16,10 @@ function installDomStubs() {
 }
 
 installDomStubs();
-const { highlightCode } = await import('../redesign/enhance.js');
+const { highlightCode, __resetHljsPromise } = await import('../redesign/enhance.js');
 
 test('highlightCode calls hljs.highlightElement on each un-done code block and marks it done', async () => {
+  __resetHljsPromise();
   installDomStubs();
   const calls = [];
   globalThis.window.hljs = { highlightElement: (el) => calls.push(el) };
@@ -33,6 +34,7 @@ test('highlightCode calls hljs.highlightElement on each un-done code block and m
 });
 
 test('highlightCode is a no-op when there is nothing to highlight', async () => {
+  __resetHljsPromise();
   installDomStubs();
   const calls = [];
   globalThis.window.hljs = { highlightElement: (el) => calls.push(el) };
@@ -44,6 +46,7 @@ test('highlightCode is a no-op when there is nothing to highlight', async () => 
 });
 
 test('highlightCode swallows a per-element hljs error and still marks it done (no crash, no infinite retry)', async () => {
+  __resetHljsPromise();
   installDomStubs();
   globalThis.window.hljs = { highlightElement: () => { throw new Error('boom'); } };
   const codeEl = { classList: fakeClassList() };
@@ -55,6 +58,26 @@ test('highlightCode swallows a per-element hljs error and still marks it done (n
 });
 
 test('highlightCode handles a null container without throwing', async () => {
+  __resetHljsPromise();
   installDomStubs();
   await assert.doesNotReject(() => highlightCode(null));
+});
+
+test('highlightCode does not call hljs.highlightElement twice when invoked concurrently without await', async () => {
+  __resetHljsPromise();
+  installDomStubs();
+  const calls = [];
+  globalThis.window.hljs = { highlightElement: (el) => calls.push(el) };
+  const codeEl = { classList: fakeClassList() };
+  const container = { querySelectorAll: (sel) => (sel.includes('code') ? [codeEl] : []) };
+
+  // Call highlightCode twice without awaiting the first before starting the second
+  const p1 = highlightCode(container);
+  const p2 = highlightCode(container);
+  await Promise.all([p1, p2]);
+
+  // Should have called hljs.highlightElement exactly once, not twice
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0], codeEl);
+  assert.ok(codeEl.classList.contains('hljs-done'));
 });

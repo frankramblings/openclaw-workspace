@@ -15,6 +15,11 @@ const HLJS_VENDOR = '/static/js/vendor/hljs/';
 
 let hljsPromise = null;
 
+// Test-only: reset the cached hljs promise for test isolation
+export function __resetHljsPromise() {
+  hljsPromise = null;
+}
+
 function injectCss(href) {
   if (document.querySelector(`link[data-enhance-css="${href}"]`)) return;
   const l = document.createElement('link');
@@ -58,6 +63,7 @@ export async function highlightCode(container) {
     return;
   }
   for (const code of blocks) {
+    if (code.classList.contains('hljs-done')) continue;
     try {
       hljs.highlightElement(code);
     } catch (err) {

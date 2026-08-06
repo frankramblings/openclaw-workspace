@@ -158,13 +158,13 @@ export function mChatMsg(m, s, ghostCtx) {
 // whatever surface is active, so the markup is all each surface needs.
 // Exported: mobile-app.js's pushedSurface (research/library/notes/settings —
 // task 6.1) reuses this same indicator on its own data-ptr scroll container.
-export const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr${s.refreshing ? ' open' : ''}" style="height:${s.refreshing ? 'auto' : '0'}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
+export const mPtr = (s, label = 'Refreshing…') => `<div class="m-ptr${s.refreshing ? ' open' : ''}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
 
 // Bottom pull-to-refresh indicator — the mirror of mPtr, anchored to the END of
 // a bottom-pinned feed (chat). A .m-scroll marked data-ptr-btm="1" with this as
 // its LAST child rubber-bands and refreshes when you keep dragging up past the
 // newest message (see wireMobileGestures). Easier to reach than the top pull.
-const mPtrBtm = (s, label = 'Refreshing chat…') => `<div class="m-ptr-btm${s.refreshing ? ' open' : ''}" style="height:${s.refreshing ? 'auto' : '0'}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
+const mPtrBtm = (s, label = 'Refreshing chat…') => `<div class="m-ptr-btm${s.refreshing ? ' open' : ''}"><span class="spin">${fortress(20)}</span>${when(s.refreshing, `<span class="lbl">${label}</span>`)}</div>`;
 
 // Composer attachment chip (task 4.2): spinner while the upload is in
 // flight, red + removable when it failed — mirrors surfaces.js attachChip.

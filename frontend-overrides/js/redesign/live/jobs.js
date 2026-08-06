@@ -195,6 +195,20 @@ export function fadeDecision({ emptySince, now, hasTimer, ttlMs = FADE_AFTER_MS 
   return { emptySince: since, hide: false, scheduleMs: hasTimer ? null : (ttlMs - elapsed) };
 }
 
+// Pure id-set diff between the previous render's job list and the next one.
+// render() uses this to patch only what changed instead of replacing every
+// row on every tick — DOM-free so it's unit-testable without a document.
+export function diffJobIds(prevIds, nextJobs) {
+  const nextIds = nextJobs.map((j) => j.id);
+  const prevSet = new Set(prevIds);
+  const nextSet = new Set(nextIds);
+  return {
+    toAdd: nextIds.filter((id) => !prevSet.has(id)),
+    toRemove: prevIds.filter((id) => !nextSet.has(id)),
+    toKeep: nextIds.filter((id) => prevSet.has(id)),
+  };
+}
+
 function render() {
   const { root, badge, list } = ensureDom();
   const running = jobs.filter((j) => j.status === 'running');
@@ -231,7 +245,95 @@ function render() {
   txt.textContent = n > 0 ? `${n} running` : (has ? 'Jobs done' : 'Jobs');
 
   const cur = currentThread();
-  list.innerHTML = jobs.map((j) => jobHtml(j, j.thread && cur && j.thread === cur)).join('');
+  const byId = new Map(jobs.map((j) => [j.id, j]));
+  const prevIds = Array.from(list.children).map((el) => el.getAttribute('data-id'));
+  const diff = diffJobIds(prevIds, jobs);
+
+  // Track mounted nodes by id as we mutate, so the reorder pass below
+  // doesn't need to re-walk the DOM. (Not `list.querySelector('[data-id="..."]')`
+  // with `CSS.escape` per id: this module already has a module-scope `const
+  // CSS = ...` — the injected stylesheet string, above — so a bare `CSS`
+  // reference here would resolve to that string, not the global CSS object,
+  // and `CSS.escape` would throw.)
+  const elById = new Map();
+  for (const el of list.children) elById.set(el.getAttribute('data-id'), el);
+
+  for (const id of diff.toRemove) {
+    const el = elById.get(id);
+    if (el) { el.remove(); elById.delete(id); }
+  }
+  for (const id of diff.toAdd) {
+    const j = byId.get(id);
+    const mine = j.thread && cur && j.thread === cur;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = jobHtml(j, mine);
+    const el = wrap.firstElementChild;
+    list.appendChild(el);
+    elById.set(id, el);
+  }
+  for (const id of diff.toKeep) {
+    const j = byId.get(id);
+    const mine = j.thread && cur && j.thread === cur;
+    const el = elById.get(id);
+    if (!el) continue;
+    // Existing node: patch it in place so .lj-fill's width transition and the
+    // indeterminate marquee animation both keep running instead of
+    // restarting on every tick.
+    const wrap = document.createElement('div');
+    wrap.innerHTML = jobHtml(j, mine);
+    const next = wrap.firstElementChild;
+
+    el.className = next.className;
+
+    const nextIcon = next.querySelector('.lj-icon');
+    const elIcon = el.querySelector('.lj-icon');
+    if (nextIcon && elIcon) elIcon.innerHTML = nextIcon.innerHTML;
+
+    const nextLabel = next.querySelector('.lj-label');
+    const elLabel = el.querySelector('.lj-label');
+    if (nextLabel && elLabel) {
+      elLabel.innerHTML = nextLabel.innerHTML;
+      elLabel.title = nextLabel.getAttribute('title') || '';
+    }
+
+    const nextPct = next.querySelector('.lj-pct');
+    const elPct = el.querySelector('.lj-pct');
+    if (nextPct && elPct) elPct.textContent = nextPct.textContent;
+
+    const nextTrack = next.querySelector('.lj-track');
+    const elTrack = el.querySelector('.lj-track');
+    if (nextTrack && elTrack) {
+      elTrack.className = nextTrack.className;
+      const nextFill = nextTrack.querySelector('.lj-fill');
+      const elFill = elTrack.querySelector('.lj-fill');
+      if (nextFill && elFill) elFill.style.width = nextFill.style.width;
+    }
+
+    const nextMeta = next.querySelector('.lj-meta');
+    const elMeta = el.querySelector('.lj-meta');
+    const elErrForMeta = el.querySelector('.lj-err');
+    if (nextMeta && elMeta) elMeta.innerHTML = nextMeta.innerHTML;
+    else if (nextMeta && !elMeta) {
+      // .lj-err always comes after .lj-meta in jobHtml()'s output — insert
+      // before it (if present) so a meta line added on a later tick doesn't
+      // land after an error line that already existed.
+      if (elErrForMeta) elErrForMeta.insertAdjacentHTML('beforebegin', nextMeta.outerHTML);
+      else el.insertAdjacentHTML('beforeend', nextMeta.outerHTML);
+    } else if (!nextMeta && elMeta) elMeta.remove();
+
+    const nextErr = next.querySelector('.lj-err');
+    const elErr = el.querySelector('.lj-err');
+    if (nextErr && elErr) elErr.innerHTML = nextErr.innerHTML;
+    else if (nextErr && !elErr) el.insertAdjacentHTML('beforeend', nextErr.outerHTML);
+    else if (!nextErr && elErr) elErr.remove();
+  }
+  // Reorder to match `jobs`' order. appendChild on an already-mounted child
+  // just moves it, so this is cheap and doesn't disturb the nodes patched
+  // above (their transitions/animations keep running through the move).
+  for (const j of jobs) {
+    const el = elById.get(j.id);
+    if (el) list.appendChild(el);
+  }
 }
 
 // ---- feed -------------------------------------------------------------

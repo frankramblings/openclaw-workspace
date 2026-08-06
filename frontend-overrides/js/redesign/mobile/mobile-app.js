@@ -279,6 +279,14 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
     const intent = swipeIntent(d.dx, cardWidth);
     if (intent) {
       const id = String(d.id);
+      // Committed swipe: this card is about to be removed/replaced by render() —
+      // clear its in-flight drag transform immediately rather than leaving the
+      // partial translateX() frozen for the instant before the rebuild, which
+      // read as a stutter. No transition plays here (nothing to ease into; the
+      // card's gone next paint) — that's the intended fix per the design doc,
+      // not a bug to coordinate around.
+      d.card.style.transition = 'none';
+      d.card.style.transform = 'translateX(0)';
       if (intent === 'primary') {
         // Find the primary action for this item and call it.
         const items = state.live && state.live.inbox && state.live.inbox.items;
@@ -286,8 +294,11 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
         // Calendar invites: never auto-RSVP on a swipe — sending "Yes" emails
         // the organizer, far too easy to fire by accident. Require a button tap.
         if (item && isInvite(item)) {
+          // Not actually a commit — snap back like an abandoned swipe, so undo
+          // the transition:none set above and let .snap ease back to rest.
           d.card.classList.remove('swiping');
           d.card.classList.add('snap');
+          d.card.style.transition = '';
           d.card.style.transform = 'translateX(0)';
           render();
           return;

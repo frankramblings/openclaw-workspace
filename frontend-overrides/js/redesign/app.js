@@ -239,6 +239,11 @@ const SCROLL_SELECTORS = [
 // chevPatchPlan() in chat-activity.js for the pure snap/reflow decision.
 const _chevRot = new Map();
 
+// Last resolved height per `.m-ptr`/`.m-ptr-btm` selector, for the reflow-
+// trick reconciler in render() below (see the comment there for why this is
+// needed on top of Task 13's fixed-px `.open` height).
+const _ptrHeight = new Map();
+
 // Track chat mount/session across renders so we can jump to the newest message
 // when a chat is first opened (or you switch sessions) instead of leaving it
 // parked at the top — without disturbing the stick-to-bottom-while-streaming case.
@@ -329,6 +334,35 @@ function render() {
       el.style.transform = plan.to;
     }
     _chevRot.set(key, next);
+  });
+
+  // Pull-to-refresh height reflow-trick reconciler — same underlying problem
+  // as the [data-chev] block above, applied to `.m-ptr`/`.m-ptr-btm`. Task 13
+  // gave the open state a fixed px height (instead of inline height:auto/0)
+  // so `transition: height` has two real numbers to interpolate between, but
+  // doRefresh() below flips state.refreshing and calls render() at BOTH the
+  // start and end of a refresh — root.innerHTML is rebuilt wholesale each
+  // time, so the `.m-ptr`/`.m-ptr-btm` node is always brand-new and has no
+  // "old" height of its own to transition from. Snap the fresh node back to
+  // its last resolved height, force a reflow, then let it animate forward to
+  // its real (CSS-resolved) target — reusing chevPatchPlan() since the snap/
+  // reflow decision is identical regardless of which CSS property is being
+  // patched. Only one `.m-ptr` and one `.m-ptr-btm` can exist in the DOM at a
+  // time (renderMobile() dispatches to exactly one surface's markup, and
+  // pushedSurface()'s own `.m-ptr` is mutually exclusive with the others), so
+  // a single tracked value per selector — not a per-instance keyed Map like
+  // the chevrons need — is enough.
+  ['.m-ptr', '.m-ptr-btm'].forEach((sel) => {
+    const el = root.querySelector(sel);
+    if (!el) return; // this surface has no such indicator this render
+    const next = getComputedStyle(el).height;
+    const plan = chevPatchPlan(_ptrHeight.get(sel), next);
+    if (plan) {
+      el.style.height = plan.from;
+      el.getBoundingClientRect(); // force reflow so the browser registers `from` before we set `to`
+      el.style.height = plan.to;
+    }
+    _ptrHeight.set(sel, next);
   });
 
   // Suppress the slide-up animation when the sheet is already open and being

@@ -240,11 +240,43 @@ html.native .m-tabbar {
 /* ---- composing layout (keyboard up) --------------------------------------
    Driven by a `.kb-up` class on .m-app toggled in app.js (setMobileKb) rather
    than a re-render, so focusing the composer never rebuilds the DOM (which
-   dropped focus and swallowed the first Send tap). Hides the chrome the old
-   focused layout removed (tab bar, companion handle, new-chat) and applies
-   the lifted composer styling. */
+   dropped focus and swallowed the first Send tap). Fades the chrome the old
+   focused layout hard-popped away (tab bar, companion handle, chats nav
+   button) instead of an instant display:none, and applies the lifted
+   composer styling.
+   Task 17: display:none can't transition, so the toggle moved to
+   opacity+visibility (both animatable). visibility flips at the END of the
+   fade (0s duration, --dur-micro delay) so the chrome only leaves the tab
+   order / hit-testing once it's visually gone — same a11y result as
+   display:none, no abrupt pop.
+   Layout-collapse check: .m-tabbar is the LAST child of the .m-app flex
+   column, directly after .m-composer (renderTabBar is appended after the
+   chat body — mobile-app.js renderMobile()). With display:none it left flow
+   entirely and .m-scroll (flex:1) reclaimed its ~60-90px, so the composer
+   sat flush above the keyboard. opacity/visibility do NOT remove an element
+   from flow, so left alone the tab bar's box would stay reserved below the
+   composer — a permanent chrome-colored gap between the composer and the
+   keyboard for as long as kb-up is set, not just mid-fade. height:0 +
+   overflow:hidden collapses that box; because of `*{box-sizing:border-box}`
+   (redesign.css) height:0 alone floors at the padding+border sum rather than
+   truly zeroing (same gotcha already called out above at .m-ptr/.m-ptr-btm),
+   so padding and border-width need zeroing too. Same collapse is applied to
+   the whole .m-hide-kb group: harmless for the chats nav button (a
+   horizontal sibling in .m-head — its height doesn't affect the row's
+   main-axis layout) and it recovers .m-comp-handle's ~40px back into
+   .m-scroll, matching the old display:none layout exactly instead of
+   leaving the thread area permanently shorter while composing. */
+.m-tabbar, .m-hide-kb { transition: opacity var(--dur-micro) var(--ease-standard), visibility 0s linear var(--dur-micro); }
 .m-app.kb-up .m-tabbar,
-.m-app.kb-up .m-hide-kb { display: none; }
+.m-app.kb-up .m-hide-kb {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  height: 0;
+  padding: 0;
+  border-width: 0;
+  overflow: hidden;
+}
 .m-app.kb-up .m-composer .bar { border-color: color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
 .m-app.kb-up .m-scroll-btm { bottom: 78px; }
 

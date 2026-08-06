@@ -139,6 +139,50 @@
 .task-row .task-elapsed:empty,
 .task-row .task-err:empty { display: none; }
 
+/* INDETERMINATE bar — no denominator, so we NEVER fake a fill %. A narrow
+   segment sweeps the empty track instead. The CSS width overrides the inline
+   width:0% paint() writes for this state. */
+.task-row .task-fill.indeterminate {
+  width: 38% !important;
+  background: linear-gradient(90deg, transparent, var(--blue, #4aa3ff), transparent);
+  animation: task-bar-indet 1.4s ease-in-out infinite;
+  transition: none;
+}
+.task-row .task-fill.indeterminate .task-fill-shimmer { display: none; }
+@keyframes task-bar-indet {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+/* PHASE RAIL — always shown for a `steps` task, above the active phase's
+   bar-or-spinner. status drives the dot; the active phase pulses. */
+.task-row .task-steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 1px 0 7px;
+  font-size: 11px;
+}
+.task-row .task-step { display: inline-flex; align-items: center; gap: 5px; color: var(--faint, #8f959d); }
+.task-row .task-step-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  flex: 0 0 auto;
+}
+.task-row .task-step.done    { color: var(--green, #2ed573); }
+.task-row .task-step.done    .task-step-dot { background: var(--green, #2ed573); }
+.task-row .task-step.active  { color: var(--gold, #f5c518); }
+.task-row .task-step.active  .task-step-dot { background: var(--gold, #f5c518); animation: task-step-pulse 1.3s ease-in-out infinite; }
+.task-row .task-step.failed  { color: var(--red, #ff4757); }
+.task-row .task-step.failed  .task-step-dot { background: var(--red, #ff4757); }
+.task-row .task-step.skipped { color: var(--faint, #8f959d); opacity: 0.55; }
+.task-row .task-step-label { white-space: nowrap; }
+@keyframes task-step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245,197,24,0.55); }
+  50%      { box-shadow: 0 0 0 4px rgba(245,197,24,0); }
+}
+
 /* Synthesized "task-only" wrap for messages with no activity trail (persistent
    post-turn rows). */
 .act-wrap.task-only { margin: 6px 0 10px; }

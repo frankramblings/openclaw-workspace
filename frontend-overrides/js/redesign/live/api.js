@@ -78,13 +78,29 @@ export async function apiDelete(path) {
  * lines prefixed `data: `, terminated by `data: [DONE]`. Calls onEvent(obj)
  * per JSON line. Returns a controller with .abort().
  */
+// HTTP status codes worth retrying automatically (transient/auth-rotation blips).
+const _RETRYABLE = new Set([422, 429, 502, 503, 504]);
+const _MAX_AUTO_RETRIES = 2;
+const _RETRY_DELAY_MS = [1500, 3000]; // backoff per attempt
+
 export function postStream(path, fields, onEvent, { headers = {} } = {}) {
-  const fd = new FormData();
-  for (const [k, v] of Object.entries(fields || {})) if (v != null) fd.append(k, v);
   const ctrl = new AbortController();
-  (async () => {
+  let attempt = 0;
+
+  const run = async () => {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries(fields || {})) if (v != null) fd.append(k, v);
     const res = await fetch(BASE + path, { method: 'POST', credentials: 'same-origin', headers, body: fd, signal: ctrl.signal });
-    if (!res.ok || !res.body) { onEvent({ type: 'error', status: res.status }); return; }
+    if (!res.ok || !res.body) {
+      if (_RETRYABLE.has(res.status) && attempt < _MAX_AUTO_RETRIES) {
+        onEvent({ type: 'retrying', attempt: attempt + 1, status: res.status });
+        await new Promise(r => setTimeout(r, _RETRY_DELAY_MS[attempt] || 2000));
+        attempt++;
+        return run();
+      }
+      onEvent({ type: 'error', status: res.status });
+      return;
+    }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '';
@@ -102,7 +118,9 @@ export function postStream(path, fields, onEvent, { headers = {} } = {}) {
       }
     }
     onEvent({ type: 'done' });
-  })().catch((e) => onEvent({ type: 'error', error: String(e) }));
+  };
+
+  run().catch((e) => onEvent({ type: 'error', error: String(e) }));
   return ctrl;
 }
 

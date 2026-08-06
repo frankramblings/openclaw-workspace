@@ -572,7 +572,7 @@ if [[ -f "$SW" ]]; then
   #     files those two modules actually request, not the whole vendor dirs
   #     (classic's workspace-terminal.js pulls in extra xterm addons/fonts
   #     that the redesign never touches).
-  #   - Fonts redesign.css @font-faces (HankenGrotesk, MonoLisa), the PWA
+  #   - Fonts redesign.css @font-faces (BearSansUI, MonoLisa), the PWA
   #     manifest + its icon set, and the couple of images theme.js/data.js
   #     fetch by literal /static/ path (brand mark, avatar, favicon fallback).
   # Excludes sw.js itself and source maps.
@@ -594,7 +594,7 @@ if [[ -f "$SW" ]]; then
         js/vendor/xterm/xterm.js js/vendor/xterm/xterm.css \
         js/vendor/xterm/wt-fonts.css js/vendor/xterm/addon-fit.js \
         js/vendor/xterm/MonoLisa-normal.woff2 js/vendor/xterm/MonoLisa-italic.woff2
-      find fonts -maxdepth 1 -type f \( -name 'HankenGrotesk*.woff2' -o -name 'MonoLisa*.woff2' \)
+      find fonts -maxdepth 1 -type f \( -name 'BearSansUI*.otf' -o -name 'MonoLisa*.woff2' \)
       printf '%s\n' \
         favicon-16x16.png favicon-32x32.png favicon.svg apple-touch-icon.png \
         icon-192.png icon-512.png maskable-icon.png logo.svg \

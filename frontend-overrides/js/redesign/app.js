@@ -9,6 +9,7 @@ import { esc, when } from './dom.js';
 import { AVATAR, filterSlashCommands } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
 import { renderCenter, renderChatList, chatMsg, inboxToastHtml } from './surfaces.js';
+import { suggestGhost } from './suggest-ghost.js';
 import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
@@ -286,9 +287,13 @@ function render() {
       // would otherwise get yanked to scrollHeight on the next render.
       const isChat = sel === '.chat-thread' || el.classList.contains('m-thread');
       const scrollable = el.scrollHeight - el.clientHeight > 4;
+      // Chat follows the bottom only when the user's latched follow-intent says so
+      // (kept in sync by the scroll listener). Non-chat scrollers keep their exact
+      // offset. The `scrollable` guard stops a short/empty thread from trivially
+      // satisfying the test and getting yanked to scrollHeight on the next render.
       scrollState[sel] = {
         top: el.scrollTop,
-        stick: isChat && scrollable && (el.scrollHeight - el.scrollTop - el.clientHeight < 80),
+        stick: isChat && scrollable && runtime.chatFollow,
       };
     }
   }
@@ -350,6 +355,9 @@ function render() {
   // catches the open/switch sequence where an early pre-fetch render would
   // otherwise consume the "just entered" state before the thread is loaded.
   const wantBottom = justEnteredChat || runtime.wantChatBottom;
+  // Landing on the newest message means the user is following again — re-arm so a
+  // freshly opened/switched thread sticks to the bottom as its reply streams in.
+  if (wantBottom) runtime.chatFollow = true;
   for (const sel of SCROLL_SELECTORS) {
     const el = root.querySelector(sel);
     if (!el) continue;
@@ -367,7 +375,7 @@ function render() {
   // hidden each render, and the scroll listener only fires on real user scrolls.
   const jumpBtn = root.querySelector('[data-act="scrollChatBottom"]');
   if (jumpBtn && chatEl) {
-    const nb = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 80;
+    const nb = chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight <= 16;
     jumpBtn.style.display = nb ? 'none' : 'flex';
   }
 
@@ -438,7 +446,7 @@ const actions = {
   // incognito=true so the backend doesn't persist the turn.
   toggleIncognito: () => { state.incognito = !state.incognito; },
   // Jump the chat thread to the latest message (button shown by the scroll listener).
-  scrollChatBottom: () => { const el = document.querySelector('.chat-thread, .m-thread'); if (el) el.scrollTop = el.scrollHeight; },
+  scrollChatBottom: () => { runtime.chatFollow = true; const el = document.querySelector('.chat-thread, .m-thread'); if (el) el.scrollTop = el.scrollHeight; },
   // Session list sort order: Recent (date groups) ⇄ A–Z (flat alphabetical).
   cycleSessionSort: () => { state.convSort = state.convSort === 'alpha' ? 'recent' : 'alpha'; },
 
@@ -587,22 +595,43 @@ root.addEventListener('click', (e) => {
   }
 }, true);
 
-// iOS standalone PWA: <a target="_blank"> clicks are silently swallowed —
-// tap does nothing, only long-press → "Open Link" works. The reliable escape
-// is an explicit window.open(url, '_blank'), which iOS honors and kicks the
-// user out to Safari as expected. Guarded to standalone so the browser tab
-// keeps its native handling.
-const _iosStandalone = window.navigator.standalone === true
-  || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-if (_iosStandalone) {
+// Installed PWA (iOS standalone + Android installed): <a target="_blank">
+// clicks are silently swallowed by the OS webview — tap does nothing, only
+// long-press → "Open Link" works. The escape is an explicit window.open, but
+// on a locked-down webview window.open can return null WITHOUT throwing, so a
+// throw-only fallback never fires and the tap still dies. So: treat a falsy
+// return as failure and navigate the frame instead — the link always opens.
+// Note we deliberately DON'T pass the 'noopener' feature string here: per spec
+// that forces a null return even on success, which would defeat the failure
+// check. We strip window.opener manually to keep the same reverse-tabnabbing
+// protection. Guarded to standalone so a normal browser tab keeps native
+// handling.
+// iOS standalone (navigator.standalone) and Android installed PWA (display-mode)
+// need DIFFERENT escapes — window.open behaves differently on each:
+//   • iOS standalone: window.open is unreliable — it can return a truthy but
+//     DEAD WindowProxy that opens nothing, so trusting its return silently
+//     fails. Navigating the top frame to an out-of-scope URL is what actually
+//     works: iOS breaks it out to Safari (and the PWA stays put in the app
+//     switcher). So on iOS we just set location.href.
+//   • Android installed: window.open('_blank') correctly hands off to the
+//     system browser; fall back to a frame navigation only if it returns null.
+// (Same-origin vault links never reach here — vaultLinks.js intercepts them
+// with stopPropagation first — so this only ever fires for external links.)
+const _iosStandalone = window.navigator.standalone === true;
+const _androidPwa = !_iosStandalone && window.matchMedia
+  && window.matchMedia('(display-mode: standalone)').matches;
+if (_iosStandalone || _androidPwa) {
   root.addEventListener('click', (e) => {
     const a = e.target.closest('a[target="_blank"]');
     if (!a) return;
     const href = a.getAttribute('href');
     if (!href || href === '#') return;
     e.preventDefault();
-    try { window.open(href, '_blank', 'noopener,noreferrer'); }
-    catch (_) { window.location.href = href; }
+    if (_iosStandalone) { window.location.href = href; return; }
+    let w = null;
+    try { w = window.open(href, '_blank'); } catch (_) { w = null; }
+    if (w) { try { w.opener = null; } catch (_) {} }
+    else { try { window.location.href = href; } catch (_) {} }
   }, true);
 }
 
@@ -1154,10 +1183,17 @@ root.addEventListener('keydown', (e) => {
 root.addEventListener('scroll', (e) => {
   const t = e.target;
   if (!t || !t.classList || !(t.classList.contains('chat-thread') || t.classList.contains('m-thread'))) return;
+  const gap = t.scrollHeight - t.scrollTop - t.clientHeight;
+  // Latch follow-intent off the user's own scroll position, with HYSTERESIS.
+  // A single 80px band was the "resists a bit" drag: until you'd pulled more than
+  // 80px off the bottom, follow stayed armed and each stream chunk re-pinned you.
+  // Now: detach the instant you lift off the bottom (>16px ≈ one line), and only
+  // re-arm once you're genuinely back at the bottom (<=4px). Between the two we
+  // leave follow untouched so tiny elastic/sub-pixel wobble can't flip it.
+  if (gap > 16) runtime.chatFollow = false;
+  else if (gap <= 4) runtime.chatFollow = true;
   const btn = root.querySelector('[data-act="scrollChatBottom"]');
-  if (!btn) return;
-  const nearBottom = t.scrollHeight - t.scrollTop - t.clientHeight < 80;
-  btn.style.display = nearBottom ? 'none' : 'flex';
+  if (btn) btn.style.display = gap > 16 ? 'flex' : 'none';
 }, true);
 
 // Global keyboard shortcuts (the Settings → Shortcuts card advertises these):
@@ -1318,22 +1354,49 @@ runtime.patchMessage = (msgId) => {
   if (!el) return false;
   const m = (state.live && state.live.chat && state.live.chat.thread || []).find((x) => x.id === msgId);
   if (!m) return false;
-  // stick to the bottom while streaming if the user is already there; otherwise
-  // leave their scroll position alone (they scrolled up to read).
   const scroller = root.querySelector('.chat-thread, .m-thread');
-  const stick = scroller && (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80);
-  // outerHTML replacement removes the node then inserts the new one — between
-  // those two steps the scroller's scrollHeight briefly drops, and the browser
-  // CLAMPS scrollTop to the (temporarily-smaller) max. At ~60 patches/sec that
-  // clamp yanks the user's scroll back toward the bottom on every frame, making
-  // it impossible to scroll up to read the top of a streaming reply. Preserve
-  // scrollTop across the swap when we're not intentionally sticking.
-  const savedTop = scroller ? scroller.scrollTop : 0;
-  el.outerHTML = isMobile() ? mChatMsg(m, state) : chatMsg(m, state);
-  if (stick && scroller) scroller.scrollTop = scroller.scrollHeight;
-  else if (scroller && scroller.scrollTop !== savedTop) scroller.scrollTop = savedTop;
+  // Preserve the midturn ghost when patching a streaming message — without
+  // ghostCtx the ghost gets wiped on every token, undoing paintGhost's work.
+  const _chat = state.live && state.live.chat;
+  const _sug = _chat && _chat.suggest;
+  const _asstSug = _sug && _sug.mode === 'midturn' ? _sug : null;
+  const _draft = (state.draft || '').trim();
+  const _mobile = isMobile();
+  const _ghostHtml = _asstSug ? suggestGhost(_asstSug, _draft, _mobile ? { mobile: true } : { assist: true }) : '';
+  const _ghostCtx = _ghostHtml ? { html: _ghostHtml, msgId } : null;
+  const html = _mobile ? mChatMsg(m, state, _ghostCtx) : chatMsg(m, state, _ghostCtx);
+  // In-place swap: keep the SAME node mounted and replace only its guts. The old
+  // `el.outerHTML = …` removed the node then inserted a new one, briefly dropping
+  // the scroller's scrollHeight; the browser then CLAMPED scrollTop to the smaller
+  // max, yanking the user toward the bottom on every one of ~60 patches/sec. Never
+  // detaching the node means scrollHeight only ever grows, so there's no clamp and
+  // nothing to fight. We touch scrollTop ONLY to follow (below).
+  swapInPlace(el, html);
+  // Stick to the bottom only while the user is following (latched by the scroll
+  // listener). When they've scrolled up, we leave scrollTop completely alone —
+  // that's what makes scroll-up hold on trackpad and touch, where momentum
+  // arrives as many small deltas the old <80px per-frame test kept overriding.
+  if (runtime.chatFollow && scroller) scroller.scrollTop = scroller.scrollHeight;
   return true;
 };
+
+// Replace an element's contents + attributes without unmounting it. Used by the
+// streaming patch so the scroll container never transiently shrinks (see above).
+function swapInPlace(el, html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = (html || '').trim();
+  const nu = tpl.content.firstElementChild;
+  if (!nu) { el.replaceChildren(); return; }
+  const keep = new Set();
+  for (const a of Array.from(nu.attributes)) {
+    keep.add(a.name);
+    if (el.getAttribute(a.name) !== a.value) el.setAttribute(a.name, a.value);
+  }
+  for (const a of Array.from(el.attributes)) {
+    if (!keep.has(a.name)) el.removeAttribute(a.name);
+  }
+  el.replaceChildren(...nu.childNodes);
+}
 
 // ---- boot -----------------------------------------------------------------
 // Deep-link the initial surface from the hash (e.g. #calendar), and keep the
@@ -1359,6 +1422,18 @@ actions.go = (surface) => { _go(surface); if (location.hash !== '#' + surface) h
 
 window.addEventListener('online', () => { state.isOnline = true; render(); });
 window.addEventListener('offline', () => { state.isOnline = false; render(); });
+
+// Badge sync on focus/visibility — keep the badge honest when returning to the app
+const syncBadge = async () => {
+  try {
+    if (!('setAppBadge' in navigator)) return;
+    const res = await fetch('/api/push/status').then(r => r.json()).catch(() => null);
+    if (!res?.unseen) await navigator.clearAppBadge();
+    else await navigator.setAppBadge(res.unseen);
+  } catch (_) { /* badge sync is best-effort */ }
+};
+window.addEventListener('focus', syncBadge);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncBadge(); });
 
 window.addEventListener('hashchange', () => {
   const h = (location.hash || '').replace('#', '');

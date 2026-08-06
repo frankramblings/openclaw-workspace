@@ -4,8 +4,20 @@
 // copyMessage / branchFromMessage / downloadMessage / downloadMessagePDF /
 // toggleMsgMenu handlers in live/chat.js drive both surfaces.
 
-import { I } from '../icons.js';
+import { I, fortress } from '../icons.js';
 import { esc } from '../dom.js';
+
+// Speak button markup shared by the mobile toolbar + sheet (3 states).
+function speakBtn(m, s, cls, size) {
+  const chat = s?.live?.chat || {};
+  if (chat.speakLoadingId === m.id) {
+    return `<button class="${cls} is-speaking" data-act="stopSpeak" data-arg="${esc(m.id)}" aria-label="Synthesizing">${fortress(size)}</button>`;
+  }
+  if (chat.speakingId === m.id) {
+    return `<button class="${cls} is-speaking" data-act="stopSpeak" data-arg="${esc(m.id)}" aria-label="Stop">${I.stopSpeak(size)}</button>`;
+  }
+  return `<button class="${cls}" data-act="speakMessage" data-arg="${esc(m.id)}" aria-label="Read aloud">${I.speak(size)}</button>`;
+}
 
 export function mdMenu(m, open) {
   if (!open) return '';
@@ -20,6 +32,7 @@ export function assistantToolbar(m, s) {
   if (!hasText || m.streaming || m.error) return '';
   const open = s?.live?.chat?.msgMenuOpen === m.id;
   return `<div class="m-msg-toolbar" data-msg-id="${esc(m.id)}">`
+    + speakBtn(m, s, 'm-msg-tool', 17)
     + `<button class="m-msg-tool" data-act="copyMessage" data-arg="${esc(m.id)}" aria-label="Copy">${I.copy(17)}</button>`
     + `<button class="m-msg-tool" data-act="branchFromMessage" data-arg="${esc(m.id)}" aria-label="Branch">${I.branch(17)}</button>`
     + `<div class="m-msg-dl-wrap">`

@@ -210,7 +210,20 @@ function msgTools(m, openId, ctx) {
         + `<button class="msg-dl-item" data-act="downloadMessagePDF" data-arg="${esc(m.id)}" role="menuitem"><span class="msg-dl-ic">${I.download(13)}</span>PDF</button>`
       + `</div>`
     : '';
+  // Speak (read aloud in Gary's voice) — assistant messages only. Three states:
+  // synthesizing (fortress spinner), playing (tap to stop), idle (tap to play).
+  let speak = '';
+  if (m.role === 'assistant') {
+    if (ctx && ctx.loadId === m.id) {
+      speak = `<button class="msg-tool is-speaking" data-act="stopSpeak" data-arg="${esc(m.id)}" title="Synthesizing…" aria-label="Synthesizing">${fortress(15)}</button>`;
+    } else if (ctx && ctx.speakId === m.id) {
+      speak = `<button class="msg-tool is-speaking" data-act="stopSpeak" data-arg="${esc(m.id)}" title="Stop" aria-label="Stop reading">${I.stopSpeak(15)}</button>`;
+    } else {
+      speak = `<button class="msg-tool" data-act="speakMessage" data-arg="${esc(m.id)}" title="Read aloud" aria-label="Read aloud">${I.speak(15)}</button>`;
+    }
+  }
   return `<div class="msg-tools">`
+    + speak
     + `<button class="msg-tool" data-act="copyMessage" data-arg="${esc(m.id)}" title="Copy message" aria-label="Copy message">${I.copy(15)}</button>`
     + `<button class="msg-tool" data-act="branchFromMessage" data-arg="${esc(m.id)}" title="Branch conversation here" aria-label="Branch here">${I.branch(15)}</button>`
     + (canEdit
@@ -260,7 +273,7 @@ function renderRounds(m, s) {
 
 // one chat message → html (assistant prose / user bubble). Live thread items:
 // { role:'assistant'|'user', time, model, text, activity? }
-export function chatMsg(m, s) {
+export function chatMsg(m, s, ghostCtx) {
   const hasText = String(m.text || '').trim().length > 0;
   const paras = hasText ? renderMarkdown(m.text) : '';
   const carriedCls = m._carried ? ` msg-carried${m._carriedFirst ? ' msg-carried-first' : ''}` : '';
@@ -314,7 +327,8 @@ export function chatMsg(m, s) {
   const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
-  const asstCtx = { canEdit: false };
+  const _chat = s.live?.chat || {};
+  const asstCtx = { canEdit: false, speakId: _chat.speakingId, loadId: _chat.speakLoadingId };
   // Pending-work update blocks (resolved deferred tasks, e.g. image_generate).
   const updateBlocksHtml = (() => {
     const blocks = m.updateBlocks;
@@ -340,7 +354,8 @@ export function chatMsg(m, s) {
     const title = tokens.map((t) => `${t.kind} · ${t.label}`).join('\n');
     return `<span class="turn-pending-pill" title="${esc(title)}"><span class="turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}</div></div>`;
+  const ghostHtml = (ghostCtx && ghostCtx.msgId === m.id) ? (ghostCtx.html || '') : '';
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
 }
 
 
@@ -443,8 +458,16 @@ export function chatSurface(s) {
   // Ghost suggestion renders only for the session it was generated in — an
   // archive/delete/switch that leaves a stale stamp shows nothing rather than
   // ghosting another thread's prompt into this composer.
-  const ghost = suggestGhost(
-    chat.suggest && chat.suggest.sessionId === chat.activeId ? chat.suggest : null, d);
+  // Two flavors (mirrors mobile-surfaces.js):
+  //   midturn  = Gary talking to Frank while a turn runs ("while you wait…")
+  //              → inline italic ✦ at the tail of the last assistant message
+  //   followup = a suggested next prompt Frank could send after a clean turn
+  //              → Tab-hint overlay inside the composer (unchanged)
+  const _activeSug = chat.suggest && chat.suggest.sessionId === chat.activeId ? chat.suggest : null;
+  const _asstSug = _activeSug && _activeSug.mode === 'midturn' ? _activeSug : null;
+  const _composerSug = _activeSug && _activeSug.mode !== 'midturn' ? _activeSug : null;
+  const ghost = suggestGhost(_composerSug, d);
+  const _asstGhostHtml = suggestGhost(_asstSug, d, { assist: true });
   // No mock fallbacks — before live data lands the header shows neutral
   // placeholders, never invented titles/models/usage numbers.
   const title = chat.title ?? 'New chat';
@@ -460,7 +483,14 @@ export function chatSurface(s) {
         ...liveMsgs,
       ]
     : liveMsgs;
-  const thread = map(msgs, (msg) => chatMsg(msg, s));
+  // Find the last assistant message so we can render the midturn ghost inline
+  // at its tail (was previously the composer overlay).
+  let _lastAsstId = null;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role !== 'user') { _lastAsstId = msgs[i].id; break; }
+  }
+  const _ghostCtx = { html: _asstGhostHtml, msgId: _lastAsstId };
+  const thread = map(msgs, (msg) => chatMsg(msg, s, _ghostCtx));
   const isEmpty = msgs.length === 0;
 
   return `

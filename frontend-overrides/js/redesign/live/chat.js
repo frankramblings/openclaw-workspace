@@ -744,9 +744,56 @@ function lineColor(line) {
   return '#cfd3da';
 }
 
-function stopElapsed() { if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; } }
+// Sticky "Gary is working…" banner visible at the top of the thread viewport,
+// so users on mobile don't need to scroll to see progress.
+function _ensureWorkingBanner() {
+  let el = document.getElementById('oc-working-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'oc-working-banner';
+    el.style.cssText = [
+      'position:sticky;top:0;z-index:50;',
+      'padding:5px 12px 5px 10px;',
+      'background:var(--panel,#1a1b1f);',
+      'border-bottom:1px solid var(--border,rgba(255,255,255,.08));',
+      'font-size:12px;color:var(--faint,#7a7e8a);',
+      'align-items:center;gap:6px;',
+    ].join('');
+    el.style.display = 'none'; // hidden until _showWorkingBanner()
+    el.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:var(--teal,#0dc);display:inline-block;animation:ocPulse 1s ease-in-out infinite"></span>'
+      + '<span class="oc-wb-text">Gary is working…</span>'
+      + '<span class="act-elapsed" style="margin-left:auto;font-family:var(--mono,monospace);font-size:11px;opacity:.65"></span>';
+    if (!document.getElementById('oc-wb-style')) {
+      const s = document.createElement('style');
+      s.id = 'oc-wb-style';
+      s.textContent = '@keyframes ocPulse{0%,100%{opacity:.4}50%{opacity:1}}';
+      document.head.appendChild(s);
+    }
+    // Insert at the top of the thread container
+    const thread = document.querySelector('.m-thread, .chat-thread, #chat-history');
+    if (thread) thread.prepend(el);
+  }
+  return el;
+}
+function _showWorkingBanner(label) {
+  const el = _ensureWorkingBanner();
+  if (!el) return;
+  el.style.display = 'flex';
+  const lbl = el.querySelector('.oc-wb-text');
+  if (lbl) lbl.textContent = label || 'Gary is working…';
+}
+function _hideWorkingBanner() {
+  const el = document.getElementById('oc-working-banner');
+  if (el) el.style.display = 'none';
+}
+
+function stopElapsed() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+  _hideWorkingBanner();
+}
 function startElapsed() {
   stopElapsed();
+  _showWorkingBanner();
   elapsedTimer = setInterval(() => {
     if (turn && turn.activity && turn.activity.status === 'working') {
       turn.activity.elapsed = fmtElapsed(turn.activity.startMs);
@@ -755,8 +802,8 @@ function startElapsed() {
       // which de-selected text, reset scroll, and made typing impossible. Update
       // the single text node instead; fall back to a full render only if the
       // clock isn't in the DOM yet (first tick before its initial paint).
-      const el = document.querySelector('.act-elapsed');
-      if (el) el.textContent = turn.activity.elapsed;
+      const els = document.querySelectorAll('.act-elapsed');
+      if (els.length) els.forEach(e => { e.textContent = turn.activity.elapsed; });
       else runtime.render();
       // Mid-turn ghost suggestion ("While you wait, …"): once per SERVER turn
       // (chat.suggestAskedTurn is keyed by turn_id so an iOS suspend/resume
@@ -792,14 +839,17 @@ function paintGhost(chat) {
   const ta = document.querySelector('[data-focus="draft"], [data-focus="mdraft"]');
   if (!ta || (ta.value || '').trim()) return;
   const mobile = ta.getAttribute('data-focus') === 'mdraft';
-  // Mobile-only: midturn ("while you wait…") is Gary talking to Frank, so it
-  // renders inline under the last assistant message, not in the composer.
-  // Followup mode stays a composer chip on both desktop and mobile.
-  if (mobile && chat.suggest.mode === 'midturn') {
-    const asstMds = document.querySelectorAll('.m-msg-asst .m-md');
+  // Midturn ("while you wait…") is Gary talking to Frank, so it renders inline
+  // under the last assistant message on both desktop and mobile — never in the
+  // composer, where it would read like a draft to send. Followup mode stays a
+  // composer overlay on both surfaces.
+  if (chat.suggest.mode === 'midturn') {
+    const sel = mobile ? '.m-msg-asst .m-md' : '.msg-asst .msg-body';
+    const asstMds = document.querySelectorAll(sel);
     const last = asstMds[asstMds.length - 1];
     if (!last || last.querySelector('.ghost-suggest')) return;
-    last.insertAdjacentHTML('beforeend', suggestGhost(chat.suggest, ta.value, { mobile: true }));
+    const opts = mobile ? { mobile: true } : { assist: true };
+    last.insertAdjacentHTML('beforeend', suggestGhost(chat.suggest, ta.value, opts));
     return;
   }
   const wrap = ta.closest('.composer, .m-composer');
@@ -992,6 +1042,7 @@ function beginTurn(chat, modelLabel, sessionId) {
     const a = ensureActivity();
     const st = { id: `${turn.msgId}-s${turn.stepN++}`, kind, label: PRESENT[kind] || 'Working', file: file || '', state: 'running', lines: [], startMs: Date.now() };
     if (kind === 'think') st.label = 'Thinking';
+    _showWorkingBanner('Gary is working — ' + st.label);
     a.steps.push(st);
     if (tid != null) turn.byTid[tid] = st;
     return st;
@@ -1071,6 +1122,21 @@ function beginTurn(chat, modelLabel, sessionId) {
       if (cleanFinish && !hadQueued) fetchSuggestion(chat, 'followup', null);
       return;
     }
+    if (ev.type === 'retrying') {
+      // Transient failure (422/429/502/503) — auto-retry in progress.
+      ensureActivity();
+      const retryStep = turn.activity.steps.find(s => s.kind === 'retry');
+      const label = `Reconnecting… (attempt ${ev.attempt} of 2)`;
+      if (retryStep) { retryStep.label = label; }
+      else {
+        const s = newStep('retry', '', null);
+        s.label = label;
+        s.kind = 'retry';
+      }
+      throttledRender();
+      return;
+    }
+
     if (ev.type === 'error') {
       flushStreamBuffer();
       if (turn.asstMsg) turn.asstMsg.streaming = false;
@@ -1090,8 +1156,8 @@ function beginTurn(chat, modelLabel, sessionId) {
       const m = ensureAsst();
       m.error = true;
       m.notice = ev.status
-        ? `Couldn’t get a response (HTTP ${ev.status}). Try again, or pick another model.`
-        : 'The connection dropped before a response arrived. Try again.';
+        ? `Gary couldn’t connect (${ev.status}). Your message is ready — tap Send to retry.`
+        : 'The connection dropped before a response arrived. Your message is ready — tap Send to retry.';
       chat.suggest = null; // no ghost suggestions under an error notice
       stopElapsed();
       flushRender();
@@ -1579,6 +1645,23 @@ async function reconcileTurn(chat, state, sessionId) {
       // the honest record; the gateway transcript may have nothing better.
       finalizeLocal(chat, true);
     }
+    // Fresh-load after an error turn: no local bubble, but event_store has the
+    // partial delta frames. Replay them so the user sees what was streamed rather
+    // than a blank thread. The decision tree returns 'none' here (no local live
+    // state), so we handle this case explicitly after reconcileDecision.
+    if (decision === 'none' && !snap.active && snap.last_turn && snap.last_turn.status === 'interrupted'
+        && snap.events && snap.events.length > 0 && !(turn || liveES)) {
+      const { onEvent } = beginTurn(chat, chat.model, sessionId);
+      for (const e of snap.events) {
+        const ev = parseStoredSSE(e.data);
+        if (ev) onEvent(ev);
+      }
+      // finalizeLocal here only if beginTurn didn't already finalize (i.e. no
+      // 'done' frame was in the events). Check via turn still being set.
+      if (turn) finalizeLocal(chat, true);
+      flushRender();
+      return false;
+    }
     if (decision === 'finalize-stale') {
       // The turn ended normally while we were detached: the real reply lives
       // server-side. Finalize, then refetch the thread so we never leave a
@@ -2043,6 +2126,21 @@ let _modelsInFlight = false;
 let _uploadSeq = 0;
 const mintUploadId = () => `up-${Date.now().toString(36)}-${(_uploadSeq++).toString(36)}`;
 
+// --- Speak (read aloud in Gary's voice) ------------------------------------
+// One <Audio> plays at a time. Playback state lives on chat.speakingId /
+// chat.speakLoadingId (rendered by msgTools); these helpers own the element +
+// object-URL lifecycle so nothing leaks between messages.
+let _speakAudio = null;
+let _speakUrl = null;
+function _cleanupSpeakUrl() {
+  if (_speakUrl) { try { URL.revokeObjectURL(_speakUrl); } catch (_) {} _speakUrl = null; }
+  _speakAudio = null;
+}
+function _stopSpeakAudio() {
+  if (_speakAudio) { try { _speakAudio.pause(); } catch (_) {} }
+  _cleanupSpeakUrl();
+}
+
 export const actions = {
   // Semantic search across ALL conversations by message CONTENT (not just the
   // title substring the list filters on locally). Debounced; hits land in
@@ -2167,6 +2265,8 @@ export const actions = {
     const pct = await fetchUsage(id);
     if (pct != null && chat.activeId === id) chat.usagePct = pct;
     runtime.render();
+    // Acknowledge unseen followups for this session (fire-and-forget)
+    fetch('/api/push/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: id }) }).catch(() => {});
   },
 
   newChat: () => {
@@ -2772,6 +2872,75 @@ export const actions = {
     const msg = (chat.thread || []).find((m) => m.id === id);
     if (!msg || !msg.text) return;
     try { await navigator.clipboard.writeText(msg.text); } catch (_) {}
+  },
+
+  // Message toolbar: read this assistant reply aloud in Gary's voice. Synth runs
+  // locally on naboo (XTTS, ~3.5x realtime on CPU), so there's a synthesizing
+  // phase (fortress spinner) before playback. Tap again (stopSpeak) to cancel.
+  speakMessage: async (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    const msg = (chat.thread || []).find((m) => m.id === id);
+    if (!msg || !msg.text) return;
+    _stopSpeakAudio();
+    chat.speakingId = null;
+    chat.speakLoadingId = id;   // spinner on this message
+    runtime.render();
+    let blob;
+    try {
+      const res = await fetch('/api/voice/speak', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: msg.text }),
+      });
+      if (!res.ok) {
+        let err = res.status;
+        try { err = (await res.json()).error || err; } catch (_) {}
+        const c = ensureChat(runtime.state); if (c) c.speakLoadingId = null;
+        runtime.render();
+        toast(`Couldn't read that aloud: ${err}`);
+        return;
+      }
+      blob = await res.blob();
+    } catch (e) {
+      const c = ensureChat(runtime.state); if (c) c.speakLoadingId = null;
+      runtime.render();
+      toast(`Couldn't read that aloud: ${String(e && e.message || e)}`);
+      return;
+    }
+    // User may have hit stop (or started another) while we were synthesizing.
+    const cur = ensureChat(runtime.state);
+    if (!cur || cur.speakLoadingId !== id) return;
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    _speakAudio = audio;
+    _speakUrl = url;
+    audio.onended = () => {
+      _cleanupSpeakUrl();
+      const c = ensureChat(runtime.state);
+      if (c && c.speakingId === id) c.speakingId = null;
+      runtime.render();
+    };
+    audio.onerror = () => {
+      _cleanupSpeakUrl();
+      const c = ensureChat(runtime.state);
+      if (c) { c.speakingId = null; c.speakLoadingId = null; }
+      runtime.render();
+    };
+    cur.speakLoadingId = null;
+    cur.speakingId = id;
+    runtime.render();
+    try { await audio.play(); } catch (_) {}
+  },
+
+  // Message toolbar: stop in-progress playback OR cancel a pending synth.
+  stopSpeak: () => {
+    _stopSpeakAudio();
+    const chat = ensureChat(runtime.state);
+    if (chat) { chat.speakingId = null; chat.speakLoadingId = null; }
+    runtime.render();
   },
 
   // Message toolbar: branch a NEW session off the transcript up through this

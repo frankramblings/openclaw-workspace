@@ -47,6 +47,10 @@
     return bare;
   }
 
+  // Binary document types — clicking should download rather than trying to
+  // open as text in the editor (which fails or shows garbage).
+  const BINARY_DOC_RE = /\.(docx?|xlsx?|pptx?|pdf|zip|gz|tar|odt|ods|odp|numbers|pages|key)$/i;
+
   // abs/~ paths → the allow-listed media route (same one MEDIA: inline uses);
   // bare relative paths are vault-relative → the workspace file server.
   function mediaUrl(path) {
@@ -130,11 +134,40 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
       const dm = window.documentModule;
-      if (dm && dm.injectFreshDoc) dm.injectFreshDoc(data);
+      if (dm && dm.injectFreshDoc) {
+        dm.injectFreshDoc(data);
+      } else {
+        // Document panel not available (e.g. mobile PWA without the editor
+        // surface loaded). Download the raw file as fallback.
+        _triggerDownload('/api/workspace/file?path=' + encodeURIComponent(path),
+          path.split('/').pop() || 'file');
+      }
     } catch (err) {
+      // Surface a friendly inline message instead of silent opacity-dimming.
+      const label = path.split('/').pop() || path;
+      const msg = document.createElement('span');
+      msg.style.cssText = 'display:inline-block;margin-left:6px;font-size:12px;color:var(--color-error,#c0392b);';
+      msg.textContent = '(could not open — try downloading)';
+      anchor.after(msg);
       anchor.title = 'Could not open: ' + String(err.message || err);
-      anchor.style.opacity = '0.6';
+      // Provide a download fallback link.
+      const dl = document.createElement('a');
+      dl.href = '/api/workspace/file?path=' + encodeURIComponent(path);
+      dl.download = label;
+      dl.textContent = '↓ download';
+      dl.style.cssText = 'margin-left:6px;font-size:12px;';
+      msg.after(dl);
     }
+  }
+
+  function _triggerDownload(url, filename) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => a.remove(), 500);
   }
 
   document.addEventListener('click', (e) => {
@@ -150,7 +183,11 @@
     e.preventDefault();
     e.stopPropagation();
     if (IMG_RE.test(path)) openImageViewer(path);
-    else openVaultDoc(path, a);
+    else if (BINARY_DOC_RE.test(path)) {
+      // Binary document: offer a download rather than attempting to open as text.
+      _triggerDownload('/api/workspace/file?path=' + encodeURIComponent(path),
+        path.split('/').pop() || 'file');
+    } else openVaultDoc(path, a);
   }, true);
 
   // Tapping an inline shared image (MEDIA:/data-URI) opens it fullscreen.

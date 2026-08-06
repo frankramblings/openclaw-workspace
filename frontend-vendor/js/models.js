@@ -21,6 +21,28 @@ const COLLAPSE_KEY = 'odysseus-models-collapsed';
 const FAVORITES_KEY = 'odysseus-model-favorites';
 const USAGE_KEY = 'odysseus-model-usage';
 const SORT_KEY = 'odysseus-model-sort';
+let _defaultFavoriteSeedPromise = null;
+
+function _seedDefaultFavoriteFromServer() {
+  if (_defaultFavoriteSeedPromise) return _defaultFavoriteSeedPromise;
+  _defaultFavoriteSeedPromise = (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/default-chat`, { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const model = (data && data.model || '').trim();
+      if (!model) return;
+      const favs = _loadFavorites();
+      if (!favs.includes(model)) {
+        favs.unshift(model);
+        _saveFavorites(favs);
+      }
+    } catch (_) {
+      // Favorites are a UI convenience; never block model rendering on this.
+    }
+  })();
+  return _defaultFavoriteSeedPromise;
+}
 
 export function init(apiBase) {
   API_BASE = apiBase;
@@ -165,6 +187,7 @@ function _buildModelRow(mid, url, displayName, endpointId, offline, modelType) {
 export async function refreshModels(force = false) {
   const box = document.getElementById('models');
   if (!box) return;
+  await _seedDefaultFavoriteFromServer();
 
   // Skip network fetch if cache is fresh and not forced — still re-render UI
   const now = Date.now();

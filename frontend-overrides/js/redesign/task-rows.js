@@ -161,6 +161,62 @@ export function anchorMode(rec, liveTurnId) {
     ? 'turn' : 'pin';
 }
 
+function clampPct(n) {
+  if (n == null || n !== n) return 0;
+  return Math.max(0, Math.min(100, n));
+}
+
+// The whole "bar vs tracker" decision, as one pure function. The producer
+// declares its shape via `task.progress.mode`; we never guess from the UI.
+// A leaf is either a filling bar (determinate — it has a denominator) or an
+// honest spinner (indeterminate — it doesn't). A `steps` task is just a list
+// of phases whose active phase carries its own resolved leaf. Tasks with no
+// `progress` field fall back to the legacy scalar `pct` so every producer
+// already emitting bars (the live download) renders unchanged.
+export function resolveProgress(task) {
+  const p = task && task.progress;
+  if (!p || !p.mode) {
+    return { mode: 'determinate', pct: clampPct(task && task.pct), showBar: true, showPct: true };
+  }
+  if (p.mode === 'indeterminate') {
+    return { mode: 'indeterminate', pct: 0, showBar: false, showPct: false, detail: p.detail || '' };
+  }
+  if (p.mode === 'steps') {
+    const steps = (Array.isArray(p.steps) ? p.steps : []).map((s) => ({
+      key: s.key, label: s.label || s.key, status: s.status || 'pending',
+      inner: s.progress ? resolveProgress(s) : null,
+    }));
+    const active = p.active || (steps.find((s) => s.status === 'active') || {}).key || null;
+    return { mode: 'steps', steps, active };
+  }
+  // Default leaf: determinate. total<=0 → 0 (no divide-by-zero, no NaN).
+  const total = Number(p.total) || 0;
+  const done = Number(p.done) || 0;
+  const pct = total > 0 ? clampPct((done / total) * 100) : 0;
+  return { mode: 'determinate', pct, showBar: true, showPct: true, eta: p.eta };
+}
+
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Phase rail for a `steps` task. Status drives the dot styling; the STATUS
+// value is whitelisted (never interpolated), and the producer-supplied label
+// is HTML-escaped so hostile phase text can't reach the innerHTML sink — same
+// discipline as taskRowHtml. Non-steps descriptors get no rail.
+const STEP_STATUS = new Set(['done', 'active', 'pending', 'failed', 'skipped']);
+export function stepsRailHtml(resolved) {
+  if (!resolved || resolved.mode !== 'steps') return '';
+  const dots = resolved.steps.map((s) => {
+    const st = STEP_STATUS.has(s.status) ? s.status : 'pending';
+    return `<span class="task-step ${st}"><span class="task-step-dot"></span>`
+         + `<span class="task-step-label">${escHtml(s.label)}</span></span>`;
+  }).join('');
+  return `<div class="task-steps">${dots}</div>`;
+}
+
 function buildRow(task) {
   const row = document.createElement('div');
   row.className = 'task-row';
@@ -181,6 +237,21 @@ function buildRow(task) {
   };
 }
 
+// Insert/update/remove the phase rail for a `steps` task. Lives just above the
+// bar-wrap so the always-on rail frames the active phase's bar-or-spinner. Rail
+// markup comes from the pure, tested stepsRailHtml(); non-steps tasks get none.
+function syncRail(row, prog) {
+  const existing = row.querySelector(':scope > .task-steps');
+  if (!prog || prog.mode !== 'steps') { if (existing) existing.remove(); return; }
+  const html = stepsRailHtml(prog);
+  if (existing) { if (existing.outerHTML !== html) existing.outerHTML = html; return; }
+  const wrap = row.querySelector('.task-bar-wrap');
+  const rail = document.createElement('div');
+  rail.className = 'task-steps';
+  rail.innerHTML = stepsRailHtml(prog).replace(/^<div class="task-steps">|<\/div>$/g, '');
+  if (wrap) row.insertBefore(rail, wrap); else row.appendChild(rail);
+}
+
 function paint(refs, row, task) {
   if (refs.label.textContent !== task.label) refs.label.textContent = task.label || task.id;
   refs.label.classList.toggle('shimmer', task.status === 'running');
@@ -195,21 +266,36 @@ function paint(refs, row, task) {
   row.classList.toggle('task-failed',  task.status === 'failed');
   row.classList.toggle('task-running', task.status === 'running');
 
-  const pct = task.status === 'done' ? 100
-            : task.status === 'failed' ? 100
-            : Math.max(0, Math.min(100, task.pct ?? 0));
-  refs.fill.style.width = pct.toFixed(1) + '%';
-  refs.fill.className = 'task-fill ' + task.status;
+  // The dumb switch: the producer's `progress` descriptor (or legacy `pct`)
+  // is resolved once, then rendered by mode. Nothing here guesses shape.
+  const prog = resolveProgress(task);
+  syncRail(row, prog);
+  // For a `steps` task the ACTIVE phase's leaf drives the bar/spinner; a plain
+  // task drives it directly. A terminal task (done/failed) always shows a full
+  // bar — the badge already carries the outcome.
+  const leaf = prog.mode === 'steps'
+    ? ((prog.steps.find((s) => s.key === prog.active) || {}).inner || { mode: 'indeterminate', detail: '' })
+    : prog;
+  const terminal = task.status === 'done' || task.status === 'failed';
+  const showBar = terminal || leaf.showBar;      // indeterminate leaf → no bar
+  const running = task.status === 'running';
 
+  const pct = terminal ? 100 : clampPct(leaf.pct);
+  refs.fill.style.width = showBar ? pct.toFixed(1) + '%' : '0%';
+  refs.fill.className = 'task-fill ' + task.status + (showBar ? '' : ' indeterminate');
+
+  const leafDetail = (!terminal && leaf.mode === 'indeterminate' && leaf.detail) ? leaf.detail : (task.detail || '');
   const seg = task.segText ? ` · ${task.segText}` : '';
-  const detailText = (task.detail || '') + seg;
+  const detailText = leafDetail + seg;
   if (refs.detail.textContent !== detailText) refs.detail.textContent = detailText;
 
-  const pctText = task.status === 'running' ? `${Math.round(pct)}%` : '';
+  // Percent only when we have a real denominator (determinate leaf, running).
+  const pctText = (running && showBar && leaf.showPct) ? `${Math.round(pct)}%` : '';
   if (refs.pct.textContent !== pctText) refs.pct.textContent = pctText;
 
-  const etaText = task.status === 'running' && task.eta != null
-    ? `eta ${hms(task.eta)}` : '';
+  const etaVal = leaf.eta != null ? leaf.eta : task.eta;
+  const etaText = running && showBar && etaVal != null
+    ? `eta ${hms(etaVal)}` : '';
   if (refs.eta.textContent !== etaText) refs.eta.textContent = etaText;
 
   // Mid-run ticker-owned view: task.elapsed is null by design (see nativeView)

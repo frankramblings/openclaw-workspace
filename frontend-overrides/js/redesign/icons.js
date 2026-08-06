@@ -72,6 +72,10 @@ export const I = {
   panelHide: (s = 15) => icon('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/><path d="m20 9-2 3 2 3"/>', { size: s, sw: 1.8 }),
   panelShow: (s = 15) => icon('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/><path d="m18 9 2 3-2 3"/>', { size: s, sw: 1.8 }),
   play: (s = 13) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`,
+  // Speaker with sound waves — "read this reply aloud" (Gary voice).
+  speak: (s = 15) => icon('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>', { size: s, sw: 1.8 }),
+  // Speaker with an X — shown while audio is playing (tap to stop).
+  stopSpeak: (s = 15) => icon('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M22 9l-6 6M16 9l6 6"/>', { size: s, sw: 1.8 }),
   code: (s = 15) => icon('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>', { size: s, sw: 1.9 }),
   refresh: (s = 15) => icon('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>', { size: s, sw: 1.9 }),
   // Monochrome clock — replaces the colored ⏰/⏱ emoji in inbox affordances

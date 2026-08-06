@@ -9,7 +9,7 @@ import { filterSlashCommands } from '../redesign/data.js';
 
 test('bare "/" matches every command (menu opens with the full list)', () => {
   const filtered = filterSlashCommands('/');
-  assert.equal(filtered.length, 5);
+  assert.equal(filtered.length, 6);
 });
 
 test('a command prefix with no space still narrows by prefix (unchanged pick behavior)', () => {
@@ -56,14 +56,18 @@ test('an unknown command with args still yields no matches (was already true, st
 
 test('plain text (no leading slash) still matches everything, ignoring spaces', () => {
   const filtered = filterSlashCommands('hello there');
-  assert.equal(filtered.length, 5);
+  assert.equal(filtered.length, 6);
 });
 
 test('empty/undefined draft matches everything', () => {
-  assert.equal(filterSlashCommands('').length, 5);
-  assert.equal(filterSlashCommands(undefined).length, 5);
+  assert.equal(filterSlashCommands('').length, 6);
+  assert.equal(filterSlashCommands(undefined).length, 6);
 });
 
+test('/nano is exposed as a Nano Banana shortcut', () => {
+  const filtered = filterSlashCommands('/na');
+  assert.deepEqual(filtered.map((c) => c.name), ['/nano']);
+});
 
 test('/pplx is exposed as a Perplexity sidecar shortcut', () => {
   const filtered = filterSlashCommands('/pp');

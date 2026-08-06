@@ -200,14 +200,26 @@
    task-bar-shim/task-bar-indet/task-step-pulse are @keyframes names, not
    classes on any element — target the actual animated selectors instead
    (.task-fill-shimmer, .task-step.active .task-step-dot) so this rule isn't
-   a silent no-op. .task-fill.indeterminate is deliberately EXCLUDED from
-   this freeze: unlike the shimmer/step-pulse (decoration on top of
+   a silent no-op. Those selectors — and the .task-fill transition:none one —
+   are prefixed with `.task-row ` here because every real declaration they
+   need to beat is itself scoped under `.task-row` (e.g. `.task-row .task-fill`,
+   `.task-row .task-fill-shimmer`, `.task-row .task-step.active .task-step-dot`).
+   A bare `.task-fill` or `.task-fill-shimmer` override has LOWER specificity
+   than those and would silently lose the cascade regardless of source order.
+
+   .task-fill.indeterminate is deliberately EXCLUDED from the animation:none
+   freeze above: unlike the shimmer/step-pulse (decoration on top of
    already-visible information), its sweep animation is the ONLY signal that
    a no-denominator task is still running — freezing it leaves a static bar
-   that reads as stalled, matching the same "don't freeze progress-conveying
-   motion" principle already applied to .m-ptr .spin and ring-drain elsewhere
-   in this codebase. */
+   that reads as stalled. It instead gets an explicit animation-duration
+   override below. A var(--loop-slow, 1.6s) fallback does NOT achieve this:
+   redesign.css's :root block zeroes --loop-slow to 0ms (not undefined) under
+   this same media query, and a var() fallback only activates when the custom
+   property is undefined — so the base rule's animation would still compute
+   to a 0s duration without this explicit override. */
 @media (prefers-reduced-motion: reduce) {
-  .task-row, .task-fill { transition: none; }
-  .task-fill-shimmer, .task-step.active .task-step-dot { animation: none; }
+  .task-row, .task-row .task-fill { transition: none; }
+  .task-row .task-fill-shimmer,
+  .task-row .task-step.active .task-step-dot { animation: none; }
+  .task-row .task-fill.indeterminate { animation-duration: 1.6s; }
 }

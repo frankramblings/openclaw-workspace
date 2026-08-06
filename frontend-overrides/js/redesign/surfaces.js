@@ -575,7 +575,11 @@ function emailSurface(s) {
         ${!s.loadError?.email ? capNotice(emails.length, EMAIL_CAP) : ''}
       </div>
     </div>
-    ${s.loadError?.email ? loadErrorBlock('Email', s) : (s.live?.email?.current || emails.length) ? `<div class="reader">
+    ${s.loadError?.email
+      ? loadErrorBlock('Email', s)
+      : s.live?.email == null
+        ? `<div class="reader reader-empty"><div>Loading email…</div></div>`
+        : (s.live?.email?.current || emails.length) ? `<div class="reader">
       <div class="reader-head">
         <h1>${esc(m.subj)}</h1>
         <div class="reader-from">
@@ -847,7 +851,9 @@ function inboxSurface(s) {
       ${when(fyi.length > 0, `<div class="grp-label fyi"><span class="lbl fyilbl">AI-SUGGESTED · FYI</span><span class="n">${fyi.length}</span><div class="sect-divider"></div></div>${map(fyi, inboxCard)}`)}
       ${s.loadError?.inbox
         ? loadErrorBlock('Inbox', s)
-        : when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed. Nothing left to triage.</div></div>`)}
+        : s.live?.inbox == null
+          ? `<div class="inbox-zero loading"><div class="d">Loading inbox…</div></div>`
+          : when(visible.length === 0, `<div class="inbox-zero"><div class="ico">${I.check()}</div><div class="t">Inbox zero</div><div class="d">__AGENT_NAME__ cleared the feed. Nothing left to triage.</div></div>`)}
       ${!s.loadError?.inbox ? capNotice(items.length, INBOX_CAP) : ''}
     </div>
     ${when(!!s.inboxEditFor, `

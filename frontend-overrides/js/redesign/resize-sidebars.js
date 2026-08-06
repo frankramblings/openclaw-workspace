@@ -34,6 +34,7 @@ window.addEventListener('mouseup', () => {
   activeDrag = null;
   document.body.style.userSelect = '';
   document.body.style.cursor = '';
+  el.style.transition = '';               // restore the CSS-declared transition (only .oc-rail has one)
   save(sb.id, parseInt(el.style.width));
 });
 
@@ -74,6 +75,7 @@ export function wireResizableSidebars(root) {
     fresh.addEventListener('mousedown', (e) => {
       e.preventDefault();
       activeDrag = { el, sb, startX: e.clientX, startW: el.getBoundingClientRect().width };
+      el.style.transition = 'none';       // let width track the cursor 1:1 during the drag
       document.body.style.userSelect = 'none';
       document.body.style.cursor = 'col-resize';
     });

@@ -408,7 +408,9 @@ html.shell-mobile .oc-toast{max-width:none}
 /* Midturn "while you wait…" aside — inline italic ✦ at the tail of Gary's
    last assistant message, matching the mobile .m-ghost treatment. Tappable
    to accept (data-act="acceptSuggest" is on the span). */
-.msg-body .ghost-suggest.asst-ghost{position:static;display:block;left:auto;right:auto;top:auto;z-index:auto;margin:10px 0 2px;color:var(--violet);font-family:var(--prose);font-size:14px;font-style:italic;line-height:1.5;white-space:normal;overflow:visible;text-overflow:clip;pointer-events:auto;cursor:pointer}
+.msg-body .ghost-suggest.asst-ghost{position:static;display:block;left:auto;right:auto;top:auto;z-index:auto;margin:10px 0 2px;color:var(--violet);font-family:var(--prose);font-size:14px;font-style:italic;line-height:1.5;white-space:normal;overflow:visible;text-overflow:clip;pointer-events:auto;cursor:pointer;animation:ghost-in 300ms ease-out}
+@keyframes ghost-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.msg-body .ghost-suggest.asst-ghost{animation:none}}
 .msg-body .ghost-suggest.asst-ghost:hover{opacity:.75}
 .icon-btn{width:32px;height:32px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer}
 .ctx-meter{display:flex;align-items:center;gap:7px;margin-left:4px}

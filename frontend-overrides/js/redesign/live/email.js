@@ -310,14 +310,14 @@ export const actions = {
     const s = runtime.state;
     if (!s) return;
     const to = (s.composeTo || '').trim();
-    if (!to) { try { window.alert('Add a recipient.'); } catch (_) {} return; }
+    if (!to) { runtime.state.inboxToast = { msg: 'Add a recipient.', undoTs: null }; runtime.render(); return; }
     const payload = { to, subject: s.composeSubject || '', body: s.composeBody || '' };
     if (s.composeInReplyTo) payload.in_reply_to = s.composeInReplyTo;
     s.emailBusy = true; runtime.render();
     try {
       await apiJson('/api/email/send', payload);
       s.composeOpen = false; s.composeTo = ''; s.composeSubject = ''; s.composeBody = ''; s.composeInReplyTo = '';
-    } catch (_) { try { window.alert('Could not send the email.'); } catch (_) {} }
+    } catch (_) { runtime.state.inboxToast = { msg: 'Could not send the email.', undoTs: null }; runtime.render(); }
     s.emailBusy = false; runtime.render();
   },
   // "✦ AI reply": open a reply and fill the body from the brain.
@@ -335,7 +335,7 @@ export const actions = {
       const res = await apiJson('/api/email/ai-reply', { subject: m.subj || '', from_address: m.fromMail || '', original_body: bodyText(m) });
       const draft = res && (res.reply || res.draft || res.text || res.body);
       if (draft) { s.composeBody = draft; }
-    } catch (_) { try { window.alert('AI reply unavailable.'); } catch (_) {} }
+    } catch (_) { runtime.state.inboxToast = { msg: 'AI reply unavailable.', undoTs: null }; runtime.render(); }
     s.emailBusy = false; runtime.render();
   },
   // "✦ Summarize": show an inline AI summary of the open email.

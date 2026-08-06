@@ -141,8 +141,6 @@ test('apiDelete throws ApiError on a non-2xx response instead of silently resolv
 // above; email.js's own try/catch was already correct, so no change to
 // email.js was needed once api.js's contract was fixed.
 
-globalThis.window = { alert: mock.fn() };
-
 const { runtime } = await import('../redesign/live/runtime.js');
 const emailMod = await import('../redesign/live/email.js');
 
@@ -156,7 +154,6 @@ test('sendEmail on a 502 keeps compose open with the draft intact and surfaces a
   };
   runtime.state = state;
   runtime.render = () => {};
-  globalThis.window.alert.mock.resetCalls();
   globalThis.fetch = mock.fn(async () => fakeRes({
     ok: false, status: 502, contentType: 'text/html', text: '<html>Bad Gateway</html>',
   }));
@@ -169,10 +166,11 @@ test('sendEmail on a 502 keeps compose open with the draft intact and surfaces a
   assert.equal(state.composeTo, 'a@b.com', 'recipient must be preserved');
   assert.equal(state.composeSubject, 'Hi', 'subject must be preserved');
   assert.equal(state.composeBody, 'draft text', 'draft body must be preserved');
-  assert.ok(globalThis.window.alert.mock.calls.length >= 1, 'a failure must be surfaced, not silently swallowed');
+  assert.ok(state.inboxToast, 'a failure must be surfaced, not silently swallowed');
+  assert.equal(state.inboxToast.msg, 'Could not send the email.');
 });
 
-test('sendEmail on a 2xx clears compose and does not alert an error', async () => {
+test('sendEmail on a 2xx clears compose and does not toast an error', async () => {
   const state = {
     composeOpen: true,
     composeTo: 'a@b.com',
@@ -182,7 +180,6 @@ test('sendEmail on a 2xx clears compose and does not alert an error', async () =
   };
   runtime.state = state;
   runtime.render = () => {};
-  globalThis.window.alert.mock.resetCalls();
   globalThis.fetch = mock.fn(async () => fakeRes({ ok: true, status: 200, json: { ok: true } }));
   try {
     await emailMod.actions.sendEmail();
@@ -247,20 +244,23 @@ test('inbox archive on a 2xx stays dismissed and does not toast a failure', asyn
 
 const settingsMod = await import('../redesign/live/settings.js');
 
-test('cronRun alerts success only after a confirmed 2xx', async () => {
-  globalThis.window.alert.mock.resetCalls();
+test('cronRun toasts success only after a confirmed 2xx', async () => {
+  const state = { inboxToast: null };
+  runtime.state = state;
+  runtime.render = () => {};
   globalThis.fetch = mock.fn(async () => fakeRes({ ok: true, status: 200, json: { ok: true } }));
   try {
     await settingsMod.actions.cronRun('job-1');
   } finally {
     delete globalThis.fetch;
   }
-  const messages = globalThis.window.alert.mock.calls.map((c) => c.arguments[0]);
-  assert.deepStrictEqual(messages, ['Job triggered.']);
+  assert.equal(state.inboxToast && state.inboxToast.msg, 'Job triggered.');
 });
 
 test('cronRun on a 502 says it failed, not "Job triggered."', async () => {
-  globalThis.window.alert.mock.resetCalls();
+  const state = { inboxToast: null };
+  runtime.state = state;
+  runtime.render = () => {};
   globalThis.fetch = mock.fn(async () => fakeRes({
     ok: false, status: 502, contentType: 'text/html', text: '<html>Bad Gateway</html>',
   }));
@@ -269,16 +269,14 @@ test('cronRun on a 502 says it failed, not "Job triggered."', async () => {
   } finally {
     delete globalThis.fetch;
   }
-  const messages = globalThis.window.alert.mock.calls.map((c) => c.arguments[0]);
-  assert.strictEqual(messages.length, 1);
-  assert.doesNotMatch(messages[0], /Job triggered/);
+  assert.ok(state.inboxToast, 'a failure must be surfaced');
+  assert.doesNotMatch(state.inboxToast.msg, /Job triggered/);
 });
 
 test('changePassword surfaces the backend detail message on failure', async () => {
-  const st = { pwCurrent: 'old', pwNew: 'newpassword1', pwConfirm: 'newpassword1' };
+  const st = { pwCurrent: 'old', pwNew: 'newpassword1', pwConfirm: 'newpassword1', inboxToast: null };
   runtime.state = st;
   runtime.render = () => {};
-  globalThis.window.alert.mock.resetCalls();
   globalThis.fetch = mock.fn(async () => fakeRes({
     ok: false, status: 400, json: { detail: 'current password is wrong' },
   }));
@@ -287,13 +285,14 @@ test('changePassword surfaces the backend detail message on failure', async () =
   } finally {
     delete globalThis.fetch;
   }
-  const messages = globalThis.window.alert.mock.calls.map((c) => c.arguments[0]);
-  assert.deepStrictEqual(messages, ['current password is wrong']);
+  assert.equal(st.inboxToast && st.inboxToast.msg, 'current password is wrong');
   assert.equal(st.pwCurrent, 'old', 'fields must not clear on a failed change');
 });
 
-test('exportData downloads the blob only on a 2xx and alerts on a server error (no error-page-as-.zip)', async () => {
-  globalThis.window.alert.mock.resetCalls();
+test('exportData downloads the blob only on a 2xx and toasts on a server error (no error-page-as-.zip)', async () => {
+  const state = { inboxToast: null };
+  runtime.state = state;
+  runtime.render = () => {};
   globalThis.fetch = mock.fn(async () => fakeRes({
     ok: false, status: 502, contentType: 'text/html', text: '<html>Bad Gateway</html>',
   }));
@@ -309,8 +308,7 @@ test('exportData downloads the blob only on a 2xx and alerts on a server error (
     delete globalThis.fetch;
     if (origCreate) globalThis.document.createElement = origCreate;
   }
-  const messages = globalThis.window.alert.mock.calls.map((c) => c.arguments[0]);
-  assert.deepStrictEqual(messages, ['Export failed — the server returned an error.']);
+  assert.equal(state.inboxToast && state.inboxToast.msg, 'Export failed — the server returned an error.');
 });
 
 // ---- dead actions removed (Task 1.6) -----------------------------------------

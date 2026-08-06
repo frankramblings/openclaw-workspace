@@ -152,16 +152,18 @@ export const actions = {
     const cur = (st.pwCurrent || '').trim();
     const nw = (st.pwNew || '').trim();
     const cf = (st.pwConfirm || '').trim();
-    if (nw.length < 8) { try { window.alert('New password must be at least 8 characters.'); } catch (_) {} return; }
-    if (nw !== cf) { try { window.alert('New password and confirmation do not match.'); } catch (_) {} return; }
+    if (nw.length < 8) { runtime.state.inboxToast = { msg: 'New password must be at least 8 characters.', undoTs: null }; runtime.render(); return; }
+    if (nw !== cf) { runtime.state.inboxToast = { msg: 'New password and confirmation do not match.', undoTs: null }; runtime.render(); return; }
     try {
       await apiJson('/api/auth/change-password', { current_password: cur, new_password: nw }, 'POST');
       st.pwCurrent = ''; st.pwNew = ''; st.pwConfirm = '';
       runtime.render();
-      try { window.alert('Password updated. Restart the OpenClaw gateway when convenient — chat routing keeps the old credential until then.'); } catch (_) {}
+      runtime.state.inboxToast = { msg: 'Password updated. Restart the OpenClaw gateway when convenient — chat routing keeps the old credential until then.', undoTs: null };
+      runtime.render();
     } catch (e) {
       const msg = apiErrorMessage(e, 'Could not change password — check the current password.');
-      try { window.alert(msg); } catch (_) {}
+      runtime.state.inboxToast = { msg, undoTs: null };
+      runtime.render();
     }
   },
 
@@ -171,7 +173,7 @@ export const actions = {
   exportData: async () => {
     try {
       const res = await fetch(`${location.origin}/api/export`, { credentials: 'same-origin' });
-      if (!res.ok) { try { window.alert('Export failed — the server returned an error.'); } catch (_) {} return; }
+      if (!res.ok) { runtime.state.inboxToast = { msg: 'Export failed — the server returned an error.', undoTs: null }; runtime.render(); return; }
       const blob = await res.blob();
       const cd = res.headers.get('content-disposition') || '';
       const m = cd.match(/filename=([^;]+)/);
@@ -181,7 +183,7 @@ export const actions = {
       a.href = url; a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1000);
-    } catch (_) { try { window.alert('Export failed.'); } catch (_) {} }
+    } catch (_) { runtime.state.inboxToast = { msg: 'Export failed.', undoTs: null }; runtime.render(); }
   },
 
   // Search → provider selector. Persists search_provider (the writable search
@@ -199,9 +201,9 @@ export const actions = {
   searchTest: async () => {
     try {
       const r = await apiJson('/api/search/test', { query: 'OpenClaw connectivity test' });
-      if (r && r.ok) { try { window.alert(`Search OK — ${r.count} results via ${r.provider || 'provider'}.`); } catch (_) {} }
-      else { try { window.alert(`Search test failed: ${(r && r.error) || 'unknown error'}`); } catch (_) {} }
-    } catch (_) { try { window.alert('Search test request failed.'); } catch (e) {} }
+      if (r && r.ok) { runtime.state.inboxToast = { msg: `Search OK — ${r.count} results via ${r.provider || 'provider'}.`, undoTs: null }; runtime.render(); }
+      else { runtime.state.inboxToast = { msg: `Search test failed: ${(r && r.error) || 'unknown error'}`, undoTs: null }; runtime.render(); }
+    } catch (_) { runtime.state.inboxToast = { msg: 'Search test request failed.', undoTs: null }; runtime.render(); }
   },
 
   // Brain → "Open Brain": load memories + skills into state.live.brain.
@@ -231,9 +233,11 @@ export const actions = {
     if (!id) return;
     try {
       await apiJson(`/api/cron/${id}/run`, {});
-      try { window.alert('Job triggered.'); } catch (_) {}
+      runtime.state.inboxToast = { msg: 'Job triggered.', undoTs: null };
+      runtime.render();
     } catch (_) {
-      try { window.alert('Could not trigger the job — try again.'); } catch (_) {}
+      runtime.state.inboxToast = { msg: 'Could not trigger the job — try again.', undoTs: null };
+      runtime.render();
     }
   },
   cronToggle: async (id) => {
@@ -256,13 +260,15 @@ export const actions = {
     try {
       const perm = await Notification.requestPermission();
       if (perm !== 'granted') {
-        try { window.alert('Notification permission was denied. Enable in your browser settings.'); } catch (_) {}
+        runtime.state.inboxToast = { msg: 'Notification permission was denied. Enable in your browser settings.', undoTs: null };
+        runtime.render();
         return;
       }
       const registration = await navigator.serviceWorker.ready;
       const status = await fetch('/api/push/status').then(r => r.json());
       if (!status.publicKey) {
-        try { window.alert('Server does not support push notifications.'); } catch (_) {}
+        runtime.state.inboxToast = { msg: 'Server does not support push notifications.', undoTs: null };
+        runtime.render();
         return;
       }
       // Convert b64url public key to Uint8Array
@@ -280,11 +286,12 @@ export const actions = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sub.toJSON())
       });
-      try { window.alert('Notifications enabled!'); } catch (_) {}
+      runtime.state.inboxToast = { msg: 'Notifications enabled!', undoTs: null };
       runtime.render(); // re-render to show updated status
     } catch (e) {
       const msg = apiErrorMessage(e, 'Could not enable notifications.');
-      try { window.alert(msg); } catch (_) {}
+      runtime.state.inboxToast = { msg, undoTs: null };
+      runtime.render();
     }
   },
 
@@ -304,11 +311,12 @@ export const actions = {
           body: JSON.stringify({ endpoint: data.endpoint })
         });
       }
-      try { window.alert('Notifications disabled.'); } catch (_) {}
+      runtime.state.inboxToast = { msg: 'Notifications disabled.', undoTs: null };
       runtime.render();
     } catch (e) {
       const msg = apiErrorMessage(e, 'Could not disable notifications.');
-      try { window.alert(msg); } catch (_) {}
+      runtime.state.inboxToast = { msg, undoTs: null };
+      runtime.render();
     }
   },
 };

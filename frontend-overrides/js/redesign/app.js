@@ -100,6 +100,19 @@ installErrorBoundary({
 let researchTimer = null;
 let refreshTimer = null;
 let toastTimer = null;
+// Longer than live/chat.js's TOAST_DWELL_MS (5000). Not a copy-paste drift:
+// this value was introduced in the same commit (3d1400e, "inbox: undo toast
+// wired to /api/items/undo") that added the Undo button now carried by many
+// inboxToast messages (RSVP/snooze/dismiss/add-to-Asana — see live/inbox.js),
+// and it has been left untouched since. Unlike chat.js's two toast variants
+// (unified there specifically because that gap had "no functional reason"),
+// inboxToast is a single shared timer covering both actionable-Undo toasts
+// and plain informational ones (settings/email/calendar errors), so keeping
+// extra dwell time protects the Undo window rather than adding it for free —
+// shortening it to 5000 would shrink real react-and-undo time, not just tidy
+// up timing feel. Kept distinct from TOAST_DWELL_MS deliberately; named here
+// for clarity rather than merged.
+const INBOX_TOAST_DISMISS_MS = 8000;
 let _convFilterRenderTimer = null;  // mobile: coalesce conv-search re-renders
 
 // ---- input-handler skip list (Task 4.4) ------------------------------------
@@ -433,10 +446,11 @@ function render() {
     hideBootLoader();
   }
 
-  // auto-dismiss toast after 8 s (re-arm on every render while toast is set)
+  // auto-dismiss toast after INBOX_TOAST_DISMISS_MS (re-arm on every render
+  // while toast is set)
   clearTimeout(toastTimer);
   if (state.inboxToast) {
-    toastTimer = setTimeout(() => { state.inboxToast = null; render(); }, 8000);
+    toastTimer = setTimeout(() => { state.inboxToast = null; render(); }, INBOX_TOAST_DISMISS_MS);
   }
 
   // restore focus + caret

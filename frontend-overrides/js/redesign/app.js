@@ -258,7 +258,7 @@ const SCROLL_SELECTORS = [
 // remembers the last-applied rotation per stable data-chev key across
 // renders; see the reconciliation pass in render(), below, and
 // chevPatchPlan() in chat-activity.js for the pure snap/reflow decision.
-const _chevRot = new Map();
+let _chevRot = new Map();
 
 // Track chat mount/session across renders so we can jump to the newest message
 // when a chat is first opened (or you switch sessions) instead of leaving it
@@ -370,6 +370,7 @@ function render() {
   // Reflow-trick reconciler: snap each freshly-rebuilt [data-chev] element
   // back to its previous rotation, force a reflow, then set the real target —
   // the CSS transition tweens the rest even though the node is technically new.
+  const nextChevRot = new Map();
   root.querySelectorAll('[data-chev]').forEach((el) => {
     const key = el.getAttribute('data-chev');
     const next = el.style.transform;
@@ -379,8 +380,9 @@ function render() {
       el.getBoundingClientRect(); // force reflow so the browser registers `from` before we set `to`
       el.style.transform = plan.to;
     }
-    _chevRot.set(key, next);
+    nextChevRot.set(key, next);
   });
+  _chevRot = nextChevRot;
 
   // Pull-to-refresh height reflow-trick reconciler — same underlying problem
   // as the [data-chev] block above, applied to `.m-ptr`/`.m-ptr-btm`. Task 13

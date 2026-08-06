@@ -247,11 +247,6 @@ const SCROLL_SELECTORS = [
 // chevPatchPlan() in chat-activity.js for the pure snap/reflow decision.
 const _chevRot = new Map();
 
-// Last resolved height per `.m-ptr`/`.m-ptr-btm` selector, for the reflow-
-// trick reconciler in render() below (see the comment there for why this is
-// needed on top of Task 13's fixed-px `.open` height).
-const _ptrHeight = new Map();
-
 // Track chat mount/session across renders so we can jump to the newest message
 // when a chat is first opened (or you switch sessions) instead of leaving it
 // parked at the top — without disturbing the stick-to-bottom-while-streaming case.
@@ -323,8 +318,38 @@ function render() {
     }
   }
 
+  // Pull-to-refresh indicator height (`.m-ptr`/`.m-ptr-btm`), captured the same
+  // way as the scroll positions above: read the OUTGOING element's true
+  // on-screen height right before the rebuild. This used to be tracked in a
+  // Map updated only at the END of each render, but the live touch-drag
+  // handlers in mobile-app.js mutate the indicator's height DIRECTLY
+  // (`ptr.el.style.height = ...`) to track the finger, entirely outside the
+  // render cycle — so that Map went stale the instant a drag ended mid-gesture:
+  // release past the trigger threshold fires refresh() -> render() while the
+  // Map still held whatever height the LAST render left behind (usually 0),
+  // and the reconciler below would snap the fresh node to that stale value
+  // and animate it back up — the user watching the indicator they were
+  // holding at ~70px visibly collapse to nothing and grow back. Reading
+  // getComputedStyle() here instead captures whatever height is really on
+  // screen, gesture-driven mutations included, so there is nothing to go stale.
+  const ptrHeights = {};
+  for (const sel of ['.m-ptr', '.m-ptr-btm']) {
+    const el = root.querySelector(sel);
+    if (el) ptrHeights[sel] = getComputedStyle(el).height;
+  }
+
   const s = state;
-  const sheetWasOpen = isMobile() && state.companionSheetOpen;
+  // Any of the 5 mobile bottom sheets (companion/capture/model/compose/snooze)
+  // share the same .m-scrim + .m-sheet entrance-animation replay bug: every
+  // data-act click dispatches a full render() (see the delegated click handler
+  // below), even for clicks INSIDE an already-open sheet, so a sheet/scrim's
+  // entrance keyframe would otherwise replay on every such re-render. This
+  // captures whether ANY of them was open before this rebuild — see the
+  // null-animation pass below, right after root.innerHTML is rebuilt.
+  const anySheetWasOpen = isMobile() && !!(
+    state.companionSheetOpen || state.quickCaptureOpen || state.mModelSheetOpen ||
+    state.composeOpen || state.inboxSnoozeFor
+  );
   const convMenuWasOpen = !isMobile() && !!(state.live?.chat?.rowMenuOpen);
   const dlMenuWasOpen = !isMobile() && !!(state.live?.chat?.msgMenuOpen);
   root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
@@ -352,32 +377,43 @@ function render() {
   // start and end of a refresh — root.innerHTML is rebuilt wholesale each
   // time, so the `.m-ptr`/`.m-ptr-btm` node is always brand-new and has no
   // "old" height of its own to transition from. Snap the fresh node back to
-  // its last resolved height, force a reflow, then let it animate forward to
-  // its real (CSS-resolved) target — reusing chevPatchPlan() since the snap/
-  // reflow decision is identical regardless of which CSS property is being
-  // patched. Only one `.m-ptr` and one `.m-ptr-btm` can exist in the DOM at a
-  // time (renderMobile() dispatches to exactly one surface's markup, and
+  // its outgoing height (captured above, right before the rebuild — see that
+  // comment for why a Map written only at the end of a render isn't good
+  // enough here), force a reflow, then let it animate forward to its real
+  // (CSS-resolved) target — reusing chevPatchPlan() since the snap/reflow
+  // decision is identical regardless of which CSS property is being patched.
+  // Only one `.m-ptr` and one `.m-ptr-btm` can exist in the DOM at a time
+  // (renderMobile() dispatches to exactly one surface's markup, and
   // pushedSurface()'s own `.m-ptr` is mutually exclusive with the others), so
-  // a single tracked value per selector — not a per-instance keyed Map like
-  // the chevrons need — is enough.
+  // a plain object keyed by selector — not a per-instance keyed Map like the
+  // chevrons need — is enough.
   ['.m-ptr', '.m-ptr-btm'].forEach((sel) => {
     const el = root.querySelector(sel);
     if (!el) return; // this surface has no such indicator this render
     const next = getComputedStyle(el).height;
-    const plan = chevPatchPlan(_ptrHeight.get(sel), next);
+    const plan = chevPatchPlan(ptrHeights[sel], next);
     if (plan) {
       el.style.height = plan.from;
       el.getBoundingClientRect(); // force reflow so the browser registers `from` before we set `to`
       el.style.height = plan.to;
     }
-    _ptrHeight.set(sel, next);
   });
 
-  // Suppress the slide-up animation when the sheet is already open and being
-  // re-rendered by a click inside it — otherwise every action replays the pop.
-  if (sheetWasOpen) {
-    const sheet = root.querySelector('.m-sheet.companion');
-    if (sheet) sheet.style.animation = 'none';
+  // Suppress the slide-up/fade-in entrance animation on every sheet + its
+  // scrim when a sheet was already open and is being re-rendered by a click
+  // inside it — otherwise every action inside an open sheet (switching
+  // Terminal/Files tabs, picking a capture type, hitting Send in compose)
+  // replays the pop. `:not(.closing)` matters here: a close action (tap the
+  // scrim / hit X) flips the *Closing flag but leaves the sheet rendered for
+  // one more pass (see closeSheetAnimated/startClosingSheet in mobile-app.js
+  // and sheet-close.js) — that render also has anySheetWasOpen true, and
+  // without this exclusion we'd stomp `style.animation` right on top of the
+  // sheet/scrim's own exit animation (m-sheet-down / m-scrim-out), turning an
+  // animated close into an instant one.
+  if (anySheetWasOpen) {
+    root.querySelectorAll('.m-scrim:not(.closing), .m-sheet:not(.closing)').forEach((el) => {
+      el.style.animation = 'none';
+    });
   }
   // Same idea for the two desktop popovers (conv-menu / msg-dl-menu): a re-render
   // while either is already open (e.g. typing with a kebab menu open) would
@@ -1521,7 +1557,7 @@ const MOBILE_PRIMARY = ['chat', 'inbox', 'email'];
 function seedMobileFromHash(h) {
   if (MOBILE_PRIMARY.includes(h)) { state.mTab = h; state.mSub = null; }
   else if (h === 'more') { state.mTab = 'more'; state.mSub = null; }
-  else if (h === 'capture') { state.mTab = 'chat'; state.quickCaptureOpen = true; }
+  else if (h === 'capture') { state.mTab = 'chat'; state.quickCaptureOpen = true; state.quickCaptureClosing = false; }
   else if (['calendar', 'research', 'library', 'notes', 'settings'].includes(h)) { state.mTab = 'more'; state.mSub = h; }
 }
 seedMobileFromHash(fromHash);

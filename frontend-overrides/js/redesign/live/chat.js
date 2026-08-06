@@ -747,6 +747,18 @@ function lineColor(line) {
 // Sticky "Gary is working…" banner visible at the top of the thread viewport,
 // so users on mobile don't need to scroll to see progress.
 function _ensureWorkingBanner() {
+  // Guard mirrors paintGhost/fetchSuggestion's `typeof document === 'undefined'`
+  // convention, extended to also cover this suite's minimal per-file test-stub
+  // `document` objects (several shapes exist across __tests__/*.test.js, each
+  // defining only the DOM surface that file's other assertions need — none
+  // define the full getElementById/createElement/head surface this banner
+  // needs). stopElapsed()/startElapsed() call into this from core turn-
+  // lifecycle paths (selectSession, stopRun, the elapsed-tick interval) that
+  // node:test's DOM-light chat.js tests exercise directly.
+  if (typeof document === 'undefined'
+      || typeof document.getElementById !== 'function'
+      || typeof document.createElement !== 'function'
+      || !document.head) return null;
   let el = document.getElementById('oc-working-banner');
   if (!el) {
     el = document.createElement('div');
@@ -783,6 +795,7 @@ function _showWorkingBanner(label) {
   if (lbl) lbl.textContent = label || 'Gary is working…';
 }
 function _hideWorkingBanner() {
+  if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
   const el = document.getElementById('oc-working-banner');
   if (el) el.style.display = 'none';
 }
@@ -802,7 +815,7 @@ function startElapsed() {
       // which de-selected text, reset scroll, and made typing impossible. Update
       // the single text node instead; fall back to a full render only if the
       // clock isn't in the DOM yet (first tick before its initial paint).
-      const els = document.querySelectorAll('.act-elapsed');
+      const els = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('.act-elapsed') : [];
       if (els.length) els.forEach(e => { e.textContent = turn.activity.elapsed; });
       else runtime.render();
       // Mid-turn ghost suggestion ("While you wait, …"): once per SERVER turn

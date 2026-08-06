@@ -388,7 +388,8 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-body .md-code:last-child,.msg-user .md-code:last-child{margin-bottom:0}
 .msg-body .md-code code,.msg-user .md-code code{font-family:var(--mono);font-size:13px;line-height:1.7;color:#cfd3da;white-space:pre}
 .msg-body .md-code[data-lang],.msg-user .md-code[data-lang]{padding-top:28px}
-.msg-body .md-code-lang,.msg-user .md-code-lang{position:absolute;top:6px;left:13px;font-size:11px;font-family:var(--mono);color:var(--faint,#9aa0a6);text-transform:uppercase;letter-spacing:.04em;pointer-events:none}
+.md-code-lang{display:none}
+.msg-body .md-code-lang,.msg-user .md-code-lang{display:initial;position:absolute;top:6px;left:13px;font-size:11px;font-family:var(--mono);color:var(--faint,#9aa0a6);text-transform:uppercase;letter-spacing:.04em;pointer-events:none}
 .msg-body .math-block,.msg-user .math-block{position:relative;margin:0 0 18px;padding:14px 16px;background:#121317;border:1px solid var(--bd);border-radius:10px;overflow-x:auto;font-size:14px;color:#cfd3da}
 .msg-body .math-block:last-child,.msg-user .math-block:last-child{margin-bottom:0}
 .msg-body .math-inline,.msg-user .math-inline{font-size:.95em}

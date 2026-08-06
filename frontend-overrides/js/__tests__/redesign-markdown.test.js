@@ -219,6 +219,23 @@ test('block math content is HTML-escaped in both the attribute and fallback text
   assert.match(html, />a &lt; b &amp; c<\/div>/);
 });
 
+test('block math: a closed $$...$$ block still renders as a math-block (regression check)', () => {
+  const html = renderMarkdown('$$\nx = 1\n$$');
+  assert.match(html, /<div class="math-block" data-math="x = 1">x = 1<\/div>/);
+});
+
+test('block math: an unclosed $$ block (still streaming) renders as plain text, not a math-block', () => {
+  const html = renderMarkdown('$$\n\\int_0^1');
+  assert.doesNotMatch(html, /class="math-block"/);
+  assert.match(html, /\\int_0\^1/);
+});
+
+test('block math: an unclosed \\[ block (still streaming) renders as plain text, not a math-block', () => {
+  const html = renderMarkdown('\\[\nE = mc^2');
+  assert.doesNotMatch(html, /class="math-block"/);
+  assert.match(html, /E = mc\^2/);
+});
+
 test('inline math: \\(...\\) becomes a math-inline span with raw LaTeX preserved', () => {
   const html = inline('mass-energy is \\(E=mc^2\\) in relativity');
   assert.match(html, /mass-energy is <span class="math-inline" data-math="E=mc\^2">E=mc\^2<\/span> in relativity/);

@@ -102,3 +102,12 @@ hue-6-2: #e6c07b
 .hljs-deletion { color: var(--red, #f0726a); }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 700; }
+
+/* The stock `pre code.hljs { padding: 1em }` rule above (specificity 0,1,2)
+   outranks the retint block's `.hljs { … }` (0,1,0) and survives untouched,
+   so highlighting a code block that already gets its padding from .md-code
+   (redesign.css) adds a redundant ~1em of padding plus a nested overflow-x
+   scroller the instant hljs.highlightElement() attaches the `hljs` class —
+   a visible layout jump. Neutralize it here, same selector, later in source
+   order, so it wins the specificity tie. */
+pre code.hljs { padding: 0; overflow-x: visible; }

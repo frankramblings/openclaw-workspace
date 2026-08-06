@@ -293,10 +293,24 @@ export function renderMarkdown(src, topLevel = true) {
     if (RE.mathDelim.test(line)) {        // multi-line $$ ... $$ / \[ ... \]
       i++;
       const buf = [];
-      while (i < lines.length && !RE.mathDelim.test(lines[i])) { buf.push(lines[i]); i++; }
-      i++; // consume closing delimiter (if present)
-      const raw = buf.join('\n');
-      out.push(`<div class="math-block" data-math="${esc(raw)}">${esc(raw)}</div>`);
+      let closed = false;
+      while (i < lines.length) {
+        if (RE.mathDelim.test(lines[i])) { closed = true; break; }
+        buf.push(lines[i]); i++;
+      }
+      if (closed) {
+        i++; // consume closing delimiter
+        const raw = buf.join('\n');
+        out.push(`<div class="math-block" data-math="${esc(raw)}">${esc(raw)}</div>`);
+      } else {
+        // No closing delimiter before EOF — a still-streaming partial block
+        // (the model hasn't finished typing the closing $$/\] yet). Render as
+        // plain text instead of a math-block placeholder: feeding incomplete
+        // LaTeX to KaTeX would show a visible error card mid-stream that only
+        // self-heals once the closing delimiter eventually arrives on a later
+        // render.
+        out.push(`<p>${inline([line, ...buf].join('\n')).replace(/\n/g, '<br>')}</p>`);
+      }
       continue;
     }
     if (RE.blank.test(line)) { i++; continue; }

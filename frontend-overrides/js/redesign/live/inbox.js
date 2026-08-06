@@ -10,7 +10,7 @@ import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
 import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs, triageSummary, ageLabelFor } from './inbox-logic.js';
 import { detailEndpoint } from './inbox-detail.js';
-import { startClosingSheet } from '../mobile/sheet-close.js';
+import { startClosingSheet, closeAnimMs } from '../mobile/sheet-close.js';
 
 // inboxSnoozeFor is shared between the mobile bottom sheet (mobile-sheets.js
 // renderSnoozeSheet, which reads inboxSnoozeClosing to play an exit
@@ -411,10 +411,11 @@ export const actions = {
     startClosingSheet(state, 'inboxSnoozeFor', 'inboxSnoozeClosing');
     // inboxSnoozeFor holds an id (truthy string), not a boolean — startClosingSheet's
     // `if (!state[openFlag])` check still works (falsy id === already closed).
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     setTimeout(() => {
       if (!state.inboxSnoozeClosing) return; // reopened (or already closed) since this timer was scheduled
       state.inboxSnoozeFor = null; state.inboxSnoozeClosing = false; runtime.render();
-    }, 200);
+    }, closeAnimMs(reduced));
   },
 
   // Commit a snooze preset: optimistic dismiss + POST + revert on failure.

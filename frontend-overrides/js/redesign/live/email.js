@@ -6,7 +6,7 @@
 
 import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
-import { startClosingSheet } from '../mobile/sheet-close.js';
+import { startClosingSheet, closeAnimMs } from '../mobile/sheet-close.js';
 
 // composeOpen/closeCompose are shared between the mobile bottom sheet
 // (mobile-sheets.js renderComposeSheet, which reads composeClosing to play an
@@ -301,10 +301,11 @@ export const actions = {
     // closes it, so it keeps the original instant close.
     if (!isMobileShell()) { s.composeOpen = false; s.composeClosing = false; runtime.render(); return; }
     startClosingSheet(s, 'composeOpen', 'composeClosing');
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     setTimeout(() => {
       if (!s.composeClosing) return; // reopened (or already closed) since this timer was scheduled
       s.composeOpen = false; s.composeClosing = false; runtime.render();
-    }, 200);
+    }, closeAnimMs(reduced));
   },
   sendEmail: async () => {
     const s = runtime.state;

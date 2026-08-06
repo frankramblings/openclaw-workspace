@@ -25,3 +25,15 @@ export function startClosingSheet(state, openFlag, closingFlag) {
   if (!state[openFlag] || state[closingFlag]) return;
   state[closingFlag] = true;
 }
+
+// Matches the CSS exit-animation duration (mobile.css .m-sheet.closing /
+// .m-scrim.closing). Pure decision for how long the animated-close timeout
+// should wait before actually unmounting a sheet: the full CSS exit-animation
+// duration under normal motion, or 0 under reduced motion (where the CSS
+// animation's duration token already resolves to 0ms, so the visual close is
+// instant — waiting the normal 200ms anyway would leave an invisible,
+// still-mounted scrim swallowing taps for 200ms after the sheet appears gone).
+const CLOSE_ANIM_MS = 200;
+export function closeAnimMs(prefersReducedMotion) {
+  return prefersReducedMotion ? 0 : CLOSE_ANIM_MS;
+}

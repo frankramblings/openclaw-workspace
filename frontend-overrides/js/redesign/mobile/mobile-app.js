@@ -13,12 +13,8 @@ import { recordCapture, readRecentCaptures } from './mobile-data.js';
 import { cardActions, isInvite, swipeIntent } from '../live/inbox-logic.js';
 import { edgeSwipeBlocked } from './mobile-history.js';
 import { armSwallow, shouldSwallowClick, scheduleSwallowDisarm } from './longpress.js';
-import { startClosingSheet } from './sheet-close.js';
+import { startClosingSheet, closeAnimMs } from './sheet-close.js';
 
-// Matches the CSS exit-animation duration (mobile.css .m-sheet.closing /
-// .m-scrim.closing — literal 200ms until Task 9's --dur-panel token lands and
-// Task 11 migrates this constant to read it). Keep these two in sync.
-const CLOSE_ANIM_MS = 200;
 // Shared timed second half of an animated sheet close: startClosingSheet has
 // already flipped the closing flag (still rendered, exit class applied); once
 // the animation has had time to play, flip the open flag false and clear the
@@ -38,12 +34,13 @@ const CLOSE_ANIM_MS = 200;
 // sees it already false and returns immediately.
 function closeSheetAnimated(state, openFlag, closingFlag) {
   startClosingSheet(state, openFlag, closingFlag);
+  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   setTimeout(() => {
     if (!state[closingFlag]) return; // reopened (or already closed) since this timer was scheduled
     state[openFlag] = false;
     state[closingFlag] = false;
     runtime.render();
-  }, CLOSE_ANIM_MS);
+  }, closeAnimMs(reduced));
 }
 
 const PUSHED_SURFACES = new Set(['research', 'library', 'notes', 'settings']);

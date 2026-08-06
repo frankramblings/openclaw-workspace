@@ -55,11 +55,8 @@ html.shell-mobile #oc-root { height: 100%; }
 .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: scale(.93); }
 @media (prefers-reduced-motion: reduce) {
   .m-round-btn:active, .m-send:active, .m-icon-btn:active, .m-tab:active, .m-add-btn:active, .m-pill:active, .m-chip:active, .m-triage:active, .m-back:active, .m-cap-type:active { transform: none; }
-  /* still pulse-free / slide-free for vestibular safety; the loading spinner
-     (.m-ptr .spin) stays — it conveys progress, freezing it reads as broken.
-     .closing variants need their own entries here too (higher specificity
-     than the bare selector would otherwise win over animation:none). */
-.m-sheet, .m-sheet.closing, .m-scrim, .m-scrim.closing { animation: none; }
+  /* still pulse-free for vestibular safety; the loading spinner
+     (.m-ptr .spin) stays — it conveys progress, freezing it reads as broken. */
   .m-term-cursor { animation: none; }
 }
 /* Keyboard / switch-control focus ring. Pointer presses use :active (above);
@@ -523,7 +520,7 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 /* ---- sheets (companion + quick capture) ---------------------------------- */
 /* Entry/exit animation durations+eases use the shared --dur-panel/--ease-decel/
    --ease-accel motion tokens (Task 9's tokens; migrated onto them in Task 11).
-   Keep in sync with CLOSE_ANIM_MS in mobile-app.js (the JS-side timer that
+   Keep in sync with CLOSE_ANIM_MS in sheet-close.js (the JS-side timer that
    actually detaches the sheet) — both resolve to 200ms today. */
 .m-scrim { position: absolute; inset: 0; background: rgba(8,9,11,.45); z-index: var(--z-dropdown); animation: m-scrim-in var(--dur-panel) var(--ease-decel); }
 .m-scrim.closing { animation: m-scrim-out var(--dur-panel) var(--ease-accel) forwards; }
@@ -531,6 +528,17 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 @keyframes m-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 .m-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: var(--z-sheet); background: var(--panel); border-radius: 22px 22px 0 0; border-top: 1px solid var(--bd); box-shadow: 0 -16px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; overflow: hidden; animation: m-sheet-up var(--dur-panel) var(--ease-decel); }
 .m-sheet.closing { animation: m-sheet-down var(--dur-panel) var(--ease-accel) forwards; }
+/* Placed after .m-scrim/.m-scrim.closing/.m-sheet/.m-sheet.closing's own
+   declarations above — source order decides ties at equal specificity, so a
+   rule targeting these selectors placed earlier in the file (as this one
+   used to be, bundled into the generic vestibular-safety block near the top)
+   is silently overridden by their own later declarations. This is otherwise
+   redundant with --dur-panel/--ease-* resolving to 0ms/no-op under reduced
+   motion at :root, but keeping it explicit and actually load-bearing is
+   cheap insurance if that token relationship ever changes. */
+@media (prefers-reduced-motion: reduce) {
+  .m-sheet, .m-sheet.closing, .m-scrim, .m-scrim.closing { animation: none; }
+}
 @keyframes m-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes m-sheet-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
 .m-sheet.companion { height: 64%; }

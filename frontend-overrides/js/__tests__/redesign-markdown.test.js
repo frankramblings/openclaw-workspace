@@ -218,3 +218,33 @@ test('block math content is HTML-escaped in both the attribute and fallback text
   assert.match(html, /data-math="a &lt; b &amp; c"/);
   assert.match(html, />a &lt; b &amp; c<\/div>/);
 });
+
+test('inline math: \\(...\\) becomes a math-inline span with raw LaTeX preserved', () => {
+  const html = inline('mass-energy is \\(E=mc^2\\) in relativity');
+  assert.match(html, /mass-energy is <span class="math-inline" data-math="E=mc\^2">E=mc\^2<\/span> in relativity/);
+});
+
+test('inline math survives alongside bold/italic without cross-interference', () => {
+  const html = inline('**important**: \\(a_b + c\\) matters');
+  assert.match(html, /<strong>important<\/strong>/);
+  assert.match(html, /<span class="math-inline" data-math="a_b \+ c">a_b \+ c<\/span>/);
+  // the underscore inside the math span must NOT have been italicized
+  assert.doesNotMatch(html, /<em>b \+ c<\/em>/);
+});
+
+test('inline math content is HTML-escaped', () => {
+  const html = inline('\\(a < b\\)');
+  assert.match(html, /data-math="a &lt; b"/);
+  assert.match(html, />a &lt; b<\/span>/);
+});
+
+test('inline math is not confused by a literal parenthesis inside the expression', () => {
+  const html = inline('\\(f(x) = x^2\\)');
+  assert.match(html, /<span class="math-inline" data-math="f\(x\) = x\^2">/);
+});
+
+test('a lone backslash-paren with no matching close is left as literal text', () => {
+  const html = inline('cost is \\(5 dollars, not math');
+  assert.doesNotMatch(html, /math-inline/);
+  assert.match(html, /cost is/);
+});

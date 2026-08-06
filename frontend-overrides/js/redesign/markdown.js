@@ -14,6 +14,8 @@ import { esc } from './dom.js';
 // appears in chat text and esc() leaves it untouched, so it round-trips safely.
 const C0 = '\u0000';
 const C1 = '\u0001';
+const C2 = '';
+const C3 = '';
 
 function safeUrl(url) {
   return /^(https?:|mailto:|\/|#)/i.test(String(url || '').trim()) ? url : '#';
@@ -115,6 +117,17 @@ function restoreCodeSpans(html, codes) {
   });
 }
 
+// Restore inline-math sentinels into <span class="math-inline"> placeholders.
+// No inAnchor tag-scan needed (unlike restoreCodeSpans/linkifyPaths) — math
+// spans aren't clickable, so there's no nested-click-target concern.
+function restoreMathSpans(html, maths) {
+  const SENTINEL_RE = new RegExp(C2 + '(\\d+)' + C3, 'g');
+  return html.replace(SENTINEL_RE, (_, i) => {
+    const escaped = esc(maths[+i]);
+    return `<span class="math-inline" data-math="${escaped}">${escaped}</span>`;
+  });
+}
+
 // Inline formatting on a single run of raw text. Code spans are pulled out and
 // escaped separately so their contents are never treated as markdown.
 export function inline(text) {
@@ -123,7 +136,12 @@ export function inline(text) {
     codes.push(c);
     return C0 + (codes.length - 1) + C1;
   });
-  s = esc(s); // escape &<>"' on everything that isn't a protected code span
+  const maths = [];
+  s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => {
+    maths.push(m);
+    return C2 + (maths.length - 1) + C3;
+  });
+  s = esc(s); // escape &<>"' on everything that isn't a protected code/math span
   s = s
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_]+)__/g, '<strong>$1</strong>')
@@ -132,7 +150,8 @@ export function inline(text) {
     .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, u) => link(t, u));
   s = linkifyPaths(s);
-  return restoreCodeSpans(s, codes);
+  s = restoreCodeSpans(s, codes);
+  return restoreMathSpans(s, maths);
 }
 
 // Inline image sharing (parity with desktop markdown.js _extractSharedImages).

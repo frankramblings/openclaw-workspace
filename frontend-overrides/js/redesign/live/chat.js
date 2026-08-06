@@ -1974,6 +1974,9 @@ function openNotified(id) {
   actions.selectSession(id);
 }
 
+// Shared dwell time for both toast variants — was 6000 (showChatToast) vs 4500 (toast()), no functional reason for the difference
+const TOAST_DWELL_MS = 5000;
+
 // Lazily request OS-notification permission on a user gesture (called from send).
 function ensureNotifyPermission() {
   try {
@@ -1995,7 +1998,7 @@ function showChatToast(text, id) {
     el.addEventListener('click', () => { openNotified(id); close(); });
     host.appendChild(el);
     requestAnimationFrame(() => el.classList.add('in'));
-    setTimeout(close, 6000);
+    setTimeout(close, TOAST_DWELL_MS);
   } catch (_) { /* DOM unavailable */ }
 }
 
@@ -2013,7 +2016,7 @@ function toast(text) {
     el.querySelector('.oc-toast-msg').textContent = text;
     host.appendChild(el);
     requestAnimationFrame(() => el.classList.add('in'));
-    setTimeout(() => { el.classList.remove('in'); setTimeout(() => el.remove(), 220); }, 4500);
+    setTimeout(() => { el.classList.remove('in'); setTimeout(() => el.remove(), 220); }, TOAST_DWELL_MS);
   } catch (_) { /* DOM unavailable */ }
 }
 

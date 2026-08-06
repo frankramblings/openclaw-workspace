@@ -164,7 +164,7 @@ test('a stale fetchThread resolving AFTER a newer selectSession must not overwri
 // ---- 3. a GENUINE failure (not a race) toasts (4.1) ------------------------
 
 test('a genuine fetchThread failure toasts instead of silently leaving the old thread under the new activeId', async () => {
-  // toast()'s own auto-dismiss (a real 4500ms setTimeout) would otherwise
+  // toast()'s own auto-dismiss (TOAST_DWELL_MS = 5000ms) would otherwise
   // dangle past this test's end and fire during a LATER test — fake it and
   // fast-forward past it before returning.
   mock.timers.enable({ apis: ['setTimeout'] });

@@ -371,7 +371,7 @@ html.native .m-tabbar {
 .m-pill.ghost { padding: 0 13px; border: 1px solid var(--bd); background: transparent; color: var(--mut); font-weight: 400; }
 .m-ai-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--violet); background: rgba(169,155,245,.1); border: 1px solid rgba(169,155,245,.25); padding: 4px 9px; border-radius: 999px; }
 .m-triage { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 9px; border: 1px solid rgba(169,155,245,.32); background: rgba(169,155,245,.1); color: var(--violet); font-size: 12px; font-weight: 600; cursor: pointer; }
-.m-chip { font-size: 11.5px; color: var(--mut); border: 1px solid var(--bd); padding: 4px 11px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
+.m-chip { font-size: 11.5px; color: var(--mut); border: 1px solid var(--bd); padding: 4px 11px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; transition: transform var(--dur-micro) var(--ease-standard), color var(--dur-micro) var(--ease-standard), background var(--dur-micro) var(--ease-standard), border-color var(--dur-micro) var(--ease-standard); }
 .m-chip.active { color: var(--teal); background: var(--tealtint); border-color: var(--teal2); font-weight: 500; }
 .m-chip .dot { width: 7px; height: 7px; border-radius: 50%; }
 
@@ -507,7 +507,7 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-grab .h { width: 38px; height: 5px; border-radius: 3px; background: var(--bd); }
 .m-seg-row { flex: none; display: flex; gap: 6px; padding: 4px 16px 12px; }
 .m-seg-row .seg { display: flex; background: var(--bg); border: 1px solid var(--bd); border-radius: 10px; padding: 3px; flex: 1; }
-.m-seg-row .seg span { flex: 1; text-align: center; font-size: 12.5px; color: var(--mut); padding: 6px 0; border-radius: 7px; cursor: pointer; }
+.m-seg-row .seg span { flex: 1; text-align: center; font-size: 12.5px; color: var(--mut); padding: 6px 0; border-radius: 7px; cursor: pointer; transition: color var(--dur-micro) var(--ease-standard), background var(--dur-micro) var(--ease-standard); }
 .m-seg-row .seg span.active { font-weight: 600; color: var(--ink); background: var(--teal); }
 .m-sheet-x { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--bd); display: flex; align-items: center; justify-content: center; color: var(--mut); cursor: pointer; background: none; flex: none; }
 .m-term { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
@@ -525,7 +525,7 @@ button.m-ai-btn { font-family: inherit; appearance: none; -webkit-appearance: no
 .m-cap-input { border: 1px solid var(--teal2); background: var(--bg); border-radius: 14px; padding: 14px; margin-bottom: 13px; min-height: 96px; }
 .m-cap-input textarea { width: 100%; background: transparent; border: none; resize: none; font-size: 16px; line-height: 1.5; color: var(--fg); min-height: 66px; }
 .m-cap-types { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-.m-cap-type { font-size: 12.5px; color: var(--mut); background: var(--bg); border: 1px solid var(--bd); padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+.m-cap-type { font-size: 12.5px; color: var(--mut); background: var(--bg); border: 1px solid var(--bd); padding: 7px 14px; border-radius: 999px; cursor: pointer; transition: transform var(--dur-micro) var(--ease-standard), color var(--dur-micro) var(--ease-standard), background var(--dur-micro) var(--ease-standard), border-color var(--dur-micro) var(--ease-standard); }
 .m-cap-type.active { color: var(--ink); background: var(--teal); border-color: transparent; font-weight: 600; }
 .m-cap-send { height: 48px; border-radius: 14px; background: var(--teal); color: var(--ink); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; font-weight: 600; border: none; width: 100%; cursor: pointer; }
 .m-cap-recent-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .1em; color: var(--faint); margin: 18px 2px 9px; }

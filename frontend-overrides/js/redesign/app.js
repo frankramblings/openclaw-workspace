@@ -1149,7 +1149,7 @@ function showDrop(on) {
     _dropOverlay.innerHTML = '<div class="oc-drop-card">Drop to attach</div>';
     document.body.appendChild(_dropOverlay);
   }
-  if (_dropOverlay) _dropOverlay.style.display = on ? 'flex' : 'none';
+  if (_dropOverlay) _dropOverlay.classList.toggle('show', on);
 }
 const dragHasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') !== -1);
 root.addEventListener('dragover', (e) => {

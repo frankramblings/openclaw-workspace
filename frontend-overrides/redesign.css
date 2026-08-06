@@ -583,7 +583,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .list-top-head{display:flex;align-items:center;gap:9px;margin-bottom:11px}
 .list-top-head .ttl{font-size:16px;font-weight:600;color:var(--fg)}
 .list-scroll{flex:1;overflow:auto;padding:8px}
-.mail-row{display:flex;flex-direction:column;gap:4px;padding:11px 12px;border-radius:10px;background:transparent;border:1px solid transparent;margin-bottom:5px;cursor:pointer}
+.mail-row{display:flex;flex-direction:column;gap:4px;padding:11px 12px;border-radius:10px;background:transparent;border:1px solid transparent;margin-bottom:5px;cursor:pointer;transition:background var(--dur-micro) var(--ease-standard)}
 .mail-row.active{background:var(--tealtint);border-color:color-mix(in srgb,var(--teal) 30%,transparent)}
 .mail-row .top{display:flex;align-items:center;gap:7px}
 .src-tag{font-family:var(--mono);font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px}
@@ -643,7 +643,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .grp-label .lbl{font-size:12px;font-weight:700;letter-spacing:.1em}
 .grp-label .lbl.needs{color:var(--teal)} .grp-label .lbl.fyilbl{color:var(--violet)}
 .grp-label .n{font-size:12px;color:var(--faint)}
-.inbox-card{border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:11px;background:var(--panel)}
+.inbox-card{border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:11px;background:var(--panel);transition:background var(--dur-micro) var(--ease-standard)}
 .inbox-card.fyi{opacity:.92}
 .inbox-card .top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .inbox-card .who{font-size:13px;color:var(--fg);font-weight:500}
@@ -762,7 +762,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .lib-filter{font-size:12.5px;font-weight:500;color:var(--mut);background:transparent;border:1px solid var(--bd);padding:5px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
 .lib-filter.active{color:var(--teal);background:var(--tealtint);border-color:var(--teal2)}
 .lib-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
-.lib-card{border:1px solid var(--bd);border-radius:12px;background:var(--panel);overflow:hidden;cursor:pointer;display:flex;flex-direction:column}
+.lib-card{border:1px solid var(--bd);border-radius:12px;background:var(--panel);overflow:hidden;cursor:pointer;display:flex;flex-direction:column;transition:background var(--dur-micro) var(--ease-standard)}
 .lib-thumb{height:96px;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--bd2)}
 .lib-thumb .kl{font-size:14px;font-weight:700;letter-spacing:.06em}
 .lib-card .meta{padding:12px 13px}
@@ -775,7 +775,7 @@ html.shell-mobile .oc-toast{max-width:none}
    NOTES
    ========================================================================== */
 .notes-list{width:300px}
-.note-row{display:flex;flex-direction:column;gap:3px;padding:11px 12px;border-radius:10px;background:transparent;border:1px solid transparent;margin-bottom:4px;cursor:pointer}
+.note-row{display:flex;flex-direction:column;gap:3px;padding:11px 12px;border-radius:10px;background:transparent;border:1px solid transparent;margin-bottom:4px;cursor:pointer;transition:background var(--dur-micro) var(--ease-standard)}
 .note-row.active{background:var(--tealtint);border-color:color-mix(in srgb,var(--teal) 30%,transparent)}
 .note-row .top{display:flex;align-items:center;gap:7px}
 .note-row .nm{font-size:14px;color:#cfd3da;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1048,7 +1048,8 @@ html.shell-mobile .oc-toast{max-width:none}
 
 /* Drag-and-drop image attach overlay (chat). Toggled by app.js; pointer-events
    none so the drop lands on the chat underneath and bubbles to the root handler. */
-#oc-drop-overlay { position: fixed; inset: 0; z-index: 9998; /* below #oc-toast-host — no ambiguous tie */ display: none; align-items: center; justify-content: center; background: rgba(8,9,11,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: none; }
+#oc-drop-overlay { position: fixed; inset: 0; z-index: 9998; /* below #oc-toast-host — no ambiguous tie */ display: flex; align-items: center; justify-content: center; background: rgba(8,9,11,.55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); pointer-events: none; opacity: 0; visibility: hidden; transition: opacity var(--dur-panel) var(--ease-standard), visibility 0s linear var(--dur-panel); }
+#oc-drop-overlay.show { opacity: 1; visibility: visible; transition-delay: 0s; }
 #oc-drop-overlay .oc-drop-card { border: 2px dashed var(--teal, #4fe3d1); color: var(--fg, #e8eaed); background: var(--panel, #1e2025); border-radius: 16px; padding: 22px 30px; font-size: 19px; font-weight: 600; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
 
 

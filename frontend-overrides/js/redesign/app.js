@@ -28,6 +28,7 @@ import { openImageOverlay } from './live/image-viewer.js';
 import { installErrorBoundary } from './error-boundary.js';
 import { trapOrder, nextFocus, pickModal } from './focus-trap.js';
 import './live/jobs.js'; // Live Jobs overlay — self-boots on import
+import { chevPatchPlan } from './chat-activity.js';
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -186,7 +187,7 @@ function renderRail() {
       <span class="oc-rail-name">__AGENT_NAME__</span>
       <span class="oc-online${state.isOnline ? '' : ' offline'}"><span class="dot"></span>${state.isOnline ? 'online' : 'offline'}</span>
       <div class="oc-spacer"></div>
-      <button class="oc-rail-collapse" data-act="toggleRail" title="Collapse sidebar"><span style="display:inline-flex;transform:rotate(${collapsed ? '180deg' : '0deg'})">${I.chevLeft()}</span></button>
+      <button class="oc-rail-collapse" data-act="toggleRail" title="Collapse sidebar"><span class="oc-rail-collapse-ic" data-chev="rail-collapse" style="display:inline-flex;transform:rotate(${collapsed ? '180deg' : '0deg'})">${I.chevLeft()}</span></button>
     </div>
     ${railItem('chat', 'Chat', I.chat(), chatNotifyBadge())}
     ${railItem('inbox', 'Inbox', I.inbox(), inboxVisible > 0 ? `<span class="nav-pip"></span><span class="nav-badge">${inboxVisible}</span>` : '')}
@@ -229,6 +230,14 @@ const SCROLL_SELECTORS = [
   '.chat-thread', '.m-scroll', '.m-files',
   '.inbox-scroll', '.list-scroll', '.lib-wrap', '.set-scroll',
 ];
+
+// Chevron rotation reflow-trick reconciler: render() rebuilds root.innerHTML
+// wholesale, so a `[data-chev]` element's CSS transition never has an "old"
+// transform to interpolate from — it's always a brand-new node. This Map
+// remembers the last-applied rotation per stable data-chev key across
+// renders; see the reconciliation pass in render(), below, and
+// chevPatchPlan() in chat-activity.js for the pure snap/reflow decision.
+const _chevRot = new Map();
 
 // Track chat mount/session across renders so we can jump to the newest message
 // when a chat is first opened (or you switch sessions) instead of leaving it
@@ -304,6 +313,22 @@ function render() {
   const s = state;
   const sheetWasOpen = isMobile() && state.companionSheetOpen;
   root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
+
+  // Reflow-trick reconciler: snap each freshly-rebuilt [data-chev] element
+  // back to its previous rotation, force a reflow, then set the real target —
+  // the CSS transition tweens the rest even though the node is technically new.
+  root.querySelectorAll('[data-chev]').forEach((el) => {
+    const key = el.getAttribute('data-chev');
+    const next = el.style.transform;
+    const plan = chevPatchPlan(_chevRot.get(key), next);
+    if (plan) {
+      el.style.transform = plan.from;
+      el.getBoundingClientRect(); // force reflow so the browser registers `from` before we set `to`
+      el.style.transform = plan.to;
+    }
+    _chevRot.set(key, next);
+  });
+
   // Suppress the slide-up animation when the sheet is already open and being
   // re-rendered by a click inside it — otherwise every action replays the pop.
   if (sheetWasOpen) {

@@ -31,7 +31,19 @@ export const ACT_ICONS = {
   generic: { color: 'var(--faint)', path: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' },
 };
 
-const chev = (rot) => `<svg class="act-chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${rot})"><path d="m9 6 6 6-6 6"/></svg>`;
+// Pure decision for the reflow-trick chevron reconciler (app.js's render()
+// applies it). A rotation transition can only play between two states of the
+// SAME node; render() rebuilds a fresh node every time, so there is nothing to
+// interpolate from unless we fake it: snap the fresh node back to its previous
+// rotation, force a reflow, then set the real target — the CSS transition
+// tweens the rest. This is that snap/reflow decision, DOM-free so it's
+// unit-testable without a document.
+export function chevPatchPlan(prev, next) {
+  if (prev == null || prev === next) return null;
+  return { from: prev, to: next };
+}
+
+const chev = (rot, key) => `<svg class="act-chev" data-chev="${key}" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${rot})"><path d="m9 6 6 6-6 6"/></svg>`;
 const checkIcon = (sz = 13) => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
 const STOP_ICON = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
 
@@ -74,7 +86,7 @@ function stepRow(st, s, { iconHtml, alwaysOpen } = {}) {
     ${st.file ? `<span class="file">${esc(st.file)}</span>` : ''}
     ${st.meta ? `<span class="meta" style="color:${st.metaColor || 'var(--faint)'}">${esc(st.meta)}</span>` : ''}
     <div class="oc-spacer"></div>
-    ${detail ? chev(open ? '90deg' : '0deg') : ''}
+    ${detail ? chev(open ? '90deg' : '0deg', `step:${st.id}`) : ''}
   </div>`;
   return row + (detail && open ? `<div class="act-detail">${detail}</div>` : '');
 }
@@ -111,7 +123,7 @@ function renderItem(it, s, working) {
     const head = `<div class="act-group ocact" data-act="toggleGroup" data-arg="${esc(it.id)}">`
       + `<span class="act-ic" style="color:${ic.color}">${icon(ic.path, { size: 13, sw: 1.8 })}</span>`
       + `<span class="lbl">${esc(groupLabel(it.kind, it.steps.length))}</span>`
-      + `<div class="oc-spacer"></div>${meta}${chev(open ? '90deg' : '0deg')}</div>`;
+      + `<div class="oc-spacer"></div>${meta}${chev(open ? '90deg' : '0deg', `group:${it.id}`)}</div>`;
     const body = open
       ? `<div class="act-spine act-subspine">${map(it.steps, (st) => stepRow(st, s))}</div>` : '';
     return head + body;
@@ -132,7 +144,7 @@ function renderWorking(m, s) {
   const moreRow = (hidden > 0) ? `<div class="act-more ocact" data-act="toggleWork" data-arg="${esc(m.id)}">
       <div class="oc-spacer"></div>
       <span class="lbl" style="color:var(--faint)">${workExpanded ? 'Show last 5' : `Show ${hidden} earlier step${hidden === 1 ? '' : 's'}`}</span>
-      ${chev(workExpanded ? '90deg' : '0deg')}
+      ${chev(workExpanded ? '90deg' : '0deg', `work:${m.id}`)}
       <div class="oc-spacer"></div>
     </div>` : '';
   const rows = visible.map((it) => renderItem(it, s, true)).join('');
@@ -167,7 +179,7 @@ export function renderActivity(m, s) {
     <div class="act-summary ocact" data-act="toggleTrail" data-arg="${esc(m.id)}">
       <span style="display:flex;color:${failed ? 'var(--red)' : 'var(--green)'}">${checkIcon(13)}</span>
       <span class="act-worked">${esc(txt)}</span>
-      ${chev(trailOpen ? '90deg' : '0deg')}
+      ${chev(trailOpen ? '90deg' : '0deg', `trail:${m.id}`)}
     </div>
     ${when(trailOpen, `<div class="act-spine">${items.map((it) => renderItem(it, s, false)).join('')}</div>`)}
   </div>`;

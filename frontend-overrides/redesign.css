@@ -387,6 +387,12 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-body .md-code .md-copy-btn.is-copied,.msg-user .md-code .md-copy-btn.is-copied{opacity:1;color:#7ed492}
 .msg-body .md-code:last-child,.msg-user .md-code:last-child{margin-bottom:0}
 .msg-body .md-code code,.msg-user .md-code code{font-family:var(--mono);font-size:13px;line-height:1.7;color:#cfd3da;white-space:pre}
+.msg-body .md-code[data-lang],.msg-user .md-code[data-lang]{padding-top:28px}
+.msg-body .md-code-lang,.msg-user .md-code-lang{position:absolute;top:6px;left:13px;font-size:11px;font-family:var(--mono);color:var(--faint,#9aa0a6);text-transform:uppercase;letter-spacing:.04em;pointer-events:none}
+.msg-body .math-block,.msg-user .math-block{position:relative;margin:0 0 18px;padding:14px 16px;background:#121317;border:1px solid var(--bd);border-radius:10px;overflow-x:auto;font-size:14px;color:#cfd3da}
+.msg-body .math-block:last-child,.msg-user .math-block:last-child{margin-bottom:0}
+.msg-body .math-inline,.msg-user .math-inline{font-size:.95em}
+.msg-body .math-block .katex,.msg-user .math-block .katex,.msg-body .math-inline .katex,.msg-user .math-inline .katex{color:var(--fg,#dfe2e8)}
 .msg-body .md-table,.msg-user .md-table{margin:0 0 18px;border-collapse:collapse;max-width:100%;display:block;overflow-x:auto;font-size:15px;line-height:1.6}
 .msg-body .md-table:last-child,.msg-user .md-table:last-child{margin-bottom:0}
 .msg-body .md-table th,.msg-body .md-table td,.msg-user .md-table th,.msg-user .md-table td{border:1px solid var(--bd);padding:7px 12px;text-align:left;vertical-align:top}

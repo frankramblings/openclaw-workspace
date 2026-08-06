@@ -117,12 +117,20 @@ let _convFilterRenderTimer = null;  // mobile: coalesce conv-search re-renders
 // calendar renders its "↵ Add" button conditionally on state.quick, so a
 // full render skip would freeze the button out of the DOM while typing.
 const PLAIN_SHEET_FIELDS = new Set(['captureDraft', 'composeTo', 'composeSubject', 'composeBody']);
-// These three DO have a results list that must eventually catch up with what
+// These DO have a results list that must eventually catch up with what
 // was typed, so instead of skipping forever they get one coalesced render
 // after a short typing pause — the same idea as convFilter's own (mobile-
 // only) debounce below, generalized here and applied on every platform.
-const DEBOUNCED_SEARCH_FIELDS = new Set(['emailQuery', 'libQuery', 'notesFilter', 'quick']);
+// convFilter itself joined this set in Task 18: on desktop it used to fall
+// all the way through to the unconditional render() at the bottom of this
+// handler, rebuilding the whole shell on every keystroke of "Search all
+// conversations…" — the mobile branch above already skip/coalesces it, this
+// just gives desktop the same debounced catch-up the other three get.
+const DEBOUNCED_SEARCH_FIELDS = new Set(['emailQuery', 'libQuery', 'notesFilter', 'quick', 'convFilter']);
 const _searchDebounceTimers = {};
+// Task 18: coalesces the slash-palette render below (see the `fk === 'draft'`
+// block) the same way _searchDebounceTimers coalesces the fields above.
+let _slashRenderTimer = null;
 const root = document.getElementById('oc-root');
 const mq = window.matchMedia('(max-width: 768px)');
 // Hide root until the first live-data render so mock sample data never flashes.
@@ -1029,8 +1037,8 @@ root.addEventListener('input', (e) => {
     // State is already synced above so send() sees the text; skip the
     // destructive re-render while composing. compositionend renders once after.
     if (e.isComposing) return;
-    // The full render() below exists ONLY to drive the slash-command palette as
-    // you type. But render() rebuilds root.innerHTML wholesale, which re-runs
+    // The render() below exists ONLY to drive the slash-command palette as you
+    // type. But render() rebuilds root.innerHTML wholesale, which re-runs
     // chatMsg→renderMarkdown for EVERY message in the thread — on a long
     // conversation (or with a long reply present) that's the real cause of
     // composer typing lag: each keystroke re-parses the entire thread. The DOM
@@ -1040,13 +1048,23 @@ root.addEventListener('input', (e) => {
     // the mobile composer, which already skips render on every keystroke.)
     const slashRelevant = t.value.startsWith('/') || !!root.querySelector('.slash-menu');
     if (!slashRelevant) return;
-    const before = root.querySelector('.chat-thread');
-    const savedTop = before ? before.scrollTop : null;
-    render();
-    if (savedTop != null) {
-      const after = root.querySelector('.chat-thread');
-      if (after) after.scrollTop = savedTop;
-    }
+    // Task 18: even gated to slash-relevant keystrokes, render() still re-parses
+    // the whole thread on EACH one — typing "/rename" fast used to mean 7 full
+    // re-renders. Debounce to one render ~150ms after typing pauses (shorter
+    // than the 250ms search debounce since this drives an autocomplete, not a
+    // search box) so the palette still tracks the draft without paying that
+    // cost per keystroke.
+    if (_slashRenderTimer) clearTimeout(_slashRenderTimer);
+    _slashRenderTimer = setTimeout(() => {
+      _slashRenderTimer = null;
+      const before = root.querySelector('.chat-thread');
+      const savedTop = before ? before.scrollTop : null;
+      render();
+      if (savedTop != null) {
+        const after = root.querySelector('.chat-thread');
+        if (after) after.scrollTop = savedTop;
+      }
+    }, 150);
     return;
   }
   render();

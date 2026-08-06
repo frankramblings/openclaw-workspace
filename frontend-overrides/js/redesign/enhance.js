@@ -72,3 +72,56 @@ export async function highlightCode(container) {
     code.classList.add('hljs-done');
   }
 }
+
+const KATEX_VENDOR = '/static/js/vendor/katex/';
+
+let katexPromise = null;
+
+// Test-only: reset the cached katex promise for test isolation
+export function __resetKatexPromise() {
+  katexPromise = null;
+}
+
+async function ensureKatex() {
+  if (!katexPromise) {
+    katexPromise = (async () => {
+      injectCss(KATEX_VENDOR + 'katex.min.css');
+      if (!window.katex) await injectScript(KATEX_VENDOR + 'katex.min.js');
+      if (!window.katex) throw new Error('KaTeX failed to load');
+      return window.katex;
+    })();
+  }
+  return katexPromise;
+}
+
+export async function renderMath(container) {
+  if (!container) return;
+  const nodes = container.querySelectorAll('[data-math]:not(.math-done)');
+  if (!nodes.length) return;
+  let katex;
+  try {
+    katex = await ensureKatex();
+  } catch (err) {
+    console.error('[enhance] KaTeX failed to load', err);
+    return;
+  }
+  for (const el of nodes) {
+    if (el.classList.contains('math-done')) continue;
+    const latex = el.getAttribute('data-math');
+    if (latex) {
+      try {
+        el.innerHTML = katex.renderToString(latex, {
+          throwOnError: false,
+          displayMode: el.classList.contains('math-block'),
+        });
+      } catch (err) {
+        console.error('[enhance] math render failed for one node', err);
+      }
+    }
+    el.classList.add('math-done');
+  }
+}
+
+export async function enhanceChatEl(container) {
+  await Promise.all([highlightCode(container), renderMath(container)]);
+}

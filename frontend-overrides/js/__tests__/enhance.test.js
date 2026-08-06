@@ -81,3 +81,88 @@ test('highlightCode does not call hljs.highlightElement twice when invoked concu
   assert.strictEqual(calls[0], codeEl);
   assert.ok(codeEl.classList.contains('hljs-done'));
 });
+
+const { renderMath, enhanceChatEl, __resetKatexPromise } = await import('../redesign/enhance.js');
+
+test('renderMath calls katex.renderToString on each un-done math node and marks it done', async () => {
+  __resetKatexPromise();
+  installDomStubs();
+  const calls = [];
+  globalThis.window.katex = { renderToString: (tex, opts) => { calls.push([tex, opts]); return `<span class="katex">${tex}</span>`; } };
+  const el = { classList: fakeClassList(), getAttribute: () => 'x^2', innerHTML: '' };
+  const container = { querySelectorAll: (sel) => (sel.includes('data-math') ? [el] : []) };
+
+  await renderMath(container);
+
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0][0], 'x^2');
+  assert.strictEqual(calls[0][1].throwOnError, false);
+  assert.ok(el.classList.contains('math-done'));
+  assert.match(el.innerHTML, /katex/);
+});
+
+test('renderMath uses displayMode:true for math-block and false for math-inline', async () => {
+  __resetKatexPromise();
+  installDomStubs();
+  const seen = [];
+  globalThis.window.katex = { renderToString: (tex, opts) => { seen.push(opts.displayMode); return 'x'; } };
+  const blockEl = { classList: fakeClassList(), getAttribute: () => 'a', innerHTML: '' };
+  blockEl.classList.contains = (c) => c === 'math-block';
+  const inlineEl = { classList: fakeClassList(), getAttribute: () => 'b', innerHTML: '' };
+  const container = { querySelectorAll: () => [blockEl, inlineEl] };
+
+  await renderMath(container);
+
+  assert.deepStrictEqual(seen, [true, false]);
+});
+
+test('renderMath swallows a per-element katex error and still marks it done', async () => {
+  __resetKatexPromise();
+  installDomStubs();
+  globalThis.window.katex = { renderToString: () => { throw new Error('bad latex'); } };
+  const el = { classList: fakeClassList(), getAttribute: () => 'x', innerHTML: '' };
+  const container = { querySelectorAll: () => [el] };
+
+  await renderMath(container);
+
+  assert.ok(el.classList.contains('math-done'));
+});
+
+test('enhanceChatEl runs both highlighting and math rendering', async () => {
+  __resetHljsPromise();
+  __resetKatexPromise();
+  installDomStubs();
+  const hlCalls = [];
+  const mathCalls = [];
+  globalThis.window.hljs = { highlightElement: (el) => hlCalls.push(el) };
+  globalThis.window.katex = { renderToString: (tex) => { mathCalls.push(tex); return 'x'; } };
+  const codeEl = { classList: fakeClassList() };
+  const mathEl = { classList: fakeClassList(), getAttribute: () => 'y', innerHTML: '' };
+  const container = {
+    querySelectorAll: (sel) => (sel.includes('code') ? [codeEl] : sel.includes('data-math') ? [mathEl] : []),
+  };
+
+  await enhanceChatEl(container);
+
+  assert.strictEqual(hlCalls.length, 1);
+  assert.strictEqual(mathCalls.length, 1);
+});
+
+test('renderMath does not call katex.renderToString twice when invoked concurrently without await', async () => {
+  __resetKatexPromise();
+  installDomStubs();
+  const calls = [];
+  globalThis.window.katex = { renderToString: (tex, opts) => { calls.push(tex); return `<span class="katex">${tex}</span>`; } };
+  const mathEl = { classList: fakeClassList(), getAttribute: () => 'x^2', innerHTML: '' };
+  const container = { querySelectorAll: (sel) => (sel.includes('data-math') ? [mathEl] : []) };
+
+  // Call renderMath twice without awaiting the first before starting the second
+  const p1 = renderMath(container);
+  const p2 = renderMath(container);
+  await Promise.all([p1, p2]);
+
+  // Should have called katex.renderToString exactly once, not twice
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0], 'x^2');
+  assert.ok(mathEl.classList.contains('math-done'));
+});

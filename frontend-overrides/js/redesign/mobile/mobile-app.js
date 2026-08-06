@@ -26,9 +26,20 @@ const CLOSE_ANIM_MS = 200;
 // `runtime.render` at call time (not destructured above) since runtime.render
 // is only ever swapped once, at boot (app.js), but this keeps the helper
 // agnostic either way.
+//
+// Race guard (found in review): this setTimeout is NOT cancelled if the sheet
+// is reopened before it fires — the corresponding open action (openCompanion/
+// openCapture/openModelSheet, below) clears `closingFlag` back to false the
+// moment it reopens, so this stale callback's `if (!state[closingFlag])
+// return;` check no-ops instead of force-closing whatever opened in the
+// meantime. The same check also collapses N redundant timers from a rapid
+// multi-tap close on the SAME sheet down to one real effect: the first timer
+// to fire clears closingFlag, so every later stale timer for that same close
+// sees it already false and returns immediately.
 function closeSheetAnimated(state, openFlag, closingFlag) {
   startClosingSheet(state, openFlag, closingFlag);
   setTimeout(() => {
+    if (!state[closingFlag]) return; // reopened (or already closed) since this timer was scheduled
     state[openFlag] = false;
     state[closingFlag] = false;
     runtime.render();
@@ -117,6 +128,13 @@ export function mobileActions(state) {
     // and renderSnoozeSheet (self-guarded only on that flag) would pop back
     // open over whatever surface came next.
     state.inboxSnoozeFor = null;
+    // Clear every animated-close "closing" flag alongside the bulk instant
+    // clear above — this is a hard teardown (tab switch), not a graceful
+    // close, so it shouldn't leave a *Closing flag dangling that a later
+    // re-open (on whichever surface comes next) would have to fight.
+    state.companionSheetClosing = false; state.quickCaptureClosing = false;
+    state.mModelSheetClosing = false; state.composeClosing = false;
+    state.inboxSnoozeClosing = false;
     if (state.live && state.live.chat) state.live.chat.mobileSheetMsgId = null;
   };
   return {
@@ -136,11 +154,17 @@ export function mobileActions(state) {
     mBackToHub: () => { state.mSub = null; },
     mOpenReader: (i) => { state.selEmail = Number(i); state.mReader = true; state.mEmailOpened = true; },
     mCloseReader: () => { state.mReader = false; },
-    openCompanion: () => { state.companionSheetOpen = true; },
+    // Reopening clears the *Closing flag (race guard, see closeSheetAnimated
+    // above) — otherwise a tap that reopens a sheet while its previous close
+    // is still mid-animation would (a) render it wrongly stamped `.closing`
+    // and (b) get force-closed 200ms later by the stale timer from the CLOSE
+    // that already happened.
+    openCompanion: () => { state.companionSheetOpen = true; state.companionSheetClosing = false; },
     closeCompanion: () => { closeSheetAnimated(state, 'companionSheetOpen', 'companionSheetClosing'); },
     companionTab: (t) => { state.companionTab = t; },
     openCapture: () => {
       state.quickCaptureOpen = true;
+      state.quickCaptureClosing = false;
       state.captureType = state.captureType || 'remind';
       // Real recents (task 3.6) — re-read on every open so a capture written
       // from elsewhere (or a prior session) is picked up.
@@ -160,6 +184,7 @@ export function mobileActions(state) {
     openModelSheet: async () => {
       closeSheets();
       state.mModelSheetOpen = true;
+      state.mModelSheetClosing = false;
       if (runtime.actions && runtime.actions.loadModelOptions) await runtime.actions.loadModelOptions();
     },
     closeModelSheet: () => { closeSheetAnimated(state, 'mModelSheetOpen', 'mModelSheetClosing'); },
@@ -185,6 +210,7 @@ export function mobileActions(state) {
         // restore so the user doesn't lose what they typed
         state.captureDraft = text;
         state.quickCaptureOpen = true;
+        state.quickCaptureClosing = false; // race guard, see openCapture
         try { runtime.render(); } catch (_) {}
       }
     },
@@ -435,6 +461,7 @@ export function wireMobileGestures({ root, state, commitArchive, refresh, render
   const fireCaptureLongPress = () => {
     lp = null;
     state.quickCaptureOpen = true;
+    state.quickCaptureClosing = false; // race guard, see openCapture
     state.captureType = state.captureType || 'remind';
     try { if (navigator.vibrate) navigator.vibrate(8); } catch (_) { /* no haptics */ }
     armSwallow(swallowGate);

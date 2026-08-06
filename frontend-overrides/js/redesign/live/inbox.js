@@ -12,6 +12,15 @@ import { srcStyle, openUrlFor, dueChipToISO, snoozeUntilMs, triageSummary, ageLa
 import { detailEndpoint } from './inbox-detail.js';
 import { startClosingSheet } from '../mobile/sheet-close.js';
 
+// inboxSnoozeFor is shared between the mobile bottom sheet (mobile-sheets.js
+// renderSnoozeSheet, which reads inboxSnoozeClosing to play an exit
+// animation) and the desktop inline popover (surfaces.js snoozeMenu, which
+// has no such animation). Same pattern as live/email.js's isMobileShell /
+// document-editor.js's isMobileShell — this module can't import app.js's
+// isMobile() latch without a cycle, so it reads the same frozen shell class
+// app.js stamps onto <html> at boot.
+const isMobileShell = () => document.documentElement.classList.contains('shell-mobile');
+
 // Pick a sensible primary CTA label from the backend's allowed actions list —
 // kept for the mobile mock fallback; desktop derives buttons from cardActions.
 const PRIMARY_LABEL = {
@@ -373,6 +382,11 @@ export const actions = {
     const state = runtime.state;
     // Toggle: tapping ⏰ again closes the menu.
     state.inboxSnoozeFor = state.inboxSnoozeFor === String(id) ? null : String(id);
+    // Race guard (see closeSnooze): clears any stale inboxSnoozeClosing left
+    // by a close that's still mid-animation for a DIFFERENT card, so this
+    // open (or this same-card instant toggle-closed) doesn't leave a flag
+    // around for that earlier close's pending timer to act on later.
+    state.inboxSnoozeClosing = false;
     runtime.render();
   },
   // Toggle the ⋯ overflow row for a card (pure UI; no network call).
@@ -382,15 +396,25 @@ export const actions = {
     runtime.render();
   },
   openSnooze: (id) => {
-    runtime.state.inboxSnoozeFor = String(id);
+    const state = runtime.state;
+    state.inboxSnoozeFor = String(id);
+    state.inboxSnoozeClosing = false; // race guard, see snooze
     runtime.render();
   },
   closeSnooze: () => {
     const state = runtime.state;
+    // Desktop's inline snoozeMenu popover (surfaces.js) never reads
+    // inboxSnoozeClosing (no exit animation there) — routing it through the
+    // animated path anyway would only add a pointless 200ms delay before
+    // Cancel actually closes it, so it keeps the original instant close.
+    if (!isMobileShell()) { state.inboxSnoozeFor = null; state.inboxSnoozeClosing = false; runtime.render(); return; }
     startClosingSheet(state, 'inboxSnoozeFor', 'inboxSnoozeClosing');
     // inboxSnoozeFor holds an id (truthy string), not a boolean — startClosingSheet's
     // `if (!state[openFlag])` check still works (falsy id === already closed).
-    setTimeout(() => { state.inboxSnoozeFor = null; state.inboxSnoozeClosing = false; runtime.render(); }, 200);
+    setTimeout(() => {
+      if (!state.inboxSnoozeClosing) return; // reopened (or already closed) since this timer was scheduled
+      state.inboxSnoozeFor = null; state.inboxSnoozeClosing = false; runtime.render();
+    }, 200);
   },
 
   // Commit a snooze preset: optimistic dismiss + POST + revert on failure.

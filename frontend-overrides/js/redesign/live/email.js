@@ -8,6 +8,14 @@ import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
 import { startClosingSheet } from '../mobile/sheet-close.js';
 
+// composeOpen/closeCompose are shared between the mobile bottom sheet
+// (mobile-sheets.js renderComposeSheet, which reads composeClosing to play an
+// exit animation) and the desktop overlay (surfaces.js .oc-compose, which has
+// no such animation). Same pattern as document-editor.js's isMobileShell —
+// this module can't import app.js's isMobile() latch without a cycle, so it
+// reads the same frozen shell class app.js stamps onto <html> at boot.
+const isMobileShell = () => document.documentElement.classList.contains('shell-mobile');
+
 // Current reader email (live current, else the selected list row).
 function curEmail(state) {
   const e = state && state.live && state.live.email;
@@ -259,14 +267,18 @@ export const actions = {
   composeNew: () => {
     const s = runtime.state;
     if (!s) return;
-    s.composeOpen = true; s.composeTo = ''; s.composeSubject = ''; s.composeBody = ''; s.composeInReplyTo = '';
+    // Clears any stale composeClosing left by a close that's still mid-animation
+    // (race guard — see closeCompose) so this fresh open doesn't render with a
+    // leftover exit class, and so that close's now-pending setTimeout finds
+    // composeClosing already false and no-ops instead of closing THIS draft.
+    s.composeOpen = true; s.composeClosing = false; s.composeTo = ''; s.composeSubject = ''; s.composeBody = ''; s.composeInReplyTo = '';
     runtime.render();
   },
   composeReply: (mode) => {
     const s = runtime.state;
     if (!s) return;
     const m = curEmail(s);
-    s.composeOpen = true;
+    s.composeOpen = true; s.composeClosing = false; // race guard, see composeNew
     if (mode === 'forward') {
       s.composeTo = '';
       s.composeSubject = `Fwd: ${m ? m.subj : ''}`;
@@ -283,8 +295,16 @@ export const actions = {
   closeCompose: () => {
     const s = runtime.state;
     if (!s) return;
+    // Desktop's .oc-compose overlay never reads composeClosing (no exit
+    // animation there) — routing it through the animated path anyway would
+    // only add a pointless 200ms delay before Cancel/scrim-click actually
+    // closes it, so it keeps the original instant close.
+    if (!isMobileShell()) { s.composeOpen = false; s.composeClosing = false; runtime.render(); return; }
     startClosingSheet(s, 'composeOpen', 'composeClosing');
-    setTimeout(() => { s.composeOpen = false; s.composeClosing = false; runtime.render(); }, 200);
+    setTimeout(() => {
+      if (!s.composeClosing) return; // reopened (or already closed) since this timer was scheduled
+      s.composeOpen = false; s.composeClosing = false; runtime.render();
+    }, 200);
   },
   sendEmail: async () => {
     const s = runtime.state;
@@ -306,7 +326,7 @@ export const actions = {
     if (!s) return;
     const m = curEmail(s);
     if (!m) return;
-    s.composeOpen = true;
+    s.composeOpen = true; s.composeClosing = false; // race guard, see composeNew
     s.composeTo = s.composeTo || m.fromMail || '';
     s.composeSubject = s.composeSubject || `Re: ${m.subj || ''}`;
     s.composeInReplyTo = m.uid || '';

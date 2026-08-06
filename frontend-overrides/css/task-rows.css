@@ -199,9 +199,15 @@
    had zero reduced-motion coverage of its own before this pass.
    task-bar-shim/task-bar-indet/task-step-pulse are @keyframes names, not
    classes on any element — target the actual animated selectors instead
-   (.task-fill-shimmer, .task-fill.indeterminate, .task-step.active
-   .task-step-dot) so this rule isn't a silent no-op. */
+   (.task-fill-shimmer, .task-step.active .task-step-dot) so this rule isn't
+   a silent no-op. .task-fill.indeterminate is deliberately EXCLUDED from
+   this freeze: unlike the shimmer/step-pulse (decoration on top of
+   already-visible information), its sweep animation is the ONLY signal that
+   a no-denominator task is still running — freezing it leaves a static bar
+   that reads as stalled, matching the same "don't freeze progress-conveying
+   motion" principle already applied to .m-ptr .spin and ring-drain elsewhere
+   in this codebase. */
 @media (prefers-reduced-motion: reduce) {
   .task-row, .task-fill { transition: none; }
-  .task-fill-shimmer, .task-fill.indeterminate, .task-step.active .task-step-dot { animation: none; }
+  .task-fill-shimmer, .task-step.active .task-step-dot { animation: none; }
 }

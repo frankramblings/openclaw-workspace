@@ -744,7 +744,7 @@ actions.qcToggle = (arg) => {
   const { p, m } = _qcFind(arg); if (!m || m.questionCard.locked) return;
   const qc = m.questionCard;
   qc.selections = qc.selections || qc.model.questions.map((q) => (q.multiSelect ? [] : null));
-  const a = qc.selections[p.qi] || (qc.selections[p.qi] = []);
+  const a = Array.isArray(qc.selections[p.qi]) ? qc.selections[p.qi] : (qc.selections[p.qi] = []);
   const i = a.indexOf(p.label); if (i >= 0) a.splice(i, 1); else a.push(p.label);
 };
 actions.qcOther = (arg, e) => {

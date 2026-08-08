@@ -19,6 +19,10 @@ def test_map_history_askuserquestion_carries_input():
     ev = te[0]
     assert ev["tool"] == "AskUserQuestion"
     assert ev["input"]["questions"][0]["question"] == "Which color?"
+    # chat.js buildQuestionCardModel keys the card's lock state on toolId —
+    # without this, every replayed card would collide on '' (see task-5prime
+    # report: found during Part C wiring, not in the original brief snippet).
+    assert ev["tool_id"] == "t1"
 
 
 def test_map_history_bash_tool_event_has_no_input_key():
@@ -30,3 +34,4 @@ def test_map_history_bash_tool_event_has_no_input_key():
     ev = _map_history(msgs)["history"][0]["metadata"]["tool_events"][0]
     assert ev["tool"] == "bash"
     assert "input" not in ev
+    assert "tool_id" not in ev

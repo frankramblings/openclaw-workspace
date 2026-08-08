@@ -598,6 +598,12 @@ def _map_history(messages: list) -> dict:
                                 if isinstance(_qin, dict):
                                     ev["input"] = _qin
                             cid = b.get("id")
+                            if name == "AskUserQuestion" and cid is not None:
+                                # chat.js buildQuestionCardModel keys the card (and
+                                # its lock state) on toolId — without it every
+                                # replayed card collides on '' and the sidecar can
+                                # never match a saved answer back to its card.
+                                ev["tool_id"] = cid
                             if cid is not None:
                                 calls[cid] = ev
                             tool_events.append(ev)

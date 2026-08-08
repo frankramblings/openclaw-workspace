@@ -233,7 +233,10 @@ async def _open_turn(message, session_key, model_ref, attachments, run_info,
 
         send_params = {
             "sessionKey": session_key,
-            "message": message,
+            # Stray \x00s (pasted from PDFs, terminal captures, etc.) make the
+            # gateway hard-reject the whole turn with INVALID_REQUEST — strip
+            # them rather than let one bad character kill the message.
+            "message": message.replace("\x00", "") if isinstance(message, str) else message,
             "deliver": False,            # don't also push to Signal/etc.
             "idempotencyKey": uuid.uuid4().hex,
         }

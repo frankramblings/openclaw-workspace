@@ -738,7 +738,7 @@ actions.qcPick = (arg) => {
   const qc = m.questionCard;
   qc.selections = qc.selections || qc.model.questions.map((q) => (q.multiSelect ? [] : null));
   qc.selections[p.qi] = p.label;
-  if (qc.model.questions.length === 1) _qcCommit(m);
+  if (qc.model.questions.length === 1 && !qc.model.questions[p.qi].multiSelect) _qcCommit(m);
 };
 actions.qcToggle = (arg) => {
   const { p, m } = _qcFind(arg); if (!m || m.questionCard.locked) return;
@@ -755,7 +755,7 @@ actions.qcOther = (arg, e) => {
   const qc = m.questionCard;
   qc.selections = qc.selections || qc.model.questions.map((q) => (q.multiSelect ? [] : null));
   qc.selections[p.qi] = val;
-  if (qc.model.questions.length === 1) _qcCommit(m);
+  if (qc.model.questions.length === 1 && !qc.model.questions[p.qi].multiSelect) _qcCommit(m);
 };
 actions.qcSend = (arg) => { const { m } = _qcFind(arg); if (m && !m.questionCard.locked) _qcCommit(m); };
 

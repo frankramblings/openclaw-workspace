@@ -18,7 +18,8 @@ import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { maybeShowThreadsHint } from './mobile/threads-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
 import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
-import { flushPending, queueForSession } from './live/chat.js';
+import { flushPending, queueForSession, answerQuestionCard } from './live/chat.js';
+import { composeAnswer } from './live/question-card.js';
 import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
 import '../deeplink.js';  // ?action=new|search|inbox|photo|voice (self-inits on load)
 import { loadSurface } from './live/index.js';
@@ -713,6 +714,50 @@ function doRefresh() {
   refreshTimer = setTimeout(() => { state.refreshing = false; render(); }, 900);
 }
 actions.refreshChat = doRefresh;
+
+// ---- AskUserQuestion card actions ------------------------------------------
+// Tapping/toggling/submitting a card option mutates m.questionCard on the
+// live thread model, then relies on the delegated dispatcher's trailing
+// render() (below) to repaint from that state — the whole thread re-renders
+// via innerHTML on every render(), so nothing here touches the DOM directly.
+function _qcFind(arg) {
+  const p = (() => { try { return JSON.parse(arg); } catch (_) { return {}; } })();
+  const chat = state.live && state.live.chat;
+  const m = chat && (chat.thread || []).find((x) => x.questionCard && x.questionCard.toolId === p.toolId);
+  return { p, m };
+}
+function _qcCommit(m) {
+  const qc = m.questionCard;
+  const sel = (qc.selections || []).map((s) => (s == null ? '' : s));
+  const answer = composeAnswer(qc.model.questions, sel);
+  qc.locked = true; qc.choice = answer;
+  answerQuestionCard(qc.toolId, answer);
+}
+actions.qcPick = (arg) => {
+  const { p, m } = _qcFind(arg); if (!m || m.questionCard.locked) return;
+  const qc = m.questionCard;
+  qc.selections = qc.selections || qc.model.questions.map((q) => (q.multiSelect ? [] : null));
+  qc.selections[p.qi] = p.label;
+  if (qc.model.questions.length === 1) _qcCommit(m);
+};
+actions.qcToggle = (arg) => {
+  const { p, m } = _qcFind(arg); if (!m || m.questionCard.locked) return;
+  const qc = m.questionCard;
+  qc.selections = qc.selections || qc.model.questions.map((q) => (q.multiSelect ? [] : null));
+  const a = qc.selections[p.qi] || (qc.selections[p.qi] = []);
+  const i = a.indexOf(p.label); if (i >= 0) a.splice(i, 1); else a.push(p.label);
+};
+actions.qcOther = (arg, e) => {
+  const { p, m } = _qcFind(arg); if (!m || m.questionCard.locked) return;
+  const input = e && e.target && e.target.closest('.question-card__q') &&
+    e.target.closest('.question-card__q').querySelector('.question-card__other');
+  const val = input && input.value.trim(); if (!val) return;
+  const qc = m.questionCard;
+  qc.selections = qc.selections || qc.model.questions.map((q) => (q.multiSelect ? [] : null));
+  qc.selections[p.qi] = val;
+  if (qc.model.questions.length === 1) _qcCommit(m);
+};
+actions.qcSend = (arg) => { const { m } = _qcFind(arg); if (m && !m.questionCard.locked) _qcCommit(m); };
 
 // Code-block copy button. Handled at capture phase and short-circuited so
 // the delegated dispatcher below doesn't trigger a render() that would wipe

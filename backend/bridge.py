@@ -587,6 +587,16 @@ def _map_history(messages: list) -> dict:
                                   "tool": name,
                                   "command": _tool_command(b),
                                   "exit_code": None}        # None until result lands
+                            if name == "AskUserQuestion":
+                                # Persist the tool input so /api/history can rebuild
+                                # the tappable card on reload (chat.js fetchThread).
+                                # Scoped to this tool only — other events are
+                                # unchanged.
+                                _qin = b.get("input")
+                                if not isinstance(_qin, dict):
+                                    _qin = b.get("arguments")
+                                if isinstance(_qin, dict):
+                                    ev["input"] = _qin
                             cid = b.get("id")
                             if cid is not None:
                                 calls[cid] = ev

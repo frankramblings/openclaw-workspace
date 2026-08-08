@@ -1187,6 +1187,9 @@ _REPLY_DELIVERY_TOOLS = {"message", "mcp__openclaw__message"}
 _STRIP_INPUT_TOOLS = {
     # Claude Code CLI names (kept for parity if that harness is ever used).
     "TodoWrite", "ExitPlanMode", "Task", "sessions_spawn",
+    # AskUserQuestion: its input carries the questions/options the webchat
+    # renders as a tappable card (frontend question-card.js).
+    "AskUserQuestion",
     # OpenClaw workspace task tools (this is what actually flows through the
     # claude-cli agent path here — TaskCreate seeds a step, TaskUpdate mutates
     # its status, TaskList reconciles). EnterPlanMode pairs with ExitPlanMode.

@@ -300,6 +300,9 @@ async function fetchThread(id, fallbackModel, name) {
   const hist = await apiGet(`/api/history/${id}?limit=100`);
   const list = Array.isArray(hist?.history) ? hist.history : [];
   const model = hist?.model || fallbackModel || '';
+  // Answered-card lock state for this session (backend/question_cards.py
+  // sidecar) — applied below when attaching msg.questionCard from tool_events.
+  __setQuestionAnswers(hist && hist.question_answers);
   const thread = list.map((h, i) => {
     const meta = h?.metadata || {};
     const msg = {
@@ -315,7 +318,13 @@ async function fetchThread(id, fallbackModel, name) {
     // (surfaces.js chatMsg / mobile-surfaces.js mChatMsg).
     if (msg.role === 'user' && /^⚙️ /.test(msg.text)) msg.sys = true;
     const q = (meta.tool_events || []).find((e) => e.tool === 'AskUserQuestion');
-    if (q) { const qc = buildQuestionCardModel({ tool: 'AskUserQuestion', tool_id: q.tool_id, input: q.input }); if (qc) msg.questionCard = qc; }
+    if (q) {
+      const qc = buildQuestionCardModel({ tool: 'AskUserQuestion', tool_id: q.tool_id, input: q.input });
+      if (qc) {
+        msg.questionCard = qc;
+        if (isQuestionLocked(qc.toolId)) { qc.locked = true; qc.choice = lockedChoice(qc.toolId); }
+      }
+    }
     // Image attachments persisted by the backend sidecar (the gateway transcript
     // only keeps text) → rehydrate so sent images survive a refresh.
     if (Array.isArray(h.attachments) && h.attachments.length) {
@@ -343,6 +352,15 @@ async function fetchThread(id, fallbackModel, name) {
     }
     return msg;
   });
+  // A question card the user never answered but then moved past (sent another
+  // message anyway) is superseded — lock it with an empty choice so it renders
+  // dismissed rather than still-tappable on reload.
+  for (let i = 0; i < thread.length; i++) {
+    const mc = thread[i].questionCard;
+    if (mc && !mc.locked && thread.slice(i + 1).some((x) => x.role === 'user')) {
+      mc.locked = true; mc.choice = mc.choice || '';
+    }
+  }
   return {
     thread,
     title: name,
@@ -733,9 +751,24 @@ export function buildQuestionCardModel(ev) {
 let _dispatchImpl = (text) => dispatchSend(text);
 export function __setDispatchForTest(fn) { _dispatchImpl = fn; }
 
-// Stub for Task 5' (persistence). No-op here so answering works now; the
-// persistence/history-replay task fills this in.
-export function recordQuestionAnswer(_toolId, _choice) {}
+// Answered-card lock state (Task 5'). Populated from /api/history's
+// `question_answers` sidecar (see backend/question_cards.py) so a reload
+// replays a card locked with the choice already made, instead of tappable
+// again.
+let _qAnswers = {};
+export function __setQuestionAnswers(m) { _qAnswers = m || {}; }
+export function isQuestionLocked(toolId) { return !!(_qAnswers[toolId] && _qAnswers[toolId].answered); }
+export function lockedChoice(toolId) { return (_qAnswers[toolId] || {}).choice || ''; }
+
+export function recordQuestionAnswer(toolId, choice) {
+  if (!toolId) return;
+  _qAnswers[toolId] = { answered: true, choice };
+  const chat = runtime.state && ensureChat(runtime.state);
+  const sid = chat && chat.activeId;
+  if (sid) fetch('/api/question-answer', { method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ session: sid, tool_id: toolId, choice }) }).catch(() => {});
+}
 
 export function answerQuestionCard(toolId, answerString) {
   try { recordQuestionAnswer(toolId, answerString); } catch (_) {}

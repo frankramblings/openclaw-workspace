@@ -71,6 +71,7 @@ from .attachments import (
     _prepend_text_attachments,
     _resolve_attachments,
 )
+from .question_cards import answers_for as _qc_answers_for, record_answer as _qc_record_answer
 from .secret_scrub import scrub as _scrub_secrets, system_note as _scrub_note
 # Re-export the turn-engine helpers (extracted to chat_turn.py in Task 19) on the
 # app module so every existing import site and monkeypatch seam keeps resolving
@@ -802,7 +803,23 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
     _apply_msg_attachments(session_id, deduped)
     # Prefer the record's chosen model label; fall back to whatever the brain used.
     data["model"] = sess.get("model") or data.get("model")
+    # Answered AskUserQuestion cards for this session, so the frontend can
+    # replay them locked with the chosen answer (chat.js fetchThread).
+    data["question_answers"] = _qc_answers_for(session_id)
     return data
+
+
+@app.post("/api/question-answer")
+async def question_answer(payload: dict = Body(default=None)):
+    """Record which choice a tappable AskUserQuestion card was answered with,
+    so reload/replay can lock it (see backend/question_cards.py)."""
+    payload = payload or {}
+    session_id = (payload.get("session") or "").strip()
+    tool_id = (payload.get("tool_id") or "").strip()
+    if not session_id or not tool_id:
+        return JSONResponse(status_code=400, content={"error": "session and tool_id required"})
+    _qc_record_answer(session_id, tool_id, payload.get("choice"))
+    return {"ok": True}
 
 
 @app.patch("/api/session/{session_id}")

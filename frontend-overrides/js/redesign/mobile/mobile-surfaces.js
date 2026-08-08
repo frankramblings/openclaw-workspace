@@ -13,6 +13,7 @@ import { providerLogo } from '../provider-logo.js';
 import { suggestGhost } from '../suggest-ghost.js';
 import { cardActions, cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
+import { questionCardHtml } from '../live/question-card.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 import { currentHealth, healthDotColor } from '../live/health.js';
 
@@ -147,9 +148,18 @@ export function mChatMsg(m, s, ghostCtx) {
     ? `<div class="m-msg-error"><span aria-hidden="true">⚠</span><span>${esc(m.notice || 'No response from this model.')}</span></div>`
     : '';
   const ghostHtml = (ghostCtx && ghostCtx.msgId === m.id) ? (ghostCtx.html || '') : '';
+  // Tappable AskUserQuestion card — mirrors surfaces.js's desktop rendering.
+  const questionCard = m.questionCard
+    ? questionCardHtml(m.questionCard.model, esc, {
+        locked: !!m.questionCard.locked,
+        choice: m.questionCard.choice || '',
+        selections: m.questionCard.selections || [],
+        toolId: m.questionCard.toolId || '',
+      })
+    : '';
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${ghostHtml}</div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${ghostHtml}</div>`
   + `</div>`;
 }
 

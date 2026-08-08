@@ -6,6 +6,7 @@ import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
 import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
+import { questionCardHtml } from './live/question-card.js';
 import {
   AVATAR, filterSlashCommands, RESEARCH_CONTROLS,
   KIND_STYLE, LIB_FILTERS, CAL_BAR_TONE,
@@ -324,6 +325,17 @@ export function chatMsg(m, s, ghostCtx) {
   const warn = (!m.error && m.warnNotice)
     ? `<div class="msg-warn" style="margin-top:6px;display:flex;gap:7px;align-items:flex-start;color:var(--amber,#d8a24a);font-size:13px;line-height:1.45;background:rgba(216,162,74,.08);border:1px solid rgba(216,162,74,.28);border-radius:8px;padding:8px 11px"><span aria-hidden="true">⚠</span><span>${esc(m.warnNotice)}</span></div>`
     : '';
+  // Tappable AskUserQuestion card (set on the live tool_start path by
+  // chat.js's buildQuestionCardModel). Locked/choice/selections live on the
+  // message model so state survives the wholesale innerHTML re-render.
+  const questionCard = m.questionCard
+    ? questionCardHtml(m.questionCard.model, esc, {
+        locked: !!m.questionCard.locked,
+        choice: m.questionCard.choice || '',
+        selections: m.questionCard.selections || [],
+        toolId: m.questionCard.toolId || '',
+      })
+    : '';
   const bodyHtml = (m.round_texts && m.round_texts.length > 1 && m.activity && !m.error)
     ? renderRounds(m, s) : `${renderActivity(m, s)}${paras}`;
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
@@ -355,7 +367,7 @@ export function chatMsg(m, s, ghostCtx) {
     return `<span class="turn-pending-pill" title="${esc(title)}"><span class="turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
   const ghostHtml = (ghostCtx && ghostCtx.msgId === m.id) ? (ghostCtx.html || '') : '';
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${warn}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
 }
 
 

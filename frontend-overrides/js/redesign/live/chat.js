@@ -727,6 +727,21 @@ export function buildQuestionCardModel(ev) {
   return model ? { model, toolId: ev.tool_id || '' } : null;
 }
 
+// Answer plumbing for tappable AskUserQuestion cards (app.js qc* actions call
+// this once a card commits). Indirected through _dispatchImpl so tests can
+// swap in a stub instead of driving the real POST /api/chat_stream path.
+let _dispatchImpl = (text) => dispatchSend(text);
+export function __setDispatchForTest(fn) { _dispatchImpl = fn; }
+
+// Stub for Task 5' (persistence). No-op here so answering works now; the
+// persistence/history-replay task fills this in.
+export function recordQuestionAnswer(_toolId, _choice) {}
+
+export function answerQuestionCard(toolId, answerString) {
+  try { recordQuestionAnswer(toolId, answerString); } catch (_) {}
+  _dispatchImpl(answerString);
+}
+
 // ---- activity-trail mapping (live SSE → step model) -----------------------
 // Map a tool name to a step kind; present/past-tense labels per state.
 function toolKind(name) {

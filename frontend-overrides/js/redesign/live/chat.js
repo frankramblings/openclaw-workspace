@@ -15,6 +15,7 @@ import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
 import { reconcileDecision } from './reconcile-decision.js';
+import { parseQuestionCard, composeAnswer } from './question-card.js';
 import { promiseWarningText, latestAsstAtOrBefore } from './promise-warning.js';
 import { setLiveTurn } from './turn-ref.js';
 import { beginUploads, resolveUploads, failUploads, sendableAttach, uploadGate } from './attach-logic.js';
@@ -242,6 +243,7 @@ export function historySteps(toolEvents, msgIdx) {
   toolEvents.forEach((ev, i) => {
     const name = String(ev.tool || '');
     if (/^(message|mcp__openclaw__message)$/i.test(name)) return;
+    if (name === 'AskUserQuestion') return; // rendered as a card, not a tool step
     const kind = toolKind(name);
     const failed = ev.exit_code != null && ev.exit_code !== 0;
     const rawLines = String(ev.output || '').split('\n').filter((l) => l.length);
@@ -312,6 +314,8 @@ async function fetchThread(id, fallbackModel, name) {
     // line; render any of them as a centered system card, not a "You" bubble
     // (surfaces.js chatMsg / mobile-surfaces.js mChatMsg).
     if (msg.role === 'user' && /^⚙️ /.test(msg.text)) msg.sys = true;
+    const q = (meta.tool_events || []).find((e) => e.tool === 'AskUserQuestion');
+    if (q) { const qc = buildQuestionCardModel({ tool: 'AskUserQuestion', tool_id: q.tool_id, input: q.input }); if (qc) msg.questionCard = qc; }
     // Image attachments persisted by the backend sidecar (the gateway transcript
     // only keeps text) → rehydrate so sent images survive a refresh.
     if (Array.isArray(h.attachments) && h.attachments.length) {
@@ -714,6 +718,13 @@ function flushStreamBuffer() {
     turn.asstMsg.text += turn.pending;
     turn.pending = '';
   }
+}
+
+// AskUserQuestion tool_start → card model, or null if not a question tool.
+export function buildQuestionCardModel(ev) {
+  if (!ev || String(ev.tool || '') !== 'AskUserQuestion') return null;
+  const model = parseQuestionCard(ev.input);
+  return model ? { model, toolId: ev.tool_id || '' } : null;
 }
 
 // ---- activity-trail mapping (live SSE → step model) -----------------------
@@ -1221,6 +1232,15 @@ function beginTurn(chat, modelLabel, sessionId) {
     }
     // tool start → a running tool step (prior running tools check off)
     if (ev.type === 'tool_start') {
+      const qc = buildQuestionCardModel(ev);
+      if (qc) {
+        if (turn.thinkStep) finalizeStep(turn.thinkStep);
+        if (turn.activity) finalizeTools(turn.activity);
+        const m = ensureAsst();
+        m.questionCard = qc;         // rendered by surfaces.js / mobile-surfaces.js
+        throttledRender();
+        return;
+      }
       if (turn.thinkStep) finalizeStep(turn.thinkStep);
       if (turn.activity) finalizeTools(turn.activity);
       const kind = toolKind(ev.tool);

@@ -324,6 +324,24 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-av img{width:100%;height:100%;object-fit:contain;padding:2px;box-sizing:border-box;display:block}
 .msg-body{min-width:0;max-width:760px;overflow-wrap:anywhere}
 .msg-meta{display:flex;align-items:baseline;gap:9px;margin-bottom:7px}
+
+/* Tappable AskUserQuestion card — matches the promise-warning .msg-warn
+   block's visual weight (radius/border/padding), amber-free (teal accent
+   for selected/interactive state instead). */
+.question-card{margin-top:6px;display:flex;flex-direction:column;gap:10px;background:rgba(255,255,255,.03);border:1px solid var(--bd2);border-radius:8px;padding:11px 13px}
+.question-card__q{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.question-card__prompt{flex:0 0 100%;font-size:13.5px;line-height:1.45;color:var(--fg);margin-bottom:2px}
+.question-card__opt{font-size:13px;line-height:1.3;color:var(--fg);background:var(--tealtint,rgba(60,180,170,.08));border:1px solid var(--bd2);border-radius:999px;padding:6px 13px;cursor:pointer}
+.question-card__opt:hover{border-color:var(--teal)}
+.question-card__opt.is-sel{border-color:var(--teal);background:var(--teal);color:#08211f}
+.question-card__other-row{flex:0 0 100%;display:flex;gap:7px;margin-top:2px}
+.question-card__other{flex:1;min-width:0;font:inherit;font-size:13px;color:var(--fg);background:transparent;border:1px solid var(--bd2);border-radius:6px;padding:6px 9px}
+.question-card__other:focus{outline:none;border-color:var(--teal)}
+.question-card__other-submit{font-size:12.5px;color:var(--faint);background:transparent;border:1px solid var(--bd2);border-radius:6px;padding:6px 11px;cursor:pointer}
+.question-card__other-submit:hover{color:var(--fg);border-color:var(--teal)}
+.question-card__send{align-self:flex-start;font-size:13px;font-weight:600;color:#08211f;background:var(--teal);border:none;border-radius:6px;padding:7px 15px;cursor:pointer}
+.question-card--locked{opacity:.7}
+.question-card__receipt{font-size:13px;color:var(--faint)}
 .msg-meta .name{font-size:14.5px;font-weight:600;color:var(--fg)}
 .msg-meta .model{font-family:var(--mono);font-size:11px;color:var(--teal);background:var(--tealtint);padding:1px 7px;border-radius:999px}
 .msg-meta .time{font-size:12.5px;color:var(--faint)}

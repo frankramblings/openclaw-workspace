@@ -247,57 +247,37 @@ def mark(pid: str, state: str, **fields) -> dict | None:
                 except Exception:  # noqa: BLE001
                     _log.warning("task_registry mirror failed for promise %s", pid,
                                 exc_info=True)
-                # Send push notification for followup completion
+                # The registry upsert just above is what reaches a push now
+                # (task_push.on_terminal, via task_registry.upsert's terminal
+                # hook). This call is unseen-badge bookkeeping only.
                 _notify_followup_completion(p, state)
                 return p
     return None
 
 
 def _notify_followup_completion(promise: dict, state: str) -> None:
-    """Schedule a push notification for followup completion (via fire-and-forget).
-    Never raises."""
+    """Track this followup as unseen (badge bookkeeping only). Never raises.
+
+    This used to ALSO spawn its own push.send fire-and-forget here. It no
+    longer does: `mark()` above already upserts the registry mirror for this
+    promise, which reaches task_push.on_terminal — that is now the ONE push
+    per finished job (any producer, `interrupted` included, idempotent by
+    id+run). Keeping this second send alive produced TWO banners for one
+    completion (this function's `tag: session-<id>` never matched
+    task_push's `tag: task-followup:<id>`, so the service worker couldn't
+    collapse them) — see honest-progress-wave1 task-7 fix round 1.
+    `mark_unseen` has to stay: nothing else calls it, and losing it would
+    silently break badge counting for every push this app sends (task_push's
+    `_payload`, chat_turn's turn push, and the /api/push/* unseen endpoints
+    all read push.unseen_count(), which mark_unseen is what increments)."""
     try:
         session_id = promise.get("session_id")
         pid = promise.get("id")
         if not session_id or not pid or not push.supported():
             return
-
-        # Mark this followup as unseen and get the badge count
-        unseen_count = push.mark_unseen(pid, session_id)
-
-        # Build the notification payload
-        label = promise.get("label", "background task")[:60]  # truncate title
-        if state == "completed":
-            duration_s = promise.get("duration_s", 0)
-            body = f"done in {_fmt_duration(duration_s)}"
-        elif state == "failed":
-            body = f"failed: {promise.get('error', 'unknown error')}"
-        elif state == "overdue":
-            body = promise.get("error", "no response by deadline")
-        else:
-            body = f"changed to {state}"
-
-        payload = {
-            "title": label,
-            "body": body,
-            "kind": "followup",
-            "session_id": session_id,
-            "tag": f"session-{session_id}",
-            "badge": unseen_count,
-        }
-
-        # Spawn async send (fire-and-forget)
-        async def _send():
-            try:
-                await push.send(payload)
-            except Exception:  # noqa: BLE001 - push failure never breaks followup
-                _log.debug("push notification send failed for promise %s", pid,
-                          exc_info=True)
-
-        from . import app as app_module  # deferred: app imports this module
-        app_module._spawn(_send())
+        push.mark_unseen(pid, session_id)
     except Exception:  # noqa: BLE001 - push failures never break followup transitions
-        _log.debug("followup push notification setup failed", exc_info=True)
+        _log.debug("followup unseen tracking failed", exc_info=True)
 
 
 def due_promises(now_ms: int) -> list[tuple[str, bool]]:

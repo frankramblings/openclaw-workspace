@@ -198,8 +198,12 @@ PROMISE_WAKE_ENABLED = os.environ.get("WORKSPACE_PROMISE_WAKE", "1") not in ("0"
 PROMISE_WAKE_DELAY_S = _env_int("WORKSPACE_PROMISE_WAKE_DELAY_S", 90)
 PROMISE_WAKE_COOLDOWN_S = _env_int("WORKSPACE_PROMISE_WAKE_COOLDOWN_S", 600)
 # Chat auto-titles run on a cheap model so they never race the user's real
-# turn through codex on the big one.
-TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL", "openai/gpt-5.4-mini")
+# turn through codex on the big one. NOT openai/* (and NOT gemini/*): those
+# stream only the first token then [DONE] through this gateway, so every new
+# thread collapsed to a one-word title (e.g. "Lex", "Casino"). claude-cli/* is
+# plan-billed and returns full titles; haiku keeps it cheap + fast.
+TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL",
+                             "claude-cli/claude-haiku-4-5-20251001")
 # Composer ghost-text suggestions run on a cheap model, same rationale as
 # titles. NOT openai/*: those return empty through this gateway.
 SUGGEST_MODEL = os.environ.get("WORKSPACE_SUGGEST_MODEL",

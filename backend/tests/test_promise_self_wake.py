@@ -78,3 +78,21 @@ def test_fire_uses_the_custom_seed(monkeypatch):
     # history_card renders the wake marker as a compact follow-through line.
     card = followup.history_card(p["seed_override"])
     assert card and "Follow-through nudge" in card
+
+
+def test_self_wake_is_off_by_default(monkeypatch):
+    # Frank's standing preference: a promised ping that may not arrive is worse
+    # than no ping. The progress row is the channel now.
+    monkeypatch.delenv("WORKSPACE_PROMISE_WAKE", raising=False)
+    import importlib
+    from backend import config
+    importlib.reload(config)
+    assert config.PROMISE_WAKE_ENABLED is False
+
+
+def test_self_wake_can_still_be_switched_on(monkeypatch):
+    monkeypatch.setenv("WORKSPACE_PROMISE_WAKE", "1")
+    import importlib
+    from backend import config
+    importlib.reload(config)
+    assert config.PROMISE_WAKE_ENABLED is True

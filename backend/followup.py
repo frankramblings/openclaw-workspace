@@ -621,6 +621,9 @@ def _spawn_fire(pid: str, *, overdue: bool = False) -> bool:
     """Single chokepoint for launching fire_followup: skips pids already in
     flight THIS process (endpoint spawn racing an overdue sweep) and holds
     the in-flight marker until the fire resolves. Returns True if spawned."""
+    if not config.FOLLOWUP_TURNS_ENABLED:
+        _log.info("followup %s: turn firing disabled; the task row reports this", pid)
+        return False
     if pid in _INFLIGHT:
         return False
     _INFLIGHT.add(pid)

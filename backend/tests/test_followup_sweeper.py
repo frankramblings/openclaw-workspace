@@ -7,17 +7,21 @@ import time
 
 import pytest
 
-from backend import followup
+from backend import config, followup
 
 
 @pytest.fixture
 def fired(monkeypatch):
+    """FOLLOWUP_TURNS_ENABLED is off by default now (_spawn_fire's chokepoint
+    gate) — turned on here because this file is specifically testing the
+    sweeper's spawn contract, not the disabled-by-default behavior."""
     calls = []
 
     async def fake_fire(pid, *, overdue=False):
         calls.append((pid, overdue))
         return True
 
+    monkeypatch.setattr(config, "FOLLOWUP_TURNS_ENABLED", True)
     monkeypatch.setattr(followup, "fire_followup", fake_fire)
     return calls
 

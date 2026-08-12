@@ -3,9 +3,11 @@
 // honest about the consequence, quiet about the mechanics.
 export function promiseWarningText(phrase) {
   const quoted = phrase ? `“${phrase}”` : 'A follow-up was promised';
-  return `${quoted} — but no tracked task is registered for this chat, so you `
-    + `will NOT be pinged when it finishes. Ask for it to be run through the `
-    + `followup wrapper, or check back manually.`;
+  // Pings are off by default now (config.PROMISE_WAKE_ENABLED). The card's job
+  // changed from "we'll try to deliver this" to "this won't arrive; here's what
+  // will" — the task row, which does not depend on the agent remembering.
+  return `${quoted} — Pings are off. This turn promised to report back; `
+    + `watch the task row instead.`;
 }
 
 // The hydrate anchor rule (same as hydrateThread's update-block matching):

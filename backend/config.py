@@ -189,14 +189,20 @@ TURN_TIMEOUT_S = _env_float("WORKSPACE_TURN_TIMEOUT_S", 180.0)
 STALL_NOTICE_S = _env_float("WORKSPACE_STALL_NOTICE", 45.0)
 STALL_CAP_S = _env_float("WORKSPACE_STALL_CAP", 240.0)
 
-# Promise self-wake (promise_guard): when a reply promises a follow-up with
-# no waker registered, schedule a turn that brings Gary back on his own so the
-# work doesn't stall until the user speaks again. ENABLED toggles the whole
-# behavior; DELAY is how long after the turn to wake; COOLDOWN bounds how often
-# a single session can self-wake so a re-promising turn can't loop.
-PROMISE_WAKE_ENABLED = os.environ.get("WORKSPACE_PROMISE_WAKE", "1") not in ("0", "false", "no", "")
+# Promise self-wake (promise_guard). DEFAULT OFF: a promised ping that only
+# sometimes arrives is worse than no ping — the task row is the honest channel
+# and does not depend on the agent remembering anything. Set
+# WORKSPACE_PROMISE_WAKE=1 to restore the old behavior. DELAY is how long after
+# the turn to wake; COOLDOWN bounds how often a single session can self-wake.
+PROMISE_WAKE_ENABLED = os.environ.get("WORKSPACE_PROMISE_WAKE", "0") not in ("0", "false", "no", "")
 PROMISE_WAKE_DELAY_S = _env_int("WORKSPACE_PROMISE_WAKE_DELAY_S", 90)
 PROMISE_WAKE_COOLDOWN_S = _env_int("WORKSPACE_PROMISE_WAKE_COOLDOWN_S", 600)
+# Follow-up completions used to drive a real chat turn ("⚙️ Background task · …").
+# DEFAULT OFF for the same reason as PROMISE_WAKE: the turn only arrived when the
+# promise and its watcher both survived, which is exactly what was failing. The
+# task row reports completion now, and task_push sends one notification off the
+# observed terminal state. Set WORKSPACE_FOLLOWUP_TURNS=1 to restore.
+FOLLOWUP_TURNS_ENABLED = os.environ.get("WORKSPACE_FOLLOWUP_TURNS", "0") not in ("0", "false", "no", "")
 # Chat auto-titles run on a cheap model so they never race the user's real
 # turn through codex on the big one. NOT openai/* (and NOT gemini/*): those
 # stream only the first token then [DONE] through this gateway, so every new

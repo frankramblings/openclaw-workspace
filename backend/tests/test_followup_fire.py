@@ -82,3 +82,9 @@ def test_fire_missing_session_marks_failed(monkeypatch):
     ok = asyncio.run(followup.fire_followup(p["id"]))
     assert ok is False
     assert followup.get_promise(p["id"])["state"] == "failed"
+
+
+def test_spawn_fire_is_disabled_by_default(monkeypatch):
+    from backend import config, followup
+    monkeypatch.setattr(config, "FOLLOWUP_TURNS_ENABLED", False)
+    assert followup._spawn_fire("anything") is False

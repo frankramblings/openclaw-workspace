@@ -2,17 +2,21 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import { promiseWarningText, latestAsstAtOrBefore } from '../redesign/live/promise-warning.js';
 
-test('warning copy quotes the phrase and states the consequence', () => {
+// Pings are off by default now (backend/config.py PROMISE_WAKE_ENABLED /
+// FOLLOWUP_TURNS_ENABLED). The card's job changed from "we'll try to
+// deliver this" to "this won't arrive; watch the task row" — updated here
+// alongside that default flip so the copy assertions match reality.
+test('warning copy quotes the phrase and points at the task row', () => {
   const t = promiseWarningText("I'll let you know");
   assert.match(t, /I'll let you know/);
-  assert.match(t, /no tracked task/i);
-  assert.match(t, /will not be pinged/i);
+  assert.match(t, /pings are off/i);
+  assert.match(t, /task row/i);
 });
 
 test('missing phrase still produces honest copy', () => {
   const t = promiseWarningText('');
   assert.match(t, /follow-up was promised/i);
-  assert.match(t, /will not be pinged/i);
+  assert.match(t, /pings are off/i);
 });
 
 test('latestAsstAtOrBefore picks the owning turn message', () => {

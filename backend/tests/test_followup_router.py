@@ -31,13 +31,17 @@ def session_rec(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_fire(monkeypatch):
-    """The router spawns the turn-firing coroutine; tests only check spawn."""
+    """The router spawns the turn-firing coroutine; tests only check spawn.
+    FOLLOWUP_TURNS_ENABLED is off by default now (_spawn_fire's chokepoint
+    gate) — turned on here because this file is specifically testing the
+    spawn contract, not the disabled-by-default behavior."""
     fired = []
 
     async def fake_fire(pid, *, overdue=False):
         fired.append((pid, overdue))
         return True
 
+    monkeypatch.setattr(config, "FOLLOWUP_TURNS_ENABLED", True)
     monkeypatch.setattr(followup, "fire_followup", fake_fire)
     return fired
 

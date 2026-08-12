@@ -26,6 +26,7 @@ import json
 import logging
 import time
 
+from . import task_liveness
 from . import task_registry
 from .jobs import JOBS_DIR
 from .workspace_files import workspace_root
@@ -181,11 +182,21 @@ def scan_once() -> None:
 
 
 async def ingest_loop() -> None:
-    """Run scan_once forever. Scan failures are logged, never fatal — a bad
-    pass self-heals on the next one."""
+    """Run scan_once forever, sweeping liveness every SWEEP_S. Failures are
+    logged, never fatal — a bad pass self-heals on the next one. The sweep runs
+    AFTER the scan so a file that just went terminal is already reconciled and
+    the sweeper sees the same truth the feed does."""
+    last_sweep = 0.0
     while True:
         try:
             scan_once()
         except Exception:  # noqa: BLE001
             log.warning("task_ingest: scan failed", exc_info=True)
+        now = time.monotonic()
+        if now - last_sweep >= task_liveness.SWEEP_S:
+            last_sweep = now
+            try:
+                task_liveness.sweep_once()
+            except Exception:  # noqa: BLE001
+                log.warning("task_ingest: liveness sweep failed", exc_info=True)
         await asyncio.sleep(POLL_S)

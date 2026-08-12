@@ -16,7 +16,18 @@ export function reduceFeedEvent(map, ev) {
   if (!ev || typeof ev !== 'object') return map;
   if (ev.type === 'tasks.snapshot' && Array.isArray(ev.tasks)) {
     const next = new Map();
-    for (const t of ev.tasks) if (t && t.id) next.set(t.id, t);
+    for (const t of ev.tasks) {
+      if (!t || !t.id) continue;
+      // Carry forward an existing _fgSeen stamp: any snapshot (including the
+      // one a visibility resume gets from the stream) otherwise looks like a
+      // brand-new sighting and restarts the terminal-row budget, so a job
+      // that finished minutes ago rides the server's much longer
+      // RETAIN_TERMINAL_S instead of TERMINAL_FOREGROUND_MS. A row that's
+      // newly terminal has no prior stamp, so it still gets one fresh on its
+      // first visible render via markSeen.
+      const prev = map.get(t.id);
+      next.set(t.id, prev && prev._fgSeen != null ? { ...t, _fgSeen: prev._fgSeen } : t);
+    }
     // The server ages terminal records out at RETAIN_TERMINAL_S, so a snapshot
     // taken after a few minutes in a pocket legitimately omits the very row
     // the user unlocked the phone to see. Rebuilding from it wholesale would
@@ -29,7 +40,8 @@ export function reduceFeedEvent(map, ev) {
   }
   if (ev.type === 'task.update' && ev.task && ev.task.id) {
     const next = new Map(map);
-    next.set(ev.task.id, ev.task);
+    const prev = map.get(ev.task.id);
+    next.set(ev.task.id, prev && prev._fgSeen != null ? { ...ev.task, _fgSeen: prev._fgSeen } : ev.task);
     return next;
   }
   return map;
@@ -190,8 +202,21 @@ function _startPruneTimer() {
 // iOS suspends a backgrounded PWA's EventSource without ever firing onerror,
 // so the socket is dead but `_es` still looks attached and no reconnect is
 // scheduled. Returning to the app is the only reliable signal we get: drop the
-// socket unconditionally, reconnect immediately (no backoff — this is a fresh
-// user-initiated resume, not a failing server), and resnapshot.
+// socket unconditionally and reconnect immediately (no backoff — this is a
+// fresh user-initiated resume, not a failing server).
+//
+// Fix round 1, F1: this used to also fire its own fetch(FALLBACK) here. That
+// was redundant AND dangerous — /api/tasks/stream's handler yields a
+// tasks.snapshot as the very first frame on connect (backend/tasks_route.py:
+// _stream_gen), so _connect() alone already delivers a fresh snapshot. The
+// manual fetch had no ordering guarantee against that stream snapshot: if it
+// resolved second, it could overwrite a just-finished row with a stale
+// `running` copy — the exact bug class this task exists to kill, reintroduced
+// on this resume path. (shouldApplyFallback's guard doesn't save it either:
+// _connect() sets _es synchronously, so the guard would just always be
+// false — dead code that looks safe.) If the EventSource constructor itself
+// throws, _connect() already falls back to _reconnect(), which does its own
+// properly-guarded fetch.
 function _onVisibilityChange() {
   if (_visible()) {
     if (_fgSince == null) _fgSince = Date.now();
@@ -199,10 +224,6 @@ function _onVisibilityChange() {
     _backoff = 0;
     _notifyConnectionState();
     _connect();
-    fetch(FALLBACK, { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) _apply({ type: 'tasks.snapshot', tasks: d.tasks }); })
-      .catch(() => {});
   } else if (_fgSince != null) {
     _fgMs += Date.now() - _fgSince;
     _fgSince = null;

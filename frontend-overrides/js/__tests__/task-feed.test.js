@@ -93,3 +93,33 @@ test('markSeen ignores running rows', () => {
   m = markSeen(m, 1000, true);
   assert.equal(m.get('job:run')._fgSeen, undefined);
 });
+
+// Fix round 1, F2: a snapshot (or task.update) that repeats an id the client
+// already had must not reset that row's foreground budget — otherwise every
+// app-switch resnapshot restarts the clock and a finished row rides the
+// server's much longer RETAIN_TERMINAL_S instead of TERMINAL_FOREGROUND_MS.
+test('a snapshot carries forward _fgSeen for a row it already knows, so the resumed budget is not refreshed', () => {
+  let m = new Map([['job:done', t('job:done', 'done')]]);
+  m = markSeen(m, 1000, true); // budget starts at fg=1000
+  m = reduceFeedEvent(m, { type: 'tasks.snapshot', tasks: [t('job:done', 'done')] });
+  assert.equal(m.get('job:done')._fgSeen, 1000, '_fgSeen carried forward, not reset by the snapshot');
+  // Pruned on the ORIGINAL budget (from fg=1000) — a refreshed budget would
+  // still show 1 row here since fg=1000+TERMINAL_FOREGROUND_MS is the seam.
+  assert.equal(pruneTerminal(m, 1000 + TERMINAL_FOREGROUND_MS + 1).size, 0);
+});
+
+test('a task.update carries forward _fgSeen for a row it already knows, so the resumed budget is not refreshed', () => {
+  let m = new Map([['job:done', t('job:done', 'done')]]);
+  m = markSeen(m, 1000, true);
+  m = reduceFeedEvent(m, { type: 'task.update', task: t('job:done', 'done', { detail: 'still done' }) });
+  assert.equal(m.get('job:done')._fgSeen, 1000);
+  assert.equal(pruneTerminal(m, 1000 + TERMINAL_FOREGROUND_MS + 1).size, 0);
+});
+
+test('a task.update that newly turns a row terminal has no stamp yet — markSeen still stamps it fresh (guard against over-fixing)', () => {
+  let m = new Map([['job:x', t('job:x', 'running')]]);
+  m = reduceFeedEvent(m, { type: 'task.update', task: t('job:x', 'done') });
+  assert.equal(m.get('job:x')._fgSeen, undefined, 'reduceFeedEvent never stamps — only markSeen does');
+  m = markSeen(m, 5000, true);
+  assert.equal(m.get('job:x')._fgSeen, 5000);
+});

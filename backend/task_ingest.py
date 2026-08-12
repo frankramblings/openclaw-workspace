@@ -49,7 +49,7 @@ import json
 import logging
 import time
 
-from . import task_liveness
+from . import task_liveness, task_push
 from . import task_registry
 from .jobs import JOBS_DIR
 from .workspace_files import workspace_root
@@ -265,4 +265,8 @@ async def ingest_loop() -> None:
                 task_liveness.sweep_once()
             except Exception:  # noqa: BLE001
                 log.warning("task_ingest: liveness sweep failed", exc_info=True)
+        try:
+            await task_push.drain()
+        except Exception:  # noqa: BLE001
+            log.warning("task_ingest: push drain failed", exc_info=True)
         await asyncio.sleep(POLL_S)

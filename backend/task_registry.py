@@ -164,6 +164,16 @@ def upsert(task_id: str, *, kind: str, source: str, label: str = "",
                     data["entries"][task_id] = entry
                     _ledger_save(data)
 
+    # Terminal transitions are the only push-worthy events. on_terminal is
+    # idempotent per task id, so a producer re-sending `done` on every tick
+    # cannot notify twice.
+    if state in _TERMINAL:
+        try:
+            from . import task_push
+            task_push.on_terminal(out)
+        except Exception:  # noqa: BLE001 - notification never breaks the feed
+            log.warning("task_registry: terminal push failed", exc_info=True)
+
     _fanout(out)
     return out
 

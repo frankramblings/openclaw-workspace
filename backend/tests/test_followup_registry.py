@@ -81,3 +81,20 @@ def test_completion_mirror_recreated_with_origin_kind():
     task_registry.reset_for_tests()          # simulate restart, pre-reseed
     followup.record_completion(rec["id"], exit_code=-1, duration_s=5.0, tail="")
     assert task_registry.get(f"followup:{rec['id']}")["kind"] == "auto"
+
+
+def test_watch_pid_is_mirrored_onto_the_registry_record():
+    from backend import followup, task_registry
+    task_registry.reset_for_tests()
+    rec = followup.create_promise("sid", "skey", "bwg 571 pull", 0, watch_pid=9191)
+    assert rec["watch_pid"] == 9191
+    mirrored = task_registry.get(f"followup:{rec['id']}")
+    assert mirrored["extra"]["pid"] == 9191
+
+
+def test_promise_without_watch_pid_carries_no_pid():
+    from backend import followup, task_registry
+    task_registry.reset_for_tests()
+    rec = followup.create_promise("sid", "skey", "no pid", 0)
+    assert rec["watch_pid"] is None
+    assert "pid" not in (task_registry.get(f"followup:{rec['id']}")["extra"] or {})

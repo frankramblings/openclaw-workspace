@@ -112,7 +112,8 @@ def _upsert_native(task_id: str, native: dict, updated_epoch: float,
         pct=native.get("pct"), eta=native.get("eta"),
         detail=str(native.get("detail") or ""),
         error=str(native.get("error") or ""),
-        extra={"native": native, "updated_epoch": updated_epoch},
+        extra={"native": native, "updated_epoch": updated_epoch,
+               **({"pid": int(native["pid"])} if str(native.get("pid") or "").isdigit() else {})},
     )
 
 

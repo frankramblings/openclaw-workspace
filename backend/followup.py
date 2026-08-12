@@ -77,6 +77,7 @@ def _save(data: dict) -> None:
 def create_promise(session_id: str, session_key: str, label: str,
                    deadline_s: int, *, origin: str = "followup",
                    turn_id: int | None = None,
+                   watch_pid: int | None = None,
                    seed_override: str | None = None) -> dict:
     rec = {
         "id": uuid.uuid4().hex[:12],
@@ -87,6 +88,10 @@ def create_promise(session_id: str, session_key: str, label: str,
         "created": _now_ms(),
         # 0 disables the deadline backstop (caller opted out).
         "deadline_ms": _now_ms() + deadline_s * 1000 if deadline_s > 0 else 0,
+        # The pid this promise is waiting on, when the caller knows it. The
+        # liveness sweeper uses it to turn a silent promise into a CONFIRMED
+        # `interrupted` instead of a row that sits at 0% for sixteen hours.
+        "watch_pid": int(watch_pid) if watch_pid else None,
         # Completion payload — set once by record_completion.
         "pinged": 0, "exit_code": None, "duration_s": None, "tail": "",
         "fired": 0, "error": "",
@@ -110,6 +115,8 @@ def create_promise(session_id: str, session_key: str, label: str,
                                  source="followup", label=rec["label"],
                                  session_key=session_key, turn_id=turn_id,
                                  state="running",
+                                 extra=({"pid": rec["watch_pid"]}
+                                        if rec["watch_pid"] else None),
                                  detail="waiting for completion ping")
         except Exception:  # noqa: BLE001
             _log.warning("task_registry mirror failed for promise %s", rec["id"],

@@ -177,3 +177,23 @@ def test_unknown_status_stalls_when_quiet_instead_of_running_forever():
     native = {"id": "x", "status": "wibble"}
     assert _state_for(native, updated_epoch=1000.0, now=1000.0) == "running"
     assert _state_for(native, updated_epoch=1000.0, now=1000.0 + 31) == "stalled"
+
+
+def test_native_pid_reaches_the_registry_extra(tmp_path, monkeypatch):
+    from backend import task_ingest, task_registry
+    task_registry.reset_for_tests()
+    task_ingest._upsert_native(
+        "taskfile:x",
+        {"id": "x", "status": "running", "pid": 4242, "label": "render"},
+        updated_epoch=1000.0, now=1000.0, session_key=None)
+    rec = task_registry.get("taskfile:x")
+    assert rec["extra"]["pid"] == 4242
+
+
+def test_missing_pid_is_absent_not_zero(tmp_path, monkeypatch):
+    from backend import task_ingest, task_registry
+    task_registry.reset_for_tests()
+    task_ingest._upsert_native(
+        "taskfile:y", {"id": "y", "status": "running"},
+        updated_epoch=1000.0, now=1000.0, session_key=None)
+    assert "pid" not in (task_registry.get("taskfile:y")["extra"] or {})

@@ -169,5 +169,135 @@ def test_sweep_does_not_revive_a_stalled_task_via_a_recycled_pid():
     # having exited and the OS later recycling this pid onto something else.
     task_registry._TASKS["followup:recycled"]["created"] = 1000
     task_registry._TASKS["followup:recycled"]["updated"] = 1000
-    assert tl.sweep_once(now_ms=2000) == 0
+    # sweep_once's return value can be nonzero here even without a revival —
+    # an already-stalled row's detail text is legitimately refreshed on
+    # every sweep now (Important-3) — so the assertion that matters is on
+    # STATE, not on the changed count.
+    tl.sweep_once(now_ms=2000)
     assert task_registry.get("followup:recycled")["state"] == "stalled"
+
+
+# --- Round-1 review fixes -------------------------------------------------
+#
+# Critical-1: the sweeper's own writes used to destroy the quiet-time
+# evidence it reasons from. `task_registry.upsert` bumps `rec["updated"]`
+# on EVERY call, including the sweeper's own upserts — so when `next_state`
+# read `rec["updated"]` as the quiet clock, a live-but-silent job would
+# oscillate stalled -> running -> stalled forever: mark it stalled (which
+# bumps `updated`), see `updated` as "fresh" next sweep, flip it straight
+# back to running. Producers now stamp `extra["producer_ms"]` at write time;
+# the sweeper reads that instead and never writes it.
+
+
+def test_quiet_clock_falls_back_to_updated_when_producer_ms_absent():
+    assert tl._quiet_clock_ms({"updated": 12345, "extra": {}}) == 12345
+    assert tl._quiet_clock_ms({"updated": 12345, "extra": {"producer_ms": 999}}) == 999
+    assert tl._quiet_clock_ms({"updated": 12345, "extra": None}) == 12345
+
+
+def test_sweeping_twice_does_not_flap_a_live_but_silent_producer():
+    # THE regression test for Critical-1. 23 previous tests never caught
+    # this because none of them called sweep_once twice. A live pid
+    # (os.getpid()) plus a producer_ms stamped far in the past: the process
+    # is genuinely alive, but its producer has not reported in ages.
+    #
+    # now_ms is deliberately REAL wall-clock time (not a synthetic value):
+    # `task_registry.upsert` always stamps `updated` from the real clock
+    # internally, regardless of what `now_ms` sweep_once is called with, so
+    # only a real-time-based test can reproduce the actual flap — the bug
+    # was that the sweeper's OWN upsert (real time T) reads back as "fresh"
+    # on the very next sweep tick (real time T + a few ms), even though the
+    # producer itself has been silent the whole time.
+    from backend import task_registry
+    task_registry.reset_for_tests()
+    now_ms = int(time.time() * 1000)
+    old_ms = now_ms - int((tl.STALE_S + 100) * 1000)  # ~130s in the past
+    task_registry.upsert("followup:silent", kind="followup", source="followup",
+                         label="silent but alive", state="running", pct=0.0,
+                         extra={"pid": os.getpid(), "producer_ms": old_ms})
+    # Backdate `updated` too, so the FIRST sweep's staleness verdict is
+    # identical whichever clock is consulted — the two clocks only diverge
+    # starting from the first sweep's own write. This isolates the
+    # regression to the second sweep, exactly where the real bug lived.
+    task_registry._TASKS["followup:silent"]["updated"] = old_ms
+    tl.sweep_once(now_ms=now_ms)
+    assert task_registry.get("followup:silent")["state"] == "stalled"
+    # Second sweep, moments later in real time (milliseconds have passed,
+    # nowhere near STALE_S). If the sweeper's own upsert had fed the quiet
+    # clock (the bug), `rec["updated"]` would now read as fresh — it was
+    # just bumped to real "now" by the first sweep's own upsert above — and
+    # this would flip straight back to "running". Because the clock is
+    # producer_ms, untouched by the sweeper, it must still read as stale
+    # and stay "stalled".
+    tl.sweep_once(now_ms=int(time.time() * 1000))
+    assert task_registry.get("followup:silent")["state"] == "stalled"
+
+
+# --- Important-3: a stalled row's detail must keep growing ----------------
+
+
+def test_stalled_detail_refreshes_as_quiet_time_grows():
+    from backend import task_registry
+    task_registry.reset_for_tests()
+    now_ms = 100_000_000
+    old_producer_ms = now_ms - int((tl.STALE_S + 60) * 1000)
+    task_registry.upsert("followup:stale", kind="followup", source="followup",
+                         label="old", state="stalled", pct=0.0,
+                         extra={"producer_ms": old_producer_ms},
+                         detail="no update in 1m")
+    later_ms = now_ms + 10 * 60_000  # 10 minutes further on
+    changed = tl.sweep_once(now_ms=later_ms)
+    rec = task_registry.get("followup:stale")
+    assert rec["state"] == "stalled"
+    assert rec["detail"] != "no update in 1m"
+    assert changed == 1
+
+
+# --- Important-4: a zombie pid must not read as confirmed alive -----------
+
+
+def test_confirm_alive_treats_a_real_zombie_as_unknown():
+    # A REAL zombie: fork a child that exits immediately without the parent
+    # reaping it. os.kill(pid, 0) succeeds for a zombie (it still occupies a
+    # pid table slot) so pid_alive alone would say True — a false "alive"
+    # claim for a process that has already exited.
+    child_pid = os.fork()
+    if child_pid == 0:
+        os._exit(0)
+        return  # pragma: no cover - unreachable, satisfies linters
+    try:
+        deadline = time.time() + 2.0
+        is_zombie = False
+        while time.time() < deadline:
+            text = tl._read_proc_stat_text(child_pid)
+            if text is not None and tl._parse_state_field(text) == "Z":
+                is_zombie = True
+                break
+            time.sleep(0.01)
+        assert is_zombie, "child did not reach zombie state in time"
+        assert tl._confirm_alive(child_pid, created_ms=int(time.time() * 1000)) is None
+    finally:
+        os.waitpid(child_pid, 0)  # reap it — must not leak a zombie into the suite
+
+
+# --- Minor-5: a non-numeric pid must not abort the whole sweep ------------
+
+
+def test_sweep_skips_bad_pid_without_aborting_other_rows():
+    from backend import task_registry
+    task_registry.reset_for_tests()
+    p = subprocess.Popen(["true"])
+    p.wait()
+    task_registry.upsert("followup:badpid", kind="followup", source="followup",
+                         label="bad pid", state="running", pct=0.0,
+                         extra={"pid": "not-a-pid"})
+    task_registry.upsert("followup:deadpid", kind="followup", source="followup",
+                         label="dead pid", state="running", pct=0.0,
+                         extra={"pid": p.pid})
+    changed = tl.sweep_once()  # must not raise despite the non-numeric pid
+    assert task_registry.get("followup:deadpid")["state"] == "interrupted"
+    # The bad-pid row was reached and evaluated (not skipped by an abort):
+    # alive=None (no confirmation either way) and it's fresh, so next_state
+    # correctly declines to change it.
+    assert task_registry.get("followup:badpid")["state"] == "running"
+    assert changed == 1

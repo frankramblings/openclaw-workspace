@@ -115,8 +115,14 @@ def create_promise(session_id: str, session_key: str, label: str,
                                  source="followup", label=rec["label"],
                                  session_key=session_key, turn_id=turn_id,
                                  state="running",
-                                 extra=({"pid": rec["watch_pid"]}
-                                        if rec["watch_pid"] else None),
+                                 # producer_ms: this promise's own quiet clock
+                                 # for the liveness sweeper (task_liveness) —
+                                 # set here, at creation, and never by the
+                                 # sweeper itself, so its own writes can't
+                                 # feed the clock it's deciding against.
+                                 extra={"producer_ms": _now_ms(),
+                                        **({"pid": rec["watch_pid"]}
+                                           if rec["watch_pid"] else {})},
                                  detail="waiting for completion ping")
         except Exception:  # noqa: BLE001
             _log.warning("task_registry mirror failed for promise %s", rec["id"],
@@ -158,6 +164,15 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
                                          kind=("auto" if p.get("origin") == "auto"
                                                else "followup"),
                                          source="followup", state="running",
+                                         # A completion ping IS producer
+                                         # activity — refresh producer_ms so
+                                         # a long-running task that just
+                                         # reported back doesn't read as
+                                         # instantly stale against its
+                                         # (possibly hours-old) creation
+                                         # stamp while it waits its turn to
+                                         # be finalized by mark().
+                                         extra={"producer_ms": _now_ms()},
                                          detail=f"finished (exit {int(exit_code)}) — "
                                                 "follow-up turn pending")
                 except Exception:  # noqa: BLE001

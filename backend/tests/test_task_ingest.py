@@ -197,3 +197,48 @@ def test_missing_pid_is_absent_not_zero(tmp_path, monkeypatch):
         "taskfile:y", {"id": "y", "status": "running"},
         updated_epoch=1000.0, now=1000.0, session_key=None)
     assert "pid" not in (task_registry.get("taskfile:y")["extra"] or {})
+
+
+# --- Round-1 review fix (Critical-2): sticky-but-reversible death ---------
+#
+# The liveness sweeper (task_liveness) confirms a pid gone and marks the
+# record `interrupted`. Without a guard, the very next 0.5s scan_once() pass
+# would re-read the SAME lingering file — still saying "running" because its
+# writer never got the chance to update it — and resurrect the row, undoing
+# the sweeper's honest verdict. `_upsert_native` is now sticky against
+# STALE evidence (a file that predates the verdict) but must still honor
+# GENUINELY NEW evidence (a file written after the verdict) — the sweeper's
+# job is to contradict a lying file, not to permanently silence a real one.
+
+
+def test_interrupted_record_with_stale_file_stays_interrupted(tmp_path):
+    from backend import task_ingest, task_registry
+    task_registry.reset_for_tests()
+    rec = task_registry.upsert(
+        "taskfile:z", kind="job", source="taskfile", label="z",
+        state="interrupted", detail="lost track of this process; outcome unknown")
+    verdict_ms = rec["updated"]
+    # The lingering file's own timestamp PREDATES the death verdict — same
+    # stale content the sweeper already contradicted.
+    stale_epoch = (verdict_ms / 1000.0) - 5
+    task_ingest._upsert_native(
+        "taskfile:z", {"id": "z", "status": "running", "label": "z"},
+        updated_epoch=stale_epoch, now=stale_epoch + 1, session_key=None)
+    assert task_registry.get("taskfile:z")["state"] == "interrupted"
+
+
+def test_interrupted_record_with_fresh_file_resurrects_to_running(tmp_path):
+    from backend import task_ingest, task_registry
+    task_registry.reset_for_tests()
+    rec = task_registry.upsert(
+        "taskfile:z2", kind="job", source="taskfile", label="z2",
+        state="interrupted", detail="lost track of this process; outcome unknown")
+    verdict_ms = rec["updated"]
+    # The file was written AFTER the verdict — genuine new evidence, and
+    # honesty runs in both directions: this must be allowed to resurrect
+    # the row, not just to kill it.
+    fresh_epoch = (verdict_ms / 1000.0) + 5
+    task_ingest._upsert_native(
+        "taskfile:z2", {"id": "z2", "status": "running", "label": "z2"},
+        updated_epoch=fresh_epoch, now=fresh_epoch + 1, session_key=None)
+    assert task_registry.get("taskfile:z2")["state"] == "running"

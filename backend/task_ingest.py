@@ -16,8 +16,22 @@ Reconciliation contract:
     all, so an idle scan emits zero SSE frames and never touches `updated`
   vanished file, record was running → interrupted (honesty rule)
   vanished file, record was terminal → remove() (native sweeps clean up)
+  lingering file, record already interrupted (liveness sweeper confirmed
+    death by pid) → SKIPPED as long as the file hasn't been written since
+    that verdict, so the next 0.5s scan can't undo it by re-reading the same
+    stale "running" content. A file that DOES advance past the verdict's
+    timestamp is genuine new evidence and is allowed to resurrect the row —
+    sticky, but only against stale evidence (see `_upsert_native`).
 Malformed/partial files are skipped, never fatal (bin/job writes are atomic
 tmp+rename, but we can race a partial writer on other filesystems).
+
+Each upsert into the registry also stamps `extra["producer_ms"]` — this
+file's own timestamp (job `_updatedEpoch` / taskfile mtime), converted to
+epoch ms — distinct from `extra["updated_epoch"]` (kept in seconds; other
+code reads it) and from the registry's own `updated` (which every upsert
+touches, including the liveness sweeper's). `producer_ms` is the quiet
+clock task_liveness.next_state actually reads; only a real file write moves
+it, so the sweeper's own writes can't feed the clock it's deciding against.
 """
 from __future__ import annotations
 
@@ -94,13 +108,24 @@ def _state_for(native: dict, updated_epoch: float, now: float) -> str:
 def _upsert_native(task_id: str, native: dict, updated_epoch: float,
                    now: float, session_key: str | None) -> None:
     state = _state_for(native, updated_epoch, now)
+    cur = task_registry.get(task_id)
+    # Sticky-but-reversible death: once the liveness sweeper has confirmed a
+    # pid gone and recorded `interrupted`, a lingering file that still says
+    # "running" must NOT resurrect it on the very next 0.5s scan just
+    # because its content differs from `state` — that's the same stale file
+    # the sweeper already contradicted. Only skip while the file predates
+    # the verdict; a file written AFTER it is real new evidence and falls
+    # through to the normal upsert below, which recomputes `state` fresh and
+    # is free to revive the row.
+    if cur is not None and cur["state"] == "interrupted":
+        if updated_epoch * 1000 <= cur["updated"]:
+            return
     # Compare-before-upsert: a file that hasn't changed since the last scan
     # must NOT fire an upsert — every upsert fans out an SSE frame to every
     # subscriber and refreshes `updated` (which would keep terminal records
     # with a lingering file alive in list_tasks forever). The state check is
     # separate from the content check because running→stalled flips with
     # UNCHANGED file content as quiet time crosses STALL_S.
-    cur = task_registry.get(task_id)
     if (cur is not None
             and (cur.get("extra") or {}).get("native") == native
             and cur["state"] == state):
@@ -114,6 +139,7 @@ def _upsert_native(task_id: str, native: dict, updated_epoch: float,
         detail=str(native.get("detail") or ""),
         error=str(native.get("error") or ""),
         extra={"native": native, "updated_epoch": updated_epoch,
+               "producer_ms": int(updated_epoch * 1000),
                **({"pid": int(native["pid"])} if str(native.get("pid") or "").isdigit() else {})},
     )
 

@@ -16,10 +16,15 @@ test('legacy: no progress field falls back to scalar pct as a determinate bar', 
   assert.equal(r.showPct, true);
 });
 
-test('legacy: missing pct resolves to 0, not NaN', () => {
+test('legacy: missing pct is an honest spinner, not a 0% bar', () => {
+  // A missing pct has no denominator, same as an explicit 0 — it must not
+  // render as a determinate bar parked at zero (that's the zombie-row bug
+  // this task fixes). Finite pct is still guaranteed, just via the spinner.
   const r = resolveProgress({ id: 't' });
-  assert.equal(r.mode, 'determinate');
+  assert.equal(r.mode, 'indeterminate');
+  assert.equal(r.showBar, false);
   assert.equal(r.pct, 0);
+  assert.ok(Number.isFinite(r.pct));
 });
 
 test('determinate descriptor computes pct from done/total', () => {
@@ -30,8 +35,10 @@ test('determinate descriptor computes pct from done/total', () => {
   assert.equal(r.showPct, true);
 });
 
-test('determinate descriptor with total 0 resolves to 0, never divides by zero', () => {
+test('determinate descriptor with total 0 is an honest spinner, never a divide-by-zero bar', () => {
   const r = resolveProgress({ id: 't', progress: { mode: 'determinate', done: 0, total: 0 } });
+  assert.equal(r.mode, 'indeterminate');
+  assert.equal(r.showBar, false);
   assert.equal(r.pct, 0);
   assert.ok(Number.isFinite(r.pct));
 });

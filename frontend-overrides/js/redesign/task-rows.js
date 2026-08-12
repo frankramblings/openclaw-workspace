@@ -166,6 +166,11 @@ function clampPct(n) {
   return Math.max(0, Math.min(100, n));
 }
 
+// A bar parked at zero looks like a measurement and is not one — it is
+// exactly what the sixteen-hour zombie rows rendered. Zero and null both
+// mean "no denominator yet", which is what the spinner already says.
+const INDETERMINATE = { mode: 'indeterminate', pct: 0, showBar: false, showPct: false, detail: '' };
+
 // The whole "bar vs tracker" decision, as one pure function. The producer
 // declares its shape via `task.progress.mode`; we never guess from the UI.
 // A leaf is either a filling bar (determinate — it has a denominator) or an
@@ -176,10 +181,12 @@ function clampPct(n) {
 export function resolveProgress(task) {
   const p = task && task.progress;
   if (!p || !p.mode) {
-    return { mode: 'determinate', pct: clampPct(task && task.pct), showBar: true, showPct: true };
+    const pct = clampPct(task && task.pct);
+    if (pct <= 0) return { ...INDETERMINATE };
+    return { mode: 'determinate', pct, showBar: true, showPct: true };
   }
   if (p.mode === 'indeterminate') {
-    return { mode: 'indeterminate', pct: 0, showBar: false, showPct: false, detail: p.detail || '' };
+    return { ...INDETERMINATE, detail: p.detail || '' };
   }
   if (p.mode === 'steps') {
     const steps = (Array.isArray(p.steps) ? p.steps : []).map((s) => ({
@@ -189,11 +196,12 @@ export function resolveProgress(task) {
     const active = p.active || (steps.find((s) => s.status === 'active') || {}).key || null;
     return { mode: 'steps', steps, active };
   }
-  // Default leaf: determinate. total<=0 → 0 (no divide-by-zero, no NaN).
+  // Default leaf: determinate only when a real denominator exists.
   const total = Number(p.total) || 0;
   const done = Number(p.done) || 0;
-  const pct = total > 0 ? clampPct((done / total) * 100) : 0;
-  return { mode: 'determinate', pct, showBar: true, showPct: true, eta: p.eta };
+  if (total <= 0) return { ...INDETERMINATE, detail: p.detail || '' };
+  return { mode: 'determinate', pct: clampPct((done / total) * 100),
+           showBar: true, showPct: true, eta: p.eta };
 }
 
 function escHtml(s) {

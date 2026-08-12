@@ -6,7 +6,7 @@
 // see Task 8 audit (docs/plans, .superpowers/sdd/task-8-report.md).
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { taskRowHtml } from '../redesign/task-rows.js';
+import { taskRowHtml, resolveProgress } from '../redesign/task-rows.js';
 
 test('XSS: hostile task.kind never reaches the row markup', () => {
   const hostile = '"><img src=x onerror=alert(1)>';
@@ -39,4 +39,35 @@ test('prototype-chain kind names (e.g. "constructor") do not leak function bodie
 test('missing task.kind falls back to the default color', () => {
   const html = taskRowHtml({ id: 't5' });
   assert.match(html, /style="background:var\(--faint\)"/);
+});
+
+test('legacy pct of 0 renders as a spinner, not a 0% bar', () => {
+  const r = resolveProgress({ pct: 0 });
+  assert.equal(r.mode, 'indeterminate');
+  assert.equal(r.showBar, false);
+});
+
+test('legacy null pct renders as a spinner', () => {
+  const r = resolveProgress({ pct: null });
+  assert.equal(r.mode, 'indeterminate');
+  assert.equal(r.showBar, false);
+});
+
+test('legacy pct above zero still renders a real bar', () => {
+  const r = resolveProgress({ pct: 41.2 });
+  assert.equal(r.mode, 'determinate');
+  assert.equal(r.showBar, true);
+  assert.equal(r.pct, 41.2);
+});
+
+test('a declared leaf with no denominator is indeterminate, not a zero bar', () => {
+  const r = resolveProgress({ progress: { mode: 'bytes', total: 0, done: 0 } });
+  assert.equal(r.mode, 'indeterminate');
+  assert.equal(r.showBar, false);
+});
+
+test('a declared leaf with a denominator is unchanged', () => {
+  const r = resolveProgress({ progress: { mode: 'bytes', total: 10, done: 5 } });
+  assert.equal(r.mode, 'determinate');
+  assert.equal(r.pct, 50);
 });

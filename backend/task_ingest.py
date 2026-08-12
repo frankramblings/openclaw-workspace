@@ -21,7 +21,12 @@ Reconciliation contract:
     that verdict, so the next 0.5s scan can't undo it by re-reading the same
     stale "running" content. A file that DOES advance past the verdict's
     timestamp is genuine new evidence and is allowed to resurrect the row —
-    sticky, but only against stale evidence (see `_upsert_native`).
+    sticky, but only against stale evidence (see `_upsert_native`). Two
+    exemptions from that skip: a file reporting a TERMINAL status is never
+    suppressed even if it predates the verdict (the producer's final word
+    outranks our inference that it vanished before writing one), and a file
+    with no timestamp at all (`updated_epoch == 0`) is unknown age, not
+    confirmed-stale age, so it is never treated as predating anything.
 Malformed/partial files are skipped, never fatal (bin/job writes are atomic
 tmp+rename, but we can race a partial writer on other filesystems).
 
@@ -117,9 +122,34 @@ def _upsert_native(task_id: str, native: dict, updated_epoch: float,
     # the verdict; a file written AFTER it is real new evidence and falls
     # through to the normal upsert below, which recomputes `state` fresh and
     # is free to revive the row.
-    if cur is not None and cur["state"] == "interrupted":
-        if updated_epoch * 1000 <= cur["updated"]:
-            return
+    #
+    # Two exemptions from that skip, both required so the guard can never
+    # outrank a producer's own final word or misfire on evidence it can't
+    # actually read:
+    #   - A file that now reports a TERMINAL status (done/failed) is never
+    #     suppressed, even if it predates the verdict. The concrete failure
+    #     this closes: a job writes its terminal status and exits: normal
+    #     shutdown IS "write terminal file, then exit"; the sweeper's own
+    #     death check can land microseconds later, mtime-before-verdict, and
+    #     without this exemption the row would report "lost track of this
+    #     process; outcome unknown" for RETAIN_TERMINAL_S and then vanish —
+    #     a real `done` job never shown to the user, worse than the silence
+    #     bug this whole module exists to fix. A terminal file is the
+    #     producer's final word; it outranks our inference that the process
+    #     vanished before writing one.
+    #   - `updated_epoch` of 0 (no `_updatedEpoch` in the file at all) is
+    #     UNKNOWN age, not confirmed-stale age. Comparing an unknown
+    #     timestamp against the verdict and treating it as "predates" would
+    #     be exactly the kind of unconfirmed claim this module's honesty
+    #     rule forbids elsewhere — and it would stick permanently, since a
+    #     missing stamp never advances past 0. Skip the stale check entirely
+    #     when the file carries no timestamp; let it fall through and be
+    #     judged on its content instead.
+    if (cur is not None and cur["state"] == "interrupted"
+            and normalize_terminal(native.get("status")) is None
+            and updated_epoch
+            and updated_epoch * 1000 <= cur["updated"]):
+        return
     # Compare-before-upsert: a file that hasn't changed since the last scan
     # must NOT fire an upsert — every upsert fans out an SSE frame to every
     # subscriber and refreshes `updated` (which would keep terminal records

@@ -242,3 +242,69 @@ def test_interrupted_record_with_fresh_file_resurrects_to_running(tmp_path):
         "taskfile:z2", {"id": "z2", "status": "running", "label": "z2"},
         updated_epoch=fresh_epoch, now=fresh_epoch + 1, session_key=None)
     assert task_registry.get("taskfile:z2")["state"] == "running"
+
+
+# --- Round-2 review fix (Important): a terminal file must always outrank --
+# --- a confirmed-death verdict, even a stale one --------------------------
+#
+# The sticky-death guard above (Critical-2) suppressed ANY lingering file
+# that predated the verdict, regardless of what the file now says. Concrete
+# failure: a job writes its terminal status and exits — normal shutdown IS
+# "write terminal file, then exit" — and the sweeper's own death check can
+# land microseconds later with an mtime that's technically "before" the
+# verdict. Without this exemption the row reports "lost track of this
+# process; outcome unknown" for RETAIN_TERMINAL_S and then is pruned — a
+# real `done` job's outcome never shown to the user, exactly the kind of lie
+# this whole module exists to prevent. A terminal file is the producer's
+# final word and must always be allowed through.
+
+
+def test_interrupted_record_with_terminal_file_becomes_done_even_if_stale(tmp_path):
+    from backend import task_ingest, task_registry
+    task_registry.reset_for_tests()
+    rec = task_registry.upsert(
+        "taskfile:z5", kind="job", source="taskfile", label="z5",
+        state="interrupted", detail="lost track of this process; outcome unknown")
+    verdict_ms = rec["updated"]
+    # mtime PREDATES the verdict — the same "stale" shape as the C2 test —
+    # but the status is a terminal synonym ("completed", not literally
+    # "done"), exercising Task 1's normalize_terminal in the same breath.
+    stale_epoch = (verdict_ms / 1000.0) - 5
+    task_ingest._upsert_native(
+        "taskfile:z5", {"id": "z5", "status": "completed", "label": "z5"},
+        updated_epoch=stale_epoch, now=stale_epoch + 1, session_key=None)
+    assert task_registry.get("taskfile:z5")["state"] == "done"
+
+
+def test_interrupted_record_with_stale_running_file_still_stays_interrupted(tmp_path):
+    # The C2 regression test, re-asserted: the terminal exemption must not
+    # weaken the original guard for a file that's still claiming "running".
+    from backend import task_ingest, task_registry
+    task_registry.reset_for_tests()
+    rec = task_registry.upsert(
+        "taskfile:z6", kind="job", source="taskfile", label="z6",
+        state="interrupted", detail="lost track of this process; outcome unknown")
+    verdict_ms = rec["updated"]
+    stale_epoch = (verdict_ms / 1000.0) - 5
+    task_ingest._upsert_native(
+        "taskfile:z6", {"id": "z6", "status": "running", "label": "z6"},
+        updated_epoch=stale_epoch, now=stale_epoch + 1, session_key=None)
+    assert task_registry.get("taskfile:z6")["state"] == "interrupted"
+
+
+def test_interrupted_record_with_zero_epoch_file_is_not_stuck_forever(tmp_path):
+    # A file with no `_updatedEpoch` at all (updated_epoch == 0) is UNKNOWN
+    # age, not confirmed-stale age. Treating it as "predates the verdict"
+    # would be exactly the unconfirmed claim this module's honesty rule
+    # forbids elsewhere, and — unlike a real timestamp — it would never
+    # advance, sticking the row at `interrupted` forever. It must be let
+    # through and judged on its content instead.
+    from backend import task_ingest, task_registry
+    task_registry.reset_for_tests()
+    rec = task_registry.upsert(
+        "taskfile:z7", kind="job", source="taskfile", label="z7",
+        state="interrupted", detail="lost track of this process; outcome unknown")
+    task_ingest._upsert_native(
+        "taskfile:z7", {"id": "z7", "status": "running", "label": "z7"},
+        updated_epoch=0.0, now=rec["updated"] / 1000.0 + 10, session_key=None)
+    assert task_registry.get("taskfile:z7")["state"] == "running"

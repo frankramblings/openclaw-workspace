@@ -51,25 +51,41 @@ def _taskfiles_dir():
     return workspace_root() / "share" / "tasks"
 
 
+# Producers are written by different hands and spell success differently.
+# The registry only understands done/failed, and an unrecognised word used to
+# fall through to "running" FOREVER: _state_for's stall check and scan_once's
+# RUNNING_MAX_AGE_S drop were both gated on the literal "running", so a record
+# saying "completed" was ingested as a live job with no upper bound. Normalise
+# once, here, and let every gate ask this function instead of comparing strings.
+_TERMINAL_ALIASES = {
+    "done": "done", "complete": "done", "completed": "done",
+    "success": "done", "succeeded": "done", "ok": "done", "finished": "done",
+    "failed": "failed", "fail": "failed", "error": "failed", "errored": "failed",
+}
+
+
+def normalize_terminal(raw) -> str | None:
+    """Map a producer's status word to a registry terminal state, or None if
+    it is not terminal. Unknown words are NOT terminal — and, per _state_for,
+    also not indefinitely running."""
+    return _TERMINAL_ALIASES.get(str(raw or "").strip().lower())
+
+
 def _stale_terminal(native: dict, updated_epoch: float, now: float) -> bool:
-    """True when a done/failed file is older than the registry's terminal
-    retention window. Such files are never ingested: without this, a terminal
-    record pruned by list_tasks would be re-created as a "new" record by the
-    very next scan — a done row resurrecting every RETAIN_TERMINAL_S. Same
-    self-heal contract the old jobs.py _read_all had with its RETAIN_SECS
-    drop; the producers' own sweeps eventually delete the files."""
-    status = str(native.get("status") or "").lower()
-    return (status in ("done", "failed")
+    """True when a terminal file is older than the registry's retention window.
+    Such files are never ingested: without this, a terminal record pruned by
+    list_tasks would be re-created as "new" by the very next scan."""
+    return (normalize_terminal(native.get("status")) is not None
             and now - updated_epoch > task_registry.RETAIN_TERMINAL_S)
 
 
 def _state_for(native: dict, updated_epoch: float, now: float) -> str:
-    status = str(native.get("status") or "").lower()
-    if status == "done":
-        return "done"
-    if status == "failed":
-        return "failed"
-    if status == "running" and updated_epoch and now - updated_epoch > STALL_S:
+    terminal = normalize_terminal(native.get("status"))
+    if terminal:
+        return terminal
+    # Anything non-terminal is a live claim, and a live claim goes stale on
+    # the same clock regardless of which word the producer used.
+    if updated_epoch and now - updated_epoch > STALL_S:
         return "stalled"
     return "running"
 
@@ -135,8 +151,8 @@ def scan_once() -> None:
                 continue
             if _stale_terminal(native, mtime, now):
                 continue
-            status = str(native.get("status") or "").lower()
-            if status == "running" and now - mtime > RUNNING_MAX_AGE_S:
+            if (normalize_terminal(native.get("status")) is None
+                    and now - mtime > RUNNING_MAX_AGE_S):
                 continue
             tid = f"taskfile:{native['id']}"
             seen.add(tid)

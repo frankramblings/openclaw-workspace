@@ -139,3 +139,41 @@ def test_stale_running_taskfile_ignored(tmp_path):
     os.utime(pj, (old, old))
     task_ingest.scan_once()
     assert task_registry.get("taskfile:ghost") is None
+
+
+from backend.task_ingest import _state_for, normalize_terminal
+
+
+def test_completed_is_a_terminal_synonym_for_done():
+    assert normalize_terminal("completed") == "done"
+    assert normalize_terminal("Complete") == "done"
+    assert normalize_terminal("success") == "done"
+    assert normalize_terminal("ok") == "done"
+    assert normalize_terminal("finished") == "done"
+
+
+def test_error_words_map_to_failed():
+    assert normalize_terminal("error") == "failed"
+    assert normalize_terminal("fail") == "failed"
+    assert normalize_terminal("failed") == "failed"
+
+
+def test_unknown_and_running_are_not_terminal():
+    assert normalize_terminal("running") is None
+    assert normalize_terminal("wibble") is None
+    assert normalize_terminal("") is None
+    assert normalize_terminal(None) is None
+
+
+def test_completed_record_renders_done_not_running():
+    # The originating bug: a shipped episode showed as a stuck running job.
+    native = {"id": "bwg-ship-571", "status": "completed", "pct": 100}
+    assert _state_for(native, updated_epoch=1000.0, now=1000.0) == "done"
+
+
+def test_unknown_status_stalls_when_quiet_instead_of_running_forever():
+    # Previously any unrecognised word fell through to "running" and, because
+    # the stall check was gated on status == "running", never escalated.
+    native = {"id": "x", "status": "wibble"}
+    assert _state_for(native, updated_epoch=1000.0, now=1000.0) == "running"
+    assert _state_for(native, updated_epoch=1000.0, now=1000.0 + 31) == "stalled"

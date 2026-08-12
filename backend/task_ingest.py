@@ -21,12 +21,16 @@ Reconciliation contract:
     that verdict, so the next 0.5s scan can't undo it by re-reading the same
     stale "running" content. A file that DOES advance past the verdict's
     timestamp is genuine new evidence and is allowed to resurrect the row —
-    sticky, but only against stale evidence (see `_upsert_native`). Two
-    exemptions from that skip: a file reporting a TERMINAL status is never
+    sticky, but only against stale evidence (see `_upsert_native`). One
+    exemption from that skip: a file reporting a TERMINAL status is never
     suppressed even if it predates the verdict (the producer's final word
-    outranks our inference that it vanished before writing one), and a file
-    with no timestamp at all (`updated_epoch == 0`) is unknown age, not
-    confirmed-stale age, so it is never treated as predating anything.
+    outranks our inference that it vanished before writing one). A file
+    with NO timestamp at all (`updated_epoch == 0`) is unknown age, not
+    proof of anything new, so it stays subject to the skip like any other
+    non-advancing file — "unknown" here must resolve conservatively (stay
+    `interrupted`), the same direction it resolves everywhere else in this
+    codebase's honesty rules, never toward reasserting a life we already
+    disproved.
 Malformed/partial files are skipped, never fatal (bin/job writes are atomic
 tmp+rename, but we can race a partial writer on other filesystems).
 
@@ -123,9 +127,8 @@ def _upsert_native(task_id: str, native: dict, updated_epoch: float,
     # through to the normal upsert below, which recomputes `state` fresh and
     # is free to revive the row.
     #
-    # Two exemptions from that skip, both required so the guard can never
-    # outrank a producer's own final word or misfire on evidence it can't
-    # actually read:
+    # One exemption from that skip, required so the guard can never outrank
+    # a producer's own final word:
     #   - A file that now reports a TERMINAL status (done/failed) is never
     #     suppressed, even if it predates the verdict. The concrete failure
     #     this closes: a job writes its terminal status and exits: normal
@@ -137,17 +140,24 @@ def _upsert_native(task_id: str, native: dict, updated_epoch: float,
     #     bug this whole module exists to fix. A terminal file is the
     #     producer's final word; it outranks our inference that the process
     #     vanished before writing one.
-    #   - `updated_epoch` of 0 (no `_updatedEpoch` in the file at all) is
-    #     UNKNOWN age, not confirmed-stale age. Comparing an unknown
-    #     timestamp against the verdict and treating it as "predates" would
-    #     be exactly the kind of unconfirmed claim this module's honesty
-    #     rule forbids elsewhere — and it would stick permanently, since a
-    #     missing stamp never advances past 0. Skip the stale check entirely
-    #     when the file carries no timestamp; let it fall through and be
-    #     judged on its content instead.
+    #
+    # `updated_epoch` of 0 (no `_updatedEpoch` in the file at all) is
+    # deliberately NOT exempted from the skip above, even though it is
+    # unknown age rather than confirmed-stale age. Round-2 tried exempting
+    # it ("unknown, so let it through") and that was itself a bug: everywhere
+    # ELSE in this module and in task_liveness, "unknown" routes to the
+    # CONSERVATIVE outcome — it means we do NOT claim death. But bypassing
+    # THIS guard means the opposite: `_state_for` also short-circuits on a
+    # falsy updated_epoch and returns "running", so letting it through made
+    # the row assert the process is ALIVE with zero confirmation, directly
+    # contradicting a death we already confirmed by pid — the sweeper would
+    # then re-kill it 5s later, the next scan would revive it, forever. An
+    # undateable file is not NEW evidence, so it must not overturn the
+    # verdict; it stays `interrupted` ("outcome unknown"), same as any other
+    # stale file. Only a file we can positively date AFTER the verdict, or
+    # one carrying a terminal status regardless of date, may override it.
     if (cur is not None and cur["state"] == "interrupted"
             and normalize_terminal(native.get("status")) is None
-            and updated_epoch
             and updated_epoch * 1000 <= cur["updated"]):
         return
     # Compare-before-upsert: a file that hasn't changed since the last scan

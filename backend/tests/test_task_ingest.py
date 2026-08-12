@@ -292,13 +292,20 @@ def test_interrupted_record_with_stale_running_file_still_stays_interrupted(tmp_
     assert task_registry.get("taskfile:z6")["state"] == "interrupted"
 
 
-def test_interrupted_record_with_zero_epoch_file_is_not_stuck_forever(tmp_path):
-    # A file with no `_updatedEpoch` at all (updated_epoch == 0) is UNKNOWN
-    # age, not confirmed-stale age. Treating it as "predates the verdict"
-    # would be exactly the unconfirmed claim this module's honesty rule
-    # forbids elsewhere, and — unlike a real timestamp — it would never
-    # advance, sticking the row at `interrupted` forever. It must be let
-    # through and judged on its content instead.
+def test_interrupted_record_with_zero_epoch_file_stays_interrupted(tmp_path):
+    # Round-2 review fix: a file with no `_updatedEpoch` at all
+    # (updated_epoch == 0) was exempted from the sticky-death guard on the
+    # theory that "unknown age" shouldn't count as "predates the verdict".
+    # That reasoning was itself a bug (round-3 finding): bypassing the guard
+    # doesn't land on a neutral "unknown" outcome here — `_state_for` ALSO
+    # short-circuits on a falsy updated_epoch straight to "running", so
+    # letting it through made the row assert the process is ALIVE with zero
+    # confirmation, directly contradicting a death already confirmed by
+    # pid. Everywhere else in this module and in task_liveness, "unknown"
+    # resolves to the CONSERVATIVE outcome (never claim death without
+    # confirmation); the same direction applies here too (never let an
+    # undateable file overturn a death already confirmed). An undateable
+    # file is not NEW evidence, so the row must stay `interrupted`.
     from backend import task_ingest, task_registry
     task_registry.reset_for_tests()
     rec = task_registry.upsert(
@@ -307,4 +314,4 @@ def test_interrupted_record_with_zero_epoch_file_is_not_stuck_forever(tmp_path):
     task_ingest._upsert_native(
         "taskfile:z7", {"id": "z7", "status": "running", "label": "z7"},
         updated_epoch=0.0, now=rec["updated"] / 1000.0 + 10, session_key=None)
-    assert task_registry.get("taskfile:z7")["state"] == "running"
+    assert task_registry.get("taskfile:z7")["state"] == "interrupted"

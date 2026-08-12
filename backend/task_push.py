@@ -107,15 +107,23 @@ def on_terminal(rec: dict) -> bool:
     if not tid:
         return False
     key = _pushed_key(tid, rec)
+    warm = time.monotonic() - _STARTED >= WARMUP_S
+    # Build the payload BEFORE claiming the dedup key. If _payload raises (a
+    # malformed rec, a push.unseen_count() read failure), the key must not
+    # already be in _PUSHED — that would silently and PERMANENTLY silence
+    # this task id/run, which is worse than the one failed attempt. A
+    # duplicate call that loses the race just below simply discards its
+    # speculatively-built payload.
+    payload = _payload(rec) if warm else None
     with _PUSHED_LOCK:
         if key in _PUSHED:
             return False
         _PUSHED.add(key)
-    if time.monotonic() - _STARTED < WARMUP_S:
+    if not warm:
         # Boot warmup: mark it pushed so it never notifies later either. A row
         # the boot sweep interrupted is old news by definition.
         return False
-    _PENDING.append(_payload(rec))
+    _PENDING.append(payload)
     return True
 
 

@@ -238,6 +238,18 @@ def mark(pid: str, state: str, **fields) -> dict | None:
                                     "task never reported back by the deadline")
                 else:
                     reg_state, detail, reg_error = "done", "", ""
+                # Unseen-badge bookkeeping runs BEFORE the registry upsert
+                # below. The upsert is what reaches a push now
+                # (task_push.on_terminal, via task_registry.upsert's terminal
+                # hook), and that push's payload snapshots push.unseen_count()
+                # at build time — if mark_unseen ran AFTER the upsert, the
+                # push would carry the PRE-increment badge, wiping the app
+                # badge on the exact event that should raise it (fix round 2
+                # of honest-progress-wave1 task-7: reproduced with badge:0
+                # queued vs unseen_count()==1 immediately after). Nothing in
+                # task_registry.upsert depends on unseen state, so this
+                # reorder is safe.
+                _notify_followup_completion(p)
                 try:
                     task_registry.upsert(f"followup:{pid}",
                                          kind=("auto" if p.get("origin") == "auto"
@@ -247,15 +259,11 @@ def mark(pid: str, state: str, **fields) -> dict | None:
                 except Exception:  # noqa: BLE001
                     _log.warning("task_registry mirror failed for promise %s", pid,
                                 exc_info=True)
-                # The registry upsert just above is what reaches a push now
-                # (task_push.on_terminal, via task_registry.upsert's terminal
-                # hook). This call is unseen-badge bookkeeping only.
-                _notify_followup_completion(p, state)
                 return p
     return None
 
 
-def _notify_followup_completion(promise: dict, state: str) -> None:
+def _notify_followup_completion(promise: dict) -> None:
     """Track this followup as unseen (badge bookkeeping only). Never raises.
 
     This used to ALSO spawn its own push.send fire-and-forget here. It no

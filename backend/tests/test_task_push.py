@@ -183,3 +183,27 @@ def test_pushed_lock_prevents_a_concurrent_double_enqueue():
 
         assert results.count(True) == 1
         assert len(task_push.pending_for_tests()) == 1
+
+
+# --- Fix round 2: badge ordering ---------------------------------------------
+
+
+def test_followup_push_carries_the_post_increment_badge():
+    """The queued push's badge must be the count AFTER mark_unseen ran for
+    THIS completion, not before. Deliberately does NOT monkeypatch
+    push.unseen_count (unlike test_badge_reflects_real_unseen_count above) —
+    by construction that test can never observe an ordering bug between
+    mark_unseen and the registry upsert that reaches task_push. This one
+    drives the real followup.mark() path end to end against an isolated
+    DATA_DIR (backend/tests/conftest.py's autouse _isolated_data_dir), the
+    same way the round-2 review reproduced the bug."""
+    from backend import followup
+
+    task_push.reset_for_tests()
+    promise = followup.create_promise("session-1", "session-key-1", "badge test", 0)
+    followup.mark(promise["id"], "completed", exit_code=0, duration_s=1.0)
+
+    queued = task_push.pending_for_tests()
+    assert len(queued) == 1
+    assert queued[0]["badge"] == push.unseen_count()
+    assert queued[0]["badge"] == 1  # the one followup just marked unseen

@@ -29,19 +29,15 @@ class _Pattern:
 
 
 # Each pattern is intentionally narrow to avoid false-positives on normal prose.
+#
+# NOTE: There is deliberately NO Gmail/Google app-password pattern. A real app
+# password is 16 random lowercase letters, which is structurally identical to an
+# ordinary 16-letter lowercase word ("misunderstanding", "responsibilities") or
+# a 16-char identifier. Any regex that catches the credential also redacts normal
+# prose, so it fired constantly on everyday messages. The value of catching a
+# rarely-pasted 16-char string does not justify mangling ordinary chat, so the
+# pattern was removed. The structurally-distinct token patterns below stay.
 _PATTERNS: list[_Pattern] = [
-    # Gmail / Google app password: 16 lowercase letters.  We only match the
-    # CONTIGUOUS 16-char form (`abcdefghijklmnop`) because that's how Gmail's
-    # copy button yields them.  The spaced 4x4 display form is deliberately NOT
-    # matched: "abcd efgh ijkl mnop" is structurally identical to an ordinary
-    # four-word sentence ("what does this mean"), so any regex catching it also
-    # redacts normal prose.  Contiguous-16 is the only reliably-distinguishable
-    # shape.  See tests/test_secret_scrub.py.
-    _Pattern(
-        name="gmail-app-password",
-        regex=re.compile(r'(?<![a-z])[a-z]{16}(?![a-z])'),
-        label="gmail-app-password",
-    ),
     # OpenClaw ops_ / ops_ tokens (internal gateway tokens)
     _Pattern(
         name="openclaw-token",

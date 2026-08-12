@@ -123,3 +123,41 @@ test('a task.update that newly turns a row terminal has no stamp yet — markSee
   m = markSeen(m, 5000, true);
   assert.equal(m.get('job:x')._fgSeen, 5000);
 });
+
+// Fix round 2: F2's carry-forward must be gated on state IDENTITY, not just
+// "was there a prior stamp". task_ingest.py deliberately revives an
+// interrupted row to running when a producer's file postdates the death
+// verdict — an unconditional carry-forward inherits the stale interrupted
+// stamp onto the revived row, and since markSeen only stamps rows with
+// _fgSeen == null, that stamp is never refreshed. The job later finishes
+// carrying the ancient stamp and pruneTerminal deletes it before _notify's
+// subscribers ever see the 'done' state — the row goes
+// interrupted -> running -> vanished, never 'done'.
+test('a row that revives from interrupted to running, then later finishes, gets its own fresh budget (not the stale interrupted stamp)', () => {
+  let m = new Map([['job:x', t('job:x', 'interrupted')]]);
+  m = markSeen(m, 1000, true); // stamped while interrupted, at fg=1000
+  // Producer evidence revives it: task_ingest.py:117-128's honesty-runs-
+  // both-directions rule. State changes, so the fg=1000 stamp must NOT
+  // survive onto the revived row.
+  m = reduceFeedEvent(m, { type: 'task.update', task: t('job:x', 'running') });
+  assert.equal(m.get('job:x')._fgSeen, undefined, 'reviving to a new state drops the stale interrupted stamp');
+  // Much later (fg=10x the budget), the job actually finishes.
+  const laterFg = 10 * TERMINAL_FOREGROUND_MS;
+  m = reduceFeedEvent(m, { type: 'task.update', task: t('job:x', 'done') });
+  assert.equal(m.get('job:x')._fgSeen, undefined, 'newly terminal again — no carried stamp, not yet seen');
+  m = markSeen(m, laterFg, true);
+  assert.equal(m.get('job:x')._fgSeen, laterFg, 'fresh budget starts at the actual finish time');
+  assert.equal(pruneTerminal(m, laterFg + TERMINAL_FOREGROUND_MS - 1).size, 1, 'still within its OWN fresh budget');
+  assert.equal(pruneTerminal(m, laterFg + TERMINAL_FOREGROUND_MS + 1).size, 0, 'pruned only once its own budget elapses');
+});
+
+test('a row that goes directly interrupted to done (task_ingest.py:130-142 terminal-file exemption) also earns a fresh budget', () => {
+  let m = new Map([['job:y', t('job:y', 'interrupted')]]);
+  m = markSeen(m, 1000, true); // stamped while interrupted, at fg=1000
+  m = reduceFeedEvent(m, { type: 'task.update', task: t('job:y', 'done') });
+  assert.equal(m.get('job:y')._fgSeen, undefined, 'different terminal state — no carry-forward despite both being terminal');
+  const laterFg = 500_000;
+  m = markSeen(m, laterFg, true);
+  assert.equal(pruneTerminal(m, laterFg + TERMINAL_FOREGROUND_MS - 1).size, 1);
+  assert.equal(pruneTerminal(m, laterFg + TERMINAL_FOREGROUND_MS + 1).size, 0);
+});

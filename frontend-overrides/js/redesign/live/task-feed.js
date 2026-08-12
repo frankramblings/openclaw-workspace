@@ -25,8 +25,20 @@ export function reduceFeedEvent(map, ev) {
       // RETAIN_TERMINAL_S instead of TERMINAL_FOREGROUND_MS. A row that's
       // newly terminal has no prior stamp, so it still gets one fresh on its
       // first visible render via markSeen.
+      //
+      // Gated on state IDENTITY (fix round 2), not just "was there a prior
+      // stamp": task_ingest.py deliberately revives an interrupted row back
+      // to running when a producer's file postdates the death verdict
+      // (honesty runs both directions), and also lets a terminal file
+      // overturn a death verdict directly to done. An unconditional
+      // carry-forward inherited the OLD state's stamp onto the new state; since
+      // markSeen only stamps rows with _fgSeen == null, that stale stamp was
+      // never refreshed, and a job that finished many minutes later could be
+      // pruned before _notify ever handed its 'done' state to a subscriber —
+      // interrupted -> running -> vanished, never seen as done. A row
+      // entering a genuinely new state has earned a fresh budget.
       const prev = map.get(t.id);
-      next.set(t.id, prev && prev._fgSeen != null ? { ...t, _fgSeen: prev._fgSeen } : t);
+      next.set(t.id, prev && prev._fgSeen != null && prev.state === t.state ? { ...t, _fgSeen: prev._fgSeen } : t);
     }
     // The server ages terminal records out at RETAIN_TERMINAL_S, so a snapshot
     // taken after a few minutes in a pocket legitimately omits the very row
@@ -41,7 +53,8 @@ export function reduceFeedEvent(map, ev) {
   if (ev.type === 'task.update' && ev.task && ev.task.id) {
     const next = new Map(map);
     const prev = map.get(ev.task.id);
-    next.set(ev.task.id, prev && prev._fgSeen != null ? { ...ev.task, _fgSeen: prev._fgSeen } : ev.task);
+    next.set(ev.task.id, prev && prev._fgSeen != null && prev.state === ev.task.state
+      ? { ...ev.task, _fgSeen: prev._fgSeen } : ev.task);
     return next;
   }
   return map;

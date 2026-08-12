@@ -334,6 +334,16 @@ async def _watch_and_complete(promise_id: str, core: str) -> None:
         log.info("launch_sniffer: no pid for %r — deadline-only promise %s",
                  core, promise_id)
         return                     # 4h backstop fires the honest turn
+    try:
+        # This is the seam that makes watch_pid load-bearing: create_promise
+        # already ran before the real pid was ever known, so without this
+        # call the liveness sweeper has nothing to check for this row and
+        # can never confirm death. Guarded: a mirror hiccup must never break
+        # the watch itself.
+        followup.set_watch_pid(promise_id, pid)
+    except Exception:  # noqa: BLE001
+        log.warning("launch_sniffer: set_watch_pid failed for promise %s",
+                    promise_id, exc_info=True)
     pattern_core = watch_pattern(core)
     while _pid_alive(pid, pattern_core):
         if time.time() - start > AUTO_DEADLINE_S:

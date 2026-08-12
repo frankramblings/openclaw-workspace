@@ -266,9 +266,15 @@ def register_and_emit(session_key: str, turn_id: int, *,
                    source_ref=source_ref, deadline=deadline)
     _emit(session_key, {"type": "token.added", "turn_id": turn_id, "token": tok})
     try:
+        # producer_ms: this token's own quiet clock for the liveness
+        # sweeper. Without it the row falls back to the registry's
+        # `updated`, which the sweeper's own writes refresh -- freezing
+        # "no update in Nm" at 0m forever (the bug Task 3 fixed for the
+        # other producers).
         task_registry.upsert(f"pending:{tok['id']}", kind="deferred", source="pending",
                              label=label, session_key=session_key, state="running",
-                             detail=kind, extra={"turn_ref": turn_id})
+                             detail=kind, extra={"turn_ref": turn_id,
+                                                  "producer_ms": _now_ms()})
     except Exception:  # noqa: BLE001
         log.warning("task_registry mirror failed for pending token %s", tok["id"], exc_info=True)
     return tok
@@ -304,7 +310,7 @@ def resolve_and_emit(session_key: str, turn_id: int, token_id: str,
                              label=removed.get("label", ""),
                              session_key=session_key,
                              state="done", detail=removed.get("kind", ""),
-                             extra={"turn_ref": turn_id})
+                             extra={"turn_ref": turn_id, "producer_ms": _now_ms()})
     except Exception:  # noqa: BLE001
         log.warning("task_registry mirror failed for pending token %s", token_id, exc_info=True)
     return removed

@@ -88,3 +88,55 @@ def test_spawn_fire_is_disabled_by_default(monkeypatch):
     from backend import config, followup
     monkeypatch.setattr(config, "FOLLOWUP_TURNS_ENABLED", False)
     assert followup._spawn_fire("anything") is False
+
+
+# --- Change 4: promises must resolve even when turn-firing is disabled -----
+#
+# Task 6 gated _spawn_fire on FOLLOWUP_TURNS_ENABLED, which defaults off.
+# mark() is only ever reached from inside fire_followup -- so with turns off,
+# a promise declined by _spawn_fire never left "pending": the store grew
+# without bound and the 30s sweeper kept re-selecting and re-logging it
+# forever. _spawn_fire must resolve the promise itself in that case (no turn
+# fired, but a terminal state reached) while still returning False.
+
+
+def test_spawn_fire_resolves_completed_promise_when_turns_disabled(monkeypatch):
+    from backend import config
+    monkeypatch.setattr(config, "FOLLOWUP_TURNS_ENABLED", False)
+    p = followup.create_promise("sid", "skey", "quiet task", 3600)
+    followup.record_completion(p["id"], exit_code=0, duration_s=1.0, tail="ok")
+    assert followup._spawn_fire(p["id"]) is False
+    assert followup.get_promise(p["id"])["state"] == "completed"
+
+
+def test_spawn_fire_resolves_overdue_promise_when_turns_disabled(monkeypatch):
+    from backend import config
+    monkeypatch.setattr(config, "FOLLOWUP_TURNS_ENABLED", False)
+    p = followup.create_promise("sid", "skey", "silent task", 3600)
+    assert followup._spawn_fire(p["id"], overdue=True) is False
+    assert followup.get_promise(p["id"])["state"] == "overdue"
+
+
+def test_spawn_fire_with_turns_enabled_behavior_is_unchanged(monkeypatch):
+    from backend import config
+    monkeypatch.setattr(config, "FOLLOWUP_TURNS_ENABLED", True)
+    calls = []
+
+    async def fake_fire(pid, *, overdue=False):
+        calls.append((pid, overdue))
+        return True
+
+    monkeypatch.setattr(followup, "fire_followup", fake_fire)
+    p = followup.create_promise("sid", "skey", "t", 3600)
+    followup.record_completion(p["id"], exit_code=0, duration_s=1, tail="")
+
+    async def run():
+        return followup._spawn_fire(p["id"])
+
+    spawned = asyncio.run(run())
+    assert spawned is True
+    assert calls == [(p["id"], False)]
+    # Resolution is fire_followup's job (faked here as a no-op on state), not
+    # _spawn_fire's -- the promise must NOT be resolved directly by the
+    # disabled-turns shortcut when turns are actually enabled.
+    assert followup.get_promise(p["id"])["state"] == "pending"

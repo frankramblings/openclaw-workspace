@@ -65,3 +65,23 @@ def test_registry_failure_never_breaks_resolve(monkeypatch):
     monkeypatch.setattr(pending_tokens.task_registry, "upsert", boom)
     out = pending_tokens.resolve_and_emit(SK, 41, tok["id"], {"url": "/x.png"})
     assert out is not None                    # resolve + emit survived
+
+
+# --- producer_ms: without it, this row's "no update in Nm" text freezes at
+# 0m forever (rec["updated"] is refreshed by the sweeper's own writes) --
+# the exact bug Task 3 fixed for the other producers.
+
+
+def test_register_mirror_carries_producer_ms():
+    tok = pending_tokens.register_and_emit(SK, 41, kind="image_generate",
+                                           label="sunset render", source_ref="img_1")
+    rec = task_registry.get(f"pending:{tok['id']}")
+    assert isinstance(rec["extra"]["producer_ms"], int) and rec["extra"]["producer_ms"] > 0
+
+
+def test_resolve_mirror_carries_producer_ms():
+    tok = pending_tokens.register_and_emit(SK, 41, kind="image_generate",
+                                           label="sunset render", source_ref="img_1")
+    pending_tokens.resolve_and_emit(SK, 41, tok["id"], {"url": "/x.png"})
+    rec = task_registry.get(f"pending:{tok['id']}")
+    assert isinstance(rec["extra"]["producer_ms"], int) and rec["extra"]["producer_ms"] > 0

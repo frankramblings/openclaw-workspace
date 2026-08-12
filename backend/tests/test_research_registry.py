@@ -53,3 +53,14 @@ def test_registry_failure_never_breaks_publish(monkeypatch):
     job = _job()
     research._publish(job, phase="searching")   # must not raise
     assert job.progress.get("phase") == "searching"   # fan-out already happened
+
+
+def test_publish_mirror_carries_producer_ms():
+    # Without producer_ms this row's quiet clock falls back to the
+    # registry's own `updated`, which the liveness sweeper's writes refresh
+    # -- freezing "no update in Nm" at 0m forever (the bug Task 3 fixed for
+    # the other producers).
+    job = _job()
+    research._publish(job, phase="searching", pct=20)
+    rec = task_registry.get("research:r_test1")
+    assert isinstance(rec["extra"]["producer_ms"], int) and rec["extra"]["producer_ms"] > 0

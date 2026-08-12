@@ -182,6 +182,42 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
     return False
 
 
+def set_watch_pid(promise_id: str, os_pid: int) -> bool:
+    """Attach the OS pid a promise is waiting on, once something actually
+    learns it. launch_sniffer only discovers the pid after create_promise has
+    already run, so this is the seam that makes Task 2's watch_pid field
+    load-bearing: without it the liveness sweeper has nothing to check for
+    followup rows and can never confirm death, which is exactly how the
+    original 16-hour `running, 0%` zombies survived."""
+    with _LOCK:
+        data = _load()
+        for p in data.get("promises", []):
+            if p.get("id") == promise_id:
+                if p.get("state") != "pending":
+                    return False
+                p["watch_pid"] = int(os_pid)
+                _save(data)
+                try:
+                    # upsert ALWAYS applies state and detail (unlike other
+                    # fields), so read the record's CURRENT values back and
+                    # pass them through -- omitting state= would fall back to
+                    # its "running" default and silently revive a row the
+                    # sweeper had already marked stalled.
+                    cur = task_registry.get(f"followup:{promise_id}")
+                    task_registry.upsert(
+                        f"followup:{promise_id}",
+                        kind=("auto" if p.get("origin") == "auto" else "followup"),
+                        source="followup",
+                        state=(cur["state"] if cur else "running"),
+                        detail=(cur["detail"] if cur else ""),
+                        extra={"pid": int(os_pid)})
+                except Exception:  # noqa: BLE001
+                    _log.warning("task_registry mirror failed for promise %s",
+                                promise_id, exc_info=True)
+                return True
+    return False
+
+
 STALL_SURFACE_S = 24 * 3600
 
 
@@ -330,12 +366,21 @@ def reseed_registry() -> int:
         if p.get("state") != "pending":
             continue
         try:
+            # producer_ms uses the promise's own `created` stamp -- NOT a
+            # fresh _now_ms() here -- so a restart doesn't reset a stalled
+            # row's quiet clock. pid is included only when watch_pid is
+            # actually known; the key stays ABSENT otherwise (never
+            # {"pid": None}), same contract as create_promise's mirror.
+            extra = {"producer_ms": int(p.get("created") or 0)}
+            if p.get("watch_pid"):
+                extra["pid"] = int(p["watch_pid"])
             task_registry.upsert(f"followup:{p['id']}",
                                  kind=("auto" if p.get("origin") == "auto" else "followup"),
                                  source="followup", label=p.get("label", ""),
                                  session_key=p.get("session_key"),
                                  turn_id=p.get("turn_id"), state="running",
-                                 detail="waiting for completion ping")
+                                 detail="waiting for completion ping",
+                                 extra=extra)
             n += 1
         except Exception:  # noqa: BLE001
             _log.warning("followup registry reseed failed for %s", p.get("id"),
@@ -610,7 +655,13 @@ def _spawn_fire(pid: str, *, overdue: bool = False) -> bool:
     flight THIS process (endpoint spawn racing an overdue sweep) and holds
     the in-flight marker until the fire resolves. Returns True if spawned."""
     if not config.FOLLOWUP_TURNS_ENABLED:
-        _log.info("followup %s: turn firing disabled; the task row reports this", pid)
+        # No turn fires -- that's the point -- but the promise still has to
+        # reach a terminal state, or it never leaves "pending": the store
+        # grows without bound and the 30s sweeper re-selects and re-logs it
+        # forever. mark() is otherwise only ever reached from inside
+        # fire_followup, which never runs on this path.
+        _log.info("followup %s: turn firing disabled; resolving without a turn", pid)
+        mark(pid, "overdue" if overdue else "completed")
         return False
     if pid in _INFLIGHT:
         return False

@@ -110,6 +110,12 @@ def _publish(job: Job, **fields) -> None:
                   ("done" if job.status == "done" else "failed"),
             pct=ev.get("pct"), detail=str(ev.get("phase") or ""),
             error=str(ev.get("error") or ("cancelled" if job.status == "cancelled" else "")),
+            # producer_ms: this job's own quiet clock for the liveness
+            # sweeper, stamped fresh on every _publish (real engine
+            # activity) -- without it the row falls back to the registry's
+            # `updated`, which the sweeper's own writes refresh, freezing
+            # "no update in Nm" at 0m forever.
+            extra={"producer_ms": int(time.time() * 1000)},
             volatile=True,   # research engines die with the process — always ledgered
         )
     except Exception:  # noqa: BLE001 - registry mirror must never break the engine

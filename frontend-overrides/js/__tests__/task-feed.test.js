@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { reduceFeedEvent, nextBackoff, pruneTerminal, shouldApplyFallback } from '../redesign/live/task-feed.js';
+import { markSeen, TERMINAL_FOREGROUND_MS } from '../redesign/live/task-feed.js';
 
 const t = (id, state = 'running', extra = {}) => ({ id, state, updated: 1, ...extra });
 
@@ -32,11 +33,15 @@ test('backoff doubles to a 15s cap with a 1s floor', () => {
 });
 
 test('pruneTerminal drops old terminal records, keeps running + fresh', () => {
-  const m = new Map([
-    ['a', { id: 'a', state: 'done', updated: 1000 }],
-    ['b', { id: 'b', state: 'running', updated: 1000 }],
-    ['c', { id: 'c', state: 'failed', updated: 90_000 }],
-  ]);
+  // 'a' is seen (foreground) early; 'c' is seen much later — pruneTerminal now
+  // measures budget from _fgSeen, not from the server's `updated` stamp.
+  // markSeen only stamps rows that don't have _fgSeen yet, so 'c' is added
+  // (and thus stamped) in a separate pass after 'a' is already marked.
+  let m = new Map([['a', { id: 'a', state: 'done', updated: 1000 }]]);
+  m = markSeen(m, 1000, true);
+  m.set('b', { id: 'b', state: 'running', updated: 1000 });
+  m.set('c', { id: 'c', state: 'failed', updated: 90_000 });
+  m = markSeen(m, 90_000, true);
   const out = pruneTerminal(m, 100_000, 60_000);
   assert.deepEqual([...out.keys()], ['b', 'c']);
 });
@@ -49,4 +54,42 @@ test('pruneTerminal returns the SAME map when nothing to drop', () => {
 test('fallback snapshot is discarded while a stream is attached', () => {
   assert.equal(shouldApplyFallback(true), false);
   assert.equal(shouldApplyFallback(false), true);
+});
+
+test('a snapshot keeps terminal rows the server has already aged out', () => {
+  // The phone was in a pocket for 3 minutes; the server pruned the finished
+  // row at RETAIN_TERMINAL_S. Reconnecting must not delete it locally too.
+  let m = new Map([['job:done', t('job:done', 'done')]]);
+  m = reduceFeedEvent(m, { type: 'tasks.snapshot', tasks: [t('job:live')] });
+  assert.deepEqual([...m.keys()].sort(), ['job:done', 'job:live']);
+});
+
+test('a snapshot still drops running rows it omits', () => {
+  let m = new Map([['job:ghost', t('job:ghost', 'running')]]);
+  m = reduceFeedEvent(m, { type: 'tasks.snapshot', tasks: [t('job:live')] });
+  assert.deepEqual([...m.keys()], ['job:live']);
+});
+
+test('an unseen terminal row is never pruned, however long the wall clock runs', () => {
+  const m = new Map([['job:done', t('job:done', 'done')]]);
+  assert.equal(pruneTerminal(m, 10 * TERMINAL_FOREGROUND_MS).size, 1);
+});
+
+test('a terminal row is pruned only after the budget of FOREGROUND time', () => {
+  let m = new Map([['job:done', t('job:done', 'done')]]);
+  m = markSeen(m, 1000, true);
+  assert.equal(pruneTerminal(m, 1000 + TERMINAL_FOREGROUND_MS - 1).size, 1);
+  assert.equal(pruneTerminal(m, 1000 + TERMINAL_FOREGROUND_MS + 1).size, 0);
+});
+
+test('markSeen does nothing while the document is hidden', () => {
+  let m = new Map([['job:done', t('job:done', 'done')]]);
+  m = markSeen(m, 1000, false);
+  assert.equal(m.get('job:done')._fgSeen, undefined);
+});
+
+test('markSeen ignores running rows', () => {
+  let m = new Map([['job:run', t('job:run', 'running')]]);
+  m = markSeen(m, 1000, true);
+  assert.equal(m.get('job:run')._fgSeen, undefined);
 });

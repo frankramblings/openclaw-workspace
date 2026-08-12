@@ -17,6 +17,14 @@ export function reduceFeedEvent(map, ev) {
   if (ev.type === 'tasks.snapshot' && Array.isArray(ev.tasks)) {
     const next = new Map();
     for (const t of ev.tasks) if (t && t.id) next.set(t.id, t);
+    // The server ages terminal records out at RETAIN_TERMINAL_S, so a snapshot
+    // taken after a few minutes in a pocket legitimately omits the very row
+    // the user unlocked the phone to see. Rebuilding from it wholesale would
+    // delete a finished job the client is correctly holding. Running rows the
+    // snapshot omits ARE gone and still drop out.
+    for (const [id, prev] of map) {
+      if (!next.has(id) && TERMINAL.has(prev.state)) next.set(id, prev);
+    }
     return next;
   }
   if (ev.type === 'task.update' && ev.task && ev.task.id) {
@@ -31,20 +39,34 @@ export function nextBackoff(ms) {
   return Math.min(Math.max(ms * 2, 1000), 15000);
 }
 
-// The delta protocol has no removal signal: a done/failed/interrupted task
-// just stops changing. Without pruning, terminal records would accumulate
-// forever (done cards lingering in every view until reload). `updated` is
-// the registry's epoch-ms timestamp; we compare it against the client's
-// Date.now(), which assumes roughly-synced clocks — fine since the same
-// host serves the page and the API.
-export const TERMINAL_TTL_MS = 60_000;
+// Terminal rows are pruned on FOREGROUND time, not wall time. A job that
+// finishes while the PWA is backgrounded used to be pruned 60s later against
+// the server's `updated` stamp — so it was gone before the screen came back
+// on. The budget only starts once the row has actually been on screen.
+export const TERMINAL_FOREGROUND_MS = 60_000;
 const TERMINAL = new Set(['done', 'failed', 'interrupted']);
 
-export function pruneTerminal(map, nowMs, ttlMs = TERMINAL_TTL_MS) {
+export function markSeen(map, fgMs, visible) {
+  if (!visible) return map;
   let changed = false;
   const next = new Map();
   for (const [id, t] of map) {
-    if (TERMINAL.has(t.state) && nowMs - (t.updated || 0) > ttlMs) { changed = true; continue; }
+    if (TERMINAL.has(t.state) && t._fgSeen == null) {
+      next.set(id, { ...t, _fgSeen: fgMs });
+      changed = true;
+    } else next.set(id, t);
+  }
+  return changed ? next : map;
+}
+
+export function pruneTerminal(map, fgMs, budgetMs = TERMINAL_FOREGROUND_MS) {
+  let changed = false;
+  const next = new Map();
+  for (const [id, t] of map) {
+    if (TERMINAL.has(t.state) && t._fgSeen != null && fgMs - t._fgSeen > budgetMs) {
+      changed = true;
+      continue;
+    }
     next.set(id, t);
   }
   return changed ? next : map;
@@ -56,6 +78,18 @@ let _es = null;
 let _backoff = 0;
 let _booted = false;
 let _pruneTimer = null;
+// Milliseconds this document has been visible since boot. Wall time is the
+// wrong clock for "has the user had a chance to see this".
+let _fgMs = 0;
+let _fgSince = null;
+
+function _foregroundMs() {
+  return _fgMs + (_fgSince == null ? 0 : Date.now() - _fgSince);
+}
+
+function _visible() {
+  return typeof document === 'undefined' || document.visibilityState === 'visible';
+}
 
 function _list() {
   const arr = [..._map.values()];
@@ -65,7 +99,8 @@ function _list() {
 }
 
 function _notify() {
-  _map = pruneTerminal(_map, Date.now());
+  const fg = _foregroundMs();
+  _map = pruneTerminal(markSeen(_map, fg, _visible()), fg);
   const arr = _list();
   for (const cb of [..._subs]) {
     try { cb(arr); } catch (_) { /* one bad view can't break the feed */ }
@@ -145,10 +180,33 @@ function _reconnect() {
 function _startPruneTimer() {
   if (_pruneTimer) return;
   _pruneTimer = setInterval(() => {
-    const next = pruneTerminal(_map, Date.now());
+    const fg = _foregroundMs();
+    const next = pruneTerminal(markSeen(_map, fg, _visible()), fg);
     if (next !== _map) { _map = next; _notify(); }
   }, 10_000);
   if (_pruneTimer && typeof _pruneTimer.unref === 'function') _pruneTimer.unref();
+}
+
+// iOS suspends a backgrounded PWA's EventSource without ever firing onerror,
+// so the socket is dead but `_es` still looks attached and no reconnect is
+// scheduled. Returning to the app is the only reliable signal we get: drop the
+// socket unconditionally, reconnect immediately (no backoff — this is a fresh
+// user-initiated resume, not a failing server), and resnapshot.
+function _onVisibilityChange() {
+  if (_visible()) {
+    if (_fgSince == null) _fgSince = Date.now();
+    if (_es) { try { _es.close(); } catch (_) {} _es = null; }
+    _backoff = 0;
+    _notifyConnectionState();
+    _connect();
+    fetch(FALLBACK, { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) _apply({ type: 'tasks.snapshot', tasks: d.tasks }); })
+      .catch(() => {});
+  } else if (_fgSince != null) {
+    _fgMs += Date.now() - _fgSince;
+    _fgSince = null;
+  }
 }
 
 // Connection tri-state for health-status callers (see live/health.js).
@@ -170,6 +228,10 @@ export function subscribeTasks(cb) {
     _booted = true;
     _connect();
     _startPruneTimer();
+    _fgSince = _visible() ? Date.now() : null;
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange', _onVisibilityChange);
+    }
   }
   try { cb(_list()); } catch (_) { /* view error isolated */ }
   return () => { _subs.delete(cb); };

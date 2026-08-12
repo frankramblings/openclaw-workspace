@@ -34,7 +34,7 @@ from . import config, fsutil
 log = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
-RETAIN_TERMINAL_S = 300           # terminal tasks age out of list_tasks()
+RETAIN_TERMINAL_S = 900           # terminal tasks age out of list_tasks()
 SUBSCRIBER_QUEUE_MAX = 512        # bound a stalled/half-open SSE client's queue
 _TERMINAL = ("done", "failed", "interrupted")
 

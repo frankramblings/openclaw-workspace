@@ -16,9 +16,10 @@ Reconciliation contract:
     all, so an idle scan emits zero SSE frames and never touches `updated`
   vanished file, record was running → interrupted (honesty rule)
   vanished file, record was terminal → remove() (native sweeps clean up)
-  taskfile whose pid (or session) matches a live observed row → its detail is
-    written INTO that row and the standalone row is removed; the observer keeps
-    owning state (task_merge)
+  taskfile whose pid sits inside a live observed row's subtree → its detail is
+    written INTO that row and the standalone row is removed WITH a removal
+    event (remove(notify=True) — a live row the clients already hold); the
+    observer keeps owning state (task_merge)
   lingering file, record already interrupted (liveness sweeper confirmed
     death by pid) → SKIPPED as long as the file hasn't been written since
     that verdict, so the next 0.5s scan can't undo it by re-reading the same

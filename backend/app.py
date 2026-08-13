@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
-               config_check, doctor, draft_mode, event_store, followup, launch_sniffer,
+               config_check, doctor, draft_mode, event_store, followup,
                monitor, pending_tokens, promise_guard, push, sessions_store, syschatter,
                task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
@@ -219,23 +219,14 @@ async def _lifespan(_app: FastAPI):
         # Own every other task we've spun up over the app's life so nothing is
         # orphaned to uvicorn's 2s force-close window: the workspace-watch
         # filesystem watcher, per-turn SSE recorders (_TURN_TASKS — one per
-        # in-flight chat turn, detached from any reader), fire-and-forget
+        # in-flight chat turn, detached from any reader), and fire-and-forget
         # background work (_BG_TASKS — memory auto-extract, gateway-side
-        # session delete, on-demand reindex), and the sniffer's live grace/watch
-        # tasks (launch_sniffer.cancel_all() — already cancelled by the call
-        # below; gathered into `remaining` too so shutdown actually awaits
-        # them instead of leaving "Task was destroyed but it is pending"
-        # noise). Snapshot to lists first: these collections mutate themselves
-        # via done-callbacks/pop as tasks finish, which would raise "set
-        # changed size during iteration" if we iterated them live while
-        # cancelling.
+        # session delete, on-demand reindex). Snapshot to lists first: these
+        # collections mutate themselves via done-callbacks/pop as tasks
+        # finish, which would raise "set changed size during iteration" if we
+        # iterated them live while cancelling.
         await workspace_watch.stop()
-        sniffer_tasks: list[asyncio.Task] = []
-        try:
-            sniffer_tasks = launch_sniffer.cancel_all()
-        except Exception:  # noqa: BLE001 - shutdown best-effort
-            _log.warning("launch_sniffer.cancel_all failed", exc_info=True)
-        remaining = list(_TURN_TASKS.values()) + list(_BG_TASKS) + sniffer_tasks
+        remaining = list(_TURN_TASKS.values()) + list(_BG_TASKS)
         for t in remaining:
             t.cancel()
         if remaining:

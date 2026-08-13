@@ -71,10 +71,10 @@ def test_check_turn_quiet_when_registered(tmp_path, monkeypatch):
 
 
 def test_check_turn_ignores_auto_registrations(tmp_path, monkeypatch):
-    # An auto task is the SNIFFER's doing, not Gary keeping his promise with
-    # the wrapper — the card still isn't needed (the work IS tracked), so auto
-    # counts as registered for the GUARD (unlike the sniffer's own grace
-    # check). Pass exclude_kinds=() here.
+    # An auto-kind row (origin="auto") is not Gary keeping his promise with
+    # the wrapper by hand — the card still isn't needed (the work IS
+    # tracked), so auto counts as registered for the GUARD. Pass
+    # exclude_kinds=() here.
     from backend import config
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     turn_state.turn_started(SK)
@@ -83,22 +83,6 @@ def test_check_turn_ignores_auto_registrations(tmp_path, monkeypatch):
                              session_key=SK)
         assert promise_guard.check_turn(SK, "I'll report back soon") is None
     finally:
-        turn_state.turn_ended(SK)
-
-
-def test_check_turn_quiet_while_grace_pending(tmp_path, monkeypatch):
-    # A sniffed launch is mid-grace-window (registration outcome not decided
-    # yet): the guard must stay quiet — the launch WILL be tracked one way or
-    # another, so warning now would be the fast-turn contradiction (amber
-    # card beside a row that pings).
-    from backend import config, launch_sniffer
-    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
-    turn_state.turn_started(SK)
-    try:
-        monkeypatch.setitem(launch_sniffer._GRACE_PENDING, SK, 1)
-        assert promise_guard.check_turn(SK, "I'll let you know when it's done") is None
-    finally:
-        launch_sniffer._GRACE_PENDING.pop(SK, None)
         turn_state.turn_ended(SK)
 
 

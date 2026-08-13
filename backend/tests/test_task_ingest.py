@@ -477,15 +477,29 @@ def test_upsert_attached_skips_a_non_terminal_write_onto_an_interrupted_row():
     # pattern the sticky-death guard tests above use for _upsert_native) so
     # the guard is pinned regardless of how target_for's own sticky-drop
     # logic happens to route on any given scan.
+    #
+    # Final review, Minor: the task_merge._BOUND reset its neighbours all do
+    # was missing here, so this producer ran with whatever binding an earlier
+    # test happened to leave behind, and the assertions below would have kept
+    # passing on the strength of an UNBOUND producer imposing nothing rather
+    # than on the guard. Bind it for real — by pid, on a live row — and only
+    # then let the observer's verdict land, so the skip is the guard's doing.
+    from backend import task_merge
     task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
     task_registry.upsert("observed:200:20", kind="observed", source="observed",
                          label="bin/task run", session_key="chat-1",
-                         state="interrupted",
-                         detail="lost track of this process; outcome unknown",
+                         state="running",
                          extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    assert task_merge.target_for({"id": "render", "pid": 300},
+                                 "chat-1") == "observed:200:20"
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         state="interrupted",
+                         detail="lost track of this process; outcome unknown")
     task_ingest._upsert_attached(
         "observed:200:20",
-        {"id": "render", "status": "running", "pct": 87.0, "detail": "encoding"},
+        {"id": "render", "pid": 300, "status": "running", "pct": 87.0,
+         "detail": "encoding"},
         updated_epoch=1000.0, session_key="chat-1")
     rec = task_registry.get("observed:200:20")
     assert rec["state"] == "interrupted"

@@ -86,6 +86,48 @@ def test_an_unchanged_subtree_after_surfacing_still_writes_nothing(monkeypatch):
     assert _observe(monkeypatch, JOB, now=1009.0) == 0
 
 
+def test_a_subtree_growth_write_does_not_clobber_a_producers_state(monkeypatch):
+    # task_registry.upsert applies `state` and `detail` UNCONDITIONALLY on
+    # every call (unlike label/pct/eta). A producer attaching to this row
+    # (Task 5) owns both; the subtree-growth write must not stomp on either.
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.upsert(row["id"], kind="observed", source="observed",
+                         detail="uploading to archive.org  ok=54 skip=0 err=0",
+                         pct=0.42)
+    grown = _procs((SHELL, 1, 10, "bash -i"),
+                   (200, SHELL, 20, "python3 bin/task run --id x"),
+                   (300, 200, 30, "bash -c sleep 16"),
+                   (400, 300, 40, "sleep 16"),
+                   (500, 400, 45, "sleep 5"))
+    assert _observe(monkeypatch, grown, now=1008.0) == 1
+    (row,) = task_registry.list_tasks()
+    assert row["detail"] == "uploading to archive.org  ok=54 skip=0 err=0"
+    assert row["pct"] == 0.42
+    assert sorted(row["extra"]["subtree"]) == [200, 300, 400, 500]
+
+
+def test_a_subtree_growth_write_does_not_resurrect_a_terminal_row(monkeypatch):
+    # `bin/task` can write `done` while its wrapped process is still alive
+    # for a moment. A subtree change landing in that window must not force
+    # the row back to `running` — observers own existence and state, but
+    # NOT once a producer has already closed the row out.
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.upsert(row["id"], kind="observed", source="observed",
+                         state="done", detail="")
+    grown = _procs((SHELL, 1, 10, "bash -i"),
+                   (200, SHELL, 20, "python3 bin/task run --id x"),
+                   (300, 200, 30, "bash -c sleep 16"),
+                   (400, 300, 40, "sleep 16"),
+                   (500, 400, 45, "sleep 5"))
+    _observe(monkeypatch, grown, now=1008.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "done"
+
+
 def test_a_vanished_chain_with_a_matching_envelope_reports_its_exit_code(monkeypatch):
     envelope = {"text": "bin/task run --id x", "start": 999.0, "end": 1010.0,
                 "exit_code": 0, "bg_pid": None, "outcome_known": True}

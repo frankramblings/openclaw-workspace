@@ -155,11 +155,26 @@ def observe_once(now: float | None = None) -> int:
                 sorted_subtree = sorted(subtree)
                 if sorted_subtree != state["written_subtree"]:
                     state["written_subtree"] = sorted_subtree
-                    task_registry.upsert(
-                        state["row_id"], kind="observed", source="observed",
-                        state="running", detail="",
-                        extra={"subtree": sorted_subtree})
-                    changed += 1
+                    # `state` and `detail` are the two fields task_registry
+                    # .upsert applies UNCONDITIONALLY on every call (unlike
+                    # label/pct/eta, which empty args never clobber) —
+                    # producers own both, per the plan's "producers own
+                    # detail; observers own existence and state". Hardcoding
+                    # them here would wipe a producer's live status text on
+                    # every child fork/reap, and would resurrect a row a
+                    # producer already finished (its process can still be
+                    # alive for a moment after `bin/task` writes `done`).
+                    # Read the current record and pass its own state/detail
+                    # straight through, so this write touches
+                    # extra["subtree"] and nothing else. If the record is
+                    # gone, skip the write rather than recreating it.
+                    existing = task_registry.get(state["row_id"])
+                    if existing is not None:
+                        task_registry.upsert(
+                            state["row_id"], kind="observed", source="observed",
+                            state=existing["state"], detail=existing["detail"],
+                            extra={"subtree": sorted_subtree})
+                        changed += 1
                 continue
             if now - state["first"] < config.OBSERVE_THRESHOLD_S:
                 continue

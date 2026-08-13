@@ -201,6 +201,83 @@ def test_a_dead_shell_interrupts_the_rows_it_owned(monkeypatch):
     assert row["state"] == "interrupted"
 
 
+# --- Final review, Important 4: the closing write must not weaken a --------
+# --- confirmed outcome, nor blank a producer's last word ------------------
+#
+# `state` and `detail` always apply on an upsert, and the closing loop used
+# to write both unconditionally. A row a pid-attached producer had already
+# marked `done` — which `bin/task` does BEFORE its own process exits — was
+# overwritten with `interrupted` and an empty detail the moment the chain
+# vanished. The next scan re-corrects that on the ordinary path, two SSE
+# frames later; it does not re-correct once the producer's file has aged
+# past RETAIN_TERMINAL_S, or was removed by `bin/task rm`, or belongs to
+# `bin/job` (whose ingest branch never merges).
+
+
+def test_a_vanished_chain_does_not_overwrite_a_row_already_done(monkeypatch):
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.upsert(row["id"], kind="observed", source="observed",
+                         state="done", detail="uploaded 54 files")
+    # No envelope, so the observer's own reading of this ending is
+    # "interrupted" — strictly weaker than the producer's confirmed `done`.
+    assert _observe(monkeypatch, IDLE, now=1011.0) == 0
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "done"
+    assert row["detail"] == "uploaded 54 files"
+
+
+def test_a_vanished_chain_does_not_overwrite_a_row_already_failed(monkeypatch):
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.upsert(row["id"], kind="observed", source="observed",
+                         state="failed", detail="ffmpeg exited 1", error="boom")
+    assert _observe(monkeypatch, IDLE, now=1011.0) == 0
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "failed" and row["error"] == "boom"
+
+
+def test_the_closing_write_keeps_the_producers_last_detail(monkeypatch):
+    # Deferred minor from Task 4, folded in here: the row's outcome is ours
+    # to state, but the context line is the producer's and is still true.
+    envelope = {"text": "bin/task run --id x", "start": 999.0, "end": 1010.0,
+                "exit_code": 0, "bg_pid": None, "outcome_known": True}
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.upsert(row["id"], kind="observed", source="observed",
+                         state="running", detail="uploading  ok=54 skip=0 err=0")
+    _observe(monkeypatch, IDLE, now=1011.0, envelopes=[envelope])
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "done"
+    assert row["detail"] == "uploading  ok=54 skip=0 err=0"
+
+
+def test_an_interrupted_close_still_replaces_a_stale_progress_line(monkeypatch):
+    # The one case that must NOT carry the detail through: "87%, encoding"
+    # under a row that says the process stopped reads as alive.
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.upsert(row["id"], kind="observed", source="observed",
+                         state="running", detail="87%, encoding")
+    _observe(monkeypatch, IDLE, now=1011.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "interrupted"
+    assert row["detail"] == "stopped; outcome unknown"
+
+
+def test_a_closing_row_the_registry_no_longer_holds_is_not_recreated(monkeypatch):
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.remove(row["id"])
+    assert _observe(monkeypatch, IDLE, now=1011.0) == 0
+    assert task_registry.list_tasks() == []
+
+
 def test_a_recycled_pid_is_a_different_row(monkeypatch):
     _observe(monkeypatch, JOB, now=1000.0)
     _observe(monkeypatch, JOB, now=1007.0)

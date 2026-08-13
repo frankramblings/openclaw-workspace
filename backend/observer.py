@@ -205,11 +205,33 @@ def observe_once(now: float | None = None) -> int:
         state = _SEEN.pop(key)
         if state["row_id"] is None:
             continue                          # never surfaced, nothing to close
+        # Read the record BEFORE writing, exactly as the growth write above
+        # does, and for the same reason: `state` and `detail` always apply on
+        # an upsert, so an unconditional write here can replace a CONFIRMED
+        # outcome with a weaker one. A pid-attached producer marks the row
+        # `done` before its own process exits (`bin/task` writes the terminal
+        # file, then returns), so the chain vanishing a beat later would
+        # overwrite that with `interrupted` and an empty detail. On the
+        # ordinary path the next scan re-corrects it two SSE frames later; it
+        # does NOT re-correct when the producer's file has aged past
+        # RETAIN_TERMINAL_S, when `bin/task rm` removed the file, or for a
+        # `bin/job` producer (whose branch does not merge at all) — and a row
+        # that says "stopped; outcome unknown" about a job that succeeded is
+        # the lie in the other direction. A record we no longer hold is not
+        # recreated either, same as the growth write.
+        existing = task_registry.get(state["row_id"])
+        if existing is None or existing["state"] in ("done", "failed"):
+            continue
         envelopes = _envelopes_for(state["terminal_key"])
         siblings = {k: s for k, s in lives.items()
                     if s["terminal_key"] == state["terminal_key"]}
         outcome = _outcome_for(state, envelopes, siblings)
-        detail = ("" if outcome in ("done", "failed")
+        # Carry the producer's last detail line through a confirmed ending
+        # rather than blanking it: the outcome is ours to state, the context
+        # is the producer's and is still true. `interrupted` is the one case
+        # that replaces it — "stopped; outcome unknown" is a statement about
+        # the row that the stale progress text would otherwise contradict.
+        detail = (existing["detail"] if outcome in ("done", "failed")
                   else "stopped; outcome unknown")
         task_registry.upsert(state["row_id"], kind="observed", source="observed",
                              state=outcome, detail=detail)

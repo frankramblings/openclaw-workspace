@@ -74,25 +74,56 @@ def log_path(session_key: str) -> Path:
     return _dir() / f"{_safe(session_key)}.log"
 
 
+# Most of a hook log we will ever read at once. The DEBUG trap appends two
+# lines per top-level command and nothing rotates the file, so a shell loop
+# can write hundreds of thousands of lines; a cold backend process asking for
+# offset 0 would otherwise read the whole thing in one blocking f.read()
+# inside the event-loop thread, only to keep the tail. Matches the observer's
+# own 64 KB text buffer.
+TAIL_MAX_BYTES = 65536
+
+
 def write_rc(session_key: str) -> Path:
-    """Write (or refresh) this session's rcfile. Raises OSError if the rc can't
-    be written — the caller falls back to an unhooked shell."""
+    """Write (or refresh) this session's rcfile, and start its log empty.
+    Raises OSError if the rc can't be written — the caller falls back to an
+    unhooked shell.
+
+    Truncating the log here is what bounds it at all: nothing else rotates or
+    deletes these files, and write_rc runs once per shell spawn, so each new
+    shell begins with a fresh log rather than appending to every command the
+    previous ones ran. `read_new`'s `size < offset` reset already handles the
+    resulting shrink correctly (the observer drops its buffered text and
+    re-reads). A log we cannot truncate is not fatal — the reader is capped
+    anyway — so it must not cost the session its hook."""
     _dir().mkdir(parents=True, exist_ok=True)
     path = rc_path(session_key)
     path.write_text(RC_TEMPLATE)
+    try:
+        log_path(session_key).write_bytes(b"")
+    except OSError:
+        log.warning("shell_hook: could not truncate the log for %s",
+                    session_key, exc_info=True)
     return path
 
 
 def read_new(path: Path, offset: int) -> tuple[str, int]:
     """Bytes appended since `offset`, and the new offset. A file shorter than
     the offset was truncated or replaced (a new shell for the same session), so
-    it is re-read from the start."""
+    it is re-read from the start — and a COLD read (offset 0) of a file bigger
+    than TAIL_MAX_BYTES starts from its tail instead, since reading a
+    multi-megabyte log to keep its last 64 KB blocks the event-loop thread for
+    as long as that takes. The returned offset always equals the position just
+    past the bytes actually returned, so the caller's stored cursor stays
+    truthful; the first line of a tail read is usually a fragment, and `parse`
+    drops any line it cannot read whole."""
     try:
         size = path.stat().st_size
     except OSError:
         return "", 0
     if size < offset:
         offset = 0
+    if offset == 0 and size > TAIL_MAX_BYTES:
+        offset = size - TAIL_MAX_BYTES
     if size == offset:
         return "", offset
     try:

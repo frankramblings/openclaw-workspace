@@ -124,6 +124,65 @@ def test_read_new_restarts_when_the_file_was_truncated(data_dir):
     assert text == "b\n" and new_offset == 2
 
 
+# --- Final review, Important 5: the log is bounded at both ends -----------
+#
+# Nothing rotated or deleted these logs, and the DEBUG trap appends two lines
+# per top-level command, so an ordinary shell loop writes hundreds of
+# thousands of lines. Worse than the disk cost: a cold backend process asks
+# read_new for offset 0, which used to f.read() the WHOLE file inside the
+# event-loop thread and then keep only its last 64 KB.
+
+
+def test_write_rc_truncates_an_existing_log(data_dir):
+    log = shell_hook.log_path("sess-trunc")
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("start\t1.0\t5\t\tfrom a previous shell\n" * 1000)
+    shell_hook.write_rc("sess-trunc")
+    assert log.read_bytes() == b""
+
+
+def test_write_rc_still_returns_the_rc_when_the_log_cannot_be_truncated(
+        data_dir, monkeypatch):
+    # A hook is worth having even if the log won't truncate — the reader is
+    # capped anyway. Losing the session's hook over it would not be.
+    def boom(_key):
+        raise OSError("read-only")
+
+    monkeypatch.setattr(shell_hook, "log_path", boom)
+    assert shell_hook.write_rc("sess-ro").read_text() == shell_hook.RC_TEMPLATE
+
+
+def test_a_cold_read_of_a_huge_log_returns_only_its_tail(data_dir):
+    p = data_dir / "huge.log"
+    line = "start\t1.0\t5\t\t" + "x" * 100 + "\n"
+    body = line * 4000                     # ~460 KB, well past the cap
+    p.write_text(body)
+    size = p.stat().st_size
+    text, offset = shell_hook.read_new(p, 0)
+    assert len(text.encode()) == shell_hook.TAIL_MAX_BYTES
+    # The offset the caller stores must describe what was actually read: the
+    # end of the file, not the end of a read that started at zero.
+    assert offset == size
+    assert text == body[-shell_hook.TAIL_MAX_BYTES:]
+
+
+def test_a_tail_read_still_tracks_later_appends(data_dir):
+    p = data_dir / "huge2.log"
+    p.write_text("y" * (shell_hook.TAIL_MAX_BYTES + 5000))
+    _text, offset = shell_hook.read_new(p, 0)
+    with p.open("a") as f:
+        f.write("end\t1.1\t5\t\t0\n")
+    text, new_offset = shell_hook.read_new(p, offset)
+    assert text == "end\t1.1\t5\t\t0\n"
+    assert new_offset == p.stat().st_size
+
+
+def test_a_cold_read_under_the_cap_is_unchanged(data_dir):
+    p = data_dir / "small.log"
+    p.write_text("start\t1.0\t5\t\tls\n")
+    assert shell_hook.read_new(p, 0) == ("start\t1.0\t5\t\tls\n", p.stat().st_size)
+
+
 @pytest.mark.skipif(not shutil.which("bash"), reason="bash required")
 def test_a_real_bash_writes_a_parseable_envelope(data_dir, tmp_path):
     # The end-to-end proof: a real interactive bash, the real rcfile, a real

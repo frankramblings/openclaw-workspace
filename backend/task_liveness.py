@@ -230,7 +230,7 @@ def next_state(rec: dict, now_ms: int, alive: bool | None) -> str | None:
     # about a job nobody ever promised to narrate.
     extra = rec.get("extra") or {}
     if extra.get("observed") and extra.get("producer_ms") is None:
-        return None
+        return "running" if rec["state"] == "stalled" else None
     quiet_s = (now_ms - _quiet_clock_ms(rec)) / 1000.0
     if quiet_s > STALE_S:
         return "stalled" if rec["state"] != "stalled" else None

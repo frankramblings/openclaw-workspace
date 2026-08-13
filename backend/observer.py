@@ -33,9 +33,15 @@ from . import config, proc_tree, shell_hook, task_registry
 
 log = logging.getLogger(__name__)
 
+# Slack on the envelope's `end` boundary, shared by both containment checks in
+# _outcome_for: the chain's own life and the "how many chains lived inside
+# this envelope" count must agree on the same boundary, or "exactly one
+# contained chain" stops meaning what its comment says.
+_ENVELOPE_SLACK_S = 1.0
+
 # key -> {"first": float, "row_id": str|None, "terminal_key": str,
 #         "session_key": str|None, "subtree": set[int], "label": str,
-#         "cmdline": str, "shell": int}
+#         "cmdline": str, "shell": int, "written_subtree": list[int]|None}
 _SEEN: dict[str, dict] = {}
 _OFFSETS: dict[str, int] = {}          # terminal key -> hook-log byte offset
 _TEXT: dict[str, str] = {}             # terminal key -> recent hook-log text
@@ -92,10 +98,11 @@ def _outcome_for(state: dict, envelopes: list[dict], chain_lives: dict) -> str:
     for env in envelopes:
         if not env.get("outcome_known") or env.get("end") is None:
             continue
-        if not (env["start"] <= first and last <= env["end"] + 1.0):
+        if not (env["start"] <= first and last <= env["end"] + _ENVELOPE_SLACK_S):
             continue
         contained = [k for k, s in chain_lives.items()
-                     if env["start"] <= s["first"] and s["last"] <= env["end"] + 1.0]
+                     if env["start"] <= s["first"]
+                     and s["last"] <= env["end"] + _ENVELOPE_SLACK_S]
         if len(contained) != 1:
             continue                          # ambiguous: do not guess
         return "done" if env.get("exit_code") == 0 else "failed"
@@ -133,11 +140,26 @@ def observe_once(now: float | None = None) -> int:
                     "session_key": _session_key_for(terminal_key),
                     "subtree": set(subtree), "shell": shell_pid,
                     "cmdline": (procs.get(root_pid) or {}).get("cmdline", ""),
-                    "label": "",
+                    "label": "", "written_subtree": None,
                 }
             state["last"] = now
             state["subtree"] = set(subtree)
             if state["row_id"] is not None:
+                # A chain can grow after it's surfaced (a worker forked
+                # later). Re-upsert only when the sorted subtree actually
+                # differs from what the REGISTRY last got — comparing against
+                # the process tree's own `state["subtree"]` would re-write on
+                # every poll; comparing against nothing would leave the row's
+                # extra["subtree"] frozen at second 6 forever, and Task 5's
+                # merge matches a producer's pid against exactly that field.
+                sorted_subtree = sorted(subtree)
+                if sorted_subtree != state["written_subtree"]:
+                    state["written_subtree"] = sorted_subtree
+                    task_registry.upsert(
+                        state["row_id"], kind="observed", source="observed",
+                        state="running", detail="",
+                        extra={"subtree": sorted_subtree})
+                    changed += 1
                 continue
             if now - state["first"] < config.OBSERVE_THRESHOLD_S:
                 continue
@@ -146,11 +168,12 @@ def observe_once(now: float | None = None) -> int:
             state["label"] = (_open_envelope_text(envelopes, state["first"])
                               or state["cmdline"])[:160]
             state["row_id"] = f"observed:{key}"
+            state["written_subtree"] = sorted(subtree)
             task_registry.upsert(
                 state["row_id"], kind="observed", source="observed",
                 label=state["label"], session_key=state["session_key"],
                 state="running", detail="",
-                extra={"pid": root_pid, "subtree": sorted(subtree),
+                extra={"pid": root_pid, "subtree": state["written_subtree"],
                        "observed": True})
             changed += 1
 
@@ -176,4 +199,16 @@ def observe_once(now: float | None = None) -> int:
         task_registry.upsert(state["row_id"], kind="observed", source="observed",
                              state=outcome, detail=detail)
         changed += 1
+
+    # Drop hook-log cursors for terminals with no live shell this poll. Must
+    # run AFTER the closing loop above, which deliberately re-reads a
+    # just-exited shell's log one last time to pick up its final `end` line —
+    # pruning first would make that read start from an empty buffer. Left
+    # unpruned, _OFFSETS/_TEXT would hold an int and up to 64 KB of text per
+    # terminal key ever seen, for the life of the process.
+    live_terminal_keys = set(shells)
+    stale = (set(_OFFSETS) | set(_TEXT)) - live_terminal_keys
+    for k in stale:
+        _OFFSETS.pop(k, None)
+        _TEXT.pop(k, None)
     return changed

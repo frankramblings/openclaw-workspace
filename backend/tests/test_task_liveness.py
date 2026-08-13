@@ -1,4 +1,3 @@
-from backend import task_liveness
 from backend import task_liveness as tl
 
 STALE_MS = int(tl.STALE_S * 1000)
@@ -308,19 +307,30 @@ def test_an_observed_row_without_a_producer_never_goes_stalled():
     # `stalled` means "observed alive, producer quiet" (spec). An observed row
     # with no producer attached has no producer to be quiet — sending it to
     # stalled would print "no update in 4m" about a job nobody is narrating.
-    rec = {"id": "observed:200:20", "source": "observed", "state": "running",
+    row = {"id": "observed:200:20", "source": "observed", "state": "running",
            "created": 0, "updated": 0, "extra": {"pid": 200, "observed": True}}
-    assert task_liveness.next_state(rec, now_ms=10_000_000, alive=True) is None
+    assert tl.next_state(row, now_ms=10_000_000, alive=True) is None
 
 
 def test_an_observed_row_with_a_producer_attached_still_stalls():
-    rec = {"id": "observed:200:20", "source": "observed", "state": "running",
+    row = {"id": "observed:200:20", "source": "observed", "state": "running",
            "created": 0, "updated": 0,
            "extra": {"pid": 200, "observed": True, "producer_ms": 0}}
-    assert task_liveness.next_state(rec, now_ms=10_000_000, alive=True) == "stalled"
+    assert tl.next_state(row, now_ms=10_000_000, alive=True) == "stalled"
 
 
 def test_an_observed_row_whose_pid_is_confirmed_gone_still_interrupts():
-    rec = {"id": "observed:200:20", "source": "observed", "state": "running",
+    row = {"id": "observed:200:20", "source": "observed", "state": "running",
            "created": 0, "updated": 0, "extra": {"pid": 200, "observed": True}}
-    assert task_liveness.next_state(rec, now_ms=10_000_000, alive=False) == "interrupted"
+    assert tl.next_state(row, now_ms=10_000_000, alive=False) == "interrupted"
+
+
+def test_an_observed_row_that_reached_stalled_can_return_to_running():
+    # The gate above returns early for an observed row with no producer, but
+    # a row that DID reach "stalled" (e.g. before a producer attached, or via
+    # some other path) must still be able to recover once the process tree
+    # reconfirms it alive — the early return must not swallow the existing
+    # stalled -> running recovery for observed rows.
+    row = {"id": "observed:200:20", "source": "observed", "state": "stalled",
+           "created": 0, "updated": 0, "extra": {"pid": 200, "observed": True}}
+    assert tl.next_state(row, now_ms=10_000_000, alive=True) == "running"

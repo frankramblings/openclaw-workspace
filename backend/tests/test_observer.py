@@ -1,6 +1,6 @@
 import pytest
 
-from backend import config, observer, proc_tree, task_registry
+from backend import config, observer, proc_tree, shell_hook, task_registry
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +57,29 @@ def test_a_chain_past_the_threshold_gets_exactly_one_row(monkeypatch):
 
 
 def test_the_row_is_not_rewritten_on_every_poll(monkeypatch):
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    assert _observe(monkeypatch, JOB, now=1008.0) == 0
+    assert _observe(monkeypatch, JOB, now=1009.0) == 0
+
+
+def test_a_chain_that_grows_after_surfacing_updates_the_subtree(monkeypatch):
+    # extra["subtree"] must not freeze at surfacing time: Task 5's merge
+    # matches a producer's pid against this field, so a worker forked AFTER
+    # the row exists (e.g. pid 500 under 400) still needs to land in it.
+    _observe(monkeypatch, JOB, now=1000.0)
+    _observe(monkeypatch, JOB, now=1007.0)
+    grown = _procs((SHELL, 1, 10, "bash -i"),
+                   (200, SHELL, 20, "python3 bin/task run --id x"),
+                   (300, 200, 30, "bash -c sleep 16"),
+                   (400, 300, 40, "sleep 16"),
+                   (500, 400, 45, "sleep 5"))
+    assert _observe(monkeypatch, grown, now=1008.0) == 1
+    (row,) = task_registry.list_tasks()
+    assert sorted(row["extra"]["subtree"]) == [200, 300, 400, 500]
+
+
+def test_an_unchanged_subtree_after_surfacing_still_writes_nothing(monkeypatch):
     _observe(monkeypatch, JOB, now=1000.0)
     _observe(monkeypatch, JOB, now=1007.0)
     assert _observe(monkeypatch, JOB, now=1008.0) == 0
@@ -158,8 +181,53 @@ def test_the_label_prefers_the_open_envelopes_command_text(monkeypatch):
     assert row["label"] == "bin/task run --label 'nightly render'"
 
 
-def test_observe_once_survives_an_unreadable_proc(monkeypatch):
+def test_an_empty_process_tree_makes_no_writes(monkeypatch):
     monkeypatch.setattr(observer, "_live_shells", lambda: {"term-1": SHELL})
     monkeypatch.setattr(proc_tree, "snapshot", lambda: {})
     monkeypatch.setattr(observer, "_envelopes_for", lambda _key: [])
     assert observer.observe_once(now=1000.0) == 0
+
+
+# --- _envelopes_for: the real function, against a real log file ------------
+#
+# Every test above monkeypatches `_envelopes_for` away, so the incremental-
+# tail-plus-whole-parse design, the 64 KB cap, and the `offset < prev` reset
+# never actually run anywhere else. These two exercise the real thing.
+
+
+def test_envelopes_for_pairs_a_start_and_end_line_across_two_reads(tmp_path, monkeypatch):
+    path = tmp_path / "term-x.log"
+    monkeypatch.setattr(shell_hook, "log_path", lambda _key: path)
+    path.write_text("start\t1000.0\t1\t\techo hi\n")
+    # First read: only the `start` line exists, so the command is still open.
+    first = observer._envelopes_for("term-x")
+    assert len(first) == 1
+    assert first[0]["text"] == "echo hi"
+    assert first[0]["end"] is None
+    # The `end` line arrives on a LATER poll, appended to the same file. A
+    # naive parse-each-chunk implementation would see only this line on the
+    # second read and pair nothing; the bounded whole-buffer reparse must
+    # still join it to the `start` line from the first read.
+    with path.open("a") as f:
+        f.write("end\t1001.0\t1\t\t0\n")
+    second = observer._envelopes_for("term-x")
+    assert len(second) == 1
+    assert second[0]["text"] == "echo hi"
+    assert second[0]["end"] == 1001.0
+    assert second[0]["exit_code"] == 0
+    assert second[0]["outcome_known"] is True
+
+
+def test_envelopes_for_resets_when_the_log_is_replaced_by_a_shorter_one(tmp_path, monkeypatch):
+    path = tmp_path / "term-y.log"
+    monkeypatch.setattr(shell_hook, "log_path", lambda _key: path)
+    path.write_text("start\t1000.0\t1\t\told long command that just finished\n"
+                     "end\t1001.0\t1\t\t0\n")
+    observer._envelopes_for("term-y")          # advance the offset past this file
+    # A new shell for the same terminal key replaces the log with a shorter
+    # one. The next read must reset the buffer to just the new content, not
+    # return misaligned bytes (or silently concatenate stale + new text).
+    path.write_text("start\t2000.0\t2\t\tnew cmd\n")
+    result = observer._envelopes_for("term-y")
+    assert len(result) == 1
+    assert result[0]["text"] == "new cmd"

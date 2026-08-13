@@ -172,7 +172,36 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
                                          # (possibly hours-old) creation
                                          # stamp while it waits its turn to
                                          # be finalized by mark().
-                                         extra={"producer_ms": _now_ms()},
+                                         #
+                                         # pid: None (not merely omitted)
+                                         # RETIRES a pid set earlier by
+                                         # set_watch_pid/create_promise. The
+                                         # producer just reported success —
+                                         # its watched process is EXPECTED
+                                         # to be gone now, so a leftover pid
+                                         # would let the next liveness sweep
+                                         # "confirm" the very death that is
+                                         # actually a normal exit and flip
+                                         # this row to `interrupted`, which
+                                         # then steals task_push's dedup key
+                                         # from the real `done` push mark()
+                                         # fires shortly after — the user's
+                                         # only notification would say "lost
+                                         # track" for a task that succeeded.
+                                         # `extra` is only ever .update()d by
+                                         # upsert, never had keys removed, so
+                                         # this can't be done by omission.
+                                         # Convention (extra["pid"]): key
+                                         # ABSENT = a pid was never known;
+                                         # key present as None = a pid WAS
+                                         # known and has been deliberately
+                                         # retired. Both route to
+                                         # task_liveness._confirm_alive's
+                                         # `if not pid: return None` —
+                                         # "no confirmation available",
+                                         # never a death claim.
+                                         extra={"producer_ms": _now_ms(),
+                                                "pid": None},
                                          detail=f"finished (exit {int(exit_code)}) — "
                                                 "follow-up turn pending")
                 except Exception:  # noqa: BLE001
@@ -204,13 +233,24 @@ def set_watch_pid(promise_id: str, os_pid: int) -> bool:
                     # its "running" default and silently revive a row the
                     # sweeper had already marked stalled.
                     cur = task_registry.get(f"followup:{promise_id}")
-                    task_registry.upsert(
-                        f"followup:{promise_id}",
-                        kind=("auto" if p.get("origin") == "auto" else "followup"),
-                        source="followup",
-                        state=(cur["state"] if cur else "running"),
-                        detail=(cur["detail"] if cur else ""),
-                        extra={"pid": int(os_pid)})
+                    if cur is None:
+                        # No registry row to mirror onto (pruned past
+                        # RETAIN_TERMINAL_S, or a restart before reseed).
+                        # Skip the upsert entirely rather than resurrecting
+                        # a bare row with no label/session_key -- the pid IS
+                        # persisted on disk (above) and reseed_registry / the
+                        # next real producer event carries it forward once a
+                        # row exists again. The on-disk update still
+                        # happened, so this is still a success.
+                        pass
+                    else:
+                        task_registry.upsert(
+                            f"followup:{promise_id}",
+                            kind=("auto" if p.get("origin") == "auto" else "followup"),
+                            source="followup",
+                            state=cur["state"],
+                            detail=cur["detail"],
+                            extra={"pid": int(os_pid)})
                 except Exception:  # noqa: BLE001
                     _log.warning("task_registry mirror failed for promise %s",
                                 promise_id, exc_info=True)
@@ -368,11 +408,29 @@ def reseed_registry() -> int:
         try:
             # producer_ms uses the promise's own `created` stamp -- NOT a
             # fresh _now_ms() here -- so a restart doesn't reset a stalled
-            # row's quiet clock. pid is included only when watch_pid is
-            # actually known; the key stays ABSENT otherwise (never
-            # {"pid": None}), same contract as create_promise's mirror.
-            extra = {"producer_ms": int(p.get("created") or 0)}
-            if p.get("watch_pid"):
+            # row's quiet clock. A missing/falsy `created` (a corrupt
+            # on-disk record) must NOT invent producer_ms=0 -- that would
+            # read as "no update in decades" for a row that may be brand
+            # new. Omit the key entirely instead, same no-confirmation
+            # fallback (rec["updated"]) every producer-less record already
+            # gets. pid is included only when watch_pid is actually known;
+            # the key stays ABSENT otherwise (never {"pid": None} --
+            # ABSENT means never known, None means retired, see
+            # record_completion), same contract as create_promise's mirror.
+            extra: dict = {}
+            if p.get("created"):
+                extra["producer_ms"] = int(p["created"])
+            if p.get("pinged"):
+                # Restart-shaped instance of the same Critical fixed in
+                # record_completion: a pinged promise's producer already
+                # reported completion, so its watch_pid is EXPECTED to be
+                # gone by now. Carrying it forward here would let a
+                # liveness sweep landing before the followup sweeper's own
+                # resolution "confirm" a normal exit as death. Retired
+                # (None), not omitted -- same convention as
+                # record_completion.
+                extra["pid"] = None
+            elif p.get("watch_pid"):
                 extra["pid"] = int(p["watch_pid"])
             task_registry.upsert(f"followup:{p['id']}",
                                  kind=("auto" if p.get("origin") == "auto" else "followup"),

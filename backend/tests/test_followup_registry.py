@@ -197,6 +197,85 @@ def test_reseed_registry_omits_pid_key_when_watch_pid_absent():
     assert "pid" not in (mirrored["extra"] or {})
 
 
+def test_set_watch_pid_is_a_noop_when_no_registry_row_exists():
+    # Restart-shaped: the promise store survives, the in-memory registry
+    # does not (RETAIN_TERMINAL_S pruning, or a restart before reseed).
+    # set_watch_pid must not resurrect a bare row with no label/session_key
+    # -- it should just persist the on-disk pid and skip the mirror.
+    rec = _mk()
+    task_registry.reset_for_tests()
+    assert followup.set_watch_pid(rec["id"], 999) is True
+    assert task_registry.get(f"followup:{rec['id']}") is None
+    assert followup.get_promise(rec["id"])["watch_pid"] == 999
+
+
+# --- Fix round 1 CRITICAL: a normally-completing watched process must not
+# read as "lost track" -----------------------------------------------------
+#
+# record_completion leaves the registry mirror at state="running" (the
+# follow-up turn is still pending) -- but upsert only ever .update()s
+# `extra`, so a pid written by set_watch_pid can never be removed by a plain
+# upsert. Left in place, the NEXT liveness sweep sees a pid that just
+# legitimately exited, "confirms" it dead, and flips the row to
+# `interrupted` -- claiming the task was lost track of when it actually
+# succeeded. Worse: that terminal upsert claims task_push's (id, created)
+# dedup key, so the LATER correct `done` transition (via mark()) gets
+# deduped away -- the user's only notification says "lost track", never
+# "finished". record_completion must retire the pid (extra={"pid": None})
+# so a completed-but-not-yet-marked row reads as "no confirmation
+# available" (routes to `stalled`, never `interrupted`), exactly like a
+# row that never had a pid at all.
+
+
+def test_record_completion_retires_the_pid():
+    rec = _mk()
+    followup.set_watch_pid(rec["id"], 4242)
+    followup.record_completion(rec["id"], exit_code=0, duration_s=1.0, tail="ok")
+    mirrored = task_registry.get(f"followup:{rec['id']}")
+    assert mirrored["extra"]["pid"] is None
+
+
+def test_completed_auto_task_never_reads_as_lost_track():
+    """THE critical regression: real dead pid (the watched process
+    legitimately exited), real sweep_once(), real task_push dedup -- proves
+    the full production trace the review found. A completed auto task must
+    reach `done` WITHOUT ever passing through `interrupted`, and must
+    produce exactly one push whose body describes completion, not loss."""
+    import subprocess
+
+    from backend import task_liveness, task_push
+
+    task_push.reset_for_tests()
+
+    dead = subprocess.Popen(["true"])
+    dead.wait()  # definitely-dead, definitely-reaped -- exactly what a
+                 # normally-exited watched process looks like to the sweeper
+
+    rec = followup.create_promise("sid", "skey", "bwg 571 pull", 0, origin="auto")
+    followup.set_watch_pid(rec["id"], dead.pid)
+
+    # The process the promise was watching exits normally -- this is what
+    # launch_sniffer._watch_and_complete does the instant _pid_alive goes
+    # False.
+    followup.record_completion(rec["id"], exit_code=0, duration_s=5.0, tail="ok")
+
+    # A sweep landing in the window before mark() fires must NOT claim
+    # death for a row whose producer just reported success.
+    task_liveness.sweep_once()
+    assert task_registry.get(f"followup:{rec['id']}")["state"] != "interrupted"
+
+    # The followup sweeper (or the /complete endpoint) eventually fires
+    # mark() -- simulated directly here, matching fire_followup's own call.
+    followup.mark(rec["id"], "completed")
+    assert task_registry.get(f"followup:{rec['id']}")["state"] == "done"
+
+    pushes = task_push.pending_for_tests()
+    assert len(pushes) == 1
+    body = pushes[0]["body"].lower()
+    assert "finished" in body
+    assert "lost track" not in body and "unknown" not in body
+
+
 def test_reseed_registry_producer_ms_uses_created_not_a_fresh_now(monkeypatch):
     # A restart must not reset a stalled row's quiet clock: producer_ms has
     # to be the promise's own `created` stamp, never "now" at reseed time.
@@ -206,3 +285,39 @@ def test_reseed_registry_producer_ms_uses_created_not_a_fresh_now(monkeypatch):
     followup.reseed_registry()
     mirrored = task_registry.get(f"followup:{rec['id']}")
     assert mirrored["extra"]["producer_ms"] == rec["created"]
+
+
+def test_reseed_registry_retires_pid_for_an_already_pinged_promise():
+    # Restart-shaped instance of the SAME critical bug fixed above for
+    # record_completion: a promise whose watched process already reported
+    # completion (pinged) before the restart, but hasn't been mark()'d yet,
+    # must not have its now-stale watch_pid carried forward by reseed. A
+    # liveness sweep landing in the window between reseed_registry() and
+    # the followup sweeper's own resolution of this promise must not
+    # "confirm" a normal exit as death.
+    rec = followup.create_promise("sid", "skey", "restart mid-flight", 3600,
+                                  watch_pid=4242)
+    followup.record_completion(rec["id"], exit_code=0, duration_s=1.0, tail="ok")
+    task_registry.reset_for_tests()
+    followup.reseed_registry()
+    mirrored = task_registry.get(f"followup:{rec['id']}")
+    assert mirrored["extra"]["pid"] is None
+
+
+def test_reseed_registry_missing_created_does_not_invent_a_producer_ms():
+    # A corrupt on-disk record with no `created` stamp must not produce an
+    # absurd producer_ms of epoch-0 ("no update in Nh" for a brand-new row)
+    # -- omit the key entirely and let the sweeper fall back to `updated`,
+    # the same no-confirmation-available path every other producer-less
+    # record already takes.
+    rec = followup.create_promise("sid", "skey", "corrupt record", 0)
+    with followup._LOCK:
+        data = followup._load()
+        for p in data["promises"]:
+            if p["id"] == rec["id"]:
+                del p["created"]
+        followup._save(data)
+    task_registry.reset_for_tests()
+    followup.reseed_registry()
+    mirrored = task_registry.get(f"followup:{rec['id']}")
+    assert "producer_ms" not in (mirrored["extra"] or {})

@@ -191,6 +191,34 @@ def test_cancel_all_stops_watchers(monkeypatch):
     assert launch_sniffer._ACTIVE == set()
 
 
+def test_watch_and_complete_wires_the_discovered_pid_onto_the_promise(monkeypatch):
+    # Statically the wiring in _watch_and_complete is unambiguous, but it's
+    # wrapped in try/except Exception (deliberately -- a mirror hiccup must
+    # never break the watch) and every OTHER test here fakes create_promise,
+    # so the real followup.set_watch_pid executes against an unpersisted
+    # promise id, returns False, and nothing observes it. A wrong function
+    # name, wrong arity, or swapped argument order would still pass all
+    # 1377+ other tests. Spy on set_watch_pid directly and assert it's
+    # called with exactly the promise id _run created and the pid _find_pid
+    # discovered -- this is the seam the fix-round-1 Critical lived behind.
+    created = _capture_promises(monkeypatch)
+    calls = []
+    monkeypatch.setattr(launch_sniffer.followup, "set_watch_pid",
+                        lambda promise_id, os_pid: calls.append((promise_id, os_pid)) or True)
+    monkeypatch.setattr(launch_sniffer.followup, "record_completion",
+                        lambda pid, **kw: True)
+    monkeypatch.setattr(launch_sniffer, "_find_pid", _async_return(4242))
+    monkeypatch.setattr(launch_sniffer, "_pid_alive", lambda pid, core: False)
+
+    async def main():
+        assert launch_sniffer.on_tool_start(SK, "Bash", "nohup ./render.sh &") is True
+        await asyncio.sleep(0.2)
+
+    asyncio.run(main())
+    assert len(created) == 1
+    assert calls == [(created[0]["id"], 4242)]
+
+
 def test_rearm_watch_dedupes_against_active(monkeypatch):
     import asyncio
     pings = []

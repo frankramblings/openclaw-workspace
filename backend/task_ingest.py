@@ -198,16 +198,31 @@ def _upsert_attached(row_id: str, native: dict, updated_epoch: float,
                      session_key: str | None) -> None:
     """Write a producer's DETAIL onto an observed row. State is the observer's
     unless the producer reports its own terminal word — the one claim a
-    producer is entitled to make about its own ending."""
+    producer is entitled to make about its own ending, and only when the
+    attach itself is pid-proven (task_merge.state_for already withholds the
+    terminal word for a session-only attach). The label is withheld the same
+    way: a session attach is soft evidence (the only live observed row in
+    this chat, not proof this producer IS that job) and must not relabel it."""
     cur = task_registry.get(row_id)
     if cur is None:
         return
-    state = task_merge.state_for(native, row_id) or cur["state"]
+    terminal = task_merge.state_for(native, row_id)
+    # Same stale-evidence rule _upsert_native enforces for its own rows: once
+    # the row is confirmed dead (`interrupted`), a producer file that keeps
+    # advancing must not resurrect its pct/detail unless it is now reporting
+    # its own terminal word — "interrupted, 87%, encoding" reads as alive.
+    if cur["state"] == "interrupted" and terminal is None:
+        return
+    state = terminal or cur["state"]
+    if task_merge.attach_method(native, row_id) == "pid":
+        label = str(native.get("label") or "") or cur["label"]
+    else:
+        label = cur["label"]
     if (cur.get("extra") or {}).get("native") == native and cur["state"] == state:
         return
     task_registry.upsert(
         row_id, kind=cur["kind"], source=cur["source"],
-        label=str(native.get("label") or "") or cur["label"],
+        label=label,
         session_key=session_key or cur.get("session_key"),
         state=state,
         pct=native.get("pct"), eta=native.get("eta"),

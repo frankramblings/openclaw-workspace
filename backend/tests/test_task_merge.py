@@ -87,3 +87,63 @@ def test_an_attached_producers_own_terminal_word_does_apply():
     task_merge.target_for({"id": "x", "pid": 300}, "chat-1")
     assert task_merge.state_for({"id": "x", "status": "completed"}, row) == "done"
     assert task_merge.state_for({"id": "x", "status": "error"}, row) == "failed"
+
+
+# --- Review round 1: a stale binding must not survive its row going terminal
+#
+# `--id nightly` (a stable, caller-chosen producer id) is the real shape on
+# this box. A finished row is retained by task_registry for RETAIN_TERMINAL_S
+# (900s), so `task_registry.get(bound)` keeps returning it long after it
+# closed. Without this fix a second run reusing the same id would attach to
+# the FIRST run's now-finished row instead of the fresh live one the observer
+# created for it.
+
+
+def test_a_bound_producer_re_derives_after_its_row_goes_terminal():
+    row_a = _observed("observed:200:20", subtree=(200,))
+    assert task_merge.target_for({"id": "nightly", "pid": 200}, "chat-1") == row_a
+    task_registry.upsert(row_a, kind="observed", source="observed", state="done",
+                         extra={"pid": 200, "subtree": [200], "observed": True})
+    row_b = _observed("observed:500:50", subtree=(500,))
+    # Same producer id, same session, but a NEW live row — the stale binding
+    # to the finished row must be dropped, not honored.
+    assert task_merge.target_for({"id": "nightly", "pid": 500}, "chat-1") == row_b
+
+
+def test_a_bound_producers_own_terminal_word_still_reaches_its_finished_row():
+    # The other half of the same fix: a producer's OWN final word must still
+    # land on the row it actually ran with, even a beat after that row
+    # already closed (e.g. the observer got there first).
+    row = _observed()
+    assert task_merge.target_for({"id": "x", "pid": 300}, "chat-1") == row
+    task_registry.upsert(row, kind="observed", source="observed", state="done",
+                         extra={"pid": 200, "subtree": [200, 300, 400], "observed": True})
+    assert task_merge.target_for({"id": "x", "pid": 300, "status": "completed"},
+                                 "chat-1") == row
+
+
+# --- Review round 1: attachment strength must follow evidence quality -----
+#
+# "Exactly one live observed row in this chat" is only the absence of a
+# second candidate, not proof this producer IS that row's job. A pid found in
+# the row's subtree is proof. Only the pid-proven kind may declare the row's
+# outcome.
+
+
+def test_only_a_pid_proven_attach_may_impose_a_terminal_state():
+    row_pid = _observed("observed:200:20", subtree=(200, 300))
+    row_session = _observed("observed:600:60", subtree=(600,), session_key="chat-2")
+    assert task_merge.target_for({"id": "p", "pid": 300}, "chat-1") == row_pid
+    assert task_merge.target_for({"id": "s"}, "chat-2") == row_session
+    assert task_merge.state_for({"id": "p", "status": "completed"}, row_pid) == "done"
+    assert task_merge.state_for({"id": "s", "status": "completed"}, row_session) is None
+
+
+def test_attach_method_reports_which_evidence_bound_the_producer():
+    row_pid = _observed("observed:200:20", subtree=(200, 300))
+    row_session = _observed("observed:600:60", subtree=(600,), session_key="chat-2")
+    task_merge.target_for({"id": "p", "pid": 300}, "chat-1")
+    task_merge.target_for({"id": "s"}, "chat-2")
+    assert task_merge.attach_method({"id": "p"}, row_pid) == "pid"
+    assert task_merge.attach_method({"id": "s"}, row_session) == "session"
+    assert task_merge.attach_method({"id": "unbound"}, row_pid) is None

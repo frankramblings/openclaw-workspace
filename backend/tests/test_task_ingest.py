@@ -339,3 +339,86 @@ def test_an_attached_taskfile_writes_into_the_observed_row(tmp_path, monkeypatch
     assert rows[0]["pct"] == 42.0
     assert rows[0]["detail"] == "encoding"
     assert rows[0]["state"] == "running"
+    # Pin the partial-extra contract: `_upsert_attached` passes only
+    # native/updated_epoch/producer_ms, so task_registry.upsert's dict.update
+    # merge must leave the observer's own pid/subtree/observed keys intact.
+    # A regression to a full-extra write would silently wipe these and no
+    # other assertion here would catch it.
+    assert rows[0]["extra"]["subtree"] == [200, 300]
+    assert rows[0]["extra"]["observed"] is True
+
+
+def test_a_session_attached_taskfile_does_not_overwrite_the_observed_rows_label(
+        tmp_path, monkeypatch):
+    # bin/task start writes no pid at all, so this can only attach by
+    # sessionKey — soft evidence (the only live observed row in this chat,
+    # not proof this producer IS that job). It may contribute pct/detail but
+    # must never relabel the row.
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         label="bin/task run", session_key="chat-1",
+                         state="running",
+                         extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    tasks = tmp_path / "share" / "tasks" / "render"
+    tasks.mkdir(parents=True)
+    (tasks / "progress.json").write_text(json.dumps(
+        {"id": "render", "label": "a completely different label", "status": "running",
+         "pct": 10.0, "sessionKey": "chat-1", "detail": "uploading"}))
+    monkeypatch.setattr(task_ingest, "_taskfiles_dir", lambda: tmp_path / "share" / "tasks")
+    monkeypatch.setattr(task_ingest, "_jobs_dir", lambda: tmp_path / "nojobs")
+    task_ingest.scan_once()
+    rows = task_registry.list_tasks()
+    assert [r["id"] for r in rows] == ["observed:200:20"]
+    assert rows[0]["label"] == "bin/task run"
+    assert rows[0]["pct"] == 10.0
+    assert rows[0]["detail"] == "uploading"
+
+
+def test_a_session_attached_taskfiles_completed_does_not_close_the_observed_row(
+        tmp_path, monkeypatch):
+    # The other half of the soft-attach fix: even the producer's own terminal
+    # word must not close a row it only reached by sessionKey guesswork — the
+    # observed process could still be running.
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         label="bin/task run", session_key="chat-1",
+                         state="running",
+                         extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    tasks = tmp_path / "share" / "tasks" / "render"
+    tasks.mkdir(parents=True)
+    (tasks / "progress.json").write_text(json.dumps(
+        {"id": "render", "label": "render", "status": "completed", "pct": 100.0,
+         "sessionKey": "chat-1", "detail": "done"}))
+    monkeypatch.setattr(task_ingest, "_taskfiles_dir", lambda: tmp_path / "share" / "tasks")
+    monkeypatch.setattr(task_ingest, "_jobs_dir", lambda: tmp_path / "nojobs")
+    task_ingest.scan_once()
+    rec = task_registry.get("observed:200:20")
+    assert rec["state"] == "running"
+
+
+def test_upsert_attached_skips_a_non_terminal_write_onto_an_interrupted_row():
+    # Same stale-evidence rule _upsert_native enforces: once the observer has
+    # confirmed the row dead (`interrupted`), a producer file that keeps
+    # advancing must not resurrect its pct/detail — "interrupted, 87%,
+    # encoding" reads as alive. Calls _upsert_attached directly (the same
+    # pattern the sticky-death guard tests above use for _upsert_native) so
+    # the guard is pinned regardless of how target_for's own sticky-drop
+    # logic happens to route on any given scan.
+    task_registry.reset_for_tests()
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         label="bin/task run", session_key="chat-1",
+                         state="interrupted",
+                         detail="lost track of this process; outcome unknown",
+                         extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    task_ingest._upsert_attached(
+        "observed:200:20",
+        {"id": "render", "status": "running", "pct": 87.0, "detail": "encoding"},
+        updated_epoch=1000.0, session_key="chat-1")
+    rec = task_registry.get("observed:200:20")
+    assert rec["state"] == "interrupted"
+    assert rec["pct"] is None
+    assert rec["detail"] == "lost track of this process; outcome unknown"

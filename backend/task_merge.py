@@ -18,7 +18,24 @@ producer keeps its own row rather than being attached to a guess.
 
 Attachment is sticky: once a producer has been bound to a row, it keeps that
 row even after its pid leaves the subtree (a chain collapses toward its root as
-children exit, and the producer's detail is still about the same job).
+children exit, and the producer's detail is still about the same job). But
+sticky is bounded, not permanent: the binding is honored only while the row is
+still live, or the producer is reporting its own terminal word on this pass —
+a caller-chosen id (`--id nightly`) can be reused for a brand-new run while the
+finished row from the LAST run is still inside its RETAIN_TERMINAL_S retention
+window, and `task_registry.get` would otherwise keep returning that finished
+row for up to 15 minutes, letting a new run's detail land on an already-closed
+one. A stale binding is dropped and re-derived from scratch instead.
+
+Not every attach is equally trustworthy, either. A pid found in the row's
+subtree is proof — nothing else in this chat could BE that subtree. "Exactly
+one live observed row in this chat" is much weaker: it is only the absence of
+a second candidate, not evidence this producer IS that row's job (the observer
+surfaces a row for any long-lived command, not just `bin/task` chains). So a
+session-fallback attach is SOFT: it may contribute pct/eta/detail, but it may
+never relabel the row or declare its outcome — only a pid-proven attach has
+that authority. `attach_method` reports which kind of attach is in effect so
+callers (task_ingest's `_upsert_attached`) can tell the difference.
 """
 from __future__ import annotations
 
@@ -26,7 +43,8 @@ from . import task_registry
 from .task_ingest import normalize_terminal
 
 _LIVE = ("running", "stalled")
-_BOUND: dict[str, str] = {}        # producer task id -> observed row id
+# producer task id -> (observed row id, "pid" | "session")
+_BOUND: dict[str, tuple[str, str]] = {}
 
 
 def reset_for_tests() -> None:
@@ -44,14 +62,25 @@ def target_for(native: dict, session_key: str | None) -> str | None:
     pid_raw = native.get("pid")
     tid = str(native.get("id") or "")
     bound = _BOUND.get(tid)
-    if bound and task_registry.get(bound) is not None:
-        return bound
+    if bound is not None:
+        row_id, _method = bound
+        row = task_registry.get(row_id)
+        # Honor the existing binding only while the row is still live, or the
+        # producer is reporting its own terminal word THIS pass (so a
+        # producer's final "completed" still lands on the row it actually
+        # ran with, even a beat after that row closed). Otherwise the id may
+        # have been reused for a NEW run — drop the stale entry and re-derive
+        # from the currently-live rows below, same as a never-bound producer.
+        if row is not None and (row["state"] in _LIVE
+                                 or normalize_terminal(native.get("status")) is not None):
+            return row_id
+        del _BOUND[tid]
     rows = _live_observed()
     if str(pid_raw or "").isdigit():
         pid = int(pid_raw)
         for row in rows:
             if pid in ((row.get("extra") or {}).get("subtree") or []):
-                _BOUND[tid] = row["id"]
+                _BOUND[tid] = (row["id"], "pid")
                 return row["id"]
         return None
     if not session_key:
@@ -59,13 +88,29 @@ def target_for(native: dict, session_key: str | None) -> str | None:
     candidates = [r for r in rows if r.get("session_key") == session_key]
     if len(candidates) != 1:
         return None               # zero: nothing to attach to. two: a guess.
-    _BOUND[tid] = candidates[0]["id"]
+    _BOUND[tid] = (candidates[0]["id"], "session")
     return candidates[0]["id"]
+
+
+def attach_method(native: dict, row_id: str) -> str | None:
+    """"pid" or "session" — the evidence that currently binds native's
+    producer id to row_id, or None if it is not (currently) bound to row_id
+    at all. "pid" means the producer's own pid was found inside the row's
+    subtree (full authority). "session" means only sessionKey matched (soft
+    evidence: group membership, not proof of identity)."""
+    bound = _BOUND.get(str(native.get("id") or ""))
+    if bound is None or bound[0] != row_id:
+        return None
+    return bound[1]
 
 
 def state_for(native: dict, row_id: str) -> str | None:
     """The state an attached producer is allowed to impose: its own terminal
     word, or None meaning "leave the observer's state alone". A producer may
     say "I finished"; it may not say "I am alive" — that claim belongs to
-    whoever can see the process."""
+    whoever can see the process. A session-fallback attach is soft evidence
+    and never gets to declare the row's outcome — only a pid-proven attach
+    (attach_method == "pid") may."""
+    if attach_method(native, row_id) != "pid":
+        return None
     return normalize_terminal(native.get("status"))

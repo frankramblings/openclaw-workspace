@@ -95,6 +95,21 @@ export function reduceFeedEvent(map, ev, tombs = null) {
       ? { ...ev.task, _fgSeen: prev._fgSeen } : ev.task);
     return next;
   }
+  // A row the server RETRACTED (backend/task_registry.remove(notify=True)):
+  // the producer's own row was merged into an observed row, so the same job
+  // is now shown by a different id. Only a full snapshot used to drop a
+  // running row the server no longer has, and snapshots arrive on connect
+  // and on a visibility resume — not per event — so without this branch the
+  // merged-away row stayed on screen forever, frozen at its last percentage,
+  // beside the row that replaced it. No tombstone: this id is not "finished
+  // and already shown", it is gone, and a genuinely new run under the same
+  // id must still be able to appear.
+  if (ev.type === 'task.remove' && ev.id) {
+    if (!map.has(ev.id)) return map;
+    const next = new Map(map);
+    next.delete(ev.id);
+    return next;
+  }
   return map;
 }
 

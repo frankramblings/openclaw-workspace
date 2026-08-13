@@ -37,6 +37,8 @@ SCHEMA_VERSION = 1
 RETAIN_TERMINAL_S = 900           # terminal tasks age out of list_tasks()
 SUBSCRIBER_QUEUE_MAX = 512        # bound a stalled/half-open SSE client's queue
 _TERMINAL = ("done", "failed", "interrupted")
+# The one non-record frame the feed carries. See remove(notify=True).
+REMOVE_EVENT = "task.remove"
 
 _LOCK = threading.Lock()
 _TASKS: dict[str, dict] = {}
@@ -80,12 +82,19 @@ def _ledger_save(data: dict) -> None:
     fsutil.atomic_write_json(_ledger_file(), data)
 
 
-def _fanout(rec: dict) -> None:
+def _fanout(msg: dict) -> None:
+    """Wake every subscriber with one frame.
+
+    A frame is either a task RECORD (the update path — copied per subscriber
+    so a consumer mutating it can't corrupt registry internals) or a small
+    EVENT dict carrying its own "type" key, which records never have
+    (currently just the removal frame). tasks_route._stream_gen frames each
+    by that same shape."""
     with _LOCK:
         subs = list(_SUBSCRIBERS)
     for q in subs:
         try:
-            q.put_nowait(_copy(rec))
+            q.put_nowait(dict(msg) if msg.get("type") else _copy(msg))
         except asyncio.QueueFull:
             # A stalled/half-open consumer: drop it rather than accumulate
             # unbounded copies. This bounds memory AND ends the stream — the
@@ -209,9 +218,9 @@ def list_tasks(session_key: str | None = None,
 def has_session_registration_since(session_key: str, since_ms: int,
                                    exclude_kinds: tuple = ("auto",)) -> bool:
     """True if the session has any registration newer than `since_ms`,
-    ignoring `exclude_kinds`. The launch sniffer's grace check and the
-    promise guard both ask this exact question: "did anything REAL get
-    registered for this chat since the turn/launch started?"."""
+    ignoring `exclude_kinds`. The promise guard asks this exact question:
+    "did anything REAL get registered for this chat since the turn
+    started?"."""
     for rec in list_tasks(session_key=session_key):
         if rec.get("kind") in exclude_kinds:
             continue
@@ -220,11 +229,26 @@ def has_session_registration_since(session_key: str, since_ms: int,
     return False
 
 
-def remove(task_id: str) -> None:
-    """Drop a record without an event — ingest reconciliation for a task
-    whose backing file vanished after it already went terminal."""
+def remove(task_id: str, *, notify: bool = False) -> None:
+    """Drop a record. Silent by default — that covers ingest reconciliation
+    for a task whose backing file vanished after it already went TERMINAL,
+    where telling the client nothing is safe because it prunes terminal rows
+    on its own foreground timer.
+
+    `notify=True` fans out a removal frame instead, and is REQUIRED whenever
+    a still-LIVE row is dropped (task_ingest's merge-attach: the producer
+    joined an observed row, so its own row must go). Nothing else in the SSE
+    vocabulary can retract a row — `task.update` only says "this row
+    changed", and the client discards a running row the server omits only
+    when a full `tasks.snapshot` arrives (on connect and on a visibility
+    resume, not per event). A silent removal here therefore leaves every
+    connected client holding the row forever, frozen at whatever percentage
+    it last had: the duplicate-row-plus-frozen-bar failure this wave exists
+    to remove."""
     with _LOCK:
-        _TASKS.pop(task_id, None)
+        existed = _TASKS.pop(task_id, None) is not None
+    if notify and existed:
+        _fanout({"type": REMOVE_EVENT, "id": task_id})
 
 
 def subscribe() -> "asyncio.Queue":

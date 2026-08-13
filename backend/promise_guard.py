@@ -4,7 +4,7 @@
 promise this project exists to kill. Heuristic BY DESIGN: a false positive
 costs one quiet amber card; a false negative costs nothing beyond the status
 quo. The registration check counts ANY kind (including auto — tracked is
-tracked); the sniffer's own grace check is the one that excludes auto.
+tracked, regardless of who registered it).
 """
 from __future__ import annotations
 
@@ -46,13 +46,11 @@ def check_turn(session_key: str, final_text: str) -> str | None:
         phrase = detect_promise(final_text)
         if not phrase:
             return None
-        # Late import: avoids any import-order question at module load time.
-        # launch_sniffer does not import promise_guard, so there's no cycle —
-        # this could be a top-level import too, but keeping it local keeps
-        # the two modules' load order independent of each other.
-        from . import launch_sniffer
-        if launch_sniffer.grace_pending(session_key):
-            return None   # a sniffed launch will register (or a real one already did)
+        # The launch sniffer's grace window used to suppress this card while a
+        # sniffed launch decided whether to register. The observer registers on
+        # evidence within OBSERVE_THRESHOLD_S instead, and the registration
+        # check below already asks the only question that matters: did anything
+        # real get registered for this chat since the turn started?
         info = turn_state.inflight_for(session_key)
         since_ms = (info or {}).get("started", 0)
         if task_registry.has_session_registration_since(session_key, since_ms,

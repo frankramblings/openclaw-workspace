@@ -315,3 +315,265 @@ def test_interrupted_record_with_zero_epoch_file_stays_interrupted(tmp_path):
         "taskfile:z7", {"id": "z7", "status": "running", "label": "z7"},
         updated_epoch=0.0, now=rec["updated"] / 1000.0 + 10, session_key=None)
     assert task_registry.get("taskfile:z7")["state"] == "interrupted"
+
+
+def test_an_attached_taskfile_writes_into_the_observed_row(tmp_path, monkeypatch):
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         label="bin/task run", session_key="chat-1",
+                         state="running",
+                         extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    tasks = tmp_path / "share" / "tasks" / "render"
+    tasks.mkdir(parents=True)
+    (tasks / "progress.json").write_text(json.dumps(
+        {"id": "render", "label": "render", "status": "running", "pct": 42.0,
+         "pid": 300, "sessionKey": "chat-1", "detail": "encoding"}))
+    monkeypatch.setattr(task_ingest, "_taskfiles_dir", lambda: tmp_path / "share" / "tasks")
+    monkeypatch.setattr(task_ingest, "_jobs_dir", lambda: tmp_path / "nojobs")
+    task_ingest.scan_once()
+    rows = task_registry.list_tasks()
+    # One row, not two: the producer's detail on the observer's row.
+    assert [r["id"] for r in rows] == ["observed:200:20"]
+    assert rows[0]["pct"] == 42.0
+    assert rows[0]["detail"] == "encoding"
+    assert rows[0]["state"] == "running"
+    # Pin the partial-extra contract: `_upsert_attached` passes only
+    # native/updated_epoch/producer_ms, so task_registry.upsert's dict.update
+    # merge must leave the observer's own pid/subtree/observed keys intact.
+    # A regression to a full-extra write would silently wipe these and no
+    # other assertion here would catch it.
+    assert rows[0]["extra"]["subtree"] == [200, 300]
+    assert rows[0]["extra"]["observed"] is True
+
+
+# --- Final review, Critical 1: the merge must RETRACT the row it drops ----
+#
+# `bin/task run` writes progress.json within a second of starting, so the
+# 0.5s scan gives the producer its own row well before the observer surfaces
+# the chain at 6s. When the merge then attaches, dropping that already-
+# broadcast row silently left every connected client holding it forever,
+# frozen at the pct it had at second 6, beside the observed row — the
+# duplicate row this wave exists to remove.
+
+
+def test_a_merge_attach_retracts_the_producers_own_row_on_the_stream(tmp_path):
+    import asyncio
+
+    from backend import task_merge
+
+    async def main():
+        task_merge.reset_for_tests()
+        d = task_ingest._taskfiles_dir() / "render"
+        d.mkdir(parents=True)
+        (d / "progress.json").write_text(json.dumps(
+            {"id": "render", "label": "render", "status": "running", "pct": 12.0,
+             "pid": 300, "sessionKey": "chat-1", "detail": "starting"}))
+        # Second ~1: no observed row exists yet, so the producer opens its own
+        # and every connected client is told about it.
+        task_ingest.scan_once()
+        assert task_registry.get("taskfile:render") is not None
+        # Second 6: the observer surfaces the chain the producer runs inside.
+        task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                             label="bin/task run", session_key="chat-1",
+                             state="running",
+                             extra={"pid": 200, "subtree": [200, 300],
+                                    "observed": True})
+        q = task_registry.subscribe()
+        try:
+            task_ingest.scan_once()
+            frames = [q.get_nowait() for _ in range(q.qsize())]
+            assert task_registry.get("taskfile:render") is None
+            assert {"type": task_registry.REMOVE_EVENT,
+                    "id": "taskfile:render"} in frames
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
+def test_a_vanished_terminal_rows_removal_stays_silent(tmp_path):
+    # The wave-1 call site keeps its exact behavior: the row is already
+    # terminal and the client prunes those on its own foreground timer, so
+    # there is nothing to retract and no frame to spend.
+    import asyncio
+
+    async def main():
+        _write_job(tmp_path, "finished", status="done")
+        task_ingest.scan_once()
+        (task_ingest._jobs_dir() / "finished.json").unlink()
+        q = task_registry.subscribe()
+        try:
+            task_ingest.scan_once()
+            assert task_registry.get("job:finished") is None
+            assert q.qsize() == 0
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
+def test_a_pidless_taskfile_keeps_its_own_row_beside_the_observed_one(
+        tmp_path, monkeypatch):
+    # Final review, Important 2: bin/task start writes no pid at all, and the
+    # sessionKey fallback that used to attach it is gone — "the only live
+    # observed row in this chat" is not evidence that THIS producer is that
+    # job. Two rows (what main shows today) beats one row wearing another
+    # command's label and percentage.
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         label="bin/task run", session_key="chat-1",
+                         state="running",
+                         extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    tasks = tmp_path / "share" / "tasks" / "render"
+    tasks.mkdir(parents=True)
+    (tasks / "progress.json").write_text(json.dumps(
+        {"id": "render", "label": "a completely different label", "status": "running",
+         "pct": 10.0, "sessionKey": "chat-1", "detail": "uploading"}))
+    monkeypatch.setattr(task_ingest, "_taskfiles_dir", lambda: tmp_path / "share" / "tasks")
+    monkeypatch.setattr(task_ingest, "_jobs_dir", lambda: tmp_path / "nojobs")
+    task_ingest.scan_once()
+    rows = {r["id"]: r for r in task_registry.list_tasks()}
+    assert set(rows) == {"observed:200:20", "taskfile:render"}
+    # The observed row is untouched: no foreign label, no foreign percentage.
+    assert rows["observed:200:20"]["label"] == "bin/task run"
+    assert rows["observed:200:20"]["pct"] is None
+    assert rows["observed:200:20"]["detail"] == ""
+    # The producer still gets its own honest row.
+    assert rows["taskfile:render"]["pct"] == 10.0
+    assert rows["taskfile:render"]["label"] == "a completely different label"
+
+
+def test_a_pidless_taskfiles_completed_does_not_close_the_observed_row(
+        tmp_path, monkeypatch):
+    # The other half: a pidless producer's own terminal word closes ITS row,
+    # never the observed one it merely shares a chat with — that process may
+    # well still be running.
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         label="bin/task run", session_key="chat-1",
+                         state="running",
+                         extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    tasks = tmp_path / "share" / "tasks" / "render"
+    tasks.mkdir(parents=True)
+    (tasks / "progress.json").write_text(json.dumps(
+        {"id": "render", "label": "render", "status": "completed", "pct": 100.0,
+         "sessionKey": "chat-1", "detail": "done"}))
+    monkeypatch.setattr(task_ingest, "_taskfiles_dir", lambda: tmp_path / "share" / "tasks")
+    monkeypatch.setattr(task_ingest, "_jobs_dir", lambda: tmp_path / "nojobs")
+    task_ingest.scan_once()
+    assert task_registry.get("observed:200:20")["state"] == "running"
+    assert task_registry.get("taskfile:render")["state"] == "done"
+
+
+def test_upsert_attached_skips_a_non_terminal_write_onto_an_interrupted_row():
+    # Same stale-evidence rule _upsert_native enforces: once the observer has
+    # confirmed the row dead (`interrupted`), a producer file that keeps
+    # advancing must not resurrect its pct/detail — "interrupted, 87%,
+    # encoding" reads as alive. Calls _upsert_attached directly (the same
+    # pattern the sticky-death guard tests above use for _upsert_native) so
+    # the guard is pinned regardless of how target_for's own sticky-drop
+    # logic happens to route on any given scan.
+    #
+    # Final review, Minor: the task_merge._BOUND reset its neighbours all do
+    # was missing here, so this producer ran with whatever binding an earlier
+    # test happened to leave behind, and the assertions below would have kept
+    # passing on the strength of an UNBOUND producer imposing nothing rather
+    # than on the guard. Bind it for real — by pid, on a live row — and only
+    # then let the observer's verdict land, so the skip is the guard's doing.
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         label="bin/task run", session_key="chat-1",
+                         state="running",
+                         extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    assert task_merge.target_for({"id": "render", "pid": 300},
+                                 "chat-1") == "observed:200:20"
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         state="interrupted",
+                         detail="lost track of this process; outcome unknown")
+    task_ingest._upsert_attached(
+        "observed:200:20",
+        {"id": "render", "pid": 300, "status": "running", "pct": 87.0,
+         "detail": "encoding"},
+        updated_epoch=1000.0, session_key="chat-1")
+    rec = task_registry.get("observed:200:20")
+    assert rec["state"] == "interrupted"
+    assert rec["pct"] is None
+    assert rec["detail"] == "lost track of this process; outcome unknown"
+
+
+def test_only_a_bound_producers_error_reaches_the_observed_row():
+    # After the sessionKey fallback was disabled, only pid-proven bindings
+    # carry authority. This asserts that when a bound producer writes an error,
+    # it lands on its own bound row but not on unrelated rows.
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    row_pid = task_registry.upsert(
+        "observed:200:20", kind="observed", source="observed",
+        label="bin/task run", session_key="chat-1", state="running",
+        extra={"pid": 200, "subtree": [200, 300], "observed": True})["id"]
+    row_other = task_registry.upsert(
+        "observed:600:60", kind="observed", source="observed",
+        label="bin/task run", session_key="chat-2", state="running",
+        extra={"pid": 600, "subtree": [600], "observed": True})["id"]
+    assert task_merge.target_for({"id": "p", "pid": 300}, "chat-1") == row_pid
+    assert task_merge.target_for({"id": "s"}, "chat-2") is None
+    task_ingest._upsert_attached(
+        row_pid, {"id": "p", "pid": 300, "status": "error", "error": "boom"},
+        updated_epoch=1000.0, session_key="chat-1")
+    assert task_registry.get(row_pid)["error"] == "boom"
+    assert task_registry.get(row_pid)["state"] == "failed"
+    assert task_registry.get(row_other)["error"] == ""
+
+
+# --- Task 7: the observer runs inside the ingest loop ---------------------
+
+
+@pytest.fixture()
+def fresh_tick(monkeypatch):
+    """tick() paces itself off module-level clocks. Without resetting them a
+    test would inherit the previous test's `now` and silently skip the observe
+    it is asserting on — passing for the wrong reason."""
+    monkeypatch.setattr(task_ingest, "_last_observe", 0.0)
+    monkeypatch.setattr(task_ingest, "_last_sweep", 0.0)
+
+
+def test_the_ingest_loop_observes_before_it_scans(monkeypatch, fresh_tick):
+    # Ordering is load-bearing: a chain surfaced by the observer must be in the
+    # registry before the merge looks for an attach target in the same pass.
+    from backend import observer
+    calls = []
+    monkeypatch.setattr(observer, "observe_once", lambda: calls.append("observe"))
+    monkeypatch.setattr(task_ingest, "scan_once", lambda: calls.append("scan"))
+    task_ingest.tick(now=1000.0)
+    assert calls == ["observe", "scan"]
+
+
+def test_the_observer_is_skipped_when_disabled(monkeypatch, fresh_tick):
+    from backend import config, observer
+    monkeypatch.setattr(config, "OBSERVER_ENABLED", False)
+    calls = []
+    monkeypatch.setattr(observer, "observe_once", lambda: calls.append("observe"))
+    monkeypatch.setattr(task_ingest, "scan_once", lambda: calls.append("scan"))
+    task_ingest.tick(now=1000.0)
+    assert calls == ["scan"]
+
+
+def test_a_failing_observer_never_stops_the_scan(monkeypatch, fresh_tick):
+    from backend import observer
+    calls = []
+
+    def boom():
+        calls.append("observe")
+        raise RuntimeError("proc walk exploded")
+
+    monkeypatch.setattr(observer, "observe_once", boom)
+    monkeypatch.setattr(task_ingest, "scan_once", lambda: calls.append("scan"))
+    task_ingest.tick(now=1000.0)
+    assert calls == ["observe", "scan"]

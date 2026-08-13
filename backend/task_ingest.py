@@ -16,6 +16,10 @@ Reconciliation contract:
     all, so an idle scan emits zero SSE frames and never touches `updated`
   vanished file, record was running → interrupted (honesty rule)
   vanished file, record was terminal → remove() (native sweeps clean up)
+  taskfile whose pid sits inside a live observed row's subtree → its detail is
+    written INTO that row and the standalone row is removed WITH a removal
+    event (remove(notify=True) — a live row the clients already hold); the
+    observer keeps owning state (task_merge)
   lingering file, record already interrupted (liveness sweeper confirmed
     death by pid) → SKIPPED as long as the file hasn't been written since
     that verdict, so the next 0.5s scan can't undo it by re-reading the same
@@ -49,7 +53,7 @@ import json
 import logging
 import time
 
-from . import task_liveness, task_push
+from . import config, observer, task_liveness, task_push
 from . import task_registry
 from .jobs import JOBS_DIR
 from .workspace_files import workspace_root
@@ -93,6 +97,13 @@ def normalize_terminal(raw) -> str | None:
     it is not terminal. Unknown words are NOT terminal — and, per _state_for,
     also not indefinitely running."""
     return _TERMINAL_ALIASES.get(str(raw or "").strip().lower())
+
+
+# Imported here, not at the top: task_merge imports normalize_terminal from
+# this module, so this name must already be bound when task_merge executes.
+# The reverse direction is safe either way — task_ingest only calls into
+# task_merge at runtime, never at import time.
+from . import task_merge  # noqa: E402
 
 
 def _stale_terminal(native: dict, updated_epoch: float, now: float) -> bool:
@@ -184,6 +195,47 @@ def _upsert_native(task_id: str, native: dict, updated_epoch: float,
     )
 
 
+def _upsert_attached(row_id: str, native: dict, updated_epoch: float,
+                     session_key: str | None) -> None:
+    """Write a producer's DETAIL onto an observed row. State is the observer's
+    unless the producer reports its own terminal word — the one claim a
+    producer is entitled to make about its own ending (task_merge.state_for
+    owns that gate).
+
+    Every attach that reaches here is pid-proven: task_merge.target_for binds
+    on ancestry alone since the final review disabled the sessionKey
+    fallback, so the producer's own pid was found inside this row's subtree.
+    That is why its label and error are written through unconditionally —
+    the earlier two-tier version existed only to withhold them from a
+    session-guessed attach, which can no longer happen."""
+    cur = task_registry.get(row_id)
+    if cur is None:
+        return
+    terminal = task_merge.state_for(native, row_id)
+    # Same stale-evidence rule _upsert_native enforces for its own rows: once
+    # the row is confirmed dead (`interrupted`), a producer file that keeps
+    # advancing must not resurrect its pct/detail unless it is now reporting
+    # its own terminal word — "interrupted, 87%, encoding" reads as alive.
+    if cur["state"] == "interrupted" and terminal is None:
+        return
+    state = terminal or cur["state"]
+    label = str(native.get("label") or "") or cur["label"]
+    error = str(native.get("error") or "")
+    if (cur.get("extra") or {}).get("native") == native and cur["state"] == state:
+        return
+    task_registry.upsert(
+        row_id, kind=cur["kind"], source=cur["source"],
+        label=label,
+        session_key=session_key or cur.get("session_key"),
+        state=state,
+        pct=native.get("pct"), eta=native.get("eta"),
+        detail=str(native.get("detail") or ""),
+        error=error,
+        extra={"native": native, "updated_epoch": updated_epoch,
+               "producer_ms": int(updated_epoch * 1000)},
+    )
+
+
 def scan_once() -> None:
     now = time.time()
     seen: set[str] = set()
@@ -223,6 +275,22 @@ def scan_once() -> None:
                     and now - mtime > RUNNING_MAX_AGE_S):
                 continue
             tid = f"taskfile:{native['id']}"
+            session_key = native.get("sessionKey") or None
+            row_id = task_merge.target_for(native, session_key)
+            if row_id:
+                # The producer joined a row that already exists. Drop its own
+                # row if it had one, so the feed never shows the same job twice
+                # — remove(), not an interrupted upsert: the job did not stop,
+                # its row moved. notify=True because this row is LIVE and was
+                # already broadcast (bin/task writes progress.json within a
+                # second; the observer does not surface until 6s), so a silent
+                # drop would leave every client holding it forever, frozen at
+                # the pct it had when the merge happened.
+                if task_registry.get(tid) is not None:
+                    task_registry.remove(tid, notify=True)
+                seen.add(row_id)
+                _upsert_attached(row_id, native, mtime, session_key)
+                continue
             seen.add(tid)
             _upsert_native(tid, native, mtime, now,
                            session_key=native.get("sessionKey") or None)
@@ -247,24 +315,43 @@ def scan_once() -> None:
             task_registry.remove(rec["id"])
 
 
-async def ingest_loop() -> None:
-    """Run scan_once forever, sweeping liveness every SWEEP_S. Failures are
-    logged, never fatal — a bad pass self-heals on the next one. The sweep runs
-    AFTER the scan so a file that just went terminal is already reconciled and
-    the sweeper sees the same truth the feed does."""
-    last_sweep = 0.0
-    while True:
+_last_observe = 0.0
+_last_sweep = 0.0
+
+
+def tick(now: float) -> None:
+    """One pass of the ingest loop. `now` is a monotonic-style clock supplied
+    by the caller so the cadence is testable without sleeping.
+
+    Order matters: OBSERVE first, so a chain that just crossed the surfacing
+    threshold is already a registry row when the scan's merge looks for an
+    attach target in this same pass. Otherwise a producer would open its own
+    row and the two would coexist for a full poll interval — visible to the
+    user as the duplicate row this wave exists to remove."""
+    global _last_observe, _last_sweep
+    if config.OBSERVER_ENABLED and now - _last_observe >= config.OBSERVER_POLL_S:
+        _last_observe = now
         try:
-            scan_once()
+            observer.observe_once()
         except Exception:  # noqa: BLE001
-            log.warning("task_ingest: scan failed", exc_info=True)
-        now = time.monotonic()
-        if now - last_sweep >= task_liveness.SWEEP_S:
-            last_sweep = now
-            try:
-                task_liveness.sweep_once()
-            except Exception:  # noqa: BLE001
-                log.warning("task_ingest: liveness sweep failed", exc_info=True)
+            log.warning("task_ingest: observe failed", exc_info=True)
+    try:
+        scan_once()
+    except Exception:  # noqa: BLE001
+        log.warning("task_ingest: scan failed", exc_info=True)
+    if now - _last_sweep >= task_liveness.SWEEP_S:
+        _last_sweep = now
+        try:
+            task_liveness.sweep_once()
+        except Exception:  # noqa: BLE001
+            log.warning("task_ingest: liveness sweep failed", exc_info=True)
+
+
+async def ingest_loop() -> None:
+    """Run tick() forever. Failures are logged inside tick, never fatal — a bad
+    pass self-heals on the next one."""
+    while True:
+        tick(time.monotonic())
         try:
             await task_push.drain()
         except Exception:  # noqa: BLE001

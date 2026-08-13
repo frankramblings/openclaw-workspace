@@ -102,7 +102,7 @@ def test_promise_without_watch_pid_carries_no_pid():
 
 # --- set_watch_pid: the seam that makes watch_pid load-bearing -------------
 #
-# launch_sniffer only learns the real pid AFTER create_promise already ran,
+# A watched process's real pid is not always known when create_promise runs,
 # so without this function the liveness sweeper never gets a pid to check
 # for a followup row -- exactly how the original 16-hour "running, 0%"
 # zombies survived. See test_followup_zombie_confirmed_dead_only_after_set_watch_pid
@@ -167,8 +167,8 @@ def test_followup_zombie_confirmed_dead_only_after_set_watch_pid():
     assert task_liveness.sweep_once() == 0
     assert task_registry.get(f"followup:{rec['id']}")["state"] == "running"
 
-    # This is the seam launch_sniffer._watch_and_complete exercises right
-    # after _find_pid resolves a real pid.
+    # This is the seam a pid-discovering watcher exercises right after it
+    # resolves the real pid for an already-created promise.
     assert followup.set_watch_pid(rec["id"], dead.pid) is True
 
     # Now the sweeper can confirm death for itself.
@@ -259,9 +259,9 @@ def test_completed_auto_task_never_reads_as_lost_track(monkeypatch):
     rec = followup.create_promise("sid", "skey", "bwg 571 pull", 0, origin="auto")
     followup.set_watch_pid(rec["id"], dead.pid)
 
-    # The process the promise was watching exits normally -- this is what
-    # launch_sniffer._watch_and_complete does the instant _pid_alive goes
-    # False.
+    # The process the promise was watching exits normally -- this is what a
+    # pid watcher's completion callback does the instant it sees the pid go
+    # dead.
     followup.record_completion(rec["id"], exit_code=0, duration_s=5.0, tail="ok")
 
     # A sweep landing in the window before mark() fires must NOT claim

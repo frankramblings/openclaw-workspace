@@ -213,11 +213,11 @@ def record_completion(pid: str, *, exit_code: int, duration_s: float,
 
 def set_watch_pid(promise_id: str, os_pid: int) -> bool:
     """Attach the OS pid a promise is waiting on, once something actually
-    learns it. launch_sniffer only discovers the pid after create_promise has
-    already run, so this is the seam that makes Task 2's watch_pid field
-    load-bearing: without it the liveness sweeper has nothing to check for
-    followup rows and can never confirm death, which is exactly how the
-    original 16-hour `running, 0%` zombies survived."""
+    learns it. The pid is not always known when create_promise runs, so this
+    is the seam that makes Task 2's watch_pid field load-bearing: without it
+    the liveness sweeper has nothing to check for followup rows and can
+    never confirm death, which is exactly how the original 16-hour
+    `running, 0%` zombies survived."""
     with _LOCK:
         data = _load()
         for p in data.get("promises", []):
@@ -387,20 +387,11 @@ def reseed_registry() -> int:
     in-memory; promises are the flagship producer and must be visible
     immediately, not on their next state change).
 
-    Auto-origin promises that are pending and unpinged also get their
-    process watcher RE-ARMED here: the watcher is an asyncio Task, which
-    doesn't survive a restart, so without this a promise from a launch that
-    finished (or is still running) across the restart would sit mute until
-    its 4h deadline backstop, instead of completing the moment it actually
-    exits. Pinged promises don't need this — they're already in the
-    sweeper's recorded-but-unfired path (due_promises() fires them directly).
-
-    Late import: launch_sniffer imports followup at module level (it calls
-    followup.create_promise / record_completion), so importing it at
-    followup's module level here would be a cycle. The in-function import
-    breaks it.
+    Auto promises no longer exist: the launch sniffer that created them was
+    retired in wave 2a, and observed rows carry the work it used to guess at.
+    Any auto promise still on disk from before the retirement reseeds as a
+    normal row and resolves on its own deadline.
     """
-    from . import launch_sniffer
     n = 0
     for p in list_promises():
         if p.get("state") != "pending":
@@ -443,13 +434,6 @@ def reseed_registry() -> int:
         except Exception:  # noqa: BLE001
             _log.warning("followup registry reseed failed for %s", p.get("id"),
                         exc_info=True)
-        if p.get("origin") == "auto" and not p.get("pinged"):
-            try:
-                launch_sniffer.rearm_watch(p["id"], p.get("label", ""),
-                                           session_key=p.get("session_key"))
-            except Exception:  # noqa: BLE001
-                _log.warning("launch_sniffer re-arm failed for %s", p.get("id"),
-                            exc_info=True)
     return n
 
 

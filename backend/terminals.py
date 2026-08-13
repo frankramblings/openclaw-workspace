@@ -118,22 +118,32 @@ def terminal_access_allowed(client_host: str | None, headers, *,
 
 def _hook_argv_env(shell: str, session_key: str, argv: list[str],
                    env: dict) -> tuple[list[str], dict]:
-    """Install observer 1 for bash, or leave the shell untouched.
+    """Install observer 1 for a shell we have a hook dialect for, or leave the
+    shell untouched.
 
     Runs BEFORE pty.fork() by contract — start() only chdirs and execs
     precomputed values in the child. Any failure here degrades coverage (the
     descendant scan still sees the processes) and must never stop a user's
-    terminal from opening."""
-    if not config.OBSERVER_ENABLED or os.path.basename(shell) != "bash":
+    terminal from opening.
+
+    Each shell takes its rc by its own flag: bash reads --rcfile, while fish
+    has no equivalent and instead evaluates --init-command after its config."""
+    dialect = shell_hook.shell_dialect(shell)
+    if not config.OBSERVER_ENABLED or dialect is None:
         return argv, env
     try:
-        rc = shell_hook.write_rc(session_key)
+        rc = shell_hook.write_rc(session_key, dialect)
     except OSError:
         log.warning("shell hook unavailable for %s; falling back to the "
                     "descendant scan", session_key, exc_info=True)
         return argv, env
     env = dict(env)
     env["HP_LOG"] = str(shell_hook.log_path(session_key))
+    if dialect == "fish":
+        # Single-quoted so a DATA_DIR containing spaces cannot split the
+        # argument; inside fish single quotes only \' and \\ are escapes.
+        quoted = str(rc).replace("\\", "\\\\").replace("'", "\\'")
+        return [shell, "--init-command", f"source '{quoted}'", "-i"], env
     return [shell, "--rcfile", str(rc), "-i"], env
 
 

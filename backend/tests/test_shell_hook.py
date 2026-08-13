@@ -1,6 +1,8 @@
+import contextlib
 import os
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -198,3 +200,112 @@ def test_a_real_bash_writes_a_parseable_envelope(data_dir, tmp_path):
     assert cmds[0]["exit_code"] == 0
     assert cmds[0]["end"] - cmds[0]["start"] >= 0.15
     assert cmds[0]["outcome_known"] is True
+
+
+# --- fish -------------------------------------------------------------------
+# Frank's workspace terminal runs fish, not bash, so on his box observer 1 was
+# never installed at all: rows appeared from the descendant scan but could
+# never reach done/failed, because the exit code only ever comes from the hook.
+# A 2026-08-13 pty probe confirmed fish exposes the same three facts bash does
+# — fish_preexec gives the command text, fish_postexec gives $status, and
+# $last_pid behaves exactly like bash's $!, including going STALE on the next
+# command — so the shared parser needs no fish-specific branch.
+
+
+def test_shell_dialect_recognizes_the_shells_we_have_hooks_for():
+    assert shell_hook.shell_dialect("/bin/bash") == "bash"
+    assert shell_hook.shell_dialect("/usr/bin/fish") == "fish"
+
+
+def test_shell_dialect_declines_shells_we_cannot_hook():
+    # Not a failure: these fall back to the descendant scan, which still sees
+    # the processes. Coverage degrades, nothing breaks.
+    assert shell_hook.shell_dialect("/usr/bin/zsh") is None
+    assert shell_hook.shell_dialect("/bin/sh") is None
+    assert shell_hook.shell_dialect("") is None
+
+
+def test_the_fish_rc_hangs_its_hooks_on_fishs_own_events(data_dir):
+    body = shell_hook.write_rc("sess-1", "fish").read_text()
+    assert "--on-event fish_preexec" in body
+    assert "--on-event fish_postexec" in body
+
+
+def test_the_fish_end_hook_captures_status_before_anything_else(data_dir):
+    # $status is clobbered by the next command run inside the handler, so the
+    # capture has to be the first statement in the function body.
+    body = shell_hook.write_rc("sess-1", "fish").read_text()
+    post = body.split("--on-event fish_postexec", 1)[1]
+    first = [ln.strip() for ln in post.splitlines()[1:] if ln.strip()][0]
+    assert first == "set -l rc $status"
+
+
+def test_the_fish_rc_logs_the_same_five_fields_as_bash(data_dir):
+    body = shell_hook.write_rc("sess-1", "fish").read_text()
+    assert "'start\\t%s\\t%s\\t%s\\t%s\\n'" in body
+    assert "'end\\t%s\\t%s\\t%s\\t%s\\n'" in body
+    assert "$last_pid" in body          # fish's $!
+
+
+def test_each_dialect_gets_its_own_rc_file(data_dir):
+    assert shell_hook.rc_path("sess-1", "bash").suffix == ".rc"
+    assert shell_hook.rc_path("sess-1", "fish").suffix == ".fish"
+    assert shell_hook.rc_path("sess-1", "bash") != shell_hook.rc_path("sess-1", "fish")
+
+
+def test_both_dialects_share_one_log(data_dir):
+    # The observer reads a session's log without knowing which shell wrote it,
+    # because the format is identical.
+    assert shell_hook.log_path("sess-1") == shell_hook.log_path("sess-1")
+
+
+def test_write_rc_truncates_the_log_for_fish_too(data_dir):
+    log = shell_hook.log_path("sess-1")
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text("stale\n" * 100)
+    shell_hook.write_rc("sess-1", "fish")
+    assert log.read_text() == ""
+
+
+def test_an_unknown_dialect_is_refused_rather_than_guessed(data_dir):
+    with pytest.raises(ValueError):
+        shell_hook.write_rc("sess-1", "zsh")
+
+
+@pytest.mark.skipif(not shutil.which("fish"), reason="fish required")
+def test_a_real_fish_writes_a_parseable_envelope(data_dir):
+    # fish's preexec/postexec events do NOT fire for `fish -c` or for a piped
+    # stdin — they need a real terminal — so this drives fish on a pty, which
+    # is also exactly how PtySession spawns it in production.
+    import pty
+
+    rc = shell_hook.write_rc("realfish", "fish")
+    log = shell_hook.log_path("realfish")
+    pid, fd = pty.fork()
+    if pid == 0:                                    # child: become fish
+        os.environ["HP_LOG"] = str(log)
+        os.environ["TERM"] = "xterm-256color"
+        os.execvp("fish", ["fish", "--init-command", f"source '{rc}'", "-i"])
+        os._exit(127)
+    try:
+        deadline = time.time() + 30
+        os.write(fd, b"sleep 0.2\n")
+        time.sleep(2)
+        os.write(fd, b"exit\n")
+        while time.time() < deadline:
+            try:
+                if not os.read(fd, 65536):
+                    break
+            except OSError:
+                break
+    finally:
+        os.close(fd)
+        with contextlib.suppress(ChildProcessError):
+            os.waitpid(pid, 0)
+
+    cmds = [c for c in shell_hook.parse(log.read_text()) if "sleep 0.2" in c["text"]]
+    assert len(cmds) == 1
+    assert cmds[0]["exit_code"] == 0
+    assert cmds[0]["end"] - cmds[0]["start"] >= 0.15
+    assert cmds[0]["outcome_known"] is True
+    assert cmds[0]["bg_pid"] is None

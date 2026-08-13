@@ -200,9 +200,11 @@ def _upsert_attached(row_id: str, native: dict, updated_epoch: float,
     unless the producer reports its own terminal word — the one claim a
     producer is entitled to make about its own ending, and only when the
     attach itself is pid-proven (task_merge.state_for already withholds the
-    terminal word for a session-only attach). The label is withheld the same
-    way: a session attach is soft evidence (the only live observed row in
-    this chat, not proof this producer IS that job) and must not relabel it."""
+    terminal word for a session-only attach). The label and error are
+    withheld the same way: a session attach is soft evidence (the only live
+    observed row in this chat, not proof this producer IS that job) and must
+    not relabel the row or put an error claim onto it — only pct/eta/detail
+    flow through on a session-only attach."""
     cur = task_registry.get(row_id)
     if cur is None:
         return
@@ -214,10 +216,13 @@ def _upsert_attached(row_id: str, native: dict, updated_epoch: float,
     if cur["state"] == "interrupted" and terminal is None:
         return
     state = terminal or cur["state"]
-    if task_merge.attach_method(native, row_id) == "pid":
+    pid_bound = task_merge.attach_method(native, row_id) == "pid"
+    if pid_bound:
         label = str(native.get("label") or "") or cur["label"]
+        error = str(native.get("error") or "")
     else:
         label = cur["label"]
+        error = ""          # task_registry.upsert never clobbers with empty
     if (cur.get("extra") or {}).get("native") == native and cur["state"] == state:
         return
     task_registry.upsert(
@@ -227,7 +232,7 @@ def _upsert_attached(row_id: str, native: dict, updated_epoch: float,
         state=state,
         pct=native.get("pct"), eta=native.get("eta"),
         detail=str(native.get("detail") or ""),
-        error=str(native.get("error") or ""),
+        error=error,
         extra={"native": native, "updated_epoch": updated_epoch,
                "producer_ms": int(updated_epoch * 1000)},
     )

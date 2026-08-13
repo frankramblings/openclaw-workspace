@@ -422,3 +422,31 @@ def test_upsert_attached_skips_a_non_terminal_write_onto_an_interrupted_row():
     assert rec["state"] == "interrupted"
     assert rec["pct"] is None
     assert rec["detail"] == "lost track of this process; outcome unknown"
+
+
+def test_a_session_attached_producers_error_does_not_reach_the_observed_row():
+    # Round-2 review: `error` slipped through the label/state gate — a
+    # session attach is soft evidence and must not put an error claim onto a
+    # row it never proved it owns, same as it must not relabel it. Only a
+    # pid-proven attach may write `error`.
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    row_pid = task_registry.upsert(
+        "observed:200:20", kind="observed", source="observed",
+        label="bin/task run", session_key="chat-1", state="running",
+        extra={"pid": 200, "subtree": [200, 300], "observed": True})["id"]
+    row_session = task_registry.upsert(
+        "observed:600:60", kind="observed", source="observed",
+        label="bin/task run", session_key="chat-2", state="running",
+        extra={"pid": 600, "subtree": [600], "observed": True})["id"]
+    assert task_merge.target_for({"id": "p", "pid": 300}, "chat-1") == row_pid
+    assert task_merge.target_for({"id": "s"}, "chat-2") == row_session
+    task_ingest._upsert_attached(
+        row_pid, {"id": "p", "pid": 300, "status": "error", "error": "boom"},
+        updated_epoch=1000.0, session_key="chat-1")
+    task_ingest._upsert_attached(
+        row_session, {"id": "s", "status": "error", "error": "boom"},
+        updated_epoch=1000.0, session_key="chat-2")
+    assert task_registry.get(row_pid)["error"] == "boom"
+    assert task_registry.get(row_session)["error"] == ""

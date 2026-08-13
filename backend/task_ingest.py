@@ -16,6 +16,9 @@ Reconciliation contract:
     all, so an idle scan emits zero SSE frames and never touches `updated`
   vanished file, record was running → interrupted (honesty rule)
   vanished file, record was terminal → remove() (native sweeps clean up)
+  taskfile whose pid (or session) matches a live observed row → its detail is
+    written INTO that row and the standalone row is removed; the observer keeps
+    owning state (task_merge)
   lingering file, record already interrupted (liveness sweeper confirmed
     death by pid) → SKIPPED as long as the file hasn't been written since
     that verdict, so the next 0.5s scan can't undo it by re-reading the same
@@ -93,6 +96,13 @@ def normalize_terminal(raw) -> str | None:
     it is not terminal. Unknown words are NOT terminal — and, per _state_for,
     also not indefinitely running."""
     return _TERMINAL_ALIASES.get(str(raw or "").strip().lower())
+
+
+# Imported here, not at the top: task_merge imports normalize_terminal from
+# this module, so this name must already be bound when task_merge executes.
+# The reverse direction is safe either way — task_ingest only calls into
+# task_merge at runtime, never at import time.
+from . import task_merge  # noqa: E402
 
 
 def _stale_terminal(native: dict, updated_epoch: float, now: float) -> bool:
@@ -184,6 +194,30 @@ def _upsert_native(task_id: str, native: dict, updated_epoch: float,
     )
 
 
+def _upsert_attached(row_id: str, native: dict, updated_epoch: float,
+                     session_key: str | None) -> None:
+    """Write a producer's DETAIL onto an observed row. State is the observer's
+    unless the producer reports its own terminal word — the one claim a
+    producer is entitled to make about its own ending."""
+    cur = task_registry.get(row_id)
+    if cur is None:
+        return
+    state = task_merge.state_for(native, row_id) or cur["state"]
+    if (cur.get("extra") or {}).get("native") == native and cur["state"] == state:
+        return
+    task_registry.upsert(
+        row_id, kind=cur["kind"], source=cur["source"],
+        label=str(native.get("label") or "") or cur["label"],
+        session_key=session_key or cur.get("session_key"),
+        state=state,
+        pct=native.get("pct"), eta=native.get("eta"),
+        detail=str(native.get("detail") or ""),
+        error=str(native.get("error") or ""),
+        extra={"native": native, "updated_epoch": updated_epoch,
+               "producer_ms": int(updated_epoch * 1000)},
+    )
+
+
 def scan_once() -> None:
     now = time.time()
     seen: set[str] = set()
@@ -223,6 +257,18 @@ def scan_once() -> None:
                     and now - mtime > RUNNING_MAX_AGE_S):
                 continue
             tid = f"taskfile:{native['id']}"
+            session_key = native.get("sessionKey") or None
+            row_id = task_merge.target_for(native, session_key)
+            if row_id:
+                # The producer joined a row that already exists. Drop its own
+                # row if it had one, so the feed never shows the same job twice
+                # — remove(), not an interrupted upsert: the job did not stop,
+                # its row moved.
+                if task_registry.get(tid) is not None:
+                    task_registry.remove(tid)
+                seen.add(row_id)
+                _upsert_attached(row_id, native, mtime, session_key)
+                continue
             seen.add(tid)
             _upsert_native(tid, native, mtime, now,
                            session_key=native.get("sessionKey") or None)

@@ -315,3 +315,27 @@ def test_interrupted_record_with_zero_epoch_file_stays_interrupted(tmp_path):
         "taskfile:z7", {"id": "z7", "status": "running", "label": "z7"},
         updated_epoch=0.0, now=rec["updated"] / 1000.0 + 10, session_key=None)
     assert task_registry.get("taskfile:z7")["state"] == "interrupted"
+
+
+def test_an_attached_taskfile_writes_into_the_observed_row(tmp_path, monkeypatch):
+    from backend import task_merge
+    task_registry.reset_for_tests()
+    task_merge.reset_for_tests()
+    task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                         label="bin/task run", session_key="chat-1",
+                         state="running",
+                         extra={"pid": 200, "subtree": [200, 300], "observed": True})
+    tasks = tmp_path / "share" / "tasks" / "render"
+    tasks.mkdir(parents=True)
+    (tasks / "progress.json").write_text(json.dumps(
+        {"id": "render", "label": "render", "status": "running", "pct": 42.0,
+         "pid": 300, "sessionKey": "chat-1", "detail": "encoding"}))
+    monkeypatch.setattr(task_ingest, "_taskfiles_dir", lambda: tmp_path / "share" / "tasks")
+    monkeypatch.setattr(task_ingest, "_jobs_dir", lambda: tmp_path / "nojobs")
+    task_ingest.scan_once()
+    rows = task_registry.list_tasks()
+    # One row, not two: the producer's detail on the observer's row.
+    assert [r["id"] for r in rows] == ["observed:200:20"]
+    assert rows[0]["pct"] == 42.0
+    assert rows[0]["detail"] == "encoding"
+    assert rows[0]["state"] == "running"

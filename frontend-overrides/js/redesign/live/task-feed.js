@@ -12,12 +12,43 @@ import { runtime } from './runtime.js';
 const STREAM = '/api/tasks/stream';
 const FALLBACK = '/api/tasks';
 
-export function reduceFeedEvent(map, ev) {
+// Ids of terminal rows this client has already SHOWN and then pruned. The
+// server retains terminal records for RETAIN_TERMINAL_S = 900s, and every
+// visibilitychange resume resnapshots unconditionally — so without a tombstone
+// every foregrounding inside that 15-minute window re-added every finished row
+// with a fresh 60s budget, and the same completed job replayed once per
+// app-switch. Bounded (insertion-ordered eviction) so it can't grow without
+// limit on a long-lived tab.
+export const TOMBSTONE_MAX = 256;
+
+export function rememberTombstone(tombs, id) {
+  if (!tombs) return;
+  tombs.delete(id);            // re-insert so recency drives eviction
+  tombs.add(id);
+  while (tombs.size > TOMBSTONE_MAX) {
+    tombs.delete(tombs.values().next().value);
+  }
+}
+
+// A tombstoned id is admitted again only when it is genuinely RUNNING: a
+// recurring producer id (bin/task --id pm-upload-ldwm) starting a new run must
+// still be able to finish visibly. Its tombstone is dropped at that point so
+// the new run gets a normal terminal display. A repeat of the same terminal
+// row is old news and stays buried.
+function _admit(t, tombs) {
+  if (!tombs || !tombs.has(t.id)) return true;
+  if (TERMINAL.has(t.state)) return false;
+  tombs.delete(t.id);
+  return true;
+}
+
+export function reduceFeedEvent(map, ev, tombs = null) {
   if (!ev || typeof ev !== 'object') return map;
   if (ev.type === 'tasks.snapshot' && Array.isArray(ev.tasks)) {
     const next = new Map();
     for (const t of ev.tasks) {
       if (!t || !t.id) continue;
+      if (!_admit(t, tombs)) continue;
       // Carry forward an existing _fgSeen stamp: any snapshot (including the
       // one a visibility resume gets from the stream) otherwise looks like a
       // brand-new sighting and restarts the terminal-row budget, so a job
@@ -53,6 +84,13 @@ export function reduceFeedEvent(map, ev) {
   if (ev.type === 'task.update' && ev.task && ev.task.id) {
     const next = new Map(map);
     const prev = map.get(ev.task.id);
+    // Deliberately NOT tombstone-gated. A task.update fires only on a real
+    // registry change, so it is never the replay source a resume snapshot is;
+    // blocking it would swallow a genuine late correction (interrupted -> done
+    // via task_ingest's terminal-file exemption) for a row already pruned. Any
+    // tombstone is cleared so the next snapshot can't yank the row back out
+    // mid-display.
+    if (tombs) tombs.delete(ev.task.id);
     next.set(ev.task.id, prev && prev._fgSeen != null && prev.state === ev.task.state
       ? { ...ev.task, _fgSeen: prev._fgSeen } : ev.task);
     return next;
@@ -84,12 +122,13 @@ export function markSeen(map, fgMs, visible) {
   return changed ? next : map;
 }
 
-export function pruneTerminal(map, fgMs, budgetMs = TERMINAL_FOREGROUND_MS) {
+export function pruneTerminal(map, fgMs, budgetMs = TERMINAL_FOREGROUND_MS, tombs = null) {
   let changed = false;
   const next = new Map();
   for (const [id, t] of map) {
     if (TERMINAL.has(t.state) && t._fgSeen != null && fgMs - t._fgSeen > budgetMs) {
       changed = true;
+      rememberTombstone(tombs, id);   // shown for its full budget; never replay it
       continue;
     }
     next.set(id, t);
@@ -98,6 +137,7 @@ export function pruneTerminal(map, fgMs, budgetMs = TERMINAL_FOREGROUND_MS) {
 }
 
 let _map = new Map();
+let _tombs = new Set();          // ids already shown for their full budget
 let _subs = new Set();
 let _es = null;
 let _backoff = 0;
@@ -125,7 +165,7 @@ function _list() {
 
 function _notify() {
   const fg = _foregroundMs();
-  _map = pruneTerminal(markSeen(_map, fg, _visible()), fg);
+  _map = pruneTerminal(markSeen(_map, fg, _visible()), fg, TERMINAL_FOREGROUND_MS, _tombs);
   const arr = _list();
   for (const cb of [..._subs]) {
     try { cb(arr); } catch (_) { /* one bad view can't break the feed */ }
@@ -133,7 +173,7 @@ function _notify() {
 }
 
 function _apply(ev) {
-  const next = reduceFeedEvent(_map, ev);
+  const next = reduceFeedEvent(_map, ev, _tombs);
   if (next !== _map) { _map = next; _notify(); }
 }
 
@@ -206,7 +246,7 @@ function _startPruneTimer() {
   if (_pruneTimer) return;
   _pruneTimer = setInterval(() => {
     const fg = _foregroundMs();
-    const next = pruneTerminal(markSeen(_map, fg, _visible()), fg);
+    const next = pruneTerminal(markSeen(_map, fg, _visible()), fg, TERMINAL_FOREGROUND_MS, _tombs);
     if (next !== _map) { _map = next; _notify(); }
   }, 10_000);
   if (_pruneTimer && typeof _pruneTimer.unref === 'function') _pruneTimer.unref();

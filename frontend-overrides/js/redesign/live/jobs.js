@@ -98,6 +98,8 @@ const CSS = `
 #live-jobs .lj-job.done{border-left-color:#3fbf6f}
 #live-jobs .lj-job.failed{border-left-color:#e5534b}
 #live-jobs .lj-job.stalled{border-left-color:#d8a24a}
+/* interrupted = outcome unknown, NOT a failure: neutral grey, never the red. */
+#live-jobs .lj-job.interrupted{border-left-color:#8a8a90}
 #live-jobs .lj-job.fading{opacity:0}
 #live-jobs .lj-top{display:flex;align-items:baseline;gap:6px;margin-bottom:5px}
 #live-jobs .lj-icon{flex:none;opacity:.8}
@@ -107,6 +109,7 @@ const CSS = `
 #live-jobs .lj-fill{height:100%;width:0;border-radius:3px;background:var(--accent,#5b9dff);transition:width .4s ease}
 #live-jobs .lj-job.done .lj-fill{background:#3fbf6f}
 #live-jobs .lj-job.failed .lj-fill{background:#e5534b}
+#live-jobs .lj-job.interrupted .lj-fill{background:#8a8a90}
 #live-jobs .lj-track.indet .lj-fill{width:35%;animation:lj-indet 1.3s ease-in-out infinite}
 @keyframes lj-indet{0%{margin-left:-35%}100%{margin-left:100%}}
 #live-jobs .lj-meta{display:flex;gap:8px;margin-top:5px;color:var(--muted,#9a9aa0);font-size:11.5px;
@@ -143,17 +146,23 @@ function currentThread() {
   try { return runtime?.state?.live?.chat?.activeId || null; } catch (_) { return null; }
 }
 
-function jobHtml(j, mine) {
+// Exported for node:test — the interrupted row's copy is a correctness claim,
+// not decoration, so it is pinned by a test rather than eyeballed.
+export function jobHtml(j, mine) {
   const cls = ['lj-job'];
   if (j.status === 'done') cls.push('done');
   else if (j.status === 'failed') cls.push('failed');
+  else if (j.status === 'interrupted') cls.push('interrupted');
   else if (j.stalled) cls.push('stalled');
   if (mine) cls.push('mine');
 
   const indet = j.status === 'running' && (j.pct == null);
+  // Never fill an interrupted bar to 100%: we did not see it finish. It stays
+  // frozen at the last measurement we actually took.
   const pct = j.status === 'done' ? 100 : (j.pct != null ? j.pct : 0);
   const pctLabel = j.status === 'done' ? '✓'
     : j.status === 'failed' ? '✕'
+    : j.status === 'interrupted' ? '—'
     : (j.pct != null ? `${Math.round(j.pct)}%` : '');
 
   const bytes = (j.bytesDone != null && j.bytesTotal)
@@ -165,6 +174,10 @@ function jobHtml(j, mine) {
     const r = fmtRate(j.rate); if (r) metaBits.push(r);
     const e = fmtEta(j.eta); if (e) metaBits.push('ETA ' + e);
     if (j.stalled) metaBits.length = 0, metaBits.push(`no update in ${j.stalled}s`);
+  } else if (j.status === 'interrupted') {
+    // Same wording as task_push._body and the in-chat row's badge, so the
+    // banner, the chat row and the overlay can never contradict each other.
+    metaBits.push('stopped · outcome unknown');
   }
 
   const meta = (metaBits.length || j.detail)
@@ -353,7 +366,16 @@ export function overlayJobs(records) {
       const upd = rec.extra && rec.extra.updated_epoch;
       j.stalled = j.stalled || (upd ? Math.max(1, Math.round(Date.now() / 1000 - upd)) : 1);
     }
-    else if (rec.state === 'interrupted') { j.status = 'failed'; j.error = j.error || 'interrupted by a backend restart'; }
+    // `interrupted` is its OWN outcome, never `failed`: no exit status was
+    // ever observed, so we neither claim one nor invent an explanation for it.
+    // (It used to arrive only from sweep_boot(), where "interrupted by a
+    // backend restart" was roughly true; the pid-confirmed-death sweeper made
+    // it the routine outcome of a process that simply went away.) The
+    // registry's own error text, if it has one, is left exactly as it is.
+    else if (rec.state === 'interrupted') {
+      j.status = 'interrupted';
+      j.detail = rec.detail || j.detail;
+    }
     else j.status = rec.state === 'done' ? 'done' : rec.state === 'failed' ? 'failed' : 'running';
     out.push(j);
   }

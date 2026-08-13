@@ -12,10 +12,18 @@ def anyio_backend():
     return "asyncio"
 
 
-def rec(tid="job:1", state="done", label="BwG 571 render", created=None):
+def rec(tid="job:1", state="done", label="BwG 571 render", created=None,
+        updated=None):
     return {"id": tid, "state": state, "label": label, "kind": "render",
             "session_key": "skey", "session_id": "sid", "error": "",
-            "created": created}
+            "created": created, "updated": updated}
+
+
+def slow(tid="job:1", state="done", **kw):
+    """A record whose run is comfortably longer than MIN_SUCCESS_S, so the
+    fast-success gate is not what any given test is measuring."""
+    return rec(tid, state, created=1_000_000,
+               updated=1_000_000 + int((task_push.MIN_SUCCESS_S + 60) * 1000), **kw)
 
 
 def test_done_queues_once():
@@ -144,6 +152,11 @@ async def test_followup_terminal_transition_queues_exactly_one_push(monkeypatch)
         return {"sent": 1}
 
     monkeypatch.setattr(push, "send", spy_send)
+    # This test is about push ROUTING (one hook, not two), not about the
+    # fast-success duration gate — the promise it drives resolves instantly, so
+    # disable the gate rather than have it silently decide the assertion.
+    # The gate itself is covered by test_a_fast_success_does_not_notify below.
+    monkeypatch.setattr(task_push, "MIN_SUCCESS_S", 0.0)
     task_push.reset_for_tests()
 
     promise = followup.create_promise("session-1", "session-key-1", "spec test", 0)
@@ -188,7 +201,100 @@ def test_pushed_lock_prevents_a_concurrent_double_enqueue():
 # --- Fix round 2: badge ordering ---------------------------------------------
 
 
-def test_followup_push_carries_the_post_increment_badge():
+# --- FINAL review, important 2: the first terminal state must not silence the
+# --- authoritative one ---------------------------------------------------------
+
+
+def test_a_real_exit_status_supersedes_lost_track():
+    """Within ONE ingest_loop iteration: scan_once reads a still-running file,
+    the process writes `done` and exits, sweep_once confirms the pid dead and
+    upserts `interrupted` (push "Lost track" claims the key), then 0.5s later
+    the terminal-file exemption applies `done`. Keying on the id alone meant
+    the WRONG content was the only push a successful job ever produced."""
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(slow("job:up", "interrupted")) is True
+    assert task_push.on_terminal(slow("job:up", "done")) is True
+    titles = [p["title"] for p in task_push.pending_for_tests()]
+    assert titles == ["Lost track", "Finished"]
+
+
+def test_lost_track_never_supersedes_a_real_exit_status():
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(slow("job:down", "done")) is True
+    assert task_push.on_terminal(slow("job:down", "interrupted")) is False
+    assert len(task_push.pending_for_tests()) == 1
+
+
+def test_exactly_one_upgrade_then_the_key_is_closed():
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(slow("job:once", "interrupted")) is True
+    assert task_push.on_terminal(slow("job:once", "failed")) is True
+    assert task_push.on_terminal(slow("job:once", "done")) is False
+    assert task_push.on_terminal(slow("job:once", "failed")) is False
+    assert len(task_push.pending_for_tests()) == 2
+
+
+def test_a_repeated_interrupted_is_not_an_upgrade():
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(slow("job:same", "interrupted")) is True
+    assert task_push.on_terminal(slow("job:same", "interrupted")) is False
+    assert len(task_push.pending_for_tests()) == 1
+
+
+def test_an_upgrade_pushes_even_for_a_fast_success():
+    """The duration gate must not strand a user on a false "Lost track"
+    banner: the correction always goes out, however short the run was."""
+    task_push.reset_for_tests()
+    fast = dict(created=1_000_000, updated=1_000_500)   # 0.5s
+    assert task_push.on_terminal(rec("job:fastup", "interrupted", **fast)) is True
+    assert task_push.on_terminal(rec("job:fastup", "done", **fast)) is True
+    assert [p["title"] for p in task_push.pending_for_tests()] == ["Lost track", "Finished"]
+
+
+# --- FINAL review, important 4b: minimum-duration gate, SUCCESS only ----------
+
+
+def test_a_fast_success_does_not_notify():
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(
+        rec("job:quick", "done", created=1_000_000, updated=1_000_000 + 5_000)) is False
+    assert task_push.pending_for_tests() == []
+
+
+def test_a_slow_success_notifies():
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(slow("job:long", "done")) is True
+
+
+def test_a_fast_failure_always_notifies():
+    """Asymmetric on purpose: a problem is worth knowing about immediately,
+    a fast success is noise."""
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(
+        rec("job:boom", "failed", created=1_000_000, updated=1_000_100)) is True
+    assert task_push.on_terminal(
+        rec("job:gone", "interrupted", created=1_000_000, updated=1_000_100)) is True
+    assert len(task_push.pending_for_tests()) == 2
+
+
+def test_an_undateable_success_is_never_suppressed_on_a_guess():
+    """No `updated` (or no `created`) means we do not know the duration. The
+    invariant runs both ways: we do not claim it was fast either."""
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(rec("job:nodur", "done")) is True
+    task_push.reset_for_tests()
+    assert task_push.on_terminal(rec("job:nocreate", "done", updated=1_000_000)) is True
+
+
+def test_a_suppressed_fast_success_never_notifies_later_either():
+    task_push.reset_for_tests()
+    fast = dict(created=1_000_000, updated=1_000_500)
+    assert task_push.on_terminal(rec("job:q2", "done", **fast)) is False
+    assert task_push.on_terminal(rec("job:q2", "done", **fast)) is False
+    assert task_push.pending_for_tests() == []
+
+
+def test_followup_push_carries_the_post_increment_badge(monkeypatch):
     """The queued push's badge must be the count AFTER mark_unseen ran for
     THIS completion, not before. Deliberately does NOT monkeypatch
     push.unseen_count (unlike test_badge_reflects_real_unseen_count above) —
@@ -199,6 +305,10 @@ def test_followup_push_carries_the_post_increment_badge():
     same way the round-2 review reproduced the bug."""
     from backend import followup
 
+    # Badge ORDERING is what's under test; the promise resolves instantly, so
+    # the fast-success gate (MIN_SUCCESS_S) is disabled here rather than left
+    # to silently decide the assertion. It is covered on its own below.
+    monkeypatch.setattr(task_push, "MIN_SUCCESS_S", 0.0)
     task_push.reset_for_tests()
     promise = followup.create_promise("session-1", "session-key-1", "badge test", 0)
     followup.mark(promise["id"], "completed", exit_code=0, duration_s=1.0)

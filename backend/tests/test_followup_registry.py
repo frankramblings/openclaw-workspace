@@ -235,7 +235,7 @@ def test_record_completion_retires_the_pid():
     assert mirrored["extra"]["pid"] is None
 
 
-def test_completed_auto_task_never_reads_as_lost_track():
+def test_completed_auto_task_never_reads_as_lost_track(monkeypatch):
     """THE critical regression: real dead pid (the watched process
     legitimately exited), real sweep_once(), real task_push dedup -- proves
     the full production trace the review found. A completed auto task must
@@ -245,6 +245,11 @@ def test_completed_auto_task_never_reads_as_lost_track():
 
     from backend import task_liveness, task_push
 
+    # This promise is created and completed within the same millisecond, so
+    # task_push's fast-success gate (MIN_SUCCESS_S) would otherwise decide the
+    # push assertion below instead of the interrupted-vs-done question actually
+    # under test. The gate has its own coverage in test_task_push.py.
+    monkeypatch.setattr(task_push, "MIN_SUCCESS_S", 0.0)
     task_push.reset_for_tests()
 
     dead = subprocess.Popen(["true"])

@@ -20,7 +20,16 @@ from . import push
 log = logging.getLogger(__name__)
 
 _TERMINAL = ("done", "failed", "interrupted")
-_PUSHED: set[str] = set()
+# key -> the STATE that was pushed (or suppressed) for it. Not a bare set: the
+# first terminal state to arrive used to claim the key and permanently silence
+# the authoritative one. Within ONE ingest_loop iteration, scan_once can read a
+# still-running file, the process then writes `done` and exits, sweep_once
+# confirms the pid dead and upserts `interrupted` (pushing "Lost track"), and
+# 0.5s later the terminal-file exemption applies `done` — which then returned
+# False. One push, wrong content, for a job that succeeded. Task 3b fixed that
+# shape for followup rows by retiring the pid; file-backed producers have no
+# equivalent, so it is fixed here instead.
+_PUSHED: dict[str, str] = {}
 # Guards the check-and-add on _PUSHED. upsert() is reachable from multiple
 # threads (file-backed producers via task_ingest's loop, the liveness
 # sweeper), so two concurrent terminal upserts of the SAME id could otherwise
@@ -39,6 +48,18 @@ _PENDING: list[dict] = []
 # already-pushed (so they never notify) but still flow through the feed.
 WARMUP_S = 30.0
 _STARTED = time.monotonic()
+
+# A finished-job banner fires on the user's phone. The complaint that started
+# this project was "I would much prefer no ping and an honest, reliable
+# progress bar", so a task that succeeded in under half a minute is noise: the
+# user either watched it happen or never noticed it was running.
+#
+# The gate is DELIBERATELY ASYMMETRIC and applies to SUCCESS ONLY. `failed` and
+# `interrupted` always notify however short the run was — a problem is worth
+# knowing about immediately, a fast success is not. An unknown duration (a
+# record missing `created` or `updated`) is never treated as fast: the same
+# no-guessing rule that governs `interrupted` applies to this decision too.
+MIN_SUCCESS_S = 30.0
 
 
 def reset_for_tests(warm: bool = True) -> None:
@@ -98,10 +119,34 @@ def _pushed_key(tid: str, rec: dict) -> str:
     return f"{tid}:{created}" if created is not None else tid
 
 
+def _supersedes(pushed_state: str, new_state: str) -> bool:
+    """Exactly ONE upgrade is allowed per key: `interrupted` -> a real exit
+    status. "We lost track of it" is the weakest claim this module can make, so
+    an observed `done`/`failed` that lands afterwards is strictly better
+    information and must be allowed to correct the banner already sent. The
+    reverse is never allowed (a confirmed outcome is not downgraded to "lost
+    track"), `interrupted` never supersedes itself, and once the key holds a
+    real exit status nothing further can re-push — this is not a door to
+    unlimited re-notification."""
+    return pushed_state == "interrupted" and new_state in ("done", "failed")
+
+
+def _too_fast_to_notify(rec: dict) -> bool:
+    """See MIN_SUCCESS_S. Success only; unknown duration is never 'fast'."""
+    if rec.get("state") != "done":
+        return False
+    created, updated = rec.get("created"), rec.get("updated")
+    if created is None or updated is None:
+        return False
+    return (updated - created) / 1000.0 < MIN_SUCCESS_S
+
+
 def on_terminal(rec: dict) -> bool:
     """Queue one push for a task that reached a terminal state. Sync,
-    idempotent per (task id, run). Returns True when a push was queued."""
-    if rec.get("state") not in _TERMINAL:
+    idempotent per (task id, run) apart from the single interrupted -> real
+    exit status upgrade. Returns True when a push was queued."""
+    state = rec.get("state")
+    if state not in _TERMINAL:
         return False
     tid = rec.get("id") or ""
     if not tid:
@@ -116,12 +161,20 @@ def on_terminal(rec: dict) -> bool:
     # speculatively-built payload.
     payload = _payload(rec) if warm else None
     with _PUSHED_LOCK:
-        if key in _PUSHED:
+        prior = _PUSHED.get(key)
+        upgrade = prior is not None and _supersedes(prior, state)
+        if prior is not None and not upgrade:
             return False
-        _PUSHED.add(key)
+        _PUSHED[key] = state
     if not warm:
         # Boot warmup: mark it pushed so it never notifies later either. A row
         # the boot sweep interrupted is old news by definition.
+        return False
+    # The duration gate never blocks an UPGRADE: leaving the user parked on a
+    # false "Lost track" banner because the correction happened to be quick is
+    # the same dishonesty this wave exists to remove. The key is already
+    # claimed above, so a suppressed fast success still never notifies later.
+    if not upgrade and _too_fast_to_notify(rec):
         return False
     _PENDING.append(payload)
     return True

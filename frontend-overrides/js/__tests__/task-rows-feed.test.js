@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { nativeView, anchorMode, tickElapsed, tickerOwnsElapsed } from '../redesign/task-rows.js';
+import { nativeView, anchorMode, tickElapsed, tickerOwnsElapsed, badgeFor, rowDetail, barFor } from '../redesign/task-rows.js';
 
 const reg = (over = {}) => ({
   id: 'taskfile:t1', kind: 'job', source: 'taskfile', label: 'publish',
@@ -17,10 +17,67 @@ test('taskfile record renders its native payload', () => {
   assert.equal(v.status, 'running');
 });
 
-test('interrupted state maps to failed with honest error', () => {
+// FINAL review, critical 1. `interrupted` means "lost track of this, outcome
+// unknown" — we never observed an exit status. Before Task 3 it only ever came
+// from sweep_boot(), so "✗ failed — interrupted by a backend restart" was at
+// least approximately true; the pid-confirmed-death sweeper made it the
+// ROUTINE outcome, and both halves of that copy are now false. It gets its own
+// status, and the row's wording matches task_push._body's so the banner and
+// the row can't contradict each other.
+test('interrupted is its own status, never failed', () => {
   const v = nativeView(reg({ state: 'interrupted', extra: { native: { id: 't1', status: 'running', sessionKey: 'x' } } }));
-  assert.equal(v.status, 'failed');
-  assert.match(v.error || '', /interrupt/i);
+  assert.equal(v.status, 'interrupted');
+});
+
+test('interrupted never overwrites the registry error, and never invents a backend restart', () => {
+  const v = nativeView(reg({
+    state: 'interrupted', error: 'ffmpeg exited 137',
+    extra: { native: { id: 't1', status: 'running', sessionKey: 'x' } },
+  }));
+  assert.equal(v.error, 'ffmpeg exited 137');
+  const noErr = nativeView(reg({
+    state: 'interrupted', error: '',
+    extra: { native: { id: 't1', status: 'running', sessionKey: 'x' } },
+  }));
+  assert.equal(noErr.error, undefined);
+  assert.doesNotMatch(JSON.stringify(noErr), /backend restart/i);
+});
+
+test('an interrupted followup row keeps the registry error too', () => {
+  const v = nativeView({
+    id: 'followup:i1', kind: 'followup', source: 'followup', label: 'x',
+    session_key: 'agent:main:web-aaa', turn_id: null, state: 'interrupted',
+    pct: null, eta: null, detail: '', error: 'watcher went away', created: 1, updated: 2,
+    extra: {},
+  });
+  assert.equal(v.status, 'interrupted');
+  assert.equal(v.error, 'watcher went away');
+  assert.doesNotMatch(JSON.stringify(v), /backend restart/i);
+});
+
+test('an interrupted row never fills the bar to 100%', () => {
+  const det = { mode: 'determinate', pct: 42, showBar: true, showPct: true };
+  assert.deepEqual(barFor('done', det), { terminal: true, showBar: true, pct: 100, indeterminate: false });
+  assert.deepEqual(barFor('failed', det), { terminal: true, showBar: true, pct: 100, indeterminate: false });
+  // Frozen at the last measurement actually taken — never a claimed completion.
+  assert.deepEqual(barFor('interrupted', det), { terminal: true, showBar: true, pct: 42, indeterminate: false });
+});
+
+test('an interrupted row with no denominator shows an empty track, not a marquee', () => {
+  const indet = { mode: 'indeterminate', pct: 0, showBar: false, showPct: false };
+  assert.deepEqual(barFor('interrupted', indet),
+    { terminal: true, showBar: false, pct: 0, indeterminate: false });
+  // A running row with the same leaf still gets the marquee (no over-fix).
+  assert.deepEqual(barFor('running', indet),
+    { terminal: false, showBar: false, pct: 0, indeterminate: true });
+});
+
+test('the interrupted badge is neutral and matches the push copy', () => {
+  assert.equal(badgeFor('interrupted'), 'stopped · outcome unknown');
+  assert.doesNotMatch(badgeFor('interrupted'), /fail/i);
+  assert.equal(badgeFor('done'), '✓ done');
+  assert.equal(badgeFor('failed'), '✗ failed');
+  assert.equal(badgeFor('running'), 'running');
 });
 
 test('followup records synthesize a native view', () => {
@@ -106,4 +163,55 @@ test('tickerOwnsElapsed true only for mid-run ticker-owned views', () => {
   assert.equal(tickerOwnsElapsed({ ...running, elapsed: 5 }, 2000), false);       // producer/terminal value present
   assert.equal(tickerOwnsElapsed({ ...running, kind: 'render' }, 2000), false);   // producer-timed kind
   assert.equal(tickerOwnsElapsed({ ...running, status: 'done' }, 2000), false);
+});
+
+// FINAL review, important 5. The sweeper writes the only honest detail a
+// silent/dead producer has ("no update in 4m", "lost track of this process;
+// outcome unknown") into rec.detail. Followup rows read it; taskfile rows
+// spread extra.native and dropped it entirely — so the whole payoff of the
+// `stalled` state was invisible on exactly the podcast/upload pipeline rows
+// this project was built for.
+test('a stalled taskfile row shows the sweeper detail, not the producer stale text', () => {
+  const v = nativeView(reg({
+    state: 'stalled', detail: 'no update in 4m',
+    extra: { native: { id: 't1', status: 'running', detail: 'frame 300/540' } },
+  }));
+  assert.equal(v.detail, 'no update in 4m');
+  assert.equal(v._sweeperOwned, true);
+});
+
+test('an interrupted taskfile row shows the sweeper detail', () => {
+  const v = nativeView(reg({
+    state: 'interrupted', detail: 'lost track of this process; outcome unknown',
+    extra: { native: { id: 't1', status: 'running', detail: 'frame 300/540' } },
+  }));
+  assert.equal(v.detail, 'lost track of this process; outcome unknown');
+});
+
+test('a healthy taskfile row keeps the producer native detail', () => {
+  const v = nativeView(reg({
+    state: 'running', detail: 'registry echo',
+    extra: { native: { id: 't1', status: 'running', detail: 'frame 300/540' } },
+  }));
+  assert.equal(v.detail, 'frame 300/540');
+  assert.equal(v._sweeperOwned, false);
+});
+
+test('a sweeper-owned row with no registry detail falls back to the native one', () => {
+  const v = nativeView(reg({
+    state: 'stalled', detail: '',
+    extra: { native: { id: 't1', status: 'running', detail: 'frame 300/540' } },
+  }));
+  assert.equal(v.detail, 'frame 300/540');
+});
+
+test('rowDetail lets the sweeper text beat a stale indeterminate leaf detail', () => {
+  const leaf = { mode: 'indeterminate', detail: 'frame 300/540' };
+  assert.equal(rowDetail({ detail: 'no update in 4m', _sweeperOwned: true }, leaf, false),
+    'no update in 4m');
+  // Not sweeper-owned: the producer's live leaf detail still wins, as before.
+  assert.equal(rowDetail({ detail: 'registry echo', _sweeperOwned: false }, leaf, false),
+    'frame 300/540');
+  // Terminal rows always show the row's own detail.
+  assert.equal(rowDetail({ detail: 'all done', _sweeperOwned: false }, leaf, true), 'all done');
 });

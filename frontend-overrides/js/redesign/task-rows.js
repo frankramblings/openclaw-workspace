@@ -100,18 +100,56 @@ export function taskRowHtml(task) {
   `;
 }
 
+// `interrupted` is its OWN outcome, never `failed`. It means "we lost track of
+// this process; outcome unknown" — no exit status was ever observed, so
+// inventing one is exactly the dishonesty this whole project exists to remove.
+// It used to arrive only from sweep_boot(), where "interrupted by a backend
+// restart" was at least approximately true and rare; the pid-confirmed-death
+// sweeper made it the ROUTINE outcome of a process that simply went away, so
+// both halves of the old copy ("✗ failed", "backend restart") became false.
+// A row must also never overwrite the registry's own `error` text with a
+// guess about why.
+const SWEEPER_OWNED = new Set(['stalled', 'interrupted']);
+export function statusFor(state) {
+  if (state === 'running' || state === 'stalled') return 'running';
+  if (state === 'done') return 'done';
+  if (state === 'interrupted') return 'interrupted';
+  return 'failed';
+}
+
+// The badge copy, as one pure function so the wording is pinnable by a test.
+// `interrupted` deliberately reuses task_push._body's phrasing ("stopped;
+// outcome unknown") — the banner and the row must never contradict each other,
+// which they did while the push said "Lost track" and the row said "✗ failed".
+export function badgeFor(status) {
+  if (status === 'done') return '✓ done';
+  if (status === 'failed') return '✗ failed';
+  if (status === 'interrupted') return 'stopped · outcome unknown';
+  return 'running';
+}
+
+// Which detail line the row shows. A sweeper-owned state means the PRODUCER
+// stopped talking, so whatever its progress descriptor last said is stale by
+// construction — the sweeper's own text ("no update in 4m", "lost track of
+// this process; outcome unknown") is the honest one and wins.
+export function rowDetail(task, leaf, terminal) {
+  if (!terminal && !task._sweeperOwned && leaf && leaf.mode === 'indeterminate' && leaf.detail) {
+    return leaf.detail;
+  }
+  return task.detail || '';
+}
+
 // Map a registry record to the native payload this module renders. Only
 // taskfile + followup sources are in-chat rows (job-source = global overlay,
 // research = research tab, pending = the ⏳ pill in chat.js).
 export function nativeView(rec) {
   if (!rec || (rec.source !== 'taskfile' && rec.source !== 'followup')) return null;
-  const statusFor = (state) => (state === 'running' || state === 'stalled') ? 'running'
-    : state === 'done' ? 'done' : 'failed';
   if (rec.source === 'followup') {
     return {
       id: rec.id, label: rec.label || rec.id, kind: rec.kind === 'auto' ? 'auto' : 'followup',
       status: statusFor(rec.state), detail: rec.detail || '',
-      error: rec.state === 'interrupted' ? 'interrupted by a backend restart' : (rec.error || ''),
+      error: rec.error || '',
+      _sweeperOwned: SWEEPER_OWNED.has(rec.state),
       sessionKey: rec.session_key || '',
       // Running rows: elapsed is ticker-owned (tickElapsed) — a second
       // per-event formula here raced it and could flash "--:--" on negative
@@ -126,9 +164,21 @@ export function nativeView(rec) {
   }
   const native = (rec.extra && rec.extra.native) || null;
   if (!native || !native.id) return null;
-  const out = { ...native, status: statusFor(rec.state), _recTurnId: rec.turn_id ?? null, _createdMs: rec.created || null };
+  const sweeperOwned = SWEEPER_OWNED.has(rec.state);
+  const out = { ...native, status: statusFor(rec.state), _sweeperOwned: sweeperOwned,
+                _recTurnId: rec.turn_id ?? null, _createdMs: rec.created || null };
   out.sessionKey = out.sessionKey || rec.session_key || '';
-  if (rec.state === 'interrupted') out.error = out.error || 'interrupted by a backend restart';
+  // Backstop the error from the registry the same way sessionKey is (a
+  // producer's terminal write can drop fields). Strictly a backstop: the
+  // producer's own text always wins, and nothing is ever invented.
+  if (!out.error && rec.error) out.error = rec.error;
+  // The sweeper writes the only honest detail a silent-or-dead producer has
+  // into rec.detail. Spreading extra.native alone dropped it, so "no update in
+  // 4m" and "lost track of this process; outcome unknown" never reached a
+  // taskfile row — the entire user-visible payoff of the `stalled` state was
+  // invisible on exactly the render/upload pipeline rows this was built for.
+  // A healthy row keeps the producer's own native detail.
+  if (sweeperOwned && rec.detail) out.detail = rec.detail;
   return out;
 }
 
@@ -170,6 +220,20 @@ function clampPct(n) {
 // exactly what the sixteen-hour zombie rows rendered. Zero and null both
 // mean "no denominator yet", which is what the spinner already says.
 const INDETERMINATE = { mode: 'indeterminate', pct: 0, showBar: false, showPct: false, detail: '' };
+
+// The bar's shape for a row, as one pure function so the interrupted rule is
+// pinnable without a DOM. done/failed fill the bar — the badge already carries
+// the outcome. `interrupted` must NOT: we never saw the process finish, so a
+// full bar would assert a completion we cannot confirm. It freezes at the last
+// measurement actually taken (empty track when there never was one), and it
+// never keeps the indeterminate marquee, which would read as "still working".
+export function barFor(status, leaf) {
+  const interrupted = status === 'interrupted';
+  const terminal = status === 'done' || status === 'failed' || interrupted;
+  const showBar = (terminal && !interrupted) || !!(leaf && leaf.showBar);
+  const pct = (terminal && !interrupted) ? 100 : clampPct(leaf && leaf.pct);
+  return { terminal, showBar, pct, indeterminate: !showBar && !interrupted };
+}
 
 // The whole "bar vs tracker" decision, as one pure function. The producer
 // declares its shape via `task.progress.mode`; we never guess from the UI.
@@ -264,15 +328,14 @@ function paint(refs, row, task) {
   if (refs.label.textContent !== task.label) refs.label.textContent = task.label || task.id;
   refs.label.classList.toggle('shimmer', task.status === 'running');
 
-  const badge = task.status === 'done' ? '✓ done'
-              : task.status === 'failed' ? '✗ failed'
-              : 'running';
+  const badge = badgeFor(task.status);
   if (refs.badge.textContent !== badge) refs.badge.textContent = badge;
   refs.badge.className = 'task-badge ' + task.status;
 
-  row.classList.toggle('task-done',    task.status === 'done');
-  row.classList.toggle('task-failed',  task.status === 'failed');
-  row.classList.toggle('task-running', task.status === 'running');
+  row.classList.toggle('task-done',        task.status === 'done');
+  row.classList.toggle('task-failed',      task.status === 'failed');
+  row.classList.toggle('task-interrupted', task.status === 'interrupted');
+  row.classList.toggle('task-running',     task.status === 'running');
 
   // The dumb switch: the producer's `progress` descriptor (or legacy `pct`)
   // is resolved once, then rendered by mode. Nothing here guesses shape.
@@ -284,15 +347,13 @@ function paint(refs, row, task) {
   const leaf = prog.mode === 'steps'
     ? ((prog.steps.find((s) => s.key === prog.active) || {}).inner || { mode: 'indeterminate', detail: '' })
     : prog;
-  const terminal = task.status === 'done' || task.status === 'failed';
-  const showBar = terminal || leaf.showBar;      // indeterminate leaf → no bar
+  const { terminal, showBar, pct, indeterminate } = barFor(task.status, leaf);
   const running = task.status === 'running';
 
-  const pct = terminal ? 100 : clampPct(leaf.pct);
   refs.fill.style.width = showBar ? pct.toFixed(1) + '%' : '0%';
-  refs.fill.className = 'task-fill ' + task.status + (showBar ? '' : ' indeterminate');
+  refs.fill.className = 'task-fill ' + task.status + (indeterminate ? ' indeterminate' : '');
 
-  const leafDetail = (!terminal && leaf.mode === 'indeterminate' && leaf.detail) ? leaf.detail : (task.detail || '');
+  const leafDetail = rowDetail(task, leaf, terminal);
   const seg = task.segText ? ` · ${task.segText}` : '';
   const detailText = leafDetail + seg;
   if (refs.detail.textContent !== detailText) refs.detail.textContent = detailText;
@@ -315,7 +376,12 @@ function paint(refs, row, task) {
     if (refs.elapsed.textContent !== elapsedText) refs.elapsed.textContent = elapsedText;
   }
 
-  const errText = task.status === 'failed' ? (task.error || 'failed') : '';
+  // An interrupted row shows the registry's error only if the registry
+  // actually has one — it never gets a substitute sentence invented for it,
+  // and never the word "failed".
+  const errText = task.status === 'failed' ? (task.error || 'failed')
+                : task.status === 'interrupted' ? (task.error || '')
+                : '';
   if (refs.err.textContent !== errText) refs.err.textContent = errText;
 }
 

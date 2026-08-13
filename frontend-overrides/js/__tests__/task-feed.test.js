@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { reduceFeedEvent, nextBackoff, pruneTerminal, shouldApplyFallback } from '../redesign/live/task-feed.js';
-import { markSeen, TERMINAL_FOREGROUND_MS } from '../redesign/live/task-feed.js';
+import { markSeen, TERMINAL_FOREGROUND_MS, TOMBSTONE_MAX } from '../redesign/live/task-feed.js';
 
 const t = (id, state = 'running', extra = {}) => ({ id, state, updated: 1, ...extra });
 
@@ -149,6 +149,70 @@ test('a row that revives from interrupted to running, then later finishes, gets 
   assert.equal(m.get('job:x')._fgSeen, laterFg, 'fresh budget starts at the actual finish time');
   assert.equal(pruneTerminal(m, laterFg + TERMINAL_FOREGROUND_MS - 1).size, 1, 'still within its OWN fresh budget');
   assert.equal(pruneTerminal(m, laterFg + TERMINAL_FOREGROUND_MS + 1).size, 0, 'pruned only once its own budget elapses');
+});
+
+// FINAL review, important 3. Pruning kept no tombstone, so with the server's
+// RETAIN_TERMINAL_S = 900 and the unconditional resnapshot on
+// visibilitychange, every foregrounding within 15 minutes re-added every
+// finished row with a fresh 60s budget. Background and return three times and
+// the same completed job replays three times.
+test('pruneTerminal records a tombstone for each row it drops', () => {
+  const tombs = new Set();
+  let m = new Map([['job:done', t('job:done', 'done')], ['job:run', t('job:run', 'running')]]);
+  m = markSeen(m, 1000, true);
+  pruneTerminal(m, 1000 + TERMINAL_FOREGROUND_MS + 1, TERMINAL_FOREGROUND_MS, tombs);
+  assert.deepEqual([...tombs], ['job:done']);
+});
+
+test('a snapshot never resurrects a tombstoned terminal row', () => {
+  const tombs = new Set(['job:done']);
+  const m = reduceFeedEvent(new Map(), { type: 'tasks.snapshot', tasks: [t('job:done', 'done'), t('job:live')] }, tombs);
+  assert.deepEqual([...m.keys()], ['job:live']);
+});
+
+test('three foregroundings replay a finished row zero times, not three', () => {
+  const tombs = new Set();
+  let m = new Map();
+  const snapshot = { type: 'tasks.snapshot', tasks: [t('job:done', 'done')] };
+  let fg = 1000;
+  let replays = 0;
+  for (let i = 0; i < 3; i++) {
+    const before = m.size;
+    m = reduceFeedEvent(m, snapshot, tombs);
+    if (i > 0 && m.size > before) replays++;
+    m = markSeen(m, fg, true);
+    m = pruneTerminal(m, fg + TERMINAL_FOREGROUND_MS + 1, TERMINAL_FOREGROUND_MS, tombs);
+    fg += 2 * TERMINAL_FOREGROUND_MS;
+  }
+  assert.equal(replays, 0);
+  assert.equal(m.size, 0);
+});
+
+test('a tombstoned id that genuinely starts running again is admitted and forgets its tombstone', () => {
+  const tombs = new Set(['pm-upload-ldwm']);
+  const m = reduceFeedEvent(new Map(), { type: 'tasks.snapshot', tasks: [t('pm-upload-ldwm', 'running')] }, tombs);
+  assert.equal(m.size, 1);
+  assert.equal(tombs.has('pm-upload-ldwm'), false, 'a re-run must be able to finish visibly');
+});
+
+test('the tombstone set is bounded so it cannot grow without limit', () => {
+  const tombs = new Set();
+  for (let i = 0; i < TOMBSTONE_MAX + 50; i++) {
+    let m = new Map([[`job:${i}`, { id: `job:${i}`, state: 'done', updated: 1 }]]);
+    m = markSeen(m, 1000, true);
+    pruneTerminal(m, 1000 + TERMINAL_FOREGROUND_MS + 1, TERMINAL_FOREGROUND_MS, tombs);
+  }
+  assert.equal(tombs.size, TOMBSTONE_MAX);
+  assert.equal(tombs.has('job:0'), false, 'oldest evicted first');
+  assert.equal(tombs.has(`job:${TOMBSTONE_MAX + 49}`), true, 'newest retained');
+});
+
+test('with no tombstone set passed, pruneTerminal and reduceFeedEvent behave exactly as before', () => {
+  let m = new Map([['job:done', t('job:done', 'done')]]);
+  m = markSeen(m, 1000, true);
+  assert.equal(pruneTerminal(m, 1000 + TERMINAL_FOREGROUND_MS + 1).size, 0);
+  const m2 = reduceFeedEvent(new Map(), { type: 'tasks.snapshot', tasks: [t('job:done', 'done')] });
+  assert.equal(m2.size, 1);
 });
 
 test('a row that goes directly interrupted to done (task_ingest.py:130-142 terminal-file exemption) also earns a fresh budget', () => {

@@ -6,7 +6,10 @@
 //     (So code/style edits show up on a normal reload, no manual cache clear.)
 //   - Other static assets (images/fonts/libs): cache-first with bg refresh.
 //   - API / non-GET: never cached.
-// Bump CACHE_NAME whenever the precache list or SW logic changes.
+// CACHE_NAME is NOT hand-maintained any more: scripts/sync-frontend.sh stamps
+// it at deploy time with a content hash of everything in frontend/ (see its
+// ASSET_HASH block), so any SW-logic or asset change already busts the cache.
+// The literal below is only what a direct read of this vendored source sees.
 const CACHE_NAME = 'gary-v327';
 
 // Generated at deploy time by scripts/sync-frontend.sh from the files
@@ -124,8 +127,15 @@ self.addEventListener('push', e => {
       // sessions aren't URL-addressable, so land on the app root per contract.
       const url = '/';
 
-      // Turn-kind: skip notification if app is visible
-      if (kind === 'turn') {
+      // Turn- and task-kind: skip the banner if the app is already visible.
+      // backend/task_push sends kind:"task" for every finished job; without
+      // 'task' here, every bin/job run, pending-token resolve and research
+      // completion banners the phone WHILE the user is watching the row it
+      // describes. The badge below still updates either way. (Task pushes for
+      // a fast SUCCESS are additionally suppressed server-side — see
+      // task_push.MIN_SUCCESS_S — so the two gates are: no banner when you're
+      // looking, and no banner at all for trivially short successes.)
+      if (kind === 'turn' || kind === 'task') {
         const clients = await self.clients.matchAll({ type: 'window' });
         if (clients.some(c => c.visibilityState === 'visible')) {
           if ('setAppBadge' in navigator) {

@@ -22,6 +22,10 @@
 
 .task-row.task-done   { border-color: rgba(46, 213, 115, 0.30); background: rgba(46, 213, 115, 0.045); }
 .task-row.task-failed { border-color: rgba(255, 71, 87, 0.38);  background: rgba(255, 71, 87, 0.06); }
+/* `interrupted` is NOT a failure — we never observed an exit status, so it gets
+   a deliberately neutral grey treatment rather than the red one. Red here
+   would be the CSS restating the exact lie the copy fix removed. */
+.task-row.task-interrupted { border-color: rgba(255, 255, 255, 0.16); background: rgba(255, 255, 255, 0.03); }
 
 /* HEAD */
 .task-row .task-head {
@@ -52,6 +56,10 @@
 }
 .task-row.task-done   .task-label { color: var(--green, #2ed573); }
 .task-row.task-failed .task-label { color: var(--red,   #ff4757); }
+.task-row.task-interrupted .task-label { color: var(--fg-dim, #a8afb8); }
+/* The interrupted row's own error text (only ever the registry's, never an
+   invented one) is neutral too — it is context, not an accusation. */
+.task-row.task-interrupted .task-err { color: var(--faint, #8f959d); }
 
 .task-row .task-badge {
   font-size: 10.5px;
@@ -66,6 +74,14 @@
 .task-row .task-badge.running { color: var(--gold, #f5c518); background: rgba(245,197,24,0.10); }
 .task-row .task-badge.done    { color: var(--green,#2ed573); background: rgba(46,213,115,0.10); }
 .task-row .task-badge.failed  { color: var(--red,  #ff4757); background: rgba(255,71,87,0.10); }
+/* "stopped · outcome unknown" is a sentence fragment, not a status shout —
+   drop the uppercase/letter-spacing so it reads as the honest caveat it is,
+   and let it shrink before the label does on a narrow phone. */
+.task-row .task-badge.interrupted {
+  color: var(--faint, #8f959d); background: rgba(255,255,255,0.05);
+  text-transform: none; letter-spacing: 0;
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .task-row .task-oc-spacer { flex: 1 1 auto; }
 
@@ -89,6 +105,9 @@
 }
 .task-row .task-fill.done   { background: var(--green, #2ed573); }
 .task-row .task-fill.failed { background: var(--red,   #ff4757); }
+/* Frozen at the last real measurement (see barFor in task-rows.js) and grey,
+   so the bar itself never claims a completion nobody observed. */
+.task-row .task-fill.interrupted { background: var(--faint, #8f959d); }
 
 /* Moving-gradient shimmer that scrolls left→right through the fill.
    Only shows while running (parent .task-fill isn't .done or .failed). */
@@ -108,7 +127,8 @@
   pointer-events: none;
 }
 .task-row .task-fill.done   .task-fill-shimmer,
-.task-row .task-fill.failed .task-fill-shimmer { display: none; }
+.task-row .task-fill.failed .task-fill-shimmer,
+.task-row .task-fill.interrupted .task-fill-shimmer { display: none; }
 
 @keyframes task-bar-shim {
   /* Sweep left → right through the fill. background-position moves the image

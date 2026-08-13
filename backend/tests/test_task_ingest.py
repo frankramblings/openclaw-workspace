@@ -508,10 +508,9 @@ def test_upsert_attached_skips_a_non_terminal_write_onto_an_interrupted_row():
 
 
 def test_only_a_bound_producers_error_reaches_the_observed_row():
-    # Round-2 review, re-aimed after the sessionKey fallback was disabled: an
-    # `error` claim rides onto a row only from a producer proven (by pid
-    # ancestry) to BE that row's job. An unbound producer — no binding could
-    # ever be made for it — writes nothing, error included.
+    # After the sessionKey fallback was disabled, only pid-proven bindings
+    # carry authority. This asserts that when a bound producer writes an error,
+    # it lands on its own bound row but not on unrelated rows.
     from backend import task_merge
     task_registry.reset_for_tests()
     task_merge.reset_for_tests()

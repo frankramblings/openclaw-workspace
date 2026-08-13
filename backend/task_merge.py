@@ -31,8 +31,8 @@ A pid found in the row's subtree is proof — nothing else in this chat could BE
 that subtree — and it is now the ONLY evidence that binds anything, so an
 attach always carries full authority (label, error, terminal word).
 `attach_method` still reports which evidence is in effect, both because
-`_upsert_attached` asks before writing a producer's claims onto a row and
-because wave 2b will add a second, weaker kind (the systemd follower).
+`state_for` consults it to decide whether a producer may impose its own
+terminal word, and because wave 2b will add a second, weaker kind (the systemd follower).
 """
 from __future__ import annotations
 

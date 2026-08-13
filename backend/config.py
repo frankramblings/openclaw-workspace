@@ -203,6 +203,17 @@ PROMISE_WAKE_COOLDOWN_S = _env_int("WORKSPACE_PROMISE_WAKE_COOLDOWN_S", 600)
 # task row reports completion now, and task_push sends one notification off the
 # observed terminal state. Set WORKSPACE_FOLLOWUP_TURNS=1 to restore.
 FOLLOWUP_TURNS_ENABLED = os.environ.get("WORKSPACE_FOLLOWUP_TURNS", "0") not in ("0", "false", "no", "")
+# Honest-progress wave 2: the observer. Rows that exist because a process was
+# SEEN, not because a producer wrote a file. OFF switches both observers off
+# and leaves the terminal exactly as it was.
+OBSERVER_ENABLED = os.environ.get("WORKSPACE_OBSERVER", "1") not in ("0", "false", "no", "")
+# No row is created for work below this age. Every exec is tracked; few are
+# surfaced. Without it a DEBUG trap firing per command would put a row on
+# screen for every `ls`.
+OBSERVE_THRESHOLD_S = _env_int("WORKSPACE_OBSERVE_THRESHOLD_S", 6)
+# A full /proc walk measured 4.5 ms over 256 processes, so 1 Hz costs ~0.45%
+# of a core.
+OBSERVER_POLL_S = _env_int("WORKSPACE_OBSERVER_POLL_S", 1)
 # Chat auto-titles run on a cheap model so they never race the user's real
 # turn through codex on the big one. NOT openai/* (and NOT gemini/*): those
 # stream only the first token then [DONE] through this gateway, so every new

@@ -26,6 +26,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from . import config
 from . import fsutil
+from . import shell_hook
 from . import workspace_files
 
 log = logging.getLogger(__name__)
@@ -115,6 +116,27 @@ def terminal_access_allowed(client_host: str | None, headers, *,
     return os.environ.get("OPENCLAW_TERMINAL_ALLOW_PLAIN_LOOPBACK", "0") == "1"  # (c)
 
 
+def _hook_argv_env(shell: str, session_key: str, argv: list[str],
+                   env: dict) -> tuple[list[str], dict]:
+    """Install observer 1 for bash, or leave the shell untouched.
+
+    Runs BEFORE pty.fork() by contract — start() only chdirs and execs
+    precomputed values in the child. Any failure here degrades coverage (the
+    descendant scan still sees the processes) and must never stop a user's
+    terminal from opening."""
+    if not config.OBSERVER_ENABLED or os.path.basename(shell) != "bash":
+        return argv, env
+    try:
+        rc = shell_hook.write_rc(session_key)
+    except OSError:
+        log.warning("shell hook unavailable for %s; falling back to the "
+                    "descendant scan", session_key, exc_info=True)
+        return argv, env
+    env = dict(env)
+    env["HP_LOG"] = str(shell_hook.log_path(session_key))
+    return [shell, "--rcfile", str(rc), "-i"], env
+
+
 class PtySession:
     """One PTY-backed shell for a chat session. start() spawns the process and
     opens the master fd; drain_once() pulls available bytes (used by tests and by
@@ -148,6 +170,7 @@ class PtySession:
         env["TERM"] = env.get("TERM") or "xterm-256color"
         env["OPENCLAW_ATTACHED_TERMINAL"] = "1"
         env["OPENCLAW_SESSION_KEY"] = self.session_key
+        argv, env = _hook_argv_env(shell, self.session_key, argv, env)
 
         pid, master_fd = pty.fork()
         if pid == 0:  # child: become the shell (slave is already stdio + ctty)
@@ -382,6 +405,13 @@ def close_session(session_key: str) -> None:
         _attachments_path(session_key).unlink()
     except (FileNotFoundError, OSError):
         pass
+
+
+def live_shells() -> dict[str, int]:
+    """{session_key: shell pid} for every running PTY — the observer's input
+    set. A session whose shell has exited owns no processes worth scanning."""
+    return {key: sess.pid for key, sess in _sessions.items()
+            if sess.pid and not sess.exited}
 
 
 # --- Terminal image attachments: per-session token → file registry ----------

@@ -2,7 +2,8 @@
 
   GET /api/tasks          one-shot snapshot ({"tasks":[...]})
   GET /api/tasks/stream   SSE: snapshot frame, then a task.update frame per
-                          registry upsert, keepalive comment on idle.
+                          registry upsert and a task.remove frame per
+                          notifying removal, keepalive comment on idle.
 
 Subscribe-before-snapshot so no upsert slips between them (same reasoning as
 resume_route.chat_stream_tail). Purely read-side; initiates nothing.
@@ -42,6 +43,12 @@ async def _stream_gen():
                 if not task_registry.is_subscribed(queue):
                     return          # dropped (QueueFull): end the stream; client resnapshots
                 yield ": keepalive\n\n"
+                continue
+            # Two frame shapes ride the same queue: a task RECORD (an update)
+            # and a removal EVENT, which carries its own "type" and is passed
+            # straight through — records never have that key.
+            if rec.get("type") == task_registry.REMOVE_EVENT:
+                yield _sse(rec)
                 continue
             yield _sse({"type": "task.update", "task": rec})
     finally:

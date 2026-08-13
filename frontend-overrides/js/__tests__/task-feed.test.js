@@ -25,6 +25,37 @@ test('unknown event types are ignored', () => {
   assert.deepEqual([...m1.keys()], ['job:a']);
 });
 
+// FINAL review, critical 1. The backend retracts a live row when the merge
+// attaches its producer to an observed row (task_registry.remove(notify=True)).
+// Before this branch existed the client kept the orphan forever: only a full
+// snapshot drops a running row the server omits, and snapshots arrive on
+// connect and on a visibility resume, not per event.
+test('a removal event drops the row', () => {
+  let m = new Map([['taskfile:x', t('taskfile:x', 'running', { pct: 41 })],
+    ['observed:200:20', t('observed:200:20')]]);
+  m = reduceFeedEvent(m, { type: 'task.remove', id: 'taskfile:x' });
+  assert.deepEqual([...m.keys()], ['observed:200:20']);
+});
+
+test('a removal event for an id we do not hold returns the SAME map', () => {
+  const m = new Map([['job:a', t('job:a')]]);
+  assert.equal(reduceFeedEvent(m, { type: 'task.remove', id: 'job:b' }), m);
+});
+
+test('a removal event with no id is ignored', () => {
+  const m = new Map([['job:a', t('job:a')]]);
+  assert.equal(reduceFeedEvent(m, { type: 'task.remove' }), m);
+});
+
+test('a removed id is not tombstoned — a new run under it must still appear', () => {
+  const tombs = new Set();
+  let m = new Map([['taskfile:nightly', t('taskfile:nightly', 'running')]]);
+  m = reduceFeedEvent(m, { type: 'task.remove', id: 'taskfile:nightly' }, tombs);
+  assert.equal(tombs.size, 0);
+  m = reduceFeedEvent(m, { type: 'tasks.snapshot', tasks: [t('taskfile:nightly', 'running')] }, tombs);
+  assert.deepEqual([...m.keys()], ['taskfile:nightly']);
+});
+
 test('backoff doubles to a 15s cap with a 1s floor', () => {
   assert.equal(nextBackoff(0), 1000);
   assert.equal(nextBackoff(1000), 2000);

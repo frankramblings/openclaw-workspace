@@ -54,6 +54,24 @@ def test_stream_snapshot_then_delta():
     asyncio.run(main())
 
 
+def test_stream_frames_a_removal_as_task_remove():
+    # Final review, Critical 1: the merge drops a LIVE row, and the client
+    # can only learn that from a frame of its own — task.update cannot say
+    # "gone", and a snapshot only arrives on connect / visibility resume.
+    task_registry.upsert("taskfile:moved", kind="job", source="taskfile")
+
+    async def main():
+        gen = tasks_route._stream_gen()
+        await gen.__anext__()                       # the snapshot frame
+        task_registry.remove("taskfile:moved", notify=True)
+        frame = await asyncio.wait_for(gen.__anext__(), timeout=2)
+        assert json.loads(frame[len("data: "):]) == {
+            "type": "task.remove", "id": "taskfile:moved"}
+        await gen.aclose()
+
+    asyncio.run(main())
+
+
 def test_stream_ends_after_drop(monkeypatch):
     monkeypatch.setattr(tasks_route, "_KEEPALIVE_S", 0.01)
 

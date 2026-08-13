@@ -283,9 +283,13 @@ def scan_once() -> None:
                 # The producer joined a row that already exists. Drop its own
                 # row if it had one, so the feed never shows the same job twice
                 # — remove(), not an interrupted upsert: the job did not stop,
-                # its row moved.
+                # its row moved. notify=True because this row is LIVE and was
+                # already broadcast (bin/task writes progress.json within a
+                # second; the observer does not surface until 6s), so a silent
+                # drop would leave every client holding it forever, frozen at
+                # the pct it had when the merge happened.
                 if task_registry.get(tid) is not None:
-                    task_registry.remove(tid)
+                    task_registry.remove(tid, notify=True)
                 seen.add(row_id)
                 _upsert_attached(row_id, native, mtime, session_key)
                 continue

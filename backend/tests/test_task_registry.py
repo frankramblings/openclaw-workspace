@@ -122,7 +122,43 @@ def test_remove_drops_silently():
         try:
             task_registry.remove("job:gone")
             assert task_registry.get("job:gone") is None
-            assert q.qsize() == 0             # no event for removals
+            assert q.qsize() == 0             # no event for a default removal
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
+# --- Final review, Critical 1: retracting a LIVE row ----------------------
+#
+# Dropping a terminal row silently is safe (the client prunes those itself),
+# but the merge attaches a producer to an observed row and drops a row that
+# is still RUNNING. `task.update` cannot express "this row is gone", and the
+# client only discards a running row the server omits when a whole snapshot
+# arrives — so a silent drop leaves every connected client holding it
+# forever.
+
+
+def test_remove_with_notify_fans_out_a_removal_event():
+    async def main():
+        task_registry.upsert("taskfile:moved", kind="job", source="taskfile")
+        q = task_registry.subscribe()
+        try:
+            task_registry.remove("taskfile:moved", notify=True)
+            assert task_registry.get("taskfile:moved") is None
+            assert q.qsize() == 1
+            assert q.get_nowait() == {"type": task_registry.REMOVE_EVENT,
+                                      "id": "taskfile:moved"}
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
+def test_remove_with_notify_says_nothing_about_a_row_that_was_not_there():
+    async def main():
+        q = task_registry.subscribe()
+        try:
+            task_registry.remove("taskfile:never", notify=True)
+            assert q.qsize() == 0        # nothing to retract
         finally:
             task_registry.unsubscribe(q)
     asyncio.run(main())

@@ -348,6 +348,70 @@ def test_an_attached_taskfile_writes_into_the_observed_row(tmp_path, monkeypatch
     assert rows[0]["extra"]["observed"] is True
 
 
+# --- Final review, Critical 1: the merge must RETRACT the row it drops ----
+#
+# `bin/task run` writes progress.json within a second of starting, so the
+# 0.5s scan gives the producer its own row well before the observer surfaces
+# the chain at 6s. When the merge then attaches, dropping that already-
+# broadcast row silently left every connected client holding it forever,
+# frozen at the pct it had at second 6, beside the observed row — the
+# duplicate row this wave exists to remove.
+
+
+def test_a_merge_attach_retracts_the_producers_own_row_on_the_stream(tmp_path):
+    import asyncio
+
+    from backend import task_merge
+
+    async def main():
+        task_merge.reset_for_tests()
+        d = task_ingest._taskfiles_dir() / "render"
+        d.mkdir(parents=True)
+        (d / "progress.json").write_text(json.dumps(
+            {"id": "render", "label": "render", "status": "running", "pct": 12.0,
+             "pid": 300, "sessionKey": "chat-1", "detail": "starting"}))
+        # Second ~1: no observed row exists yet, so the producer opens its own
+        # and every connected client is told about it.
+        task_ingest.scan_once()
+        assert task_registry.get("taskfile:render") is not None
+        # Second 6: the observer surfaces the chain the producer runs inside.
+        task_registry.upsert("observed:200:20", kind="observed", source="observed",
+                             label="bin/task run", session_key="chat-1",
+                             state="running",
+                             extra={"pid": 200, "subtree": [200, 300],
+                                    "observed": True})
+        q = task_registry.subscribe()
+        try:
+            task_ingest.scan_once()
+            frames = [q.get_nowait() for _ in range(q.qsize())]
+            assert task_registry.get("taskfile:render") is None
+            assert {"type": task_registry.REMOVE_EVENT,
+                    "id": "taskfile:render"} in frames
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
+def test_a_vanished_terminal_rows_removal_stays_silent(tmp_path):
+    # The wave-1 call site keeps its exact behavior: the row is already
+    # terminal and the client prunes those on its own foreground timer, so
+    # there is nothing to retract and no frame to spend.
+    import asyncio
+
+    async def main():
+        _write_job(tmp_path, "finished", status="done")
+        task_ingest.scan_once()
+        (task_ingest._jobs_dir() / "finished.json").unlink()
+        q = task_registry.subscribe()
+        try:
+            task_ingest.scan_once()
+            assert task_registry.get("job:finished") is None
+            assert q.qsize() == 0
+        finally:
+            task_registry.unsubscribe(q)
+    asyncio.run(main())
+
+
 def test_a_session_attached_taskfile_does_not_overwrite_the_observed_rows_label(
         tmp_path, monkeypatch):
     # bin/task start writes no pid at all, so this can only attach by

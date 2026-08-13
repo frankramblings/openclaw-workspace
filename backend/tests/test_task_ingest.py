@@ -412,12 +412,13 @@ def test_a_vanished_terminal_rows_removal_stays_silent(tmp_path):
     asyncio.run(main())
 
 
-def test_a_session_attached_taskfile_does_not_overwrite_the_observed_rows_label(
+def test_a_pidless_taskfile_keeps_its_own_row_beside_the_observed_one(
         tmp_path, monkeypatch):
-    # bin/task start writes no pid at all, so this can only attach by
-    # sessionKey — soft evidence (the only live observed row in this chat,
-    # not proof this producer IS that job). It may contribute pct/detail but
-    # must never relabel the row.
+    # Final review, Important 2: bin/task start writes no pid at all, and the
+    # sessionKey fallback that used to attach it is gone — "the only live
+    # observed row in this chat" is not evidence that THIS producer is that
+    # job. Two rows (what main shows today) beats one row wearing another
+    # command's label and percentage.
     from backend import task_merge
     task_registry.reset_for_tests()
     task_merge.reset_for_tests()
@@ -433,18 +434,22 @@ def test_a_session_attached_taskfile_does_not_overwrite_the_observed_rows_label(
     monkeypatch.setattr(task_ingest, "_taskfiles_dir", lambda: tmp_path / "share" / "tasks")
     monkeypatch.setattr(task_ingest, "_jobs_dir", lambda: tmp_path / "nojobs")
     task_ingest.scan_once()
-    rows = task_registry.list_tasks()
-    assert [r["id"] for r in rows] == ["observed:200:20"]
-    assert rows[0]["label"] == "bin/task run"
-    assert rows[0]["pct"] == 10.0
-    assert rows[0]["detail"] == "uploading"
+    rows = {r["id"]: r for r in task_registry.list_tasks()}
+    assert set(rows) == {"observed:200:20", "taskfile:render"}
+    # The observed row is untouched: no foreign label, no foreign percentage.
+    assert rows["observed:200:20"]["label"] == "bin/task run"
+    assert rows["observed:200:20"]["pct"] is None
+    assert rows["observed:200:20"]["detail"] == ""
+    # The producer still gets its own honest row.
+    assert rows["taskfile:render"]["pct"] == 10.0
+    assert rows["taskfile:render"]["label"] == "a completely different label"
 
 
-def test_a_session_attached_taskfiles_completed_does_not_close_the_observed_row(
+def test_a_pidless_taskfiles_completed_does_not_close_the_observed_row(
         tmp_path, monkeypatch):
-    # The other half of the soft-attach fix: even the producer's own terminal
-    # word must not close a row it only reached by sessionKey guesswork — the
-    # observed process could still be running.
+    # The other half: a pidless producer's own terminal word closes ITS row,
+    # never the observed one it merely shares a chat with — that process may
+    # well still be running.
     from backend import task_merge
     task_registry.reset_for_tests()
     task_merge.reset_for_tests()
@@ -460,8 +465,8 @@ def test_a_session_attached_taskfiles_completed_does_not_close_the_observed_row(
     monkeypatch.setattr(task_ingest, "_taskfiles_dir", lambda: tmp_path / "share" / "tasks")
     monkeypatch.setattr(task_ingest, "_jobs_dir", lambda: tmp_path / "nojobs")
     task_ingest.scan_once()
-    rec = task_registry.get("observed:200:20")
-    assert rec["state"] == "running"
+    assert task_registry.get("observed:200:20")["state"] == "running"
+    assert task_registry.get("taskfile:render")["state"] == "done"
 
 
 def test_upsert_attached_skips_a_non_terminal_write_onto_an_interrupted_row():
@@ -488,11 +493,11 @@ def test_upsert_attached_skips_a_non_terminal_write_onto_an_interrupted_row():
     assert rec["detail"] == "lost track of this process; outcome unknown"
 
 
-def test_a_session_attached_producers_error_does_not_reach_the_observed_row():
-    # Round-2 review: `error` slipped through the label/state gate — a
-    # session attach is soft evidence and must not put an error claim onto a
-    # row it never proved it owns, same as it must not relabel it. Only a
-    # pid-proven attach may write `error`.
+def test_only_a_bound_producers_error_reaches_the_observed_row():
+    # Round-2 review, re-aimed after the sessionKey fallback was disabled: an
+    # `error` claim rides onto a row only from a producer proven (by pid
+    # ancestry) to BE that row's job. An unbound producer — no binding could
+    # ever be made for it — writes nothing, error included.
     from backend import task_merge
     task_registry.reset_for_tests()
     task_merge.reset_for_tests()
@@ -500,20 +505,18 @@ def test_a_session_attached_producers_error_does_not_reach_the_observed_row():
         "observed:200:20", kind="observed", source="observed",
         label="bin/task run", session_key="chat-1", state="running",
         extra={"pid": 200, "subtree": [200, 300], "observed": True})["id"]
-    row_session = task_registry.upsert(
+    row_other = task_registry.upsert(
         "observed:600:60", kind="observed", source="observed",
         label="bin/task run", session_key="chat-2", state="running",
         extra={"pid": 600, "subtree": [600], "observed": True})["id"]
     assert task_merge.target_for({"id": "p", "pid": 300}, "chat-1") == row_pid
-    assert task_merge.target_for({"id": "s"}, "chat-2") == row_session
+    assert task_merge.target_for({"id": "s"}, "chat-2") is None
     task_ingest._upsert_attached(
         row_pid, {"id": "p", "pid": 300, "status": "error", "error": "boom"},
         updated_epoch=1000.0, session_key="chat-1")
-    task_ingest._upsert_attached(
-        row_session, {"id": "s", "status": "error", "error": "boom"},
-        updated_epoch=1000.0, session_key="chat-2")
     assert task_registry.get(row_pid)["error"] == "boom"
-    assert task_registry.get(row_session)["error"] == ""
+    assert task_registry.get(row_pid)["state"] == "failed"
+    assert task_registry.get(row_other)["error"] == ""
 
 
 # --- Task 7: the observer runs inside the ingest loop ---------------------

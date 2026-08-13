@@ -198,13 +198,15 @@ def _upsert_attached(row_id: str, native: dict, updated_epoch: float,
                      session_key: str | None) -> None:
     """Write a producer's DETAIL onto an observed row. State is the observer's
     unless the producer reports its own terminal word — the one claim a
-    producer is entitled to make about its own ending, and only when the
-    attach itself is pid-proven (task_merge.state_for already withholds the
-    terminal word for a session-only attach). The label and error are
-    withheld the same way: a session attach is soft evidence (the only live
-    observed row in this chat, not proof this producer IS that job) and must
-    not relabel the row or put an error claim onto it — only pct/eta/detail
-    flow through on a session-only attach."""
+    producer is entitled to make about its own ending (task_merge.state_for
+    owns that gate).
+
+    Every attach that reaches here is pid-proven: task_merge.target_for binds
+    on ancestry alone since the final review disabled the sessionKey
+    fallback, so the producer's own pid was found inside this row's subtree.
+    That is why its label and error are written through unconditionally —
+    the earlier two-tier version existed only to withhold them from a
+    session-guessed attach, which can no longer happen."""
     cur = task_registry.get(row_id)
     if cur is None:
         return
@@ -216,13 +218,8 @@ def _upsert_attached(row_id: str, native: dict, updated_epoch: float,
     if cur["state"] == "interrupted" and terminal is None:
         return
     state = terminal or cur["state"]
-    pid_bound = task_merge.attach_method(native, row_id) == "pid"
-    if pid_bound:
-        label = str(native.get("label") or "") or cur["label"]
-        error = str(native.get("error") or "")
-    else:
-        label = cur["label"]
-        error = ""          # task_registry.upsert never clobbers with empty
+    label = str(native.get("label") or "") or cur["label"]
+    error = str(native.get("error") or "")
     if (cur.get("extra") or {}).get("native") == native and cur["state"] == state:
         return
     task_registry.upsert(

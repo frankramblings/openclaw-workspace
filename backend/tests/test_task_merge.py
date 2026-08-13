@@ -39,10 +39,30 @@ def test_a_pid_in_no_chain_keeps_its_own_row():
     assert task_merge.target_for({"id": "x", "pid": 9999}, "chat-1") is None
 
 
-def test_a_pidless_producer_attaches_by_session_when_one_row_matches():
+# --- Final review, Important 2: the sessionKey fallback is disabled -------
+#
+# The spec's amendment 3 let a pidless producer attach when its chat held
+# exactly one live observed row. The real workload says that can only ever be
+# wrong: every flagship producer here (pm-upload-*, bwg-*, podmigrate) writes
+# sessionKey with no pid AND runs under `systemd-run --user`, so it is never
+# inside a PTY shell's tree and can never BE the observed row — its attach
+# could only bind to an unrelated command, stamping a multi-hour upload's
+# percentage onto that command's row under that command's label. sessionKey
+# identifies a chat, not a job. A pidless producer now keeps its own row,
+# which is exactly what main does today.
+
+
+def test_a_pidless_producer_keeps_its_own_row_even_with_one_candidate():
     # The live pm-upload-rdup shape: bin/task start writes no pid at all.
+    _observed()
+    assert task_merge.target_for({"id": "x"}, "chat-1") is None
+
+
+def test_a_pidless_producer_never_binds_so_it_can_impose_nothing():
     row = _observed()
-    assert task_merge.target_for({"id": "x"}, "chat-1") == row
+    assert task_merge.target_for({"id": "x"}, "chat-1") is None
+    assert task_merge.attach_method({"id": "x"}, row) is None
+    assert task_merge.state_for({"id": "x", "status": "completed"}, row) is None
 
 
 def test_a_pidless_producer_with_two_candidates_does_not_guess():
@@ -59,6 +79,12 @@ def test_a_pidless_producer_from_another_session_does_not_attach():
 def test_a_pidless_producer_with_no_session_does_not_attach():
     _observed()
     assert task_merge.target_for({"id": "x"}, None) is None
+
+
+def test_a_non_numeric_pid_is_treated_as_no_pid_at_all():
+    _observed()
+    assert task_merge.target_for({"id": "x", "pid": "null"}, "chat-1") is None
+    assert task_merge.target_for({"id": "y", "pid": None}, "chat-1") is None
 
 
 def test_a_terminal_observed_row_is_not_an_attach_candidate():
@@ -122,28 +148,29 @@ def test_a_bound_producers_own_terminal_word_still_reaches_its_finished_row():
                                  "chat-1") == row
 
 
-# --- Review round 1: attachment strength must follow evidence quality -----
+# --- Review round 1: only a proven attach may declare an outcome ----------
 #
-# "Exactly one live observed row in this chat" is only the absence of a
-# second candidate, not proof this producer IS that row's job. A pid found in
-# the row's subtree is proof. Only the pid-proven kind may declare the row's
-# outcome.
+# A pid found in the row's subtree is proof — nothing else in this chat could
+# BE that subtree — and since the final review disabled the sessionKey
+# fallback it is the only evidence that binds anything at all. A producer
+# bound to no row, or to a DIFFERENT row, still imposes nothing.
 
 
 def test_only_a_pid_proven_attach_may_impose_a_terminal_state():
     row_pid = _observed("observed:200:20", subtree=(200, 300))
-    row_session = _observed("observed:600:60", subtree=(600,), session_key="chat-2")
+    row_other = _observed("observed:600:60", subtree=(600,), session_key="chat-2")
     assert task_merge.target_for({"id": "p", "pid": 300}, "chat-1") == row_pid
-    assert task_merge.target_for({"id": "s"}, "chat-2") == row_session
     assert task_merge.state_for({"id": "p", "status": "completed"}, row_pid) == "done"
-    assert task_merge.state_for({"id": "s", "status": "completed"}, row_session) is None
+    # Same producer, a row it was never bound to: no authority there.
+    assert task_merge.state_for({"id": "p", "status": "completed"}, row_other) is None
 
 
 def test_attach_method_reports_which_evidence_bound_the_producer():
     row_pid = _observed("observed:200:20", subtree=(200, 300))
-    row_session = _observed("observed:600:60", subtree=(600,), session_key="chat-2")
+    row_other = _observed("observed:600:60", subtree=(600,), session_key="chat-2")
     task_merge.target_for({"id": "p", "pid": 300}, "chat-1")
-    task_merge.target_for({"id": "s"}, "chat-2")
+    task_merge.target_for({"id": "s"}, "chat-2")          # pidless: binds nothing
     assert task_merge.attach_method({"id": "p"}, row_pid) == "pid"
-    assert task_merge.attach_method({"id": "s"}, row_session) == "session"
+    assert task_merge.attach_method({"id": "p"}, row_other) is None
+    assert task_merge.attach_method({"id": "s"}, row_other) is None
     assert task_merge.attach_method({"id": "unbound"}, row_pid) is None

@@ -52,7 +52,7 @@ import json
 import logging
 import time
 
-from . import task_liveness, task_push
+from . import config, observer, task_liveness, task_push
 from . import task_registry
 from .jobs import JOBS_DIR
 from .workspace_files import workspace_root
@@ -313,24 +313,43 @@ def scan_once() -> None:
             task_registry.remove(rec["id"])
 
 
-async def ingest_loop() -> None:
-    """Run scan_once forever, sweeping liveness every SWEEP_S. Failures are
-    logged, never fatal — a bad pass self-heals on the next one. The sweep runs
-    AFTER the scan so a file that just went terminal is already reconciled and
-    the sweeper sees the same truth the feed does."""
-    last_sweep = 0.0
-    while True:
+_last_observe = 0.0
+_last_sweep = 0.0
+
+
+def tick(now: float) -> None:
+    """One pass of the ingest loop. `now` is a monotonic-style clock supplied
+    by the caller so the cadence is testable without sleeping.
+
+    Order matters: OBSERVE first, so a chain that just crossed the surfacing
+    threshold is already a registry row when the scan's merge looks for an
+    attach target in this same pass. Otherwise a producer would open its own
+    row and the two would coexist for a full poll interval — visible to the
+    user as the duplicate row this wave exists to remove."""
+    global _last_observe, _last_sweep
+    if config.OBSERVER_ENABLED and now - _last_observe >= config.OBSERVER_POLL_S:
+        _last_observe = now
         try:
-            scan_once()
+            observer.observe_once()
         except Exception:  # noqa: BLE001
-            log.warning("task_ingest: scan failed", exc_info=True)
-        now = time.monotonic()
-        if now - last_sweep >= task_liveness.SWEEP_S:
-            last_sweep = now
-            try:
-                task_liveness.sweep_once()
-            except Exception:  # noqa: BLE001
-                log.warning("task_ingest: liveness sweep failed", exc_info=True)
+            log.warning("task_ingest: observe failed", exc_info=True)
+    try:
+        scan_once()
+    except Exception:  # noqa: BLE001
+        log.warning("task_ingest: scan failed", exc_info=True)
+    if now - _last_sweep >= task_liveness.SWEEP_S:
+        _last_sweep = now
+        try:
+            task_liveness.sweep_once()
+        except Exception:  # noqa: BLE001
+            log.warning("task_ingest: liveness sweep failed", exc_info=True)
+
+
+async def ingest_loop() -> None:
+    """Run tick() forever. Failures are logged inside tick, never fatal — a bad
+    pass self-heals on the next one."""
+    while True:
+        tick(time.monotonic())
         try:
             await task_push.drain()
         except Exception:  # noqa: BLE001

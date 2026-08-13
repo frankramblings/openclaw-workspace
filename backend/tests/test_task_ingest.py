@@ -450,3 +450,50 @@ def test_a_session_attached_producers_error_does_not_reach_the_observed_row():
         updated_epoch=1000.0, session_key="chat-2")
     assert task_registry.get(row_pid)["error"] == "boom"
     assert task_registry.get(row_session)["error"] == ""
+
+
+# --- Task 7: the observer runs inside the ingest loop ---------------------
+
+
+@pytest.fixture()
+def fresh_tick(monkeypatch):
+    """tick() paces itself off module-level clocks. Without resetting them a
+    test would inherit the previous test's `now` and silently skip the observe
+    it is asserting on — passing for the wrong reason."""
+    monkeypatch.setattr(task_ingest, "_last_observe", 0.0)
+    monkeypatch.setattr(task_ingest, "_last_sweep", 0.0)
+
+
+def test_the_ingest_loop_observes_before_it_scans(monkeypatch, fresh_tick):
+    # Ordering is load-bearing: a chain surfaced by the observer must be in the
+    # registry before the merge looks for an attach target in the same pass.
+    from backend import observer
+    calls = []
+    monkeypatch.setattr(observer, "observe_once", lambda: calls.append("observe"))
+    monkeypatch.setattr(task_ingest, "scan_once", lambda: calls.append("scan"))
+    task_ingest.tick(now=1000.0)
+    assert calls == ["observe", "scan"]
+
+
+def test_the_observer_is_skipped_when_disabled(monkeypatch, fresh_tick):
+    from backend import config, observer
+    monkeypatch.setattr(config, "OBSERVER_ENABLED", False)
+    calls = []
+    monkeypatch.setattr(observer, "observe_once", lambda: calls.append("observe"))
+    monkeypatch.setattr(task_ingest, "scan_once", lambda: calls.append("scan"))
+    task_ingest.tick(now=1000.0)
+    assert calls == ["scan"]
+
+
+def test_a_failing_observer_never_stops_the_scan(monkeypatch, fresh_tick):
+    from backend import observer
+    calls = []
+
+    def boom():
+        calls.append("observe")
+        raise RuntimeError("proc walk exploded")
+
+    monkeypatch.setattr(observer, "observe_once", boom)
+    monkeypatch.setattr(task_ingest, "scan_once", lambda: calls.append("scan"))
+    task_ingest.tick(now=1000.0)
+    assert calls == ["observe", "scan"]

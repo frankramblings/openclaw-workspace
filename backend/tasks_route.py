@@ -27,6 +27,15 @@ def _sse(obj) -> str:
     return f"data: {json.dumps(obj, separators=(',', ':'))}\n\n"
 
 
+def _frame_for(rec: dict) -> dict:
+    """One place decides record-vs-event, and it uses the SAME test
+    `task_registry._fanout` uses to decide what it is forwarding: the presence
+    of a "type" key. A record has no "type"; an event has nothing else."""
+    if rec.get("type"):
+        return rec
+    return {"type": "task.update", "task": rec}
+
+
 @router.get("/api/tasks")
 async def tasks_snapshot(session: str = ""):
     return JSONResponse({"tasks": task_registry.list_tasks(session_key=session or None)})
@@ -45,12 +54,9 @@ async def _stream_gen():
                 yield ": keepalive\n\n"
                 continue
             # Two frame shapes ride the same queue: a task RECORD (an update)
-            # and a removal EVENT, which carries its own "type" and is passed
+            # and an EVENT, which carries its own "type" and is passed
             # straight through — records never have that key.
-            if rec.get("type") == task_registry.REMOVE_EVENT:
-                yield _sse(rec)
-                continue
-            yield _sse({"type": "task.update", "task": rec})
+            yield _sse(_frame_for(rec))
     finally:
         task_registry.unsubscribe(queue)
 

@@ -53,7 +53,7 @@ import json
 import logging
 import time
 
-from . import config, observer, task_liveness, task_push
+from . import config, observer, task_liveness, task_push, unit_follower
 from . import task_registry
 from .jobs import JOBS_DIR
 from .workspace_files import workspace_root
@@ -317,6 +317,7 @@ def scan_once() -> None:
 
 _last_observe = 0.0
 _last_sweep = 0.0
+_last_unit_poll = 0.0
 
 
 def tick(now: float) -> None:
@@ -347,11 +348,39 @@ def tick(now: float) -> None:
             log.warning("task_ingest: liveness sweep failed", exc_info=True)
 
 
+async def _maybe_follow_units(now: float) -> None:
+    """Run the systemd unit follower on its own (slower) cadence, off the
+    event-loop thread via asyncio.to_thread.
+
+    It does NOT live inside tick(), on purpose: tick is synchronous and runs
+    directly on this coroutine's turn, and unlike observers 1 and 2 (a pure
+    /proc walk) the unit follower forks systemctl — up to twice per pass, one
+    list-units and one batched show. A hung/slow systemd there would stall
+    the whole event loop, not just this ingest pass, so it gets its own gate
+    and its own thread. `now` is the same monotonic-style clock tick() takes
+    and, like tick's own _last_observe/_last_sweep gates, is a parameter
+    rather than read internally so the cadence is testable without sleeping."""
+    global _last_unit_poll
+    if not config.UNIT_FOLLOWER_ENABLED:
+        return
+    if now - _last_unit_poll < config.UNIT_POLL_S:
+        return
+    _last_unit_poll = now
+    try:
+        await asyncio.to_thread(unit_follower.follow_once)
+    except Exception:  # noqa: BLE001
+        log.warning("task_ingest: unit follower failed", exc_info=True)
+
+
 async def ingest_loop() -> None:
     """Run tick() forever. Failures are logged inside tick, never fatal — a bad
-    pass self-heals on the next one."""
+    pass self-heals on the next one. The unit follower runs alongside tick on
+    its own cadence (_maybe_follow_units) rather than inside it — see that
+    function for why."""
     while True:
-        tick(time.monotonic())
+        now = time.monotonic()
+        tick(now)
+        await _maybe_follow_units(now)
         try:
             await task_push.drain()
         except Exception:  # noqa: BLE001

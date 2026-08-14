@@ -185,10 +185,106 @@ def test_the_follower_is_skipped_when_disabled(monkeypatch):
 
 
 def test_systemd_being_unavailable_is_silence_not_an_error(monkeypatch):
-    monkeypatch.setattr(unit_follower, "_list_active", lambda: [])
+    # A real systemctl failure surfaces as _list_active() returning None (see
+    # systemd_units.list_active), not []. [] is now a legitimate, actionable
+    # answer -- "systemd was asked and nothing is active" -- so it no longer
+    # stands in for "could not be asked at all".
+    monkeypatch.setattr(unit_follower, "_list_active", lambda: None)
     monkeypatch.setattr(unit_follower, "_show", lambda _names: {})
     assert unit_follower.follow_once(now=1000.0) == 0
     assert task_registry.list_tasks() == []
+
+
+def test_a_failing_systemctl_pass_leaves_an_existing_row_untouched(monkeypatch):
+    # Review finding 2 (Important): list_active() returning [] used to mean
+    # BOTH "confirmed nothing active" and "systemd is unreachable", so a
+    # failed pass closed every tracked row as interrupted -- a guess dressed
+    # as a confirmed ending. None is "no information this pass": leave
+    # everything exactly as it was and write nothing.
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "running"
+    monkeypatch.setattr(unit_follower, "_list_active", lambda: None)
+    assert unit_follower.follow_once(now=1008.0) == 0
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"
+    assert row["state"] == "running"
+
+
+def test_a_deactivating_unit_is_not_closed_until_it_genuinely_stops(monkeypatch):
+    # Review finding 1 (Critical): `systemctl list-units --state=active`
+    # excludes ActiveState=deactivating for the unit's ENTIRE shutdown window
+    # (up to TimeoutStopSec), so a unit dropping out of the active list is
+    # NOT proof it has stopped. Its held properties can still report
+    # Result=success/ExecMainStatus=0 from before the stop even started --
+    # closing on that would report `done` for a unit that is still running.
+    # Only a genuinely-stopped ActiveState may produce a terminal outcome.
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    monkeypatch.setattr(unit_follower, "_list_active", lambda: [])
+    # The re-check (batched show) still reports it alive.
+    monkeypatch.setattr(unit_follower, "_show", lambda _names: {JOB["Id"]: JOB})
+    assert unit_follower.follow_once(now=1008.0) == 0
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"
+    assert row["state"] == "running"
+    # It survived the deactivating pass rather than being lost from _SEEN:
+    # once it genuinely stops, the SAME row closes, not a fresh one.
+    monkeypatch.setattr(unit_follower, "_show",
+                        lambda _names: {JOB["Id"]: _exited(ExecMainStatus="0",
+                                                            Result="success")})
+    unit_follower.follow_once(now=1009.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"
+    assert row["state"] == "done"
+
+
+def test_the_closing_reshow_is_one_batched_call_not_one_per_unit(monkeypatch):
+    # Review finding 4 (Important): the closing loop must fork systemctl at
+    # most once per pass for units that need a fresh look, not once per
+    # closing unit.
+    two = {**JOB}
+    other = {**JOB, "Id": "podmigrate-other.service", "InvocationID": "zzz999",
+             "ExecMainPID": "9999"}
+    _units(monkeypatch, {two["Id"]: two, other["Id"]: other})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    assert len(task_registry.list_tasks()) == 2
+    monkeypatch.setattr(unit_follower, "_list_active", lambda: [])
+    calls = []
+
+    def spy_show(names):
+        calls.append(list(names))
+        return {two["Id"]: _exited(ExecMainStatus="0", Result="success"),
+                other["Id"]: _exited(**{**other, "ExecMainStatus": "0",
+                                        "Result": "success",
+                                        "ActiveState": "inactive",
+                                        "SubState": "dead",
+                                        "ExecMainPID": "0"})}
+    monkeypatch.setattr(unit_follower, "_show", spy_show)
+    unit_follower.follow_once(now=1008.0)
+    assert len(calls) == 1
+    assert set(calls[0]) == {two["Id"], other["Id"]}
+    states = {r["id"]: r["state"] for r in task_registry.list_tasks()}
+    assert states == {"observed:unit:abc123": "done", "observed:unit:zzz999": "done"}
+
+
+def test_a_stopped_unit_with_no_result_evidence_is_interrupted_not_failed(monkeypatch):
+    # Review finding 5 (Minor): with Result and ExecMainStatus both empty,
+    # _outcome_for used to fall through to "failed" / "exited 0" -- a guess
+    # in the direction that claims MORE than we know. No evidence means the
+    # same "we don't know" outcome as a unit that vanished outright.
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    _units(monkeypatch, {JOB["Id"]: _exited(Result="", ExecMainStatus="")})
+    unit_follower.follow_once(now=1010.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "interrupted"
+    assert "outcome unknown" in row["detail"]
 
 
 def test_a_unit_listed_but_already_inactive_still_closes(monkeypatch):

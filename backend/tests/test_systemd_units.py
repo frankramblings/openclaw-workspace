@@ -59,11 +59,13 @@ def test_list_active_ignores_blank_and_short_lines():
 
 
 def test_list_active_survives_systemd_being_unavailable():
-    # systemd unavailable => follower off, per the spec's degradation rule.
-    # It must read as "no units", never raise.
+    # systemd unavailable => the follower must get a signal it can tell apart
+    # from "systemd answered and nothing is active" (an empty list is real,
+    # actionable information; a failure is none at all). None is that signal.
+    # It must never raise.
     def boom(_argv):
         raise OSError("no systemd")
-    assert su.list_active(run=boom) == []
+    assert su.list_active(run=boom) is None
 
 
 def test_show_maps_units_by_id():

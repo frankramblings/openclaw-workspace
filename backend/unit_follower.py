@@ -24,7 +24,17 @@ unit that exits is `done` or `failed`, never `interrupted`. The single path to
 `interrupted` here is a unit that disappears before its status can be read --
 reachable, because `systemd-run --collect` garbage-collects a transient unit
 on exit -- and that is the honest reading of it: we watched it stop and never
-saw an outcome.
+saw an outcome. The same honest reading applies when a unit's properties are
+readable but carry no real evidence (`Result` and `ExecMainStatus` both
+empty): that is not knowledge either, and must not be dressed up as one.
+
+A unit dropping out of `list-units --state=active` is likewise NOT proof it
+has stopped. `deactivating` is excluded from that list for the unit's WHOLE
+shutdown window (up to `TimeoutStopSec`), and its still-held properties can
+report a stale `Result=success` from before the stop even began. Only a
+genuinely-stopped `ActiveState` may produce a terminal outcome; short of
+that, the closing loop leaves the entry tracked for a later pass rather than
+guess.
 """
 from __future__ import annotations
 
@@ -40,12 +50,19 @@ _SEEN: dict[str, dict] = {}
 
 _SYSTEMD_RUN_PREFIX = "[systemd-run] "
 
+# ActiveState values under which a unit has NOT genuinely stopped yet.
+# `list-units --state=active` only ever reports "active" -- it excludes
+# "deactivating" outright, which is where a unit sits for its entire
+# shutdown -- so "missing from the active list" is not this check; only a
+# fresh look at ActiveState itself is.
+_STILL_ALIVE_STATES = frozenset({"active", "activating", "reloading", "deactivating"})
+
 
 def reset_for_tests() -> None:
     _SEEN.clear()
 
 
-def _list_active() -> list[str]:
+def _list_active() -> list[str] | None:
     return systemd_units.list_active()
 
 
@@ -69,12 +86,25 @@ def _label_for(props: dict) -> str:
     return (desc or props.get("Id") or "")[:160]
 
 
+def _still_alive(props: dict) -> bool:
+    """True while ActiveState says a unit has not genuinely stopped. The
+    closing loop's ONE question before it will compute an outcome -- see the
+    module docstring for why "dropped out of the active list" cannot answer
+    it on its own."""
+    return (props.get("ActiveState") or "").strip() in _STILL_ALIVE_STATES
+
+
 def _outcome_for(props: dict) -> tuple[str, str]:
-    """(state, detail) for a unit that has stopped. A unit reports a real
-    status, so this is knowledge rather than inference -- `interrupted` is not
-    reachable from here, only from a unit that vanished before we asked."""
+    """(state, detail) for a unit whose ActiveState confirms it has genuinely
+    stopped. A unit reports a real status, so this is knowledge rather than
+    inference -- EXCEPT when Result and ExecMainStatus are both empty, which
+    is no evidence at all, not evidence of failure; that case reads the same
+    as a unit that vanished before we could ask."""
     result = (props.get("Result") or "").strip()
-    status = _int(props.get("ExecMainStatus"), 0)
+    status_raw = (props.get("ExecMainStatus") or "").strip()
+    if not result and not status_raw:
+        return "interrupted", "outcome unknown"
+    status = _int(status_raw, 0)
     if result == "success" and status == 0:
         return "done", ""
     if result and result != "exit-code":
@@ -91,6 +121,12 @@ def follow_once(now: float | None = None) -> int:
         return 0
     now = time.time() if now is None else now
     names = _list_active()
+    if names is None:
+        # systemctl could not be asked at all this pass -- no information,
+        # not "nothing is active". Writing anything from here would mean
+        # guessing every tracked unit's fate off a subprocess hiccup; leave
+        # `_SEEN` exactly as it is and try again next pass.
+        return 0
     props_by_unit = _show(names) if names else {}
     procs = proc_tree.snapshot()
     changed = 0
@@ -156,18 +192,35 @@ def follow_once(now: float | None = None) -> int:
                 changed += 1
 
     # A unit we were following is no longer active. Prefer the properties we
-    # already hold from this pass; only re-ask systemd when the unit dropped
-    # out of the active list without us ever seeing it inactive, which is the
-    # normal production path. If it is gone entirely -- `systemd-run --collect`
-    # garbage-collects a transient unit on exit -- we never saw an outcome and
-    # say exactly that.
-    for invocation in [i for i in _SEEN if i not in live_ids]:
-        state = _SEEN.pop(invocation)
+    # already hold from this pass; only re-ask systemd -- in ONE batched call
+    # covering every such unit, not one fork each -- when what we hold does
+    # not already show a genuinely stopped unit. "Dropped out of the active
+    # list" is not that: `deactivating` is excluded from it for the unit's
+    # WHOLE shutdown window, so a unit can vanish from `live_ids` while still
+    # actually running. If the fresh look still shows it alive, leave the
+    # entry tracked and write nothing this pass -- it closes on a later one.
+    # If it is gone entirely -- `systemd-run --collect` garbage-collects a
+    # transient unit on exit -- we never saw an outcome and say exactly that.
+    closing = [i for i in _SEEN if i not in live_ids]
+    need_reshow = sorted({
+        _SEEN[i]["unit"] for i in closing
+        if _SEEN[i]["row_id"] is not None and _SEEN[i]["unit"]
+        and (not _SEEN[i].get("last_props") or _still_alive(_SEEN[i]["last_props"]))
+    })
+    fresh = _show(need_reshow) if need_reshow else {}
+
+    for invocation in closing:
+        state = _SEEN[invocation]
         if state["row_id"] is None:
+            _SEEN.pop(invocation)
             continue                      # never surfaced, nothing to close
         props = state.get("last_props")
-        if not props or (props.get("ActiveState") or "").strip() == "active":
-            props = _show([state["unit"]]).get(state["unit"]) if state["unit"] else None
+        if not props or _still_alive(props):
+            props = fresh.get(state["unit"]) if state["unit"] else None
+        if props and _still_alive(props):
+            state["last_props"] = props   # freshest reading, for next pass
+            continue                      # mid-shutdown; still tracked, try again later
+        _SEEN.pop(invocation)
         if props and (props.get("InvocationID") or "").strip() == invocation:
             outcome, detail = _outcome_for(props)
         else:

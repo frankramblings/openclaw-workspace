@@ -2,6 +2,7 @@
 the registry: create, progress-merge, stall derivation, vanish → interrupted
 (running) / remove (terminal). Uses real files in tmp fixtures — the same
 atomic-JSON contract bin/job writes."""
+import asyncio
 import json
 import time
 
@@ -577,3 +578,57 @@ def test_a_failing_observer_never_stops_the_scan(monkeypatch, fresh_tick):
     monkeypatch.setattr(task_ingest, "scan_once", lambda: calls.append("scan"))
     task_ingest.tick(now=1000.0)
     assert calls == ["observe", "scan"]
+
+
+# --- Task 2 review, Important 4: the unit follower forks systemctl, and ----
+# --- must never do that on the event-loop thread ---------------------------
+#
+# tick() is synchronous and runs directly inside ingest_loop's coroutine turn
+# — a blocking fork-and-wait there stalls the WHOLE server, not just this
+# loop. The follower therefore does NOT live inside tick; it runs from
+# ingest_loop via asyncio.to_thread, gated by its own module-level clock
+# (_last_unit_poll), the same pattern _last_observe/_last_sweep use for
+# tick's own gates.
+
+
+@pytest.fixture()
+def fresh_unit_poll(monkeypatch):
+    """_maybe_follow_units paces itself off its own module-level clock,
+    separate from tick's. Reset it for the same reason fresh_tick resets
+    tick's clocks — otherwise a test inherits the previous test's `now` and
+    silently skips the call it's asserting on."""
+    monkeypatch.setattr(task_ingest, "_last_unit_poll", 0.0)
+
+
+def test_the_unit_follower_runs_off_the_event_loop_thread_on_its_own_cadence(
+        monkeypatch, fresh_unit_poll):
+    from backend import config, unit_follower
+    calls = []
+    monkeypatch.setattr(unit_follower, "follow_once", lambda: calls.append("follow"))
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))
+    assert calls == ["follow"]
+    # Same pass again without advancing past UNIT_POLL_S: gated, no 2nd call.
+    asyncio.run(task_ingest._maybe_follow_units(1000.0 + config.UNIT_POLL_S - 0.001))
+    assert calls == ["follow"]
+    # Advance past the cadence: fires again.
+    asyncio.run(task_ingest._maybe_follow_units(1000.0 + config.UNIT_POLL_S + 1))
+    assert calls == ["follow", "follow"]
+
+
+def test_the_unit_follower_is_skipped_when_disabled(monkeypatch, fresh_unit_poll):
+    from backend import config, unit_follower
+    monkeypatch.setattr(config, "UNIT_FOLLOWER_ENABLED", False)
+    calls = []
+    monkeypatch.setattr(unit_follower, "follow_once", lambda: calls.append("follow"))
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))
+    assert calls == []
+
+
+def test_a_failing_unit_follower_never_raises_out_of_the_gate(monkeypatch, fresh_unit_poll):
+    from backend import unit_follower
+
+    def boom():
+        raise RuntimeError("systemctl exploded")
+
+    monkeypatch.setattr(unit_follower, "follow_once", boom)
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))  # must not raise

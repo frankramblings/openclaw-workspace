@@ -305,6 +305,31 @@ def apply(collected: dict | None, now: float) -> int:
             # deterministic name -- either way, not evidence about THIS
             # invocation's fate.
             outcome, detail = "interrupted", "unit is gone; outcome unknown"
+        # Read the record before writing, the same guard observer.py's own
+        # closing loop applies and for the same reason (see its module
+        # comment: an unconditional write is "the lie in the other
+        # direction"). Two consequences this prevents: a pid-carrying
+        # producer inside the unit writes its own terminal `done` at 100%,
+        # `systemd-run --collect` garbage-collects the unit before this loop
+        # can read its status, and an unconditional write would relabel a
+        # SUCCEEDED job "interrupted" / "outcome unknown"; and a row the
+        # registry has already pruned (RETAIN_TERMINAL_S, or `bin/task rm`)
+        # would be resurrected as a brand-new labelless `interrupted` record
+        # that sorts to the top of the feed.
+        #
+        # One deliberate asymmetry with observer.py: a real `done`/`failed`
+        # computed from an actual ExecMainStatus/Result (the `_outcome_for`
+        # branch, not its own no-evidence fallback, which also reads
+        # `interrupted`) MAY still correct an existing done/failed. A unit's
+        # own exit status is better evidence than a producer's claim -- this
+        # module is the only observer that ever has it -- so knowledge may
+        # overwrite knowledge here. No-knowledge (`outcome == "interrupted"`)
+        # must never overwrite knowledge, in either module.
+        existing = task_registry.get(state["row_id"])
+        if existing is None:
+            continue                  # a pruned row is never recreated
+        if existing["state"] in ("done", "failed") and outcome == "interrupted":
+            continue                  # no-knowledge must never overwrite knowledge
         task_registry.upsert(state["row_id"], kind="observed", source="observed",
                              state=outcome, detail=detail)
         changed += 1

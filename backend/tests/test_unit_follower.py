@@ -421,6 +421,69 @@ def test_an_unrecognized_activestate_is_not_treated_as_confirmed_stopped(monkeyp
     assert row["state"] == "running"
 
 
+# --- Final whole-branch review, Important 2: the closing write must read --
+# --- the record before it writes, mirroring observer.py's own guard -------
+#
+# The closing loop wrote its outcome unconditionally. observer.py's closing
+# loop reads the record first and skips when it is None or already
+# done/failed -- "the lie in the other direction" -- with four tests pinning
+# it; this module had none. Two probed consequences: a pid-carrying producer
+# inside the unit writes its own terminal `done` at 100%, `systemd-run
+# --collect` garbage-collects the unit before this loop can read its status,
+# and the unconditional write relabels a SUCCEEDED job "interrupted" /
+# "outcome unknown"; and a row the registry has already pruned is recreated
+# as a brand-new labelless `interrupted` record that sorts to the top of the
+# feed. One deliberate asymmetry with observer.py: a REAL done/failed this
+# module computed from an actual ExecMainStatus/Result may still correct an
+# existing done/failed, because a unit's own exit status is better evidence
+# than a producer's claim -- this is the one module that ever has it.
+
+
+def test_a_vanished_unit_does_not_overwrite_a_row_already_done(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.upsert(row["id"], kind="observed", source="observed",
+                         state="done", detail="render finished at 100%")
+    # No evidence this pass -- the unit is gone before we could read a status.
+    _units(monkeypatch, {})
+    assert unit_follower.follow_once(now=1010.0) == 0
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "done"
+    assert row["detail"] == "render finished at 100%"
+
+
+def test_a_closing_unit_the_registry_no_longer_holds_is_not_recreated(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.remove(row["id"])
+    _units(monkeypatch, {})
+    assert unit_follower.follow_once(now=1010.0) == 0
+    assert task_registry.list_tasks() == []
+
+
+def test_a_real_failed_status_does_correct_a_producers_done(monkeypatch):
+    # The one deliberate asymmetry with observer.py: a unit's own exit status
+    # is BETTER evidence than a producer's claim, so a real `failed` this
+    # module computed from an actual ExecMainStatus/Result MAY still correct
+    # an existing `done` -- unlike a no-evidence `interrupted` close, which
+    # may never overwrite it (see the two tests above).
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    task_registry.upsert(row["id"], kind="observed", source="observed",
+                         state="done", detail="producer claimed success early")
+    _units(monkeypatch, {JOB["Id"]: _exited(ExecMainStatus="2", Result="exit-code")})
+    unit_follower.follow_once(now=1010.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "failed"
+    assert "2" in (row["detail"] or "")
+
+
 def test_collect_makes_no_registry_writes_only_apply_does(monkeypatch):
     _units(monkeypatch, {JOB["Id"]: JOB})
     collected = unit_follower.collect()

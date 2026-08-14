@@ -11,14 +11,16 @@ spec's degradation rule for this observer is "systemd unavailable → follower
 off; units fall back to the descendant scan". A follower that cannot see a
 unit must report nothing, never guess.
 
-`show` collapses that failure to {}, same as "no units matched" — it has no
-question that hinges on telling the two apart. `list_active` does NOT: it
-returns None on failure, distinct from [] ("systemd answered; nothing is
-active"), because the follower's closing loop treats those two answers
-oppositely. Read [] as "everything I'm tracking really did stop" is fine —
-that is what the answer means. Read None that way and a systemctl timeout
-would close every unit the follower is tracking as if it had confirmed each
-one gone, on precisely the review finding that is not confirmation at all.
+Both `list_active` and `show` return None on failure — a raised exception, a
+timeout, OR a nonzero exit (`Failed to connect to bus` from a transient
+DBus/user-manager blip exits 1 with empty stdout, which must not read as
+systemd's real answer of "") — distinct from an empty/falsy SUCCESSFUL
+answer ([] / {}), because the follower's closing loop treats those two
+outcomes oppositely. Read [] or {} as "everything I'm tracking really did
+stop / systemd said nothing about these units" is fine — that is what a real
+answer means. Read None that way and a systemctl hiccup would close every
+unit the follower is tracking as if it had confirmed each one gone, which is
+not confirmation at all.
 """
 from __future__ import annotations
 
@@ -51,12 +53,19 @@ TIMEOUT_S = 5.0
 def _run(argv: list[str]) -> str | None:
     """Default runner: stdout, or None on any failure whatsoever -- distinct
     from a legitimate empty stdout, which is real output ("nothing matched")
-    rather than "could not be asked at all"."""
+    rather than "could not be asked at all". A nonzero exit counts as
+    failure too, not just an exception: `Failed to connect to bus` (a
+    transient DBus/user-manager blip) exits 1 with empty stdout and its
+    message on stderr, which must not read as systemd's real answer of ""."""
     try:
         proc = subprocess.run(argv, capture_output=True, text=True,
                               timeout=TIMEOUT_S)
     except (OSError, subprocess.SubprocessError):
         log.warning("systemd_units: %s failed", " ".join(argv[:3]), exc_info=True)
+        return None
+    if proc.returncode != 0:
+        log.warning("systemd_units: %s exited %d: %s", " ".join(argv[:3]),
+                    proc.returncode, (proc.stderr or "").strip())
         return None
     return proc.stdout
 
@@ -120,12 +129,24 @@ def list_active(run=None) -> list[str] | None:
     return names
 
 
-def show(units: list[str], run=None) -> dict[str, dict]:
-    """unit name -> properties. One fork for the whole list."""
+def show(units: list[str], run=None) -> dict[str, dict] | None:
+    """unit name -> properties, or None if systemd could not be asked at all
+    this pass. One fork for the whole list.
+
+    None is distinct from {}, for the same reason list_active's is: an empty
+    dict is a real (if unlikely, given `units` is normally drawn straight
+    from list_active) answer -- "systemd was asked about these and said
+    nothing" -- while None is no information whatsoever. The follower's
+    closing loop reads a missing/empty result as confirmed-gone, so
+    collapsing a genuine systemctl failure into {} here would close every
+    unit it was tracking on a mere hiccup, the same failure mode
+    list_active's None already exists to prevent."""
     if not units:
         return {}
     argv = ["systemctl", "--user", "show", *units]
     for prop in SHOW_PROPS:
         argv += ["-p", prop]
-    out = _guarded(run, argv) or ""
+    out = _guarded(run, argv)
+    if out is None:
+        return None
     return {b["Id"]: b for b in parse_show(out) if b.get("Id")}

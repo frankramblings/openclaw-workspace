@@ -98,6 +98,44 @@ def test_show_asks_for_every_property_the_follower_needs():
 
 
 def test_show_survives_systemd_being_unavailable():
+    # Review round 2, findings 2/3: show() must carry the SAME None-on-
+    # failure signal list_active() does, distinct from {} ("systemd
+    # answered about these units and said nothing"). The follower's closing
+    # loop reads a missing entry as confirmed-gone, so collapsing a real
+    # systemctl failure to {} here would close every unit it was tracking.
     def boom(_argv):
         raise OSError("no systemd")
-    assert su.show(["a.service"], run=boom) == {}
+    assert su.show(["a.service"], run=boom) is None
+
+
+def test_run_reads_a_nonzero_returncode_as_none_not_empty_stdout(monkeypatch):
+    # Review round 2, findings 2/3: `Failed to connect to bus` (a transient
+    # DBus/user-manager blip) exits 1 with empty stdout and its message on
+    # stderr -- that must not read as systemd's real answer of "".
+    class FakeCompletedProcess:
+        returncode = 1
+        stdout = ""
+        stderr = "Failed to connect to bus: No such file or directory\n"
+
+    monkeypatch.setattr(su.subprocess, "run", lambda *a, **k: FakeCompletedProcess())
+    assert su._run(["systemctl", "--user", "list-units"]) is None
+
+
+def test_list_active_survives_a_nonzero_returncode(monkeypatch):
+    class FakeCompletedProcess:
+        returncode = 1
+        stdout = ""
+        stderr = "Failed to connect to bus: No such file or directory\n"
+
+    monkeypatch.setattr(su.subprocess, "run", lambda *a, **k: FakeCompletedProcess())
+    assert su.list_active() is None
+
+
+def test_show_survives_a_nonzero_returncode(monkeypatch):
+    class FakeCompletedProcess:
+        returncode = 1
+        stdout = ""
+        stderr = "Failed to connect to bus: No such file or directory\n"
+
+    monkeypatch.setattr(su.subprocess, "run", lambda *a, **k: FakeCompletedProcess())
+    assert su.show(["a.service"]) is None

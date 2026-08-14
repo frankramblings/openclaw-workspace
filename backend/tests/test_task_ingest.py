@@ -600,35 +600,82 @@ def fresh_unit_poll(monkeypatch):
     monkeypatch.setattr(task_ingest, "_last_unit_poll", 0.0)
 
 
-def test_the_unit_follower_runs_off_the_event_loop_thread_on_its_own_cadence(
+# --- Review round 2, finding 4 ---------------------------------------------
+#
+# Round 1's fix ran unit_follower.follow_once() via asyncio.to_thread — which
+# made it upsert into task_registry off the event-loop thread, breaking a
+# DOCUMENTED contract (task_registry.py: "Producers must call upsert from
+# the event-loop thread"). The ruling was to honor that contract, not weaken
+# it: split the follower into collect() (the blocking systemctl forks, no
+# registry access — this is what runs via to_thread) and apply() (the pure
+# state machine and every upsert — runs inline, back on the loop). These
+# tests assert _maybe_follow_units calls them in that shape.
+
+
+def test_the_unit_follower_collects_off_thread_then_applies_on_the_loop(
         monkeypatch, fresh_unit_poll):
+    from backend import unit_follower
+    calls = []
+
+    def fake_collect():
+        calls.append("collect")
+        return "COLLECTED-SENTINEL"
+
+    def fake_apply(collected, now):
+        calls.append(("apply", collected, now))
+
+    monkeypatch.setattr(unit_follower, "collect", fake_collect)
+    monkeypatch.setattr(unit_follower, "apply", fake_apply)
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))
+    assert calls[0] == "collect"
+    kind, collected, now = calls[1]
+    assert kind == "apply"
+    # apply() receives EXACTLY what collect() returned, unmodified.
+    assert collected == "COLLECTED-SENTINEL"
+    assert isinstance(now, float)
+
+
+def test_the_unit_follower_runs_on_its_own_cadence(monkeypatch, fresh_unit_poll):
     from backend import config, unit_follower
     calls = []
-    monkeypatch.setattr(unit_follower, "follow_once", lambda: calls.append("follow"))
+    monkeypatch.setattr(unit_follower, "collect", lambda: calls.append("pass"))
+    monkeypatch.setattr(unit_follower, "apply", lambda collected, now: None)
     asyncio.run(task_ingest._maybe_follow_units(1000.0))
-    assert calls == ["follow"]
+    assert calls == ["pass"]
     # Same pass again without advancing past UNIT_POLL_S: gated, no 2nd call.
     asyncio.run(task_ingest._maybe_follow_units(1000.0 + config.UNIT_POLL_S - 0.001))
-    assert calls == ["follow"]
+    assert calls == ["pass"]
     # Advance past the cadence: fires again.
     asyncio.run(task_ingest._maybe_follow_units(1000.0 + config.UNIT_POLL_S + 1))
-    assert calls == ["follow", "follow"]
+    assert calls == ["pass", "pass"]
 
 
 def test_the_unit_follower_is_skipped_when_disabled(monkeypatch, fresh_unit_poll):
     from backend import config, unit_follower
     monkeypatch.setattr(config, "UNIT_FOLLOWER_ENABLED", False)
     calls = []
-    monkeypatch.setattr(unit_follower, "follow_once", lambda: calls.append("follow"))
+    monkeypatch.setattr(unit_follower, "collect", lambda: calls.append("collect"))
+    monkeypatch.setattr(unit_follower, "apply", lambda collected, now: calls.append("apply"))
     asyncio.run(task_ingest._maybe_follow_units(1000.0))
     assert calls == []
 
 
-def test_a_failing_unit_follower_never_raises_out_of_the_gate(monkeypatch, fresh_unit_poll):
+def test_a_failing_collect_never_raises_out_of_the_gate(monkeypatch, fresh_unit_poll):
     from backend import unit_follower
 
     def boom():
         raise RuntimeError("systemctl exploded")
 
-    monkeypatch.setattr(unit_follower, "follow_once", boom)
+    monkeypatch.setattr(unit_follower, "collect", boom)
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))  # must not raise
+
+
+def test_a_failing_apply_never_raises_out_of_the_gate(monkeypatch, fresh_unit_poll):
+    from backend import unit_follower
+    monkeypatch.setattr(unit_follower, "collect", lambda: None)
+
+    def boom(collected, now):
+        raise RuntimeError("state machine exploded")
+
+    monkeypatch.setattr(unit_follower, "apply", boom)
     asyncio.run(task_ingest._maybe_follow_units(1000.0))  # must not raise

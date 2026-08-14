@@ -307,3 +307,129 @@ def test_a_unit_first_seen_already_dead_never_gets_a_row(monkeypatch):
     unit_follower.follow_once(now=1000.0)
     unit_follower.follow_once(now=1010.0)
     assert task_registry.list_tasks() == []
+
+
+# --- Review round 2 -----------------------------------------------------
+#
+# Finding 1 (Important, regression from round 1's still-alive gate): the
+# closing loop accepted `fresh.get(state["unit"])` as evidence about
+# `invocation` without checking the properties actually belong to it. `bwg`
+# and `podmigrate` reuse DETERMINISTIC unit names on purpose, so if the old
+# invocation exits and a new run starts under the SAME name inside one
+# UNIT_POLL_S window, a fresh look at that name is now about the NEW
+# invocation -- accepting it as "still alive, don't close" stranded the OLD
+# row at `running` forever, re-forking a `show` for it every pass.
+
+
+def test_a_reused_unit_name_closes_the_old_invocation_not_the_new_one(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"
+    assert row["state"] == "running"
+    # Same unit name, but `show()`'s answer for it is now about a brand new
+    # invocation -- a fresh run replaced the old one inside this poll window.
+    _units(monkeypatch, {JOB["Id"]: {**JOB, "InvocationID": "def456",
+                                     "ExecMainPID": "5555"}})
+    assert unit_follower.follow_once(now=1008.0) == 1   # A's close, this pass
+    rows = {r["id"]: r for r in task_registry.list_tasks()}
+    assert rows["observed:unit:abc123"]["state"] == "interrupted"
+    assert "outcome unknown" in rows["observed:unit:abc123"]["detail"]
+    # B accumulates under its own identity and, once past the threshold,
+    # gets its own row -- proof this is a genuinely new row, not A revived.
+    unit_follower.follow_once(now=1015.0)
+    ids = {r["id"] for r in task_registry.list_tasks()}
+    assert ids == {"observed:unit:abc123", "observed:unit:def456"}
+
+
+# Findings 2/3 (Important): the None-vs-empty contract stopped one door
+# short. `show()` collapsing a failed call to {} (finding 2) or `_run`
+# reading a nonzero exit as an empty stdout (finding 3, fixed at the
+# systemd_units layer -- see test_systemd_units.py) both turn a systemctl
+# hiccup into "confirmed gone", closing every tracked unit `interrupted`.
+
+
+def test_a_show_failure_during_the_main_pass_leaves_existing_rows_untouched(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "running"
+    monkeypatch.setattr(unit_follower, "_list_active", lambda: [JOB["Id"]])
+    monkeypatch.setattr(unit_follower, "_show", lambda _names: None)
+    assert unit_follower.follow_once(now=1008.0) == 0
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"
+    assert row["state"] == "running"
+
+
+def test_a_show_failure_during_the_closing_pass_leaves_the_entry_tracked(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "running"
+    # list_active answers honestly (the unit dropped out, e.g. deactivating),
+    # but the SEPARATE closing-loop reshow fails outright.
+    monkeypatch.setattr(unit_follower, "_list_active", lambda: [])
+    monkeypatch.setattr(unit_follower, "_show", lambda _names: None)
+    assert unit_follower.follow_once(now=1008.0) == 0
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"
+    assert row["state"] == "running"
+    # It survived rather than closing wrong: once systemd answers again with
+    # a real outcome, the SAME row closes.
+    monkeypatch.setattr(unit_follower, "_show",
+                        lambda _names: {JOB["Id"]: _exited(ExecMainStatus="0",
+                                                            Result="success")})
+    unit_follower.follow_once(now=1009.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"
+    assert row["state"] == "done"
+
+
+# Finding 4 (Important): collect() is the blocking half (systemctl forks
+# only, no registry access) and is what runs off the event-loop thread;
+# apply() is the pure half (the whole state machine, every _SEEN mutation,
+# every task_registry.upsert) and MUST run on the loop -- task_registry's
+# own contract requires producers to call upsert from there (see its module
+# docstring: _fanout's queue wakeups are not thread-safe). follow_once stays
+# a thin collect()-then-apply() wrapper so this file's existing tests, which
+# all call it directly and synchronously, need no other change.
+
+
+# Finding C (Minor): _still_alive is an ALLOWLIST of confirmed-stopped
+# states (inactive, failed), not a denylist of known-alive ones. systemd's
+# ActiveState vocabulary is bigger than what this box has been observed
+# reporting (systemd 259 here also reports "maintenance"/"refreshing"), and
+# a value this module doesn't recognize must resolve toward "not yet
+# confirmed stopped" rather than toward computing an outcome from properties
+# that might still be mid-transition.
+
+
+def test_an_unrecognized_activestate_is_not_treated_as_confirmed_stopped(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    monkeypatch.setattr(unit_follower, "_list_active", lambda: [])
+    monkeypatch.setattr(unit_follower, "_show",
+                        lambda _names: {JOB["Id"]: {**JOB, "ActiveState": "maintenance"}})
+    assert unit_follower.follow_once(now=1008.0) == 0
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"
+    assert row["state"] == "running"
+
+
+def test_collect_makes_no_registry_writes_only_apply_does(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB})
+    collected = unit_follower.collect()
+    assert task_registry.list_tasks() == []       # collect() wrote nothing
+    unit_follower.apply(collected, 1000.0)
+    assert task_registry.list_tasks() == []        # still under threshold
+    collected = unit_follower.collect()
+    assert task_registry.list_tasks() == []        # collect() STILL wrote nothing
+    changed = unit_follower.apply(collected, 1007.0)
+    assert changed == 1
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == "observed:unit:abc123"

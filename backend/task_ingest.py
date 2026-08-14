@@ -349,17 +349,30 @@ def tick(now: float) -> None:
 
 
 async def _maybe_follow_units(now: float) -> None:
-    """Run the systemd unit follower on its own (slower) cadence, off the
-    event-loop thread via asyncio.to_thread.
+    """Run the systemd unit follower on its own (slower) cadence.
 
     It does NOT live inside tick(), on purpose: tick is synchronous and runs
     directly on this coroutine's turn, and unlike observers 1 and 2 (a pure
     /proc walk) the unit follower forks systemctl — up to twice per pass, one
     list-units and one batched show. A hung/slow systemd there would stall
-    the whole event loop, not just this ingest pass, so it gets its own gate
-    and its own thread. `now` is the same monotonic-style clock tick() takes
-    and, like tick's own _last_observe/_last_sweep gates, is a parameter
-    rather than read internally so the cadence is testable without sleeping."""
+    the whole event loop, not just this ingest pass, so it gets its own gate.
+    `now` is the same monotonic-style clock tick() takes and, like tick's own
+    _last_observe/_last_sweep gates, is a parameter rather than read
+    internally so the cadence is testable without sleeping.
+
+    The blocking work (`collect()`) runs off the event-loop thread via
+    asyncio.to_thread; the registry writes (`apply()`) run back on it,
+    inline, right here, on REAL wall-clock time -- not the monotonic `now`
+    this gate itself uses, matching how observer.observe_once() has always
+    been called (with no `now`, defaulting internally to time.time()); the
+    monotonic clock stays scoped to this cadence gate only. This is NOT
+    `asyncio.to_thread(unit_follower.follow_once)`: task_registry's module
+    docstring documents "producers must call upsert from the event-loop
+    thread" as a real invariant (its SSE fan-out wakes the loop's selector in
+    a way that is only safe from the thread that owns it), and collapsing
+    collect+apply into one off-thread call would silently violate it for
+    every write this follower makes. See unit_follower's own module
+    docstring for the full split."""
     global _last_unit_poll
     if not config.UNIT_FOLLOWER_ENABLED:
         return
@@ -367,7 +380,8 @@ async def _maybe_follow_units(now: float) -> None:
         return
     _last_unit_poll = now
     try:
-        await asyncio.to_thread(unit_follower.follow_once)
+        collected = await asyncio.to_thread(unit_follower.collect)
+        unit_follower.apply(collected, time.time())
     except Exception:  # noqa: BLE001
         log.warning("task_ingest: unit follower failed", exc_info=True)
 

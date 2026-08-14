@@ -34,7 +34,26 @@ shutdown window (up to `TimeoutStopSec`), and its still-held properties can
 report a stale `Result=success` from before the stop even began. Only a
 genuinely-stopped `ActiveState` may produce a terminal outcome; short of
 that, the closing loop leaves the entry tracked for a later pass rather than
-guess.
+guess. A "fresh look" fetched for a closing invocation is matched by unit
+NAME, not identity -- `bwg`/`podmigrate` reuse deterministic names on
+purpose, so that fresh look can legitimately belong to a brand new
+invocation that already replaced the one being judged. It is trusted as
+evidence that THIS invocation is still alive only when its own
+`InvocationID` matches; a mismatch is not evidence about this invocation at
+all and falls through to the ordinary close (which reads it the same as a
+unit that vanished outright).
+
+The module is split along its one real seam: `collect()` does every
+systemctl fork (list-units, the main show, and the closing loop's batched
+reshow) and touches nothing else -- no `_SEEN` mutation, no
+`task_registry` access. `apply()` does the entire state machine -- every
+`_SEEN` mutation and every `task_registry.upsert` -- and no I/O at all.
+That split exists for a threading reason, not a style one: `task_registry`'s
+producer contract requires `upsert` to be called from the event-loop thread
+(see its module docstring), so `collect()` is what runs off it via
+`asyncio.to_thread` (see `task_ingest._maybe_follow_units`) while `apply()`
+runs back on it. `follow_once()` composes the two on the SAME (calling)
+thread, for this module's own test suite and any other synchronous caller.
 """
 from __future__ import annotations
 
@@ -50,12 +69,15 @@ _SEEN: dict[str, dict] = {}
 
 _SYSTEMD_RUN_PREFIX = "[systemd-run] "
 
-# ActiveState values under which a unit has NOT genuinely stopped yet.
-# `list-units --state=active` only ever reports "active" -- it excludes
-# "deactivating" outright, which is where a unit sits for its entire
-# shutdown -- so "missing from the active list" is not this check; only a
-# fresh look at ActiveState itself is.
-_STILL_ALIVE_STATES = frozenset({"active", "activating", "reloading", "deactivating"})
+# ActiveState values under which a unit is CONFIRMED to have genuinely
+# stopped. An ALLOWLIST, not a denylist of known-alive states: systemd's
+# ActiveState vocabulary is bigger than what this box has been observed
+# reporting (systemd 259 here also reports "maintenance"/"refreshing" for
+# some unit types), and a value this module doesn't recognize must resolve
+# toward "not yet confirmed stopped" -- the same direction "unknown" resolves
+# everywhere else in this codebase's honesty rules -- rather than toward
+# computing an outcome from properties that might still be mid-transition.
+_CONFIRMED_STOPPED_STATES = frozenset({"inactive", "failed"})
 
 
 def reset_for_tests() -> None:
@@ -66,7 +88,7 @@ def _list_active() -> list[str] | None:
     return systemd_units.list_active()
 
 
-def _show(names: list[str]) -> dict[str, dict]:
+def _show(names: list[str]) -> dict[str, dict] | None:
     return systemd_units.show(names)
 
 
@@ -87,11 +109,12 @@ def _label_for(props: dict) -> str:
 
 
 def _still_alive(props: dict) -> bool:
-    """True while ActiveState says a unit has not genuinely stopped. The
+    """True UNLESS ActiveState confirms a unit has genuinely stopped. The
     closing loop's ONE question before it will compute an outcome -- see the
     module docstring for why "dropped out of the active list" cannot answer
-    it on its own."""
-    return (props.get("ActiveState") or "").strip() in _STILL_ALIVE_STATES
+    it on its own, and why this is an allowlist of confirmed-stopped values
+    rather than a denylist of known-alive ones."""
+    return (props.get("ActiveState") or "").strip() not in _CONFIRMED_STOPPED_STATES
 
 
 def _outcome_for(props: dict) -> tuple[str, str]:
@@ -114,21 +137,73 @@ def _outcome_for(props: dict) -> tuple[str, str]:
     return "failed", f"exited {status}"
 
 
-def follow_once(now: float | None = None) -> int:
-    """One poll. Returns the number of registry writes made -- zero on a quiet
-    pass, because every upsert fans out an SSE frame."""
-    if not config.UNIT_FOLLOWER_ENABLED:
-        return 0
-    now = time.time() if now is None else now
+def _live_invocations(props_by_unit: dict[str, dict]) -> set[str]:
+    """Invocation IDs this pass's properties confirm are genuinely running
+    right now -- the exact filter apply()'s own per-unit loop applies to
+    decide `live_ids`, replicated here (read-only) so collect() can decide,
+    before doing any more I/O, which tracked invocations need a fresh look."""
+    return {
+        (p.get("InvocationID") or "").strip() for p in props_by_unit.values()
+        if (p.get("Transient") or "").strip() == "yes"
+        and (p.get("InvocationID") or "").strip()
+        and (p.get("ActiveState") or "").strip() == "active"
+    }
+
+
+def collect() -> dict | None:
+    """The blocking half of a pass: every systemctl fork this pass might
+    need, and nothing else -- no `_SEEN` mutation, no task_registry access.
+    This is what runs off the event-loop thread; see the module docstring
+    and `task_ingest._maybe_follow_units`.
+
+    Returns None when systemd could not be asked at all this pass (the
+    list-units fork or the main show fork failed outright) -- "no
+    information", not "nothing is active"/"nothing changed", the same
+    contract `systemd_units.list_active`/`show` each already carry. A
+    failure of only the closing loop's batched reshow is NOT collapsed into
+    this: the main pass's own findings are still real information, so it is
+    carried through in the returned dict's "reshow" key as None instead, for
+    apply() to act on unit by unit."""
     names = _list_active()
     if names is None:
-        # systemctl could not be asked at all this pass -- no information,
-        # not "nothing is active". Writing anything from here would mean
-        # guessing every tracked unit's fate off a subprocess hiccup; leave
-        # `_SEEN` exactly as it is and try again next pass.
-        return 0
+        return None
     props_by_unit = _show(names) if names else {}
+    if props_by_unit is None:
+        return None
     procs = proc_tree.snapshot()
+
+    live_ids = _live_invocations(props_by_unit)
+    need_reshow = sorted({
+        s["unit"] for inv, s in _SEEN.items()
+        if inv not in live_ids and s["row_id"] is not None and s["unit"]
+        and (not s.get("last_props") or _still_alive(s["last_props"]))
+    })
+    reshow = _show(need_reshow) if need_reshow else {}
+    return {"props_by_unit": props_by_unit, "procs": procs, "reshow": reshow}
+
+
+def apply(collected: dict | None, now: float) -> int:
+    """The pure half of a pass: the whole state machine, every `_SEEN`
+    mutation, and every `task_registry.upsert` -- always on the event-loop
+    thread, per task_registry's producer contract (see its module
+    docstring: `upsert`'s SSE fan-out wakes the loop's selector in a way
+    that is only safe from the thread that owns it). No I/O of any kind:
+    over a handful of units this is microseconds of CPU, exactly what
+    belongs on the loop rather than off it.
+
+    `collected` is `collect()`'s return value. None means systemd could not
+    be asked at all this pass -- apply() makes no writes and returns 0,
+    leaving `_SEEN` exactly as it was, the same "no information" contract
+    collect() itself follows. Returns the number of registry writes made --
+    zero on a quiet pass, because every upsert fans out an SSE frame."""
+    if collected is None:
+        return 0
+    props_by_unit = collected["props_by_unit"]
+    procs = collected["procs"]
+    fresh = collected["reshow"]
+    reshow_failed = fresh is None
+    if reshow_failed:
+        fresh = {}
     changed = 0
     live_ids: set[str] = set()
 
@@ -192,40 +267,60 @@ def follow_once(now: float | None = None) -> int:
                 changed += 1
 
     # A unit we were following is no longer active. Prefer the properties we
-    # already hold from this pass; only re-ask systemd -- in ONE batched call
-    # covering every such unit, not one fork each -- when what we hold does
-    # not already show a genuinely stopped unit. "Dropped out of the active
-    # list" is not that: `deactivating` is excluded from it for the unit's
-    # WHOLE shutdown window, so a unit can vanish from `live_ids` while still
-    # actually running. If the fresh look still shows it alive, leave the
-    # entry tracked and write nothing this pass -- it closes on a later one.
-    # If it is gone entirely -- `systemd-run --collect` garbage-collects a
-    # transient unit on exit -- we never saw an outcome and say exactly that.
+    # already hold from this pass; only trust collect()'s batched reshow --
+    # matched by unit NAME, so it can legitimately belong to a DIFFERENT,
+    # newer invocation of the same deterministic name -- when its own
+    # InvocationID confirms it is actually about US. "Dropped out of the
+    # active list" is not proof of a stop either: `deactivating` is excluded
+    # from it for the unit's WHOLE shutdown window, so a unit can vanish from
+    # `live_ids` while still actually running. If the fresh look still shows
+    # OUR invocation alive, leave the entry tracked and write nothing this
+    # pass -- it closes on a later one. If the reshow itself failed, that is
+    # no information, not confirmation everyone needing it is gone -- same
+    # treatment. If it is gone entirely -- `systemd-run --collect`
+    # garbage-collects a transient unit on exit -- or the fresh look belongs
+    # to a different invocation, we never saw OUR outcome and say exactly that.
     closing = [i for i in _SEEN if i not in live_ids]
-    need_reshow = sorted({
-        _SEEN[i]["unit"] for i in closing
-        if _SEEN[i]["row_id"] is not None and _SEEN[i]["unit"]
-        and (not _SEEN[i].get("last_props") or _still_alive(_SEEN[i]["last_props"]))
-    })
-    fresh = _show(need_reshow) if need_reshow else {}
-
     for invocation in closing:
         state = _SEEN[invocation]
         if state["row_id"] is None:
             _SEEN.pop(invocation)
             continue                      # never surfaced, nothing to close
         props = state.get("last_props")
-        if not props or _still_alive(props):
+        needed_reshow = not props or _still_alive(props)
+        if needed_reshow:
+            if reshow_failed:
+                continue                  # no information this pass; stays tracked
             props = fresh.get(state["unit"]) if state["unit"] else None
-        if props and _still_alive(props):
+        if (props and (props.get("InvocationID") or "").strip() == invocation
+                and _still_alive(props)):
             state["last_props"] = props   # freshest reading, for next pass
             continue                      # mid-shutdown; still tracked, try again later
         _SEEN.pop(invocation)
         if props and (props.get("InvocationID") or "").strip() == invocation:
             outcome, detail = _outcome_for(props)
         else:
+            # Either genuinely gone, or `props` belongs to a DIFFERENT
+            # invocation that already replaced this one under the same
+            # deterministic name -- either way, not evidence about THIS
+            # invocation's fate.
             outcome, detail = "interrupted", "unit is gone; outcome unknown"
         task_registry.upsert(state["row_id"], kind="observed", source="observed",
                              state=outcome, detail=detail)
         changed += 1
     return changed
+
+
+def follow_once(now: float | None = None) -> int:
+    """One poll: collect() then apply(), on the SAME (calling) thread. A
+    convenience wrapper for this module's own test suite and any other
+    synchronous/direct caller. The real production path
+    (`task_ingest._maybe_follow_units`) calls collect() and apply()
+    separately so apply()'s upserts land on the event-loop thread while
+    collect()'s systemctl forks run off it. Returns the number of registry
+    writes made -- zero on a quiet pass, because every upsert fans out an
+    SSE frame."""
+    if not config.UNIT_FOLLOWER_ENABLED:
+        return 0
+    now = time.time() if now is None else now
+    return apply(collect(), now)

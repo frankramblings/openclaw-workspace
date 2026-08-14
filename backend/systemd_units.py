@@ -74,10 +74,13 @@ def _guarded(run, argv: list[str]) -> str | None:
     """An injected runner is test code and may raise; the contract with our
     caller is still silence-on-failure, expressed as None rather than "" so a
     caller that needs to tell "systemd could not be asked at all" apart from
-    "systemd answered and there was nothing" can do so. `list_active` relies
-    on that distinction (a failed pass must not read as "nothing active" and
-    close every unit it was tracking); `show` has no equivalent question to
-    ask and just collapses None back to an empty result, same as before."""
+    "systemd answered and there was nothing" can do so. Both `list_active`
+    and `show` rely on that distinction and propagate this function's None
+    as their own: a failed `list_active` pass must not read as "nothing
+    active" and close every unit it was tracking, and a failed `show` must
+    not read as "these units are gone" for the same reason -- collapsing
+    either one back to an empty result (`[]`/`{}`) here would erase the
+    difference the whole point of this function is to preserve."""
     try:
         return (run or _run)(argv)
     except Exception:  # noqa: BLE001 - the follower must never break the poll

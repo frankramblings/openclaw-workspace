@@ -328,7 +328,14 @@ def tick(now: float) -> None:
     threshold is already a registry row when the scan's merge looks for an
     attach target in this same pass. Otherwise a producer would open its own
     row and the two would coexist for a full poll interval — visible to the
-    user as the duplicate row this wave exists to remove."""
+    user as the duplicate row this wave exists to remove.
+
+    The same rationale now covers unit rows too, one layer up: ingest_loop
+    calls `_maybe_follow_units(now)` BEFORE tick(), so by the time this
+    function's own scan_once() runs, any unit row the follower just closed or
+    opened this pass already exists in the registry for the merge to find —
+    and, closing side, already terminal before task_liveness.sweep_once()
+    below gets a turn to look at its (by-then-dead) pid."""
     global _last_observe, _last_sweep
     if config.OBSERVER_ENABLED and now - _last_observe >= config.OBSERVER_POLL_S:
         _last_observe = now

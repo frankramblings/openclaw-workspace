@@ -214,6 +214,15 @@ OBSERVE_THRESHOLD_S = _env_int("WORKSPACE_OBSERVE_THRESHOLD_S", 6)
 # A full /proc walk measured 4.5 ms over 256 processes, so 1 Hz costs ~0.45%
 # of a core.
 OBSERVER_POLL_S = _env_int("WORKSPACE_OBSERVER_POLL_S", 1)
+# Observer 3: the systemd unit follower. The two long-running workloads on
+# this box -- podcast renders (`bwg` launches each with `systemd-run --user
+# --unit=...`) and podcast migrations (`run-show.sh`, fired by a 05:00 timer)
+# -- run as transient user units, which no shell ever sees and no descendant
+# scan can reach, because their parent is `systemd --user`.
+UNIT_FOLLOWER_ENABLED = os.environ.get("WORKSPACE_UNIT_FOLLOWER", "1") not in ("0", "false", "no", "")
+# Slower than the /proc walk on purpose: each pass forks systemctl twice
+# (one list-units, one batched show), where the descendant scan forks nothing.
+UNIT_POLL_S = _env_int("WORKSPACE_UNIT_POLL_S", 5)
 # Chat auto-titles run on a cheap model so they never race the user's real
 # turn through codex on the big one. NOT openai/* (and NOT gemini/*): those
 # stream only the first token then [DONE] through this gateway, so every new

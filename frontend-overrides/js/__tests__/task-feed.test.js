@@ -256,3 +256,10 @@ test('a row that goes directly interrupted to done (task_ingest.py:130-142 termi
   assert.equal(pruneTerminal(m, laterFg + TERMINAL_FOREGROUND_MS - 1).size, 1);
   assert.equal(pruneTerminal(m, laterFg + TERMINAL_FOREGROUND_MS + 1).size, 0);
 });
+
+test('an unknown typed event leaves the map untouched rather than corrupting it', () => {
+  const before = new Map([['a', { id: 'a', state: 'running' }]]);
+  const after = reduceFeedEvent(before, { type: 'task.something-new', id: 'a' });
+  assert.equal(after.get('a').state, 'running');
+  assert.equal(after.size, 1);
+});

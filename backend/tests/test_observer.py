@@ -9,6 +9,11 @@ def clean(monkeypatch):
     observer.reset_for_tests()
     monkeypatch.setattr(config, "OBSERVE_THRESHOLD_S", 6)
     monkeypatch.setattr(observer, "_session_key_for", lambda key: "chat-1")
+    # Review finding 3: observe_once no longer calls the unit follower at all
+    # (it now runs from ingest_loop on its own thread — see task_ingest), but
+    # this flag stays here as a belt-and-suspenders guard against forking
+    # real systemctl from this module's tests if that ever changes again.
+    monkeypatch.setattr(config, "UNIT_FOLLOWER_ENABLED", False)
     yield
     task_registry.reset_for_tests()
     observer.reset_for_tests()

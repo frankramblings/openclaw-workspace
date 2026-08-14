@@ -2,6 +2,7 @@
 the registry: create, progress-merge, stall derivation, vanish → interrupted
 (running) / remove (terminal). Uses real files in tmp fixtures — the same
 atomic-JSON contract bin/job writes."""
+import asyncio
 import json
 import time
 
@@ -577,3 +578,199 @@ def test_a_failing_observer_never_stops_the_scan(monkeypatch, fresh_tick):
     monkeypatch.setattr(task_ingest, "scan_once", lambda: calls.append("scan"))
     task_ingest.tick(now=1000.0)
     assert calls == ["observe", "scan"]
+
+
+# --- Task 2 review, Important 4: the unit follower forks systemctl, and ----
+# --- must never do that on the event-loop thread ---------------------------
+#
+# tick() is synchronous and runs directly inside ingest_loop's coroutine turn
+# — a blocking fork-and-wait there stalls the WHOLE server, not just this
+# loop. The follower therefore does NOT live inside tick; it runs from
+# ingest_loop via asyncio.to_thread, gated by its own module-level clock
+# (_last_unit_poll), the same pattern _last_observe/_last_sweep use for
+# tick's own gates.
+
+
+@pytest.fixture()
+def fresh_unit_poll(monkeypatch):
+    """_maybe_follow_units paces itself off its own module-level clock,
+    separate from tick's. Reset it for the same reason fresh_tick resets
+    tick's clocks — otherwise a test inherits the previous test's `now` and
+    silently skips the call it's asserting on."""
+    monkeypatch.setattr(task_ingest, "_last_unit_poll", 0.0)
+
+
+# --- Review round 2, finding 4 ---------------------------------------------
+#
+# Round 1's fix ran unit_follower.follow_once() via asyncio.to_thread — which
+# made it upsert into task_registry off the event-loop thread, breaking a
+# DOCUMENTED contract (task_registry.py: "Producers must call upsert from
+# the event-loop thread"). The ruling was to honor that contract, not weaken
+# it: split the follower into collect() (the blocking systemctl forks, no
+# registry access — this is what runs via to_thread) and apply() (the pure
+# state machine and every upsert — runs inline, back on the loop). These
+# tests assert _maybe_follow_units calls them in that shape.
+
+
+def test_the_unit_follower_collects_off_thread_then_applies_on_the_loop(
+        monkeypatch, fresh_unit_poll):
+    # Call order and argument passing alone do not pin the guarantee this
+    # test is named for: wrapping BOTH collect() and apply() in one
+    # asyncio.to_thread call — the exact regression that took two review
+    # rounds to remove (task 2, round-1 finding new-D) — would still pass an
+    # order/argument-only version of this test. Recording threading.get_ident()
+    # inside each fake is what actually pins "off the event-loop thread, then
+    # back on it".
+    import threading
+
+    from backend import unit_follower
+    calls = []
+    loop_thread_ident = threading.get_ident()
+
+    def fake_collect():
+        calls.append(("collect", threading.get_ident()))
+        return "COLLECTED-SENTINEL"
+
+    def fake_apply(collected, now):
+        calls.append(("apply", collected, now, threading.get_ident()))
+
+    monkeypatch.setattr(unit_follower, "collect", fake_collect)
+    monkeypatch.setattr(unit_follower, "apply", fake_apply)
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))
+    collect_kind, collect_ident = calls[0]
+    assert collect_kind == "collect"
+    apply_kind, collected, now, apply_ident = calls[1]
+    assert apply_kind == "apply"
+    # apply() receives EXACTLY what collect() returned, unmodified.
+    assert collected == "COLLECTED-SENTINEL"
+    assert isinstance(now, float)
+    # The actual threading guarantee: collect() ran on a DIFFERENT thread
+    # than the caller, and apply() ran back on the caller's (event-loop)
+    # thread — not merely "some thread or other" for each.
+    assert collect_ident != loop_thread_ident
+    assert apply_ident == loop_thread_ident
+
+
+def test_the_unit_follower_runs_on_its_own_cadence(monkeypatch, fresh_unit_poll):
+    from backend import config, unit_follower
+    calls = []
+    monkeypatch.setattr(unit_follower, "collect", lambda: calls.append("pass"))
+    monkeypatch.setattr(unit_follower, "apply", lambda collected, now: None)
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))
+    assert calls == ["pass"]
+    # Same pass again without advancing past UNIT_POLL_S: gated, no 2nd call.
+    asyncio.run(task_ingest._maybe_follow_units(1000.0 + config.UNIT_POLL_S - 0.001))
+    assert calls == ["pass"]
+    # Advance past the cadence: fires again.
+    asyncio.run(task_ingest._maybe_follow_units(1000.0 + config.UNIT_POLL_S + 1))
+    assert calls == ["pass", "pass"]
+
+
+def test_the_unit_follower_is_skipped_when_disabled(monkeypatch, fresh_unit_poll):
+    from backend import config, unit_follower
+    monkeypatch.setattr(config, "UNIT_FOLLOWER_ENABLED", False)
+    calls = []
+    monkeypatch.setattr(unit_follower, "collect", lambda: calls.append("collect"))
+    monkeypatch.setattr(unit_follower, "apply", lambda collected, now: calls.append("apply"))
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))
+    assert calls == []
+
+
+def test_a_failing_collect_never_raises_out_of_the_gate(monkeypatch, fresh_unit_poll):
+    from backend import unit_follower
+
+    def boom():
+        raise RuntimeError("systemctl exploded")
+
+    monkeypatch.setattr(unit_follower, "collect", boom)
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))  # must not raise
+
+
+def test_a_failing_apply_never_raises_out_of_the_gate(monkeypatch, fresh_unit_poll):
+    from backend import unit_follower
+    monkeypatch.setattr(unit_follower, "collect", lambda: None)
+
+    def boom(collected, now):
+        raise RuntimeError("state machine exploded")
+
+    monkeypatch.setattr(unit_follower, "apply", boom)
+    asyncio.run(task_ingest._maybe_follow_units(1000.0))  # must not raise
+
+
+# --- Final whole-branch review, Important 1: a COMPOSITION defect ----------
+#
+# task_liveness.SWEEP_S and config.UNIT_POLL_S are both 5s and are stamped
+# from the SAME `now` (ingest_loop's own clock), so they fire on identical
+# iterations forever. A unit row's extra["pid"] is its ExecMainPID, already
+# dead by the time systemd itself reports the unit has stopped — so if the
+# liveness sweeper got a turn before the unit follower's own closing pass,
+# it would confirm that pid dead and flip the row to `interrupted` ("outcome
+# unknown"), queuing a false "lost track" push, before the follower ever
+# wrote the honest `done`. Fixed by running _maybe_follow_units BEFORE
+# tick() in ingest_loop. This test drives one iteration's worth of work in
+# that fixed order and pins the CONSEQUENCE — the row never reads
+# `interrupted` — rather than only the call order: a call-order test is
+# exactly what let the threading regression (finding new-D, task 2 round 1)
+# through earlier in this wave.
+
+
+def test_a_units_close_is_not_preempted_by_the_liveness_sweeper(
+        monkeypatch, fresh_tick, fresh_unit_poll):
+    import subprocess
+
+    from backend import config, proc_tree, task_liveness, unit_follower
+
+    monkeypatch.setattr(config, "UNIT_FOLLOWER_ENABLED", True)
+    monkeypatch.setattr(config, "OBSERVER_ENABLED", False)
+    monkeypatch.setattr(config, "OBSERVE_THRESHOLD_S", 0)
+    monkeypatch.setattr(proc_tree, "snapshot", lambda: {})
+    unit_follower.reset_for_tests()
+
+    # A pid that is genuinely, permanently dead — exactly what a unit's
+    # ExecMainPID looks like by the time systemd itself reports the unit has
+    # stopped (already reaped, not merely absent).
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+
+    job = {"Id": "podmigrate-readup.service", "Transient": "yes",
+           "InvocationID": "abc123", "ActiveState": "active",
+           "SubState": "running", "ExecMainPID": str(dead.pid),
+           "ExecMainStatus": "0", "Result": "success",
+           "Description": "[systemd-run] readup", "ActiveEnterTimestamp": ""}
+    exited = {**job, "ActiveState": "inactive", "SubState": "dead",
+             "ExecMainPID": "0"}
+
+    try:
+        # Surface the row. OBSERVE_THRESHOLD_S=0 means one pass is enough.
+        monkeypatch.setattr(unit_follower, "_list_active", lambda: [job["Id"]])
+        monkeypatch.setattr(unit_follower, "_show", lambda names: {job["Id"]: job})
+        asyncio.run(task_ingest._maybe_follow_units(1000.0))
+        row = task_registry.get("observed:unit:abc123")
+        assert row is not None and row["state"] == "running"
+        assert row["extra"]["pid"] == dead.pid
+
+        # The unit has now exited cleanly and dropped off the active list.
+        # Both cadence gates land on the SAME `now` here, on purpose,
+        # reproducing exactly the composition the final review flagged.
+        monkeypatch.setattr(unit_follower, "_list_active", lambda: [])
+        monkeypatch.setattr(
+            unit_follower, "_show",
+            lambda names: {job["Id"]: exited} if job["Id"] in names else {})
+        now = 2000.0
+        monkeypatch.setattr(task_ingest, "_last_unit_poll", now - config.UNIT_POLL_S)
+        monkeypatch.setattr(task_ingest, "_last_sweep", now - task_liveness.SWEEP_S)
+
+        # One loop iteration's worth of work, in the FIXED order (see
+        # ingest_loop): the follower closes the row to `done` before the
+        # sweeper ever gets a turn to look at its now-dead pid.
+        asyncio.run(task_ingest._maybe_follow_units(now))
+        assert task_registry.get("observed:unit:abc123")["state"] == "done"
+
+        task_ingest.tick(now)
+        # The sweeper ran on this same `now` (its gate is satisfied too) but
+        # found nothing to do: the row already left task_liveness._LIVE, so
+        # next_state declines it. It must never have read `interrupted` at
+        # any point in this sequence.
+        assert task_registry.get("observed:unit:abc123")["state"] == "done"
+    finally:
+        unit_follower.reset_for_tests()

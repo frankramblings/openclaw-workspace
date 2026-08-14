@@ -88,3 +88,21 @@ def test_stream_ends_after_drop(monkeypatch):
                 await asyncio.wait_for(gen.__anext__(), timeout=1)
 
     asyncio.run(main())
+
+
+def test_the_stream_frames_any_typed_event_not_just_the_one_it_knows():
+    # _fanout forwards a bare event whenever it carries a "type"; the route
+    # must use the SAME test, or the next event type ships as a malformed
+    # task.update whose "task" is an event.
+    from backend import tasks_route
+    framed = tasks_route._frame_for({"type": "task.something-new", "id": "x"})
+    assert framed["type"] == "task.something-new"
+    assert "task" not in framed
+
+
+def test_the_stream_still_frames_a_record_as_an_update():
+    from backend import tasks_route
+    rec = {"id": "taskfile:x", "state": "running", "kind": "job"}
+    framed = tasks_route._frame_for(rec)
+    assert framed["type"] == "task.update"
+    assert framed["task"] == rec

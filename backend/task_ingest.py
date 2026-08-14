@@ -53,7 +53,7 @@ import json
 import logging
 import time
 
-from . import config, observer, task_liveness, task_push
+from . import config, observer, task_liveness, task_push, unit_follower
 from . import task_registry
 from .jobs import JOBS_DIR
 from .workspace_files import workspace_root
@@ -317,6 +317,7 @@ def scan_once() -> None:
 
 _last_observe = 0.0
 _last_sweep = 0.0
+_last_unit_poll = 0.0
 
 
 def tick(now: float) -> None:
@@ -327,7 +328,14 @@ def tick(now: float) -> None:
     threshold is already a registry row when the scan's merge looks for an
     attach target in this same pass. Otherwise a producer would open its own
     row and the two would coexist for a full poll interval — visible to the
-    user as the duplicate row this wave exists to remove."""
+    user as the duplicate row this wave exists to remove.
+
+    The same rationale now covers unit rows too, one layer up: ingest_loop
+    calls `_maybe_follow_units(now)` BEFORE tick(), so by the time this
+    function's own scan_once() runs, any unit row the follower just closed or
+    opened this pass already exists in the registry for the merge to find —
+    and, closing side, already terminal before task_liveness.sweep_once()
+    below gets a turn to look at its (by-then-dead) pid."""
     global _last_observe, _last_sweep
     if config.OBSERVER_ENABLED and now - _last_observe >= config.OBSERVER_POLL_S:
         _last_observe = now
@@ -347,11 +355,75 @@ def tick(now: float) -> None:
             log.warning("task_ingest: liveness sweep failed", exc_info=True)
 
 
+async def _maybe_follow_units(now: float) -> None:
+    """Run the systemd unit follower on its own (slower) cadence.
+
+    It does NOT live inside tick(), on purpose: tick is synchronous and runs
+    directly on this coroutine's turn, and unlike observers 1 and 2 (a pure
+    /proc walk) the unit follower forks systemctl — up to twice per pass, one
+    list-units and one batched show. A hung/slow systemd there would stall
+    the whole event loop, not just this ingest pass, so it gets its own gate.
+    `now` is the same monotonic-style clock tick() takes and, like tick's own
+    _last_observe/_last_sweep gates, is a parameter rather than read
+    internally so the cadence is testable without sleeping.
+
+    The blocking work (`collect()`) runs off the event-loop thread via
+    asyncio.to_thread; the registry writes (`apply()`) run back on it,
+    inline, right here, on REAL wall-clock time -- not the monotonic `now`
+    this gate itself uses, matching how observer.observe_once() has always
+    been called (with no `now`, defaulting internally to time.time()); the
+    monotonic clock stays scoped to this cadence gate only. This is NOT
+    `asyncio.to_thread(unit_follower.follow_once)`: task_registry's module
+    docstring documents "producers must call upsert from the event-loop
+    thread" as a real invariant (its SSE fan-out wakes the loop's selector in
+    a way that is only safe from the thread that owns it), and collapsing
+    collect+apply into one off-thread call would silently violate it for
+    every write this follower makes. See unit_follower's own module
+    docstring for the full split."""
+    global _last_unit_poll
+    if not config.UNIT_FOLLOWER_ENABLED:
+        return
+    if now - _last_unit_poll < config.UNIT_POLL_S:
+        return
+    _last_unit_poll = now
+    try:
+        collected = await asyncio.to_thread(unit_follower.collect)
+        unit_follower.apply(collected, time.time())
+    except Exception:  # noqa: BLE001
+        log.warning("task_ingest: unit follower failed", exc_info=True)
+
+
 async def ingest_loop() -> None:
     """Run tick() forever. Failures are logged inside tick, never fatal — a bad
-    pass self-heals on the next one."""
+    pass self-heals on the next one. The unit follower runs alongside tick on
+    its own cadence (_maybe_follow_units) rather than inside it — see that
+    function for why.
+
+    Ordering within the loop body is load-bearing, the same way tick()'s own
+    observe-before-scan ordering is: _maybe_follow_units runs BEFORE tick, not
+    after. task_liveness.SWEEP_S and config.UNIT_POLL_S are both 5s and are
+    stamped from this SAME `now`, so on every single iteration where the unit
+    follower has fresh work, tick()'s liveness sweeper is gated to fire on
+    that identical iteration too. A unit row's extra["pid"] is its
+    ExecMainPID, which systemd already reports as gone by the time a unit has
+    stopped — so if the sweeper ran first, it would find that pid dead on
+    every successful unit and flip the row to `interrupted` ("outcome
+    unknown"), queuing a false "lost track" push, milliseconds before the
+    follower's own closing pass would have written the honest `done`/`failed`.
+    Running the follower first means its apply() has already written the
+    terminal state and dropped the row out of task_liveness._LIVE before the
+    sweeper ever looks at it, so the sweeper leaves it alone. The sweeper
+    still matters after this reordering — it is not made redundant by it: if
+    collect() fails this pass, the follower writes nothing, and the sweeper's
+    `interrupted` is then the honest, still-upgradeable (task_push._supersedes)
+    answer for that row. This ordering also puts unit rows in the registry
+    before scan_once's merge looks for an attach target in the same pass —
+    the same rationale tick's own docstring gives for observing before
+    scanning."""
     while True:
-        tick(time.monotonic())
+        now = time.monotonic()
+        await _maybe_follow_units(now)
+        tick(now)
         try:
             await task_push.drain()
         except Exception:  # noqa: BLE001

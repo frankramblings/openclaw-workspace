@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import time
 
-from . import config, proc_tree, shell_hook, task_registry
+from . import config, proc_tree, shell_hook, task_registry, unit_follower
 
 log = logging.getLogger(__name__)
 
@@ -45,12 +45,16 @@ _ENVELOPE_SLACK_S = 1.0
 _SEEN: dict[str, dict] = {}
 _OFFSETS: dict[str, int] = {}          # terminal key -> hook-log byte offset
 _TEXT: dict[str, str] = {}             # terminal key -> recent hook-log text
+_LAST_UNIT_POLL = 0.0
 
 
 def reset_for_tests() -> None:
+    global _LAST_UNIT_POLL
     _SEEN.clear()
     _OFFSETS.clear()
     _TEXT.clear()
+    _LAST_UNIT_POLL = 0.0
+    unit_follower.reset_for_tests()
 
 
 def _live_shells() -> dict[str, int]:
@@ -248,4 +252,16 @@ def observe_once(now: float | None = None) -> int:
     for k in stale:
         _OFFSETS.pop(k, None)
         _TEXT.pop(k, None)
+
+    # Observer 3 runs on its own slower cadence inside this same pass: each of
+    # its polls forks systemctl twice, where the /proc walk above forks
+    # nothing. Guarded separately so a systemd problem cannot cost us the
+    # shell-and-descendant coverage that already worked.
+    global _LAST_UNIT_POLL
+    if now - _LAST_UNIT_POLL >= config.UNIT_POLL_S:
+        _LAST_UNIT_POLL = now
+        try:
+            changed += unit_follower.follow_once(now=now)
+        except Exception:  # noqa: BLE001
+            log.warning("observer: unit follower failed", exc_info=True)
     return changed

@@ -774,3 +774,122 @@ def test_a_units_close_is_not_preempted_by_the_liveness_sweeper(
         assert task_registry.get("observed:unit:abc123")["state"] == "done"
     finally:
         unit_follower.reset_for_tests()
+
+
+# --- Closing the gap the review found in the test above ---------------------
+#
+# The test above calls `_maybe_follow_units(now)` and then `tick(now)`
+# ITSELF, in the order IT chose — it restates the fix's ordering rather than
+# reading it from `ingest_loop`. Reverting the two-line swap in `ingest_loop`
+# (putting `tick(now)` back before `await _maybe_follow_units(now)`) leaves
+# that test green, because nothing in it ever calls `ingest_loop`. This test
+# drives one REAL iteration of `ingest_loop`'s own body — POLL_S patched
+# small, the coroutine run as a task, cancelled once the row leaves `running`
+# — and asserts the consequence: the row closes `done` with exactly one
+# terminal push queued, titled the success one, never a "Lost track" ahead of
+# a "Finished". Swap the two lines back and this fails (see the branch's test
+# report for the revert-proof this claim was checked against, not assumed).
+
+
+def test_ingest_loop_itself_runs_the_follower_before_the_sweep(
+        monkeypatch, fresh_tick, fresh_unit_poll):
+    import subprocess
+
+    from backend import config, proc_tree, push, task_push, unit_follower
+
+    monkeypatch.setattr(config, "UNIT_FOLLOWER_ENABLED", True)
+    monkeypatch.setattr(config, "OBSERVER_ENABLED", False)
+    monkeypatch.setattr(config, "OBSERVE_THRESHOLD_S", 0)
+    monkeypatch.setattr(proc_tree, "snapshot", lambda: {})
+    monkeypatch.setattr(task_ingest, "POLL_S", 0.01)
+    unit_follower.reset_for_tests()
+
+    # Push side effects, made deterministic and observable: bypass the
+    # fast-success gate (orthogonal to what this test defends — see
+    # test_task_push.py's own `slow`/MIN_SUCCESS_S convention), skip the real
+    # subscriptions/unseen-followups files, and capture what actually gets
+    # sent instead of reaching into _PENDING (ingest_loop's own drain() call
+    # empties that list before this test ever gets a look at it).
+    monkeypatch.setattr(task_push, "MIN_SUCCESS_S", 0.0)
+    monkeypatch.setattr(push, "unseen_count", lambda: 0)
+    sent = []
+
+    async def fake_send(payload):
+        sent.append(payload)
+        return {"sent": 1, "pruned": 0}
+
+    monkeypatch.setattr(push, "send", fake_send)
+    task_push.reset_for_tests()
+
+    # A pid that is genuinely, permanently dead — exactly what a unit's
+    # ExecMainPID looks like by the time systemd itself reports the unit has
+    # stopped — so the sweeper WOULD confirm it dead and close the row
+    # `interrupted` if it got a turn before the follower's own closing pass.
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+
+    job = {"Id": "podmigrate-readup.service", "Transient": "yes",
+           "InvocationID": "abc123", "ActiveState": "active",
+           "SubState": "running", "ExecMainPID": str(dead.pid),
+           "ExecMainStatus": "0", "Result": "success",
+           "Description": "[systemd-run] readup", "ActiveEnterTimestamp": ""}
+    exited = {**job, "ActiveState": "inactive", "SubState": "dead",
+             "ExecMainPID": "0"}
+
+    async def main():
+        try:
+            # Arrange: the row is already surfaced and running — setup, not
+            # part of what this test asserts.
+            monkeypatch.setattr(unit_follower, "_list_active", lambda: [job["Id"]])
+            monkeypatch.setattr(unit_follower, "_show", lambda names: {job["Id"]: job})
+            await task_ingest._maybe_follow_units(time.monotonic())
+            row = task_registry.get("observed:unit:abc123")
+            assert row is not None and row["state"] == "running"
+            assert row["extra"]["pid"] == dead.pid
+
+            # The unit has now exited cleanly and dropped off the active list.
+            monkeypatch.setattr(unit_follower, "_list_active", lambda: [])
+            monkeypatch.setattr(
+                unit_follower, "_show",
+                lambda names: {job["Id"]: exited} if job["Id"] in names else {})
+
+            # Re-zero both cadence gates so the loop's own FIRST spin — its
+            # `now` comes from time.monotonic() read INSIDE ingest_loop, not
+            # supplied by this test — clears both, reproducing the exact
+            # composition the final review flagged: task_liveness.SWEEP_S ==
+            # config.UNIT_POLL_S == 5s, stamped from the SAME `now`.
+            monkeypatch.setattr(task_ingest, "_last_unit_poll", 0.0)
+            monkeypatch.setattr(task_ingest, "_last_sweep", 0.0)
+
+            task = asyncio.create_task(task_ingest.ingest_loop())
+            try:
+                # Poll for the loop's own consequence instead of a fixed
+                # sleep: the row must leave `running`, closed by whichever of
+                # the follower/sweeper the loop's OWN body happened to run
+                # first this pass.
+                for _ in range(300):
+                    row = task_registry.get("observed:unit:abc123")
+                    if row is not None and row["state"] != "running":
+                        break
+                    await asyncio.sleep(0.01)
+                # Give the same iteration's push-drain (and the harmless
+                # start of a second, idle spin) time to run before inspecting.
+                await asyncio.sleep(0.05)
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+            row = task_registry.get("observed:unit:abc123")
+            assert row is not None and row["state"] == "done"
+            # The essential property: not "Lost track" then "Finished" —
+            # exactly one push, and it is the honest one.
+            assert len(sent) == 1
+            assert sent[0]["title"] == "Finished"
+        finally:
+            unit_follower.reset_for_tests()
+            task_push.reset_for_tests()
+
+    asyncio.run(main())

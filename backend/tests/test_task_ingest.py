@@ -614,25 +614,41 @@ def fresh_unit_poll(monkeypatch):
 
 def test_the_unit_follower_collects_off_thread_then_applies_on_the_loop(
         monkeypatch, fresh_unit_poll):
+    # Call order and argument passing alone do not pin the guarantee this
+    # test is named for: wrapping BOTH collect() and apply() in one
+    # asyncio.to_thread call — the exact regression that took two review
+    # rounds to remove (task 2, round-1 finding new-D) — would still pass an
+    # order/argument-only version of this test. Recording threading.get_ident()
+    # inside each fake is what actually pins "off the event-loop thread, then
+    # back on it".
+    import threading
+
     from backend import unit_follower
     calls = []
+    loop_thread_ident = threading.get_ident()
 
     def fake_collect():
-        calls.append("collect")
+        calls.append(("collect", threading.get_ident()))
         return "COLLECTED-SENTINEL"
 
     def fake_apply(collected, now):
-        calls.append(("apply", collected, now))
+        calls.append(("apply", collected, now, threading.get_ident()))
 
     monkeypatch.setattr(unit_follower, "collect", fake_collect)
     monkeypatch.setattr(unit_follower, "apply", fake_apply)
     asyncio.run(task_ingest._maybe_follow_units(1000.0))
-    assert calls[0] == "collect"
-    kind, collected, now = calls[1]
-    assert kind == "apply"
+    collect_kind, collect_ident = calls[0]
+    assert collect_kind == "collect"
+    apply_kind, collected, now, apply_ident = calls[1]
+    assert apply_kind == "apply"
     # apply() receives EXACTLY what collect() returned, unmodified.
     assert collected == "COLLECTED-SENTINEL"
     assert isinstance(now, float)
+    # The actual threading guarantee: collect() ran on a DIFFERENT thread
+    # than the caller, and apply() ran back on the caller's (event-loop)
+    # thread — not merely "some thread or other" for each.
+    assert collect_ident != loop_thread_ident
+    assert apply_ident == loop_thread_ident
 
 
 def test_the_unit_follower_runs_on_its_own_cadence(monkeypatch, fresh_unit_poll):

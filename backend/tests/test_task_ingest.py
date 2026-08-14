@@ -679,3 +679,82 @@ def test_a_failing_apply_never_raises_out_of_the_gate(monkeypatch, fresh_unit_po
 
     monkeypatch.setattr(unit_follower, "apply", boom)
     asyncio.run(task_ingest._maybe_follow_units(1000.0))  # must not raise
+
+
+# --- Final whole-branch review, Important 1: a COMPOSITION defect ----------
+#
+# task_liveness.SWEEP_S and config.UNIT_POLL_S are both 5s and are stamped
+# from the SAME `now` (ingest_loop's own clock), so they fire on identical
+# iterations forever. A unit row's extra["pid"] is its ExecMainPID, already
+# dead by the time systemd itself reports the unit has stopped — so if the
+# liveness sweeper got a turn before the unit follower's own closing pass,
+# it would confirm that pid dead and flip the row to `interrupted` ("outcome
+# unknown"), queuing a false "lost track" push, before the follower ever
+# wrote the honest `done`. Fixed by running _maybe_follow_units BEFORE
+# tick() in ingest_loop. This test drives one iteration's worth of work in
+# that fixed order and pins the CONSEQUENCE — the row never reads
+# `interrupted` — rather than only the call order: a call-order test is
+# exactly what let the threading regression (finding new-D, task 2 round 1)
+# through earlier in this wave.
+
+
+def test_a_units_close_is_not_preempted_by_the_liveness_sweeper(
+        monkeypatch, fresh_tick, fresh_unit_poll):
+    import subprocess
+
+    from backend import config, proc_tree, task_liveness, unit_follower
+
+    monkeypatch.setattr(config, "UNIT_FOLLOWER_ENABLED", True)
+    monkeypatch.setattr(config, "OBSERVER_ENABLED", False)
+    monkeypatch.setattr(config, "OBSERVE_THRESHOLD_S", 0)
+    monkeypatch.setattr(proc_tree, "snapshot", lambda: {})
+    unit_follower.reset_for_tests()
+
+    # A pid that is genuinely, permanently dead — exactly what a unit's
+    # ExecMainPID looks like by the time systemd itself reports the unit has
+    # stopped (already reaped, not merely absent).
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+
+    job = {"Id": "podmigrate-readup.service", "Transient": "yes",
+           "InvocationID": "abc123", "ActiveState": "active",
+           "SubState": "running", "ExecMainPID": str(dead.pid),
+           "ExecMainStatus": "0", "Result": "success",
+           "Description": "[systemd-run] readup", "ActiveEnterTimestamp": ""}
+    exited = {**job, "ActiveState": "inactive", "SubState": "dead",
+             "ExecMainPID": "0"}
+
+    try:
+        # Surface the row. OBSERVE_THRESHOLD_S=0 means one pass is enough.
+        monkeypatch.setattr(unit_follower, "_list_active", lambda: [job["Id"]])
+        monkeypatch.setattr(unit_follower, "_show", lambda names: {job["Id"]: job})
+        asyncio.run(task_ingest._maybe_follow_units(1000.0))
+        row = task_registry.get("observed:unit:abc123")
+        assert row is not None and row["state"] == "running"
+        assert row["extra"]["pid"] == dead.pid
+
+        # The unit has now exited cleanly and dropped off the active list.
+        # Both cadence gates land on the SAME `now` here, on purpose,
+        # reproducing exactly the composition the final review flagged.
+        monkeypatch.setattr(unit_follower, "_list_active", lambda: [])
+        monkeypatch.setattr(
+            unit_follower, "_show",
+            lambda names: {job["Id"]: exited} if job["Id"] in names else {})
+        now = 2000.0
+        monkeypatch.setattr(task_ingest, "_last_unit_poll", now - config.UNIT_POLL_S)
+        monkeypatch.setattr(task_ingest, "_last_sweep", now - task_liveness.SWEEP_S)
+
+        # One loop iteration's worth of work, in the FIXED order (see
+        # ingest_loop): the follower closes the row to `done` before the
+        # sweeper ever gets a turn to look at its now-dead pid.
+        asyncio.run(task_ingest._maybe_follow_units(now))
+        assert task_registry.get("observed:unit:abc123")["state"] == "done"
+
+        task_ingest.tick(now)
+        # The sweeper ran on this same `now` (its gate is satisfied too) but
+        # found nothing to do: the row already left task_liveness._LIVE, so
+        # next_state declines it. It must never have read `interrupted` at
+        # any point in this sequence.
+        assert task_registry.get("observed:unit:abc123")["state"] == "done"
+    finally:
+        unit_follower.reset_for_tests()

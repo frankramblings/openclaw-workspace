@@ -390,11 +390,33 @@ async def ingest_loop() -> None:
     """Run tick() forever. Failures are logged inside tick, never fatal — a bad
     pass self-heals on the next one. The unit follower runs alongside tick on
     its own cadence (_maybe_follow_units) rather than inside it — see that
-    function for why."""
+    function for why.
+
+    Ordering within the loop body is load-bearing, the same way tick()'s own
+    observe-before-scan ordering is: _maybe_follow_units runs BEFORE tick, not
+    after. task_liveness.SWEEP_S and config.UNIT_POLL_S are both 5s and are
+    stamped from this SAME `now`, so on every single iteration where the unit
+    follower has fresh work, tick()'s liveness sweeper is gated to fire on
+    that identical iteration too. A unit row's extra["pid"] is its
+    ExecMainPID, which systemd already reports as gone by the time a unit has
+    stopped — so if the sweeper ran first, it would find that pid dead on
+    every successful unit and flip the row to `interrupted` ("outcome
+    unknown"), queuing a false "lost track" push, milliseconds before the
+    follower's own closing pass would have written the honest `done`/`failed`.
+    Running the follower first means its apply() has already written the
+    terminal state and dropped the row out of task_liveness._LIVE before the
+    sweeper ever looks at it, so the sweeper leaves it alone. The sweeper
+    still matters after this reordering — it is not made redundant by it: if
+    collect() fails this pass, the follower writes nothing, and the sweeper's
+    `interrupted` is then the honest, still-upgradeable (task_push._supersedes)
+    answer for that row. This ordering also puts unit rows in the registry
+    before scan_once's merge looks for an attach target in the same pass —
+    the same rationale tick's own docstring gives for observing before
+    scanning."""
     while True:
         now = time.monotonic()
-        tick(now)
         await _maybe_follow_units(now)
+        tick(now)
         try:
             await task_push.drain()
         except Exception:  # noqa: BLE001

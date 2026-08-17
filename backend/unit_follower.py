@@ -48,14 +48,17 @@ the main one's progress (`podmigrate-<slug>-uploadbar`/`-bloggerbar`;
 `bwg-render-<id>-prog`) -- three rows for one job is its own dishonesty, so a
 followed unit whose name is another followed unit's name plus a hyphen is
 grouped as that unit's CHILD (see `_parent_unit`/`_unit_roots`) and never
-gets a row of its own. It is still followed individually -- its own
-`ActiveState`/`InvocationID`/exit are exactly as real as a root's -- it just
-feeds the root's row instead of opening one: its live process tree joins the
-root's `extra["subtree"]` union, and its name joins `extra["child_units"]`.
-The root's row closes on the ROOT's own outcome only; a child stopping, or
-even outliving the root entirely, never closes or inherits the row -- once a
-unit is grouped under a root, that stays true even after the root's own row
-closes and its name stops appearing in `list-units` at all.
+gets, or keeps, a row of its own -- even one it was already given, if its
+root turns out to have started later and only now became visible (nothing
+orders a sidecar's startup against the job that owns it). It is still
+followed individually -- its own `ActiveState`/`InvocationID`/exit are
+exactly as real as a root's -- it just feeds the root's row instead of
+opening one: its live process tree joins the root's `extra["subtree"]`
+union, and its name joins `extra["child_units"]`. The root's row closes on
+the ROOT's own outcome only; a child stopping, or even outliving the root
+entirely, never closes or inherits the row -- once a unit is grouped under a
+root, that stays true even after the root's own row closes and its name
+stops appearing in `list-units` at all.
 
 The module is split along its one real seam: `collect()` does every
 systemctl fork (list-units, the main show, and the closing loop's batched
@@ -303,16 +306,30 @@ def apply(collected: dict | None, now: float) -> int:
                 "last_props": props,
             }
         # A unit found grouped under another followed unit's name THIS pass is
-        # a CHILD and never gets a row of its own. This latches ON and stays
-        # on: once a child, always a child, even once its root's row closes
-        # and the root's name later drops out of every future pass entirely
-        # (systemd-run --collect garbage-collects it) -- the job is over for
-        # the child too, not a promotion to a fresh root. It is never
-        # re-evaluated back to False, which is also why a child seen before
-        # any matching root ever existed (root_name == name at every pass up
-        # to and including its own row's creation) is correctly left to
-        # become a root by the same rule everyone else uses.
+        # a CHILD and never gets (or keeps) a row of its own. This latches ON
+        # and stays on: once a child, always a child, even once its root's
+        # row closes and the root's name later drops out of every future
+        # pass entirely (systemd-run --collect garbage-collects it) -- the
+        # job is over for the child too, not a promotion to a fresh root. It
+        # is never re-evaluated back to False, which is also why a child
+        # whose root never becomes visible on ANY pass before or up to the
+        # child's own row-creation pass is correctly left to become a root
+        # by the same rule everyone else uses -- root_name == name on every
+        # such pass, so this branch never fires for it at all.
+        #
+        # A unit's OWN root can start after it does -- a sidecar can win the
+        # startup race against the job that owns it -- so a unit can already
+        # own a row (state["row_id"] is not None) at the moment its true
+        # parent is first seen. One job, one row still has to hold even
+        # then: retire the row it was wrongly given -- notify=True because
+        # it is still LIVE and every connected client already holds it, the
+        # same merge-attach retraction task_ingest.py uses when a producer's
+        # own row turns out to belong to an observed one -- and let the
+        # root's subtree union (via pid_by_name, below) carry it from here.
         if not state["suppressed"] and root_name != name:
+            if state["row_id"] is not None:
+                task_registry.remove(state["row_id"], notify=True)
+                changed += 1           # a retraction is a registry write too
             state["suppressed"] = True
         state["last_props"] = props       # spares the closing loop a fork
         if not active:

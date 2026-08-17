@@ -656,3 +656,89 @@ def test_an_unchanged_subtree_union_still_writes_nothing(monkeypatch):
     assert row["state"] == "running"
     assert unit_follower.follow_once(now=1008.0) == 0
     assert unit_follower.follow_once(now=1009.0) == 0
+
+
+# --- Wave 2b review round 2 -------------------------------------------------
+#
+# Finding 1 (Important): nothing orders a sidecar's systemd startup against
+# the job that owns it -- a sidecar can win that race by more than a
+# threshold's worth of polling and legitimately get its own row (there is no
+# evidence yet of any parent). The suppression latch used to only ever turn
+# ON; it never revisited a unit that already had a row, so once the true
+# root showed up late, its row and the sidecar's stale, now-frozen one sat
+# side by side forever -- two rows for one job, and task_merge.target_for's
+# subtree search would pick whichever of the two it iterated to first for a
+# producer pid that lived in both. One job, one row has to hold even when
+# the root is discovered late: the sidecar's row is retired (task_registry's
+# own live-row merge-retraction, notify=True) the moment its true parent is
+# found, the same pass, and it never gets another one.
+
+
+def test_a_child_already_rowed_before_its_root_appears_yields_to_it(monkeypatch):
+    _units(monkeypatch, {UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == f"observed:unit:{UPLOADBAR['InvocationID']}"
+    # The root shows up well after the sidecar already owns a row. Its
+    # retraction is its own registry write (an SSE removal frame), the same
+    # as an upsert would be -- it must be counted, not silently absorbed.
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR})
+    assert unit_follower.follow_once(now=1010.0) == 1
+    assert task_registry.list_tasks() == []      # retired; root not yet due
+    unit_follower.follow_once(now=1017.0)
+    rows = task_registry.list_tasks()
+    assert len(rows) == 1
+    assert rows[0]["id"] == f"observed:unit:{JOB['InvocationID']}"
+    assert UPLOADBAR["Id"] in rows[0]["extra"]["child_units"]
+
+
+# Finding 3 (Minor): _unit_roots resolves a chain transitively -- `a-b-c`'s
+# direct parent is `a-b` (the longest match), but `a-b` is itself `a`'s
+# child, so the whole chain collapses onto `a`, the one name with no parent
+# at all. Pinned through apply(), not just the direct-parent helper.
+
+
+def test_a_three_level_chain_collapses_onto_the_topmost_root(monkeypatch):
+    root = {**JOB, "Id": "a.service", "InvocationID": "root-a", "ExecMainPID": "9001"}
+    mid = {**JOB, "Id": "a-b.service", "InvocationID": "mid-ab", "ExecMainPID": "9002"}
+    leaf = {**JOB, "Id": "a-b-c.service", "InvocationID": "leaf-abc", "ExecMainPID": "9003"}
+    _units(monkeypatch, {root["Id"]: root, mid["Id"]: mid, leaf["Id"]: leaf})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    rows = task_registry.list_tasks()
+    assert len(rows) == 1
+    assert rows[0]["id"] == f"observed:unit:{root['InvocationID']}"
+    assert rows[0]["extra"]["child_units"] == sorted([mid["Id"], leaf["Id"]])
+
+
+# Finding 4 (Minor): the growth-write gate gained a second trigger
+# (child_units changing) alongside the pre-existing subtree one -- that is
+# the one behavior added beyond the brief's literal "subtree union is
+# change-gated" text, so it carries its own test: a membership-only change
+# (a new followed sidecar, seen but not yet active, so it contributes no pid)
+# must still write, even though the pid subtree itself is unchanged.
+
+
+def test_a_child_units_only_change_still_writes(monkeypatch):
+    procs = {4242: {"ppid": 1, "starttime": 10, "cmdline": "run-show.sh"},
+             5001: {"ppid": 1, "starttime": 11, "cmdline": "upload_progress.py"}}
+    monkeypatch.setattr(proc_tree, "snapshot", lambda: procs)
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["extra"]["child_units"] == [UPLOADBAR["Id"]]
+    assert row["extra"]["subtree"] == [4242, 5001]
+    # A third sidecar becomes followed but is not yet active -- it
+    # contributes no pid, so the subtree union is byte-for-byte unchanged,
+    # but the row's composition changed and that alone must still write.
+    inactive_child = {**BLOGGERBAR, "ActiveState": "inactive",
+                      "SubState": "dead", "ExecMainPID": "0"}
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR,
+                         BLOGGERBAR["Id"]: inactive_child})
+    changed = unit_follower.follow_once(now=1008.0)
+    assert changed == 1
+    (row,) = task_registry.list_tasks()
+    assert row["extra"]["subtree"] == [4242, 5001]
+    assert row["extra"]["child_units"] == sorted([UPLOADBAR["Id"], BLOGGERBAR["Id"]])

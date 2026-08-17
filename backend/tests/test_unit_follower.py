@@ -35,6 +35,16 @@ def _exited(**over):
     return out
 
 
+# Sidecars of JOB, matching the real podmigrate shape: the same job's two
+# progress-publishing units, named with JOB's own name as a proper prefix.
+UPLOADBAR = {**JOB, "Id": "podmigrate-readup-uploadbar.service",
+             "InvocationID": "child-up1", "ExecMainPID": "5001",
+             "Description": "[systemd-run] upload_progress.py --watch --pwa"}
+BLOGGERBAR = {**JOB, "Id": "podmigrate-readup-bloggerbar.service",
+              "InvocationID": "child-bg1", "ExecMainPID": "6001",
+              "Description": "[systemd-run] blogger_progress.py --watch --pwa"}
+
+
 def test_an_installed_unit_is_never_followed(monkeypatch):
     _units(monkeypatch, {"openclaw-gateway.service":
                          {**JOB, "Id": "openclaw-gateway.service",
@@ -496,3 +506,153 @@ def test_collect_makes_no_registry_writes_only_apply_does(monkeypatch):
     assert changed == 1
     (row,) = task_registry.list_tasks()
     assert row["id"] == "observed:unit:abc123"
+
+
+# --- Wave 2b: a job's sidecars collapse into one row ----------------------
+#
+# Deployed right now, three podmigrate/bwg jobs show up as NINE rows: the
+# real work plus two progress-publishing sidecars apiece, all Transient=yes,
+# all outliving the threshold. The rule: a followed unit is a child of
+# another followed unit when the parent's name is a proper prefix of the
+# child's, followed by a hyphen (compared with ".service" stripped). A child
+# is still followed individually -- its own ActiveState/InvocationID/exit
+# are unaffected -- but it never gets a row of its own; it feeds the root's
+# subtree union and shows up in the root's extra["child_units"] instead.
+
+
+def test_a_sidecar_unit_does_not_get_its_own_row(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR,
+                         BLOGGERBAR["Id"]: BLOGGERBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == f"observed:unit:{JOB['InvocationID']}"
+
+
+def test_the_row_carries_its_child_unit_names(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR,
+                         BLOGGERBAR["Id"]: BLOGGERBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["extra"]["child_units"] == sorted([UPLOADBAR["Id"], BLOGGERBAR["Id"]])
+
+
+def test_the_rows_subtree_unions_every_childs_processes(monkeypatch):
+    procs = {
+        4242: {"ppid": 1, "starttime": 10, "cmdline": "run-show.sh"},
+        5001: {"ppid": 1, "starttime": 11, "cmdline": "upload_progress.py"},
+        5002: {"ppid": 5001, "starttime": 12, "cmdline": "curl"},
+        6001: {"ppid": 1, "starttime": 13, "cmdline": "blogger_progress.py"},
+        6002: {"ppid": 6001, "starttime": 14, "cmdline": "curl"},
+    }
+    monkeypatch.setattr(proc_tree, "snapshot", lambda: procs)
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR,
+                         BLOGGERBAR["Id"]: BLOGGERBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    # A producer publishing ANY of these pids -- including one from inside a
+    # sidecar -- must attach to this one row.
+    assert sorted(row["extra"]["subtree"]) == [4242, 5001, 5002, 6001, 6002]
+
+
+def test_two_sibling_jobs_do_not_merge(monkeypatch):
+    job_b = {**JOB, "Id": "podmigrate-batwomantvtalk.service",
+             "InvocationID": "root-b", "ExecMainPID": "7000"}
+    up_b = {**JOB, "Id": "podmigrate-batwomantvtalk-uploadbar.service",
+            "InvocationID": "child-b-up", "ExecMainPID": "7001"}
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR,
+                         job_b["Id"]: job_b, up_b["Id"]: up_b})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    rows = {r["id"]: r for r in task_registry.list_tasks()}
+    assert set(rows) == {f"observed:unit:{JOB['InvocationID']}",
+                         f"observed:unit:{job_b['InvocationID']}"}
+    assert rows[f"observed:unit:{JOB['InvocationID']}"]["extra"]["child_units"] == [UPLOADBAR["Id"]]
+    assert rows[f"observed:unit:{job_b['InvocationID']}"]["extra"]["child_units"] == [up_b["Id"]]
+
+
+def test_the_longest_matching_parent_wins():
+    names = {"a", "a-b", "a-b-c"}
+    assert unit_follower._parent_unit("a-b-c", names) == "a-b"
+
+
+def test_a_child_whose_parent_is_gone_gets_its_own_row(monkeypatch):
+    _units(monkeypatch, {UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == f"observed:unit:{UPLOADBAR['InvocationID']}"
+
+
+def test_a_child_stopping_does_not_close_the_row(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "running"
+    exited_uploadbar = {**UPLOADBAR, "ActiveState": "inactive",
+                        "SubState": "dead", "ExecMainPID": "0"}
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: exited_uploadbar})
+    unit_follower.follow_once(now=1010.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == f"observed:unit:{JOB['InvocationID']}"
+    assert row["state"] == "running"
+
+
+def test_the_root_stopping_closes_the_row_with_its_own_status(monkeypatch):
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == f"observed:unit:{JOB['InvocationID']}"
+    exited_job = _exited(ExecMainStatus="2", Result="exit-code")
+    _units(monkeypatch, {JOB["Id"]: exited_job, UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1010.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == f"observed:unit:{JOB['InvocationID']}"
+    assert row["state"] == "failed"
+    assert "2" in (row["detail"] or "")
+    # The surviving sidecar never surfaces a row of its own -- not this
+    # pass, and not later once the root's unit name has dropped out of
+    # every future scan entirely (systemd-run --collect garbage-collects
+    # it). The job is over; the sidecar doesn't inherit it or start a new one.
+    _units(monkeypatch, {UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1020.0)
+    rows = task_registry.list_tasks()
+    assert len(rows) == 1
+    assert rows[0]["id"] == f"observed:unit:{JOB['InvocationID']}"
+
+
+def test_a_child_crossing_the_threshold_first_surfaces_nothing(monkeypatch):
+    # The sidecar is seen first, alone, and would individually be past
+    # threshold well before the root is. The row is gated on the ROOT's own
+    # clock only -- a child's age must never surface it.
+    _units(monkeypatch, {UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1000.0)
+    # The root shows up now, freshly first-seen -- not yet past ITS OWN
+    # threshold. The sidecar latches onto it as a child from this pass on.
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1003.0)
+    # The sidecar has now been tracked for 8s (well past the 6s threshold);
+    # the root has only been tracked for 5s. No row either way.
+    unit_follower.follow_once(now=1008.0)
+    assert task_registry.list_tasks() == []
+    # The root itself has now outlived the threshold.
+    unit_follower.follow_once(now=1010.0)
+    (row,) = task_registry.list_tasks()
+    assert row["id"] == f"observed:unit:{JOB['InvocationID']}"
+
+
+def test_an_unchanged_subtree_union_still_writes_nothing(monkeypatch):
+    procs = {4242: {"ppid": 1, "starttime": 10, "cmdline": "run-show.sh"},
+             5001: {"ppid": 1, "starttime": 11, "cmdline": "upload_progress.py"}}
+    monkeypatch.setattr(proc_tree, "snapshot", lambda: procs)
+    _units(monkeypatch, {JOB["Id"]: JOB, UPLOADBAR["Id"]: UPLOADBAR})
+    unit_follower.follow_once(now=1000.0)
+    unit_follower.follow_once(now=1007.0)
+    (row,) = task_registry.list_tasks()
+    assert row["state"] == "running"
+    assert unit_follower.follow_once(now=1008.0) == 0
+    assert unit_follower.follow_once(now=1009.0) == 0

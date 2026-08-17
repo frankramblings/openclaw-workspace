@@ -43,6 +43,20 @@ evidence that THIS invocation is still alive only when its own
 all and falls through to the ordinary close (which reads it the same as a
 unit that vanished outright).
 
+Both real workloads also launch sidecar units whose only job is to publish
+the main one's progress (`podmigrate-<slug>-uploadbar`/`-bloggerbar`;
+`bwg-render-<id>-prog`) -- three rows for one job is its own dishonesty, so a
+followed unit whose name is another followed unit's name plus a hyphen is
+grouped as that unit's CHILD (see `_parent_unit`/`_unit_roots`) and never
+gets a row of its own. It is still followed individually -- its own
+`ActiveState`/`InvocationID`/exit are exactly as real as a root's -- it just
+feeds the root's row instead of opening one: its live process tree joins the
+root's `extra["subtree"]` union, and its name joins `extra["child_units"]`.
+The root's row closes on the ROOT's own outcome only; a child stopping, or
+even outliving the root entirely, never closes or inherits the row -- once a
+unit is grouped under a root, that stays true even after the root's own row
+closes and its name stops appearing in `list-units` at all.
+
 The module is split along its one real seam: `collect()` does every
 systemctl fork (list-units, the main show, and the closing loop's batched
 reshow) and touches nothing else -- no `_SEEN` mutation, no
@@ -137,6 +151,44 @@ def _outcome_for(props: dict) -> tuple[str, str]:
     return "failed", f"exited {status}"
 
 
+def _strip_service(unit_id: str) -> str:
+    """Unit id with a trailing `.service` removed, for the grouping rule's
+    name comparison below."""
+    return unit_id[:-len(".service")] if unit_id.endswith(".service") else unit_id
+
+
+def _parent_unit(name: str, names: set[str]) -> str | None:
+    """The grouping rule, alone: the LONGEST other name in `names` that is a
+    proper prefix of `name` followed by a hyphen, or None if none matches.
+    `podmigrate-academyrewind` parents `podmigrate-academyrewind-uploadbar`
+    but not `podmigrate-batwomantvtalk` -- the hyphen boundary is what keeps
+    two unrelated jobs from ever matching each other. Longest wins when more
+    than one candidate matches (`a-b-c` picks `a-b` over the shorter `a`), so
+    a chain resolves to its nearest ancestor first."""
+    candidates = [n for n in names if n != name and name.startswith(n + "-")]
+    return max(candidates, key=len) if candidates else None
+
+
+def _unit_roots(names: set[str]) -> dict[str, str]:
+    """Every name in `names`, mapped to the ROOT of its family: itself if
+    `_parent_unit` finds no match, else its parent's own root, resolved
+    transitively. Cycle-safe by construction -- a proper-prefix parent is
+    always strictly shorter than its child, so the chain can only shrink.
+    A name with no parent among the currently-followed units is its own
+    root and gets its own row, exactly as a lone unit does today."""
+    resolved: dict[str, str] = {}
+
+    def root_of(name: str) -> str:
+        if name in resolved:
+            return resolved[name]
+        parent = _parent_unit(name, names)
+        result = name if parent is None else root_of(parent)
+        resolved[name] = result
+        return result
+
+    return {name: root_of(name) for name in names}
+
+
 def _live_invocations(props_by_unit: dict[str, dict]) -> set[str]:
     """Invocation IDs this pass's properties confirm are genuinely running
     right now -- the exact filter apply()'s own per-unit loop applies to
@@ -207,12 +259,31 @@ def apply(collected: dict | None, now: float) -> int:
     changed = 0
     live_ids: set[str] = set()
 
+    # Grouping is computed fresh each pass, over every transient unit with an
+    # identity THIS pass's properties cover -- active or not, so a root that
+    # just went inactive this same pass (see the closing block below) still
+    # counts as "currently followed" for a still-active sidecar's sake. See
+    # _unit_roots for the rule itself.
+    transient = [p for p in props_by_unit.values()
+                 if (p.get("Transient") or "").strip() == "yes"
+                 and (p.get("InvocationID") or "").strip()]
+    id_by_name = {_strip_service(p.get("Id") or ""): (p.get("Id") or "")
+                  for p in transient}
+    roots_by_name = _unit_roots(set(id_by_name))
+    pid_by_name = {
+        _strip_service(p.get("Id") or ""): _int(p.get("ExecMainPID"))
+        for p in transient
+        if (p.get("ActiveState") or "").strip() == "active"
+    }
+
     for props in props_by_unit.values():
         if (props.get("Transient") or "").strip() != "yes":
             continue                      # installed infrastructure, not a job
         invocation = (props.get("InvocationID") or "").strip()
         if not invocation:
             continue                      # no identity, no row
+        name = _strip_service(props.get("Id") or "")
+        root_name = roots_by_name.get(name, name)
         # `list_active` already filters to active units, so in production a
         # stopped unit simply stops appearing. Do NOT rely on that: a unit can
         # be listed and already inactive (it exited between the two systemctl
@@ -228,42 +299,75 @@ def apply(collected: dict | None, now: float) -> int:
                 "first": now, "row_id": None, "unit": props.get("Id") or "",
                 "pid": _int(props.get("ExecMainPID")),
                 "label": _label_for(props), "written_subtree": None,
+                "written_children": None, "suppressed": False,
                 "last_props": props,
             }
+        # A unit found grouped under another followed unit's name THIS pass is
+        # a CHILD and never gets a row of its own. This latches ON and stays
+        # on: once a child, always a child, even once its root's row closes
+        # and the root's name later drops out of every future pass entirely
+        # (systemd-run --collect garbage-collects it) -- the job is over for
+        # the child too, not a promotion to a fresh root. It is never
+        # re-evaluated back to False, which is also why a child seen before
+        # any matching root ever existed (root_name == name at every pass up
+        # to and including its own row's creation) is correctly left to
+        # become a root by the same rule everyone else uses.
+        if not state["suppressed"] and root_name != name:
+            state["suppressed"] = True
         state["last_props"] = props       # spares the closing loop a fork
         if not active:
             continue                      # the closing loop below owns it
         live_ids.add(invocation)
+        if state["suppressed"]:
+            continue                      # feeds the root's subtree union via
+                                           # pid_by_name below; no row of its own
         pid = _int(props.get("ExecMainPID")) or state["pid"]
         state["pid"] = pid
-        subtree = sorted({pid} | proc_tree.descendants(procs, pid)) if pid else []
+        # The subtree union: this unit's own process tree, plus every
+        # CURRENTLY ACTIVE child's -- so a producer publishing a pid from
+        # inside a sidecar still attaches to the one row. child_units lists
+        # every followed unit grouped under this root this pass, active or
+        # not, so the row can say what it is composed of.
+        child_names = [n for n, r in roots_by_name.items()
+                      if r == name and n != name]
+        child_ids = sorted(id_by_name[n] for n in child_names)
+        subtree_set = ({pid} | proc_tree.descendants(procs, pid)) if pid else set()
+        for child_name in child_names:
+            child_pid = pid_by_name.get(child_name)
+            if child_pid:
+                subtree_set |= {child_pid} | proc_tree.descendants(procs, child_pid)
+        subtree = sorted(subtree_set)
 
         if state["row_id"] is None:
             if now - state["first"] < config.OBSERVE_THRESHOLD_S:
                 continue
             state["row_id"] = f"observed:unit:{invocation}"
             state["written_subtree"] = subtree
+            state["written_children"] = child_ids
             task_registry.upsert(
                 state["row_id"], kind="observed", source="observed",
                 label=state["label"], state="running", detail="",
                 extra={"pid": pid, "subtree": subtree, "observed": True,
-                       "unit": state["unit"]})
+                       "unit": state["unit"], "child_units": child_ids})
             changed += 1
             continue
 
-        # Live row: the only thing worth re-writing is a subtree that actually
-        # changed, so a producer spawned after the row appeared can still
-        # attach by ancestry. Change-gated, or an idle poll would fan out a
-        # frame per second. State and detail are echoed back untouched --
-        # they belong to whoever set them.
-        if subtree and subtree != state["written_subtree"]:
+        # Live row: the only thing worth re-writing is a subtree/child list
+        # that actually changed, so a producer spawned after the row
+        # appeared -- inside the root or inside a sidecar -- can still attach
+        # by ancestry. Change-gated, or an idle poll would fan out a frame
+        # per second. State and detail are echoed back untouched -- they
+        # belong to whoever set them.
+        if subtree and (subtree != state["written_subtree"]
+                        or child_ids != state["written_children"]):
             existing = task_registry.get(state["row_id"])
             if existing is not None:
                 state["written_subtree"] = subtree
+                state["written_children"] = child_ids
                 task_registry.upsert(
                     state["row_id"], kind="observed", source="observed",
                     state=existing["state"], detail=existing["detail"],
-                    extra={"subtree": subtree})
+                    extra={"subtree": subtree, "child_units": child_ids})
                 changed += 1
 
     # A unit we were following is no longer active. Prefer the properties we

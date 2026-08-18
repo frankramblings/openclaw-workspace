@@ -15,6 +15,7 @@ import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
 import { reconcileDecision } from './reconcile-decision.js';
+import { shouldRecoverDroppedTurn } from './dropped-turn-decision.js';
 import { parseQuestionCard, composeAnswer } from './question-card.js';
 import { promiseWarningText, latestAsstAtOrBefore } from './promise-warning.js';
 import { setLiveTurn } from './turn-ref.js';
@@ -1219,27 +1220,27 @@ function beginTurn(chat, modelLabel, sessionId) {
         onEvent({ type: 'done' });
         return;
       }
-      const m = ensureAsst();
-      m.error = true;
-      m.notice = ev.status
-        ? `Gary couldn’t connect (${ev.status}). Your message is ready — tap Send to retry.`
-        : 'The connection dropped before a response arrived. Your message is ready — tap Send to retry.';
-      chat.suggest = null; // no ghost suggestions under an error notice
+      const m = ensureAsst();            // capture the live bubble before teardown
+      chat.suggest = null;               // no ghost suggestions under an error notice
       stopElapsed();
-      flushRender();
-      const errSid = turn.sessionId;   // capture before teardown
+      const errSid = turn.sessionId;     // capture before teardown
+      const statusless = !ev.status;     // dropped mid-turn (vs an HTTP-level POST failure)
       setLiveTurn(null);
       turn = null;
-      // A turn that errored leaves the queued message intact — recall it to the
-      // composer so the user doesn't lose it (rather than auto-firing into a
-      // possibly-broken session). Keyed to the ERRORING turn's session, not the
-      // active view: a background thread's error must never clobber the draft
-      // (or steal the queued entry) of whatever thread is on screen. When the
-      // erroring session isn't the one being viewed, its entry simply stays in
-      // the session-keyed queue for its own thread.
-      if (errSid && errSid === chat.activeId && queueHead(chat.queuedList, errSid)) {
-        actions.queueRecall();
+      // Statusless drop on the visible thread: the turn may have COMPLETED
+      // server-side while our reader was dead (event_store owns the turn, not
+      // the POST reader). Showing an error + recalling here is what lets a
+      // "Send to retry" tap start a SECOND turn for an already-answered message
+      // → the duplicate-bubble bug. Ask server truth first; only fall back to
+      // error+recall when the turn did NOT finish cleanly. Never loses a message.
+      if (statusless && errSid && errSid === chat.activeId) {
+        recoverDroppedTurn(chat, errSid).then((recovered) => {
+          if (!recovered) showDroppedError(chat, errSid, m, ev.status);
+        }).catch(() => showDroppedError(chat, errSid, m, ev.status));
+        flushRender();
+        return;
       }
+      showDroppedError(chat, errSid, m, ev.status);
       return;
     }
 
@@ -1693,6 +1694,54 @@ function finalizeLocal(chat, interrupted) {
 // death, hb-gap watchdog, thread open) routes through here. Exactly one
 // outcome per call: attach the live tail, finalize local state (stale or
 // interrupted), or nothing.
+// Today's dropped-connection behavior: annotate the bubble with a retry notice
+// and recall the queued message to the composer so the user can resend. Factored
+// out of the 'error' handler so the recovery path (recoverDroppedTurn) can fall
+// back to it only when server truth says the turn did NOT finish cleanly.
+function showDroppedError(chat, errSid, m, status) {
+  if (m) {
+    m.error = true;
+    m.notice = status
+      ? `Gary couldn’t connect (${status}). Your message is ready — tap Send to retry.`
+      : 'The connection dropped before a response arrived. Your message is ready — tap Send to retry.';
+  }
+  chat.suggest = null;
+  // Keyed to the ERRORING session, not the active view: a background thread's
+  // error must never clobber the draft (or steal the queued entry) of whatever
+  // thread is on screen.
+  if (errSid && errSid === chat.activeId && queueHead(chat.queuedList, errSid)) {
+    actions.queueRecall();
+  }
+  flushRender();
+}
+
+// A statusless connection drop can mean the turn already COMPLETED server-side
+// while our reader was dead. Reconcile against the same /api/chat/turn snapshot
+// reconcileTurn trusts: if the turn ended cleanly, pull the real reply from
+// server truth and suppress the retry (killing the duplicate-bubble bug).
+// Resolves true only when it rendered the finished reply; false = let the caller
+// fall back to showDroppedError. Never starts a turn, never loses a message.
+async function recoverDroppedTurn(chat, sid) {
+  let snap = null;
+  try {
+    snap = await apiGet(`/api/chat/turn?session=${encodeURIComponent(sid)}`);
+  } catch (_) { return false; /* backend unreachable → fall back to retry path */ }
+  if (!shouldRecoverDroppedTurn(snap)) return false;
+  if (chat.activeId !== sid) return false;  // user switched threads mid-await
+  try {
+    const t = await fetchThread(sid, chat.model, chat.title);
+    const thread = dedupeAdjacentUserMessages(t.thread, 'dropped-recover');
+    const last = thread[thread.length - 1];
+    // Require an actual assistant reply as the tail — otherwise there's nothing
+    // to show and the user still needs the retry path.
+    if (!last || last.role !== 'assistant' || !(last.text || '').trim()) return false;
+    chat.thread = thread;
+    chat.subtitle = t.subtitle || chat.subtitle;
+    flushRender();
+    return true;
+  } catch (_) { return false; }
+}
+
 let _reconcileBusy = false;
 async function reconcileTurn(chat, state, sessionId) {
   if (!sessionId || _reconcileBusy) return false;

@@ -32,7 +32,9 @@ test('composer send buffers 700ms — mid-window edit wins the actual POST', asy
   mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const fetchCalls = [];
   globalThis.fetch = mock.fn(async (url, opts) => {
-    fetchCalls.push({ url, opts });
+    // Count only chat_stream POSTs — a statusless drop now also fires a
+    // /api/chat/turn recovery GET (dropped-turn-decision), which is not a send.
+    if (String(url).includes('/api/chat_stream')) fetchCalls.push({ url, opts });
     return { ok: true, body: null };
   });
   runtime.render = () => {};
@@ -82,7 +84,9 @@ test('a second submit while one is buffered flushes the first synchronously', as
   mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
   const fetchCalls = [];
   globalThis.fetch = mock.fn(async (url, opts) => {
-    fetchCalls.push({ url, opts });
+    // Count only chat_stream POSTs — a statusless drop now also fires a
+    // /api/chat/turn recovery GET (dropped-turn-decision), which is not a send.
+    if (String(url).includes('/api/chat_stream')) fetchCalls.push({ url, opts });
     return { ok: true, body: null };
   });
   runtime.render = () => {};

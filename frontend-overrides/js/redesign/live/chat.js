@@ -585,6 +585,17 @@ let _turnEpoch = 0;
 // epoch on both sides — undefined === undefined must NOT count as current.
 export function isCurrentTurn(t, epoch) { return !!(t && epoch != null && t.epoch === epoch); }
 
+// reply_commit separator: keep the narration the user just read and end it with
+// exactly one blank line so the next block (more narration, or the answer) reads
+// as its own paragraph instead of running together. Empty/whitespace text and
+// text already ending in a blank line are returned unchanged. Pure + exported
+// for __tests__/reply-commit-separator.test.js.
+export function commitSeparator(text) {
+  if (!text || !text.trim()) return text || '';
+  if (/\n\n$/.test(text)) return text;
+  return text.replace(/\s+$/, '') + '\n\n';
+}
+
 // ---- session-keyed queued messages -----------------------------------------
 // chat.queuedList = [{sid, text, attachSnap}, ...] is the truth: messages the
 // user sent while a turn was streaming in their thread, in submission order,
@@ -1244,6 +1255,17 @@ function beginTurn(chat, modelLabel, sessionId) {
       return;
     }
 
+    // reply_commit → a new assistant block is starting after a real tool step:
+    // genuine next-step narration/answer, NOT a re-delivery. KEEP what the user
+    // just read (wiping it is the "rugpull" — text vanishing mid-read); flush
+    // the buffered text and separate it from the coming block with a blank line
+    // so narration and answer don't run together into one soup paragraph.
+    if (ev.type === 'reply_commit') {
+      flushStreamBuffer();
+      if (turn.asstMsg) turn.asstMsg.text = commitSeparator(turn.asstMsg.text);
+      throttledRender();
+      return;
+    }
     // reply_reset → the agent began a NEW message mid-turn (its real reply after
     // a message-tool delivery). Drop the text shown so far so the final reply
     // isn't doubled ("Sent…Hey 👋"). Tool/thinking steps are kept.

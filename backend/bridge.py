@@ -1307,18 +1307,25 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
                 if url not in images_seen:
                     images_seen.add(url)
                     yield _sse({"image_url": url, "image_prompt": alt})
-            # The agent can emit SEVERAL assistant messages in one turn — e.g.
-            # its `message`-tool delivery (Gary's Signal reply channel) and then
-            # its real final reply. The gateway RESETS message.content between
-            # them, so both used to stream in and render doubled ("Sent…Hey 👋").
-            # We track the current message's text; on a reset (new message whose
-            # content doesn't extend what we've shown) we tell the SPA to drop the
-            # turn's text so far and keep only the latest message. This also makes
-            # the trailing state:"final" snapshot a no-op (content == msg_text →
-            # no re-emit), fixing the older "final re-emits everything" doubling.
+            # The agent can emit SEVERAL assistant messages in one turn. The
+            # gateway RESETS message.content between them, so without a signal
+            # both would stream in and render doubled. There are TWO cases, and
+            # they must be handled differently (SPA keys off the frame type):
+            #
+            #  - A user-facing tool ran since the last text → this is genuine
+            #    next-step narration/answer (e.g. "I'll research X" → search →
+            #    "Here's the funnel"). WIPING it out from under the reader is the
+            #    "rugpull" Frank hit: text you're reading vanishes. Emit
+            #    reply_commit so the SPA KEEPS what's shown and separates it from
+            #    the next block instead of deleting it.
+            #  - No tool since the last text → it's a re-delivery of the same
+            #    reply (message-tool "Sent." then the real "Hi there"). Emit
+            #    reply_reset so the SPA drops the delivery and shows only the
+            #    final reply — no doubling. This also makes the trailing
+            #    state:"final" snapshot a no-op (content == msg_text → no re-emit).
             full = _extract_text(payload)
             if full and not full.startswith(msg_text):
-                yield _sse({"type": "reply_reset"})  # SPA clears this turn's text
+                yield _sse({"type": "reply_commit" if tool_since_text else "reply_reset"})
                 msg_text = ""
                 tool_since_text = False
             delta = payload.get("deltaText")

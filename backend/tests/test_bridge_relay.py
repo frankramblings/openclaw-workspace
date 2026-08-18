@@ -83,6 +83,38 @@ def test_message_tool_delivery_is_dropped_for_final_reply():
     assert after == "Hi there"
 
 
+def test_narration_after_a_tool_is_kept_not_wiped():
+    # Genuine multi-step turn: narration → a real user-facing tool → the answer.
+    # The gateway resets message.content before the answer. Because a tool ran
+    # since the last text, this is next-step narration, not a re-delivery: the
+    # relay must emit reply_commit (KEEP what the user is reading — no rugpull),
+    # NOT reply_reset (which would wipe it out from under them).
+    out = collect([
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "delta", "deltaText": "I'll research this.",
+            "message": {"content": [{"text": "I'll research this."}]}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "item",
+            "data": {"kind": "command", "name": "search", "phase": "start", "itemId": "t1"}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "item",
+            "data": {"kind": "command", "name": "search", "phase": "end",
+                     "itemId": "t1", "status": "completed"}}},
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "delta", "deltaText": "Here's the answer.",
+            "message": {"content": [{"text": "Here's the answer."}]}}},  # content RESET
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "lifecycle", "data": {"phase": "end"}}},
+    ])
+    assert any(f.get("type") == "reply_commit" for f in out)
+    assert not any(f.get("type") == "reply_reset" for f in out)
+    # Both blocks survive, in order — the narration is kept, the answer follows.
+    deltas = "".join(f["delta"] for f in out if "delta" in f)
+    assert "I'll research this." in deltas
+    assert "Here's the answer." in deltas
+    assert deltas.index("I'll research this.") < deltas.index("Here's the answer.")
+
+
 def test_final_snapshot_emits_text_when_no_deltas_streamed():
     # The cumulative fallback must still work when a turn sends ONLY a final
     # snapshot (no deltaText at all) — e.g. a non-streaming model.

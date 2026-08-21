@@ -16,12 +16,29 @@ from .bridge import gateway_call
 router = APIRouter()
 
 
+def _pick(*vals):
+    """First non-empty value — the gateway nests run-state under `state` in the
+    rich cron.list but returns it flat (nextRunAtMs/lastRunStatus/…) in the
+    compact shape, so read both."""
+    for v in vals:
+        if v not in (None, ""):
+            return v
+    return None
+
+
 def _map_job(j: dict) -> dict:
     sched = j.get("schedule") or {}
     expr = sched.get("expr") or sched.get("kind") or ""
     tz = sched.get("tz") or ""
     payload = j.get("payload") or {}
     state = j.get("state") or {}
+    next_at = _pick(state.get("nextWakeAtMs"), state.get("nextRunAtMs"),
+                    j.get("nextRunAtMs"), j.get("nextWakeAtMs"))
+    last_at = _pick(state.get("lastRunAtMs"), j.get("lastRunAtMs"))
+    last_status = _pick(state.get("lastStatus"), state.get("status"),
+                        j.get("lastRunStatus"), j.get("status"))
+    last_error = _pick(state.get("lastError"), j.get("lastRunError"),
+                       state.get("error"))
     return {
         "id": j.get("id"),
         "name": j.get("name") or j.get("id"),
@@ -29,13 +46,16 @@ def _map_job(j: dict) -> dict:
         "agentId": j.get("agentId"),
         "schedule": expr + (f"  ({tz})" if tz else ""),
         "schedule_expr": expr,
+        "scheduleKind": j.get("scheduleKind") or sched.get("kind"),
         "tz": tz,
         "message": (payload.get("message") or "")[:280],
         "sessionTarget": j.get("sessionTarget"),
         "wakeMode": j.get("wakeMode"),
-        "nextWakeAtMs": state.get("nextWakeAtMs") or j.get("nextWakeAtMs"),
-        "lastRunAtMs": state.get("lastRunAtMs"),
-        "lastStatus": state.get("lastStatus") or state.get("status"),
+        "nextRunAtMs": next_at,
+        "nextWakeAtMs": next_at,  # legacy alias
+        "lastRunAtMs": last_at,
+        "lastStatus": last_status,
+        "lastError": ((last_error or "")[:280]) or None,
         "createdAtMs": j.get("createdAtMs"),
         "updatedAtMs": j.get("updatedAtMs"),
     }
@@ -70,11 +90,24 @@ def _runs_list(payload) -> list:
 @router.get("/api/cron")
 async def list_cron():
     try:
-        data = await gateway_call("cron.list", {"limit": 200})
+        data = await gateway_call("cron.list",
+                                  {"limit": 200, "includeDisabled": True})
         jobs = [_map_job(j) for j in (data.get("jobs") or [])]
-        # Enabled first, then by name — stable, scannable.
-        jobs.sort(key=lambda j: (not j["enabled"], (j["name"] or "").lower()))
+        # Active first, soonest next-run at the top (reads as an upcoming
+        # timeline); disabled after, alphabetical.
+        big = float("inf")
+        jobs.sort(key=lambda j: (
+            not j["enabled"],
+            (j.get("nextRunAtMs") or big) if j["enabled"] else 0,
+            (j["name"] or "").lower(),
+        ))
+        active = sum(1 for j in jobs if j["enabled"])
+        attention = sum(1 for j in jobs
+                        if j["enabled"] and j.get("lastStatus") == "error")
         return {"jobs": jobs, "total": data.get("total", len(jobs)),
+                "summary": {"active": active,
+                            "disabled": len(jobs) - active,
+                            "attention": attention},
                 "enabled": True}
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502,

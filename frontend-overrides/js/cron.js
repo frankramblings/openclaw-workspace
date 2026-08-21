@@ -69,45 +69,112 @@
   }
   function onEsc(e) { if (e.key === 'Escape') close(); }
 
-  function render(jobs) {
-    const body = $('#cron-body');
-    const count = $('#cron-count');
-    if (count) count.textContent = jobs.length ? `${jobs.length} job${jobs.length === 1 ? '' : 's'}` : '';
-    if (!body) return;
-    if (!jobs.length) { body.innerHTML = '<div class="cron-empty">No scheduled jobs.</div>'; return; }
-    body.innerHTML = jobs.map((j) => {
-      const next = fmtTime(j.nextWakeAtMs);
-      const last = fmtTime(j.lastRunAtMs);
-      const meta = [
-        next ? `next ${esc(next)}` : '',
-        last ? `last ${esc(last)}${j.lastStatus ? ' · ' + esc(j.lastStatus) : ''}` : '',
-        j.agentId ? esc(j.agentId) : '',
-      ].filter(Boolean).join('  ·  ');
-      return (
-        `<div class="cron-job${j.enabled ? '' : ' cron-job-off'}" data-id="${esc(j.id)}">` +
-        `  <div class="cron-job-main">` +
-        `    <div class="cron-job-top">` +
-        `      <span class="cron-job-name">${esc(j.name)}</span>` +
-        `      <code class="cron-job-sched">${esc(j.schedule)}</code>` +
-        `    </div>` +
-        (j.message ? `    <div class="cron-job-msg">${esc(j.message)}</div>` : '') +
-        (meta ? `    <div class="cron-job-meta">${meta}</div>` : '') +
-        `    <div class="cron-job-runs" hidden></div>` +
-        `  </div>` +
-        `  <div class="cron-job-actions">` +
-        `    <button class="cron-btn cron-history" title="Recent runs">⟲</button>` +
-        `    <button class="cron-btn cron-run" title="Run now">Run</button>` +
-        `    <button class="cron-toggle${j.enabled ? ' on' : ''}" title="${j.enabled ? 'Disable' : 'Enable'}" role="switch" aria-checked="${j.enabled}"><span></span></button>` +
-        `  </div>` +
-        `</div>`
-      );
-    }).join('');
-    body.querySelectorAll('.cron-job').forEach((row) => {
+  // Relative "in 2h 3m" for a future timestamp — this is the scannable signal
+  // (is it about to fire / overdue?) the old absolute "next 3:14 PM" buried.
+  function fmtRel(ms) {
+    if (!ms) return '';
+    const diff = ms - Date.now();
+    if (diff <= 0) return 'due';
+    const m = Math.round(diff / 60000);
+    if (m < 60) return `in ${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `in ${h}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}`;
+    const d = Math.floor(h / 24);
+    return `in ${d}d${h % 24 ? ' ' + (h % 24) + 'h' : ''}`;
+  }
+
+  function rowHtml(j) {
+    const nextRel = j.enabled ? fmtRel(j.nextRunAtMs || j.nextWakeAtMs) : '';
+    const last = fmtTime(j.lastRunAtMs);
+    const dot = j.lastStatus === 'error' ? 'err' : (j.lastStatus === 'ok' ? 'ok' : 'none');
+    const meta = [
+      last ? `last ${esc(last)}` : '',
+      j.agentId ? esc(j.agentId) : '',
+    ].filter(Boolean).join('  ·  ');
+    const nameKey = esc(String(j.name || '').toLowerCase());
+    return (
+      `<div class="cron-job${j.enabled ? '' : ' cron-job-off'}" data-id="${esc(j.id)}" data-name="${nameKey}">` +
+      `  <span class="cron-dot cron-dot-${dot}" title="${esc(j.lastStatus || 'never run')}"></span>` +
+      `  <div class="cron-job-main">` +
+      `    <div class="cron-job-top">` +
+      `      <span class="cron-job-name">${esc(j.name)}</span>` +
+      `      <code class="cron-job-sched">${esc(j.schedule || j.scheduleKind || '')}</code>` +
+      (nextRel ? `      <span class="cron-next">${esc(nextRel)}</span>` : '') +
+      `    </div>` +
+      (j.lastError
+        ? `    <div class="cron-job-err" title="${esc(j.lastError)}">⚠ ${esc(j.lastError)}</div>`
+        : (j.message ? `    <div class="cron-job-msg">${esc(j.message)}</div>` : '')) +
+      (meta ? `    <div class="cron-job-meta">${meta}</div>` : '') +
+      `    <div class="cron-job-runs" hidden></div>` +
+      `  </div>` +
+      `  <div class="cron-job-actions">` +
+      `    <button class="cron-btn cron-history" title="Recent runs">⟲</button>` +
+      `    <button class="cron-btn cron-run" title="Run now">Run</button>` +
+      `    <button class="cron-toggle${j.enabled ? ' on' : ''}" title="${j.enabled ? 'Disable' : 'Enable'}" role="switch" aria-checked="${j.enabled}"><span></span></button>` +
+      `  </div>` +
+      `</div>`
+    );
+  }
+
+  function bindRows(root) {
+    root.querySelectorAll('.cron-job').forEach((row) => {
+      if (row.dataset.bound === '1') return;
+      row.dataset.bound = '1';
       const id = row.dataset.id;
       row.querySelector('.cron-history').addEventListener('click', () => toggleRuns(id, row));
       row.querySelector('.cron-run').addEventListener('click', () => runJob(id, row));
       row.querySelector('.cron-toggle').addEventListener('click', () => toggleJob(id, row));
     });
+  }
+
+  function applyFilter(body, q) {
+    const needle = String(q || '').trim().toLowerCase();
+    body.querySelectorAll('.cron-job').forEach((row) => {
+      const hit = !needle || (row.dataset.name || '').indexOf(needle) !== -1;
+      row.style.display = hit ? '' : 'none';
+    });
+    // Auto-expand the disabled group when a filter is active so matches there show.
+    const det = body.querySelector('.cron-details');
+    if (det && needle) det.open = true;
+  }
+
+  function render(data) {
+    const jobs = (data && data.jobs) || [];
+    const sum = (data && data.summary) || {};
+    const body = $('#cron-body');
+    const count = $('#cron-count');
+    if (count) count.textContent = jobs.length ? `${jobs.length}` : '';
+    if (!body) return;
+    if (!jobs.length) { body.innerHTML = '<div class="cron-empty">No scheduled jobs.</div>'; return; }
+
+    const active = jobs.filter((j) => j.enabled);
+    const disabled = jobs.filter((j) => !j.enabled);
+    const attn = sum.attention != null
+      ? sum.attention
+      : active.filter((j) => j.lastStatus === 'error').length;
+
+    const summaryBar =
+      '<div class="cron-summary">' +
+      `<span class="cron-stat"><b>${active.length}</b> active</span>` +
+      `<span class="cron-stat cron-stat-off"><b>${disabled.length}</b> disabled</span>` +
+      (attn
+        ? `<span class="cron-stat cron-stat-err"><b>${attn}</b> failing</span>`
+        : '<span class="cron-stat cron-stat-ok">all healthy</span>') +
+      '<input class="cron-filter" id="cron-filter" placeholder="Filter jobs…" autocomplete="off" />' +
+      '</div>';
+
+    body.innerHTML =
+      summaryBar +
+      `<div class="cron-group" data-group="active">${active.map(rowHtml).join('')}</div>` +
+      (disabled.length
+        ? '<details class="cron-details"><summary class="cron-group-head">' +
+          `Disabled · ${disabled.length}</summary>` +
+          `<div class="cron-group" data-group="disabled">${disabled.map(rowHtml).join('')}</div></details>`
+        : '');
+
+    bindRows(body);
+    const filter = $('#cron-filter', body);
+    if (filter) filter.addEventListener('input', () => applyFilter(body, filter.value));
   }
 
   async function load() {
@@ -118,7 +185,7 @@
     try {
       const res = await fetch(`${API}/api/cron`);
       const data = await res.json();
-      render(data.jobs || []);
+      render(data);
     } catch (e) {
       if (body) body.innerHTML = `<div class="cron-empty">Failed to load: ${esc(e && e.message)}</div>`;
     } finally { _loading = false; }
@@ -243,6 +310,9 @@
     item.addEventListener('click', open);
     tasksItem.parentNode.insertBefore(item, tasksItem);
   }
+
+  // Reachable from the mobile shell (More → Scheduled), which has no icon rail.
+  window.openCronModal = open;
 
   function init() {
     injectRailButton();

@@ -81,6 +81,61 @@
 }
 .cron-toggle.on span { left: 17px; }
 
+/* command-center header + grouping (cron.js render) */
+.cron-summary {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 4px 8px 10px;
+}
+.cron-stat {
+  font-size: 12px; opacity: 0.7; padding: 3px 9px; border-radius: 999px;
+  background: rgba(127, 127, 127, 0.12); white-space: nowrap;
+}
+.cron-stat b { font-weight: 700; opacity: 1; }
+.cron-stat-off { opacity: 0.55; }
+.cron-stat-err { color: #ff453a; background: rgba(255, 69, 58, 0.14); opacity: 1; }
+.cron-stat-ok { color: #30d158; background: rgba(48, 209, 88, 0.12); opacity: 1; }
+.cron-filter {
+  margin-left: auto; flex: 1 1 140px; min-width: 110px; max-width: 220px;
+  background: rgba(127, 127, 127, 0.12); color: inherit; font-size: 12px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  border-radius: 8px; padding: 5px 9px; outline: none;
+}
+.cron-filter:focus { border-color: var(--accent, #6ea8fe); }
+.cron-details { margin-top: 2px; }
+.cron-group-head {
+  cursor: pointer; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.05em; opacity: 0.5; padding: 8px 12px 4px;
+  user-select: none; list-style: none;
+}
+.cron-group-head::-webkit-details-marker { display: none; }
+.cron-group-head::before { content: '\25B8  '; }
+.cron-details[open] .cron-group-head::before { content: '\25BE  '; }
+.cron-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: rgba(127, 127, 127, 0.4);
+}
+.cron-dot-ok { background: #30d158; }
+.cron-dot-err { background: #ff453a; }
+.cron-next {
+  font-size: 11px; color: var(--accent, #6ea8fe); font-weight: 600;
+  white-space: nowrap;
+}
+.cron-job-err {
+  font-size: 11.5px; color: #ff6961; margin-top: 3px; max-width: 480px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Phone: the cron modal is opened from More → Scheduled (no icon rail there).
+   Render it as a near-full-height bottom sheet instead of a centered card. */
+@media (max-width: 640px) {
+  #cron-modal.cron-modal-overlay { align-items: flex-end; }
+  #cron-modal .cron-modal-card {
+    width: 100vw; max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .cron-filter { max-width: none; }
+}
+
 /* --- Agent brand mark ------------------------------------------------------
    The brand logo is a single-color CSS mask so it inherits the live
    theme accent (--brand-color), exactly how the old boat <svg> tracked the

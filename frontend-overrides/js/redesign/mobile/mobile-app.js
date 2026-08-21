@@ -145,8 +145,12 @@ export function mobileActions(state) {
     },
     mOpenSub: (id) => {
       state.mTab = 'more';
-      if (id === 'scheduled') { state.mSub = 'settings'; state.setSection = 'scheduled'; }
-      else state.mSub = id;
+      if (id === 'scheduled') {
+        // Open the shared cron command-center modal directly (cron.js). Fall
+        // back to the Settings section if that script hasn't loaded.
+        if (typeof window.openCronModal === 'function') { window.openCronModal(); return; }
+        state.mSub = 'settings'; state.setSection = 'scheduled';
+      } else state.mSub = id;
     },
     mBackToHub: () => { state.mSub = null; },
     mOpenReader: (i) => { state.selEmail = Number(i); state.mReader = true; state.mEmailOpened = true; },

@@ -235,6 +235,42 @@ TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL",
 SUGGEST_MODEL = os.environ.get("WORKSPACE_SUGGEST_MODEL",
                                "anthropic/claude-sonnet-4-6")
 
+# Titles + suggestions are stateless one-shot completions: no agent persona,
+# no sessions, no tools. Routing them through the gateway forces the FULL
+# ~27k-token Gary bootstrap into every request — wasteful on cloud, and on a
+# local 7B the prefill blows past the utility-turn timeout. So when the model
+# is served by a local OpenAI-compatible provider (LM Studio / mlx_lm on
+# kamino), call that endpoint DIRECTLY and skip the agent runtime entirely.
+# Any provider in openclaw.json models.providers.* with api "openai-completions"
+# and a non-loopback baseUrl qualifies; we match on the "<provider>/" prefix.
+def _local_openai_providers() -> dict[str, str]:
+    """provider-id -> baseUrl for every openai-completions provider we can
+    reach directly (used to bypass the gateway for utility completions)."""
+    out: dict[str, str] = {}
+    provs = (_openclaw_json().get("models", {}) or {}).get("providers", {}) or {}
+    for pid, p in provs.items():
+        if not isinstance(p, dict):
+            continue
+        base = p.get("baseUrl")
+        if base and p.get("api") == "openai-completions":
+            out[pid] = base
+    return out
+
+
+def direct_completion_base(model_ref: str | None) -> str | None:
+    """If `model_ref` (`<provider>/<model_id>`) names a local OpenAI-compatible
+    provider, return its baseUrl so the caller can POST /chat/completions
+    directly. Otherwise None → route through the gateway as usual."""
+    if not model_ref or "/" not in model_ref:
+        return None
+    provider = model_ref.split("/", 1)[0]
+    return _local_openai_providers().get(provider)
+
+
+def direct_completion_model(model_ref: str) -> str:
+    """The bare model id the local endpoint expects (strip the provider prefix)."""
+    return model_ref.split("/", 1)[1] if "/" in model_ref else model_ref
+
 
 # --- Branding (the agent's name + theme accent) ------------------------------
 # The agent name is WORKSPACE branding, not OpenClaw config: OpenClaw's

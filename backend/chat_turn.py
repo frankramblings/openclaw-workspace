@@ -32,8 +32,9 @@ import logging
 import re
 import time
 
-from . import (bridge, config, draft_mode, event_store, promise_guard, push,
-               sessions_store, terminals, turn_state, websearch)
+from . import (bridge, config, draft_mode, event_store, local_llm,
+               promise_guard, push, sessions_store, terminals, turn_state,
+               websearch)
 from .attachments import _terminal_attachments
 
 # Log under "backend.app" (not __name__): these turn-engine warnings were emitted
@@ -151,6 +152,14 @@ async def _generate_ai_title(message: str) -> str:
     prompt = ("Generate a short, specific chat title (3-6 words, no quotes, no "
               "trailing punctuation) for the topic of a conversation that opens "
               f"with this message:\n\n{message[:600]}\n\nOutput ONLY the title.")
+    # Local models: hit the endpoint directly (no gateway bootstrap). See
+    # backend/local_llm.py — the gateway path would prefill the full ~27k Gary
+    # bootstrap, which times out a title turn on a local 7B.
+    if local_llm.can_route(config.TITLE_MODEL):
+        raw = await local_llm.complete(config.TITLE_MODEL, prompt,
+                                       max_tokens=32, temperature=0.3)
+        if raw:
+            return _sanitize_title(raw)
     return _sanitize_title(await _collect_brain_text(
         prompt, _TITLE_SESSION_KEY, model_ref=config.TITLE_MODEL))
 

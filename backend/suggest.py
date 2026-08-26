@@ -22,7 +22,7 @@ import logging
 from fastapi import Body
 from fastapi.routing import APIRouter
 
-from . import bridge, config
+from . import bridge, config, local_llm
 
 log = logging.getLogger("workspace.suggest")
 
@@ -73,10 +73,17 @@ async def chat_suggest(body: dict = Body(...)):
         return {"text": ""}
     prompt = _PROMPTS[mode].format(context=context)
     try:
-        raw = await asyncio.wait_for(
-            bridge.run_text(prompt, _SESSION_KEY,
-                            model_ref=config.SUGGEST_MODEL, utility=True),
-            timeout=_TIMEOUT_S)
+        # Local models bypass the gateway (no ~27k bootstrap per keystroke-idle
+        # suggestion). See backend/local_llm.py.
+        if local_llm.can_route(config.SUGGEST_MODEL):
+            raw = await local_llm.complete(
+                config.SUGGEST_MODEL, prompt, max_tokens=40,
+                temperature=0.4, timeout=_TIMEOUT_S)
+        else:
+            raw = await asyncio.wait_for(
+                bridge.run_text(prompt, _SESSION_KEY,
+                                model_ref=config.SUGGEST_MODEL, utility=True),
+                timeout=_TIMEOUT_S)
     except Exception:  # noqa: BLE001 — any failure means "no suggestion"
         log.warning("suggest turn failed (mode=%s session=%s)",
                     mode, body.get("session_key", ""), exc_info=True)

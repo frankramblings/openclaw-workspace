@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { shouldRecoverDroppedTurn } from '../redesign/live/dropped-turn-decision.js';
+import { shouldRecoverDroppedTurn, droppedTurnAction } from '../redesign/live/dropped-turn-decision.js';
 
 const r = (snap) => shouldRecoverDroppedTurn(snap);
 
@@ -33,4 +33,29 @@ test('missing/unknown status → do not recover', () => {
 test('null/undefined snapshot → do not recover', () => {
   assert.equal(r(null), false);
   assert.equal(r(undefined), false);
+});
+
+// droppedTurnAction: the full triage a statusless mid-turn drop needs. The bug
+// it fixes: a still-RUNNING turn (reader dropped, not the turn) used to fall to
+// error+recall, abandoning the partial reply the user was reading ("streaming
+// then disappears"). It must re-attach to the live event_store tail instead.
+const a = (snap) => droppedTurnAction(snap);
+
+test('still-active turn → reattach (keep streaming, do not abandon partial)', () => {
+  assert.equal(a({ active: true }), 'reattach');
+  assert.equal(a({ active: true, last_turn: { status: 'ok' } }), 'reattach');
+  assert.equal(a({ active: true, last_turn: null }), 'reattach');
+});
+
+test('finished-clean while detached → recover the real reply', () => {
+  assert.equal(a({ active: false, last_turn: { status: 'ok' } }), 'recover');
+  assert.equal(a({ active: false, last_turn: { status: 'done' } }), 'recover');
+});
+
+test('interrupted / unknown / no snapshot → error+recall (real resend wanted)', () => {
+  assert.equal(a({ active: false, last_turn: { status: 'interrupted' } }), 'error');
+  assert.equal(a({ active: false, last_turn: {} }), 'error');
+  assert.equal(a({ active: false }), 'error');
+  assert.equal(a(null), 'error');
+  assert.equal(a(undefined), 'error');
 });

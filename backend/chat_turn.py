@@ -494,6 +494,12 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                     reply_parts.append(frame["delta"])
                 if frame.get("type") == "reply_reset":
                     reply_parts.clear()   # dual-output: keep only the final reply
+                    # ...and forget we ever saw text. The post-reset reply can
+                    # land ONLY in the transcript (message-tool delivery), never
+                    # on the live stream — leaving text_seen True there strands
+                    # the SPA-wiped bubble blank, because the late-reply salvage
+                    # below fires only when no text was seen this turn.
+                    text_seen = False
                 if frame.get("type") in ("tool_start", "tool_output"):
                     tools_seen = True
                 if (frame.get("exit_code") == 1

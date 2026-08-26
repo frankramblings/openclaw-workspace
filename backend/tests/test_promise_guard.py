@@ -119,3 +119,44 @@ def test_drive_turn_emits_promise_warning(monkeypatch):
 
 async def _async_none(*a, **k):
     return None
+
+
+def test_reply_reset_re_enables_late_salvage(monkeypatch):
+    # The "streaming then disappears" bug's second face. The gateway streams
+    # visible text, then a reply_reset (message-tool dual-output: the SPA wipes
+    # what's shown to make room for the real reply) — but the real reply lands
+    # only in the transcript, not on the live stream. The late-reply salvage
+    # keys off text_seen; a reply_reset must clear text_seen too, or the wiped
+    # bubble stays blank forever (salvage skipped because "text was seen").
+    import asyncio
+    import json
+
+    async def fake_stream(*a, **k):
+        yield chat_turn.bridge._sse({"delta": "Sent."})       # message-tool echo
+        yield chat_turn.bridge._sse({"type": "reply_reset"})  # SPA wipes "Sent."
+        # ...and then nothing: the real reply only reaches the transcript.
+
+    async def fake_late(*a, **k):
+        return "the real reply"
+
+    monkeypatch.setattr(chat_turn.bridge, "stream_turn", fake_stream)
+    monkeypatch.setattr(chat_turn, "_late_reply", fake_late)
+
+    async def main():
+        frames = []
+        async for chunk in chat_turn.drive_turn(
+                message="go", use_web="", allow_web_search="", draft_doc=None,
+                rec=None, session_key=SK, run_info={}, chat_attachments=[],
+                title_task=None, active_runs={}, spawn=lambda c: c.close(),
+                auto_extract=_async_none, log_turn_timing=lambda r: None):
+            frames.append(chunk)
+        return frames
+
+    frames = asyncio.run(main())
+    bodies = [json.loads(c[5:].strip()) for c in frames
+              if c.startswith("data:") and c[5:].strip() not in ("", "[DONE]")
+              and c[5:].strip().startswith("{")]
+    deltas = [b["delta"] for b in bodies if b.get("delta")]
+    assert "the real reply" in deltas, (
+        "reply_reset left text_seen True, so the late-reply salvage was "
+        "skipped and the wiped reply was never recovered")

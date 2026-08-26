@@ -25,3 +25,21 @@ export function shouldRecoverDroppedTurn(snap) {
   if (!status || status === 'interrupted') return false;
   return true;
 }
+
+// Full triage for a statusless mid-turn connection drop. The reader dying does
+// NOT mean the turn died — event_store owns the turn, not the POST reader. Three
+// outcomes:
+//   'reattach' — the turn is STILL RUNNING server-side: re-attach to the live
+//                event_store tail and keep streaming. This is the case that was
+//                missing — it used to fall through to error+recall, abandoning
+//                the partial reply the user was reading ("streaming then
+//                disappears").
+//   'recover'  — the turn FINISHED cleanly while our reader was dead: pull the
+//                real reply from server truth, suppress the retry (no dup turn).
+//   'error'    — ambiguous (interrupted / unknown / no snapshot): keep today's
+//                error notice + recall so a genuine resend is never swallowed.
+export function droppedTurnAction(snap) {
+  if (snap && snap.active) return 'reattach';
+  if (shouldRecoverDroppedTurn(snap)) return 'recover';
+  return 'error';
+}

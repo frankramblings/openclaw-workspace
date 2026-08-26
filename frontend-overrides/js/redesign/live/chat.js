@@ -15,7 +15,7 @@ import { apiGet, apiForm, apiJson, apiDelete, postStream } from './api.js';
 import { renderMarkdown } from '../markdown.js';
 import { AVATAR } from '../data.js';
 import { reconcileDecision } from './reconcile-decision.js';
-import { shouldRecoverDroppedTurn } from './dropped-turn-decision.js';
+import { droppedTurnAction } from './dropped-turn-decision.js';
 import { parseQuestionCard, composeAnswer } from './question-card.js';
 import { promiseWarningText, latestAsstAtOrBefore } from './promise-warning.js';
 import { setLiveTurn } from './turn-ref.js';
@@ -1245,7 +1245,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       // → the duplicate-bubble bug. Ask server truth first; only fall back to
       // error+recall when the turn did NOT finish cleanly. Never loses a message.
       if (statusless && errSid && errSid === chat.activeId) {
-        recoverDroppedTurn(chat, errSid).then((recovered) => {
+        recoverDroppedTurn(chat, errSid, m).then((recovered) => {
           if (!recovered) showDroppedError(chat, errSid, m, ev.status);
         }).catch(() => showDroppedError(chat, errSid, m, ev.status));
         flushRender();
@@ -1737,19 +1737,43 @@ function showDroppedError(chat, errSid, m, status) {
   flushRender();
 }
 
-// A statusless connection drop can mean the turn already COMPLETED server-side
-// while our reader was dead. Reconcile against the same /api/chat/turn snapshot
-// reconcileTurn trusts: if the turn ended cleanly, pull the real reply from
-// server truth and suppress the retry (killing the duplicate-bubble bug).
-// Resolves true only when it rendered the finished reply; false = let the caller
-// fall back to showDroppedError. Never starts a turn, never loses a message.
-async function recoverDroppedTurn(chat, sid) {
+// A statusless connection drop does NOT mean the turn died — event_store owns
+// the turn, not the POST reader. One snapshot fetch, then droppedTurnAction
+// triages three cases (see dropped-turn-decision.js):
+//   'reattach' — turn STILL running: re-attach to the live event_store tail and
+//                keep streaming. Without this the partial reply the user was
+//                reading is abandoned ("streaming then disappears") even though
+//                the turn completes fine server-side.
+//   'recover'  — turn FINISHED cleanly while our reader was dead: pull the real
+//                reply from server truth and suppress the retry (no dup turn).
+//   'error'    — ambiguous: resolve false so the caller shows error+recall.
+// Resolves true when it re-attached OR rendered the finished reply; false = let
+// the caller fall back to showDroppedError. Never starts a turn, never loses a
+// message.
+async function recoverDroppedTurn(chat, sid, staleMsg) {
   let snap = null;
   try {
     snap = await apiGet(`/api/chat/turn?session=${encodeURIComponent(sid)}`);
   } catch (_) { return false; /* backend unreachable → fall back to retry path */ }
-  if (!shouldRecoverDroppedTurn(snap)) return false;
   if (chat.activeId !== sid) return false;  // user switched threads mid-await
+  const action = droppedTurnAction(snap);
+  if (action === 'reattach') {
+    // The error handler already tore the local turn down (turn = null) and left
+    // its partial assistant bubble orphaned in the thread. attachTurn rebuilds
+    // the turn from its start out of event_store, so drop that orphan first or
+    // it renders as a duplicate. (activeId was just re-checked with no await
+    // since, so attachTurn won't early-return here.)
+    if (staleMsg && Array.isArray(chat.thread)) {
+      const i = chat.thread.indexOf(staleMsg);
+      if (i >= 0) chat.thread.splice(i, 1);
+    }
+    // attachTurn replays the partial the dead reader had shown then
+    // EventSource-tails the rest — the same machinery reconcileTurn uses for
+    // refresh / switch-away-and-back.
+    try { return await attachTurn(chat, runtime.state, sid, snap); }
+    catch (_) { return false; }
+  }
+  if (action !== 'recover') return false;
   try {
     const t = await fetchThread(sid, chat.model, chat.title);
     const thread = dedupeAdjacentUserMessages(t.thread, 'dropped-recover');

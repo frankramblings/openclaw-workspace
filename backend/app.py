@@ -1091,7 +1091,7 @@ async def search_test(payload: dict = Body(default=None)):
 
 
 # --- Semantic search over all chat content -----------------------------------
-# Real embedding-based search (Voyage voyage-3.5-lite) over every session's
+# Real embedding-based search (local kamino nomic-embed-text) over every session's
 # message content. Explicit routes — registered before the /api/{path} catch-all
 # below and preferred by FastAPI, so they aren't shadowed by it.
 @app.get("/api/search")

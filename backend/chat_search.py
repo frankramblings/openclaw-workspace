@@ -3,19 +3,19 @@
 Message content lives in the brain and is read back per-session via
 `bridge.fetch_history`. This module builds a local embedding index of that
 content in sqlite (`.data/chat_search.db`) and serves cosine-similarity search
-over it. Embeddings come from Voyage AI's HTTP API (voyage-3.5-lite).
+over it. Embeddings are computed LOCALLY on the kamino inference node
+(ollama `nomic-embed-text`, 768-dim) — chat content never leaves the tailnet.
 
 Design constraints (single user, small scale ~291 sessions):
   * Incremental: a session is re-embedded only when its `updated` stamp moves.
   * Resilient: one session's gateway/embed failure never aborts a full reindex.
-  * Graceful degradation: no Voyage key → indexing/search are no-ops that log a
-    warning and return empty, never raise.
+  * Graceful degradation: local embed endpoint unreachable → indexing/search are
+    no-ops that log a warning and return empty, never raise.
   * Cheap search: the embedding matrix is cached in-process keyed on the db
     file mtime, so repeated queries don't re-read sqlite.
 
-The Voyage API key is read from env `VOYAGE_API_KEY`, falling back to the
-`VOYAGE_API_KEY=` line in ~/.config/openclaw-secrets/ramblebot.env. The key
-value is NEVER logged or returned.
+The embed endpoint defaults to kamino's ollama (LAN) and is overridable via
+`CHAT_EMBED_URL`. No API key or cloud egress is involved.
 """
 from __future__ import annotations
 
@@ -36,12 +36,15 @@ log = logging.getLogger("workspace.chat_search")
 
 # --- Tunables ----------------------------------------------------------------
 _DB_PATH = config.DATA_DIR / "chat_search.db"
-_SECRETS_ENV = Path.home() / ".config" / "openclaw-secrets" / "ramblebot.env"
-_VOYAGE_URL = "https://api.voyageai.com/v1/embeddings"
-_VOYAGE_MODEL = "voyage-3.5-lite"
+# Local embed endpoint (kamino ollama, LAN). Override with CHAT_EMBED_URL.
+_EMBED_URL = os.environ.get("CHAT_EMBED_URL", "http://100.97.60.15:11434/api/embed")
+_EMBED_MODEL = os.environ.get("CHAT_EMBED_MODEL", "nomic-embed-text")
+# nomic-embed-text is asymmetric: index docs and queries get distinct task
+# prefixes for best retrieval quality.
+_EMBED_PREFIX = {"document": "search_document: ", "query": "search_query: "}
 _MAX_TEXT_CHARS = 1200      # truncate each chunk before embedding
 _SNIPPET_CHARS = 240        # content_snippet length in results
-_BATCH = 128                # Voyage: max inputs per request
+_BATCH = 64                 # inputs per local embed request
 _MIN_CONTENT_LEN = 12       # skip trivially short messages
 # Per-session transcript window. The gateway's chat.history rejects limits
 # above ~1000 (returns empty), so 1000 is the effective ceiling — the same cap
@@ -58,53 +61,45 @@ _MATRIX_LOCK = threading.Lock()
 _matrix_cache: dict = {"mtime": None, "matrix": None, "rows": None}
 
 
-# --- Voyage API key ----------------------------------------------------------
-def _voyage_key() -> str | None:
-    """Return the Voyage API key from env, or parse it from the secrets env
-    file. Returns None if unavailable. The value is never logged."""
-    env = os.environ.get("VOYAGE_API_KEY")
-    if env:
-        return env.strip()
+# --- local embed availability ------------------------------------------------
+def _embed_enabled() -> bool:
+    """True if the local embed endpoint is reachable. A short probe against the
+    ollama host root; failures mean indexing/search degrade to no-ops rather
+    than raising. No key or cloud call is involved."""
     try:
-        for line in _SECRETS_ENV.read_text().splitlines():
-            line = line.strip()
-            if line.startswith("VOYAGE_API_KEY="):
-                val = line.split("=", 1)[1].strip().strip('"').strip("'")
-                return val or None
-    except (FileNotFoundError, OSError):
-        return None
-    return None
+        host = _EMBED_URL.rsplit("/api/", 1)[0] or _EMBED_URL
+        r = httpx.get(host, timeout=2.0)
+        return r.status_code < 500
+    except Exception:  # noqa: BLE001 - unreachable == disabled
+        return False
 
 
 async def _embed(texts: list[str], input_type: str) -> list[list[float]] | None:
-    """Embed `texts` via Voyage in batches of <=128. `input_type` is
-    "document" (indexing) or "query" (search). Returns a list of float vectors
-    aligned with `texts`, or None if no key / a hard API failure. Best-effort:
-    on a batch error it logs and returns None so callers degrade gracefully."""
-    key = _voyage_key()
-    if not key:
-        log.warning("chat_search: no Voyage API key found — search disabled")
-        return None
+    """Embed `texts` LOCALLY on kamino (ollama nomic-embed-text) in batches.
+    `input_type` is "document" (indexing) or "query" (search), mapped to the
+    model's task prefix. Returns a list of float vectors aligned with `texts`,
+    or None on a hard failure. Best-effort: on error it logs and returns None so
+    callers degrade gracefully. Chat content never leaves the tailnet."""
+    prefix = _EMBED_PREFIX.get(input_type, "")
     out: list[list[float]] = []
-    headers = {"Authorization": f"Bearer {key}",
-               "Content-Type": "application/json"}
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             for i in range(0, len(texts), _BATCH):
-                batch = texts[i:i + _BATCH]
-                body = {"input": batch, "model": _VOYAGE_MODEL,
-                        "input_type": input_type}
-                res = await client.post(_VOYAGE_URL, json=body, headers=headers)
+                batch = [prefix + t for t in texts[i:i + _BATCH]]
+                body = {"model": _EMBED_MODEL, "input": batch}
+                res = await client.post(_EMBED_URL, json=body)
                 if res.status_code != 200:
-                    log.warning("chat_search: Voyage returned %s (batch %d)",
+                    log.warning("chat_search: embed endpoint returned %s (batch %d)",
                                 res.status_code, i // _BATCH)
                     return None
-                data = res.json().get("data") or []
-                # Order by index to be safe, then take embeddings.
-                data.sort(key=lambda d: d.get("index", 0))
-                out.extend(d["embedding"] for d in data)
+                embs = res.json().get("embeddings") or []
+                if len(embs) != len(batch):
+                    log.warning("chat_search: embed returned %d vectors for %d inputs",
+                                len(embs), len(batch))
+                    return None
+                out.extend(embs)
     except Exception as exc:  # noqa: BLE001 - never let embed crash a caller
-        log.warning("chat_search: Voyage embed failed: %r", exc)
+        log.warning("chat_search: local embed failed: %r", exc)
         return None
     return out
 
@@ -234,10 +229,10 @@ async def reindex(force: bool = False) -> dict:
         log.info("chat_search: reindex already in progress — skipping")
         return {"sessions_indexed": 0, "chunks": 0, "skipped": 0,
                 "note": "already running"}
-    if not _voyage_key():
-        log.warning("chat_search: no Voyage API key — reindex skipped")
+    if not _embed_enabled():
+        log.warning("chat_search: local embed endpoint unreachable — reindex skipped")
         return {"sessions_indexed": 0, "chunks": 0, "skipped": 0,
-                "note": "no key"}
+                "note": "embed endpoint unreachable"}
 
     async with _reindex_lock:
         conn = _connect()
@@ -403,4 +398,4 @@ def stats() -> dict:
     except Exception as exc:  # noqa: BLE001
         log.warning("chat_search: stats failed: %r", exc)
     return {"chunks": chunks, "sessions": sessions,
-            "has_key": _voyage_key() is not None}
+            "has_key": _embed_enabled()}

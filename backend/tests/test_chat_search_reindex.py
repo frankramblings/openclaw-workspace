@@ -25,7 +25,7 @@ def _session(sid="s1", updated=100):
 def search_env(tmp_path, monkeypatch):
     # _DB_PATH is bound at import from the (real) data dir; redirect it to tmp.
     monkeypatch.setattr(chat_search, "_DB_PATH", tmp_path / "chat_search.db")
-    monkeypatch.setattr(chat_search, "_voyage_key", lambda: "test-key")
+    monkeypatch.setattr(chat_search, "_embed_enabled", lambda: True)
 
     async def fake_embed(texts, input_type):
         return [[1.0, 0.0, 0.0] for _ in texts]

@@ -25,3 +25,16 @@ export function parseHash(hash) {
 export function chatHash(id) {
   return id ? `#chat/${id}` : '#chat';
 }
+
+// After any popstate on the chat surface: a history entry can never
+// legitimately name a different thread than the one on screen, because thread
+// hashes are written with replaceState only (live/chat.js _setHash). The
+// mobile UI ladder (app.js syncMobileHistory) pushes and pops entries whose
+// URLs froze the hash of the moment they were pushed, so a pop can surface a
+// stale thread id. Returns the hash the shell must re-assert, or null.
+export function reassertedThreadHash(hash, activeId) {
+  if (!activeId) return null;
+  const p = parseHash(hash);
+  if (p.surface !== 'chat') return null;
+  return p.sessionId === activeId ? null : chatHash(activeId);
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { parseHash, chatHash, SURFACES } from '../redesign/routes.js';
+import { parseHash, chatHash, SURFACES, reassertedThreadHash } from '../redesign/routes.js';
 
 test('plain surface hashes parse to a surface with no session', () => {
   assert.deepEqual(parseHash('#calendar'), { surface: 'calendar', sessionId: null, special: null });
@@ -32,4 +32,13 @@ test('chatHash formats both forms', () => {
 
 test('SURFACES matches the shell list', () => {
   assert.deepEqual(SURFACES, ['chat', 'inbox', 'email', 'calendar', 'research', 'library', 'notes', 'settings']);
+});
+
+test('reassertedThreadHash corrects a stale thread hash after a history pop', () => {
+  assert.equal(reassertedThreadHash('#chat/old', 'new'), '#chat/new');
+  assert.equal(reassertedThreadHash('#chat', 'new'), '#chat/new');
+  assert.equal(reassertedThreadHash('#chat/new', 'new'), null);
+  assert.equal(reassertedThreadHash('#inbox', 'new'), null);
+  assert.equal(reassertedThreadHash('#chat/x', null), null);
+  assert.equal(reassertedThreadHash('', 'new'), null);
 });

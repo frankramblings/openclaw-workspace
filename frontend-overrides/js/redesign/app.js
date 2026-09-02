@@ -6,7 +6,7 @@
 
 import { I } from './icons.js';
 import { esc, when } from './dom.js';
-import { parseHash, chatHash, SURFACES } from './routes.js';
+import { parseHash, chatHash, SURFACES, reassertedThreadHash } from './routes.js';
 import { AVATAR, filterSlashCommands } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
 import { renderCenter, renderChatList, chatMsg, inboxToastHtml } from './surfaces.js';
@@ -298,6 +298,15 @@ function syncMobileHistory() {
   }
 }
 window.addEventListener('popstate', (e) => {
+  // Runs before the hashchange listener (popstate is dispatched first): the
+  // mobile UI ladder above pops entries whose URLs froze an older thread's
+  // hash, and thread hashes are replaceState-only, so put the active thread
+  // back into the URL before hashchange can re-select the stale one.
+  const chatState = state.live && state.live.chat;
+  if (state.surface === 'chat' && chatState && chatState.activeId) {
+    const want = reassertedThreadHash(location.hash, chatState.activeId);
+    if (want) { try { history.replaceState(history.state, '', want); } catch (_) { /* no history API */ } }
+  }
   if (_ignorePops > 0) { _ignorePops--; return; }
   if (!isMobile()) return;
   const to = (e.state && e.state.ocUi) || 0;

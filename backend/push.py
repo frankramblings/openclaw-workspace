@@ -16,7 +16,7 @@ import os
 import threading
 from pathlib import Path
 
-from . import config, fsutil
+from . import config, fsutil, sessions_store
 
 _log = logging.getLogger(__name__)
 
@@ -158,6 +158,23 @@ def subscription_count() -> int:
         return len(data.get("subscriptions", []))
 
 
+def with_thread_url(payload: dict) -> dict:
+    """Return a copy of `payload` with `url` set to the thread's deep link
+    ("/#chat/<spa id>") when `session_id` names a known session (SPA id or
+    gateway key). A payload that already carries `url`, or names no session,
+    comes back unchanged. Pure: never mutates the input."""
+    out = dict(payload or {})
+    if out.get("url"):
+        return out
+    sid = str(out.get("session_id") or "").strip()
+    if not sid:
+        return out
+    spa = sessions_store.id_for_session_key(sid)
+    if spa:
+        out["url"] = f"/#chat/{spa}"
+    return out
+
+
 async def send(payload: dict) -> dict:
     """Send push notification to all subscriptions.
 
@@ -165,6 +182,7 @@ async def send(payload: dict) -> dict:
     404/410. Returns {"sent": n, "pruned": n} on success, or
     {"sent": 0, "reason": ...} when degraded. Never raises.
     """
+    payload = with_thread_url(payload)
     if not supported():
         return {"sent": 0, "reason": "push not supported"}
 

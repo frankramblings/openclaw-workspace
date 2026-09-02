@@ -125,7 +125,7 @@ self.addEventListener('push', e => {
       const { title, body, kind, tag, badge } = data;
       // backend/push.with_thread_url stamps '/#chat/<id>' for session-bound
       // pushes; anything else lands on the app root. Same-origin paths only.
-      const url = (typeof data.url === 'string' && data.url.startsWith('/')) ? data.url : '/';
+      const url = (typeof data.url === 'string' && data.url.startsWith('/') && !data.url.startsWith('//')) ? data.url : '/';
 
       // Turn- and task-kind: skip the banner if the app is already visible.
       // backend/task_push sends kind:"task" for every finished job; without

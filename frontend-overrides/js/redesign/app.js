@@ -914,6 +914,8 @@ function focusLocator(el) {
   return null;
 }
 function restoreModalFocus() {
+  const switcherKey = _switcherFocusKey;
+  _switcherFocusKey = null;
   _pendingModalFocus = false;
   if (_modalFocusReturn) {
     const sel = _modalFocusReturn;
@@ -924,12 +926,10 @@ function restoreModalFocus() {
   }
   // No click-captured trigger (or it no longer exists) — fall back to the
   // field that was focused when a keyboard shortcut opened the modal.
-  if (_switcherFocusKey) {
-    const key = _switcherFocusKey;
-    _switcherFocusKey = null;
+  if (switcherKey) {
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => {
-        const el = root.querySelector(`[data-focus="${key}"]`);
+        const el = root.querySelector(`[data-focus="${switcherKey}"]`);
         if (el && el.focus) el.focus({ preventScroll: true });
       });
     }
@@ -1731,7 +1731,7 @@ window.addEventListener('hashchange', () => {
   if (p.surface === 'chat' && p.sessionId && actions.selectSession) {
     const chat = state.live && state.live.chat;
     const known = !chat || !Array.isArray(chat.sessions) || !chat.sessions.length || chat.sessions.some((s) => s.id === p.sessionId);
-    if (!known) history.replaceState(null, '', '#chat');
+    if (!known) history.replaceState(history.state, '', '#chat');
     else if (!chat || chat.activeId !== p.sessionId) actions.selectSession(p.sessionId);
   }
   loadActive();

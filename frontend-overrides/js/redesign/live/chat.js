@@ -229,7 +229,7 @@ function _leaveThread(chat, state) {
 }
 
 function _setHash(h) {
-  try { if (location.hash !== h) history.replaceState(null, '', h); } catch (_) { /* no history API */ }
+  try { if (location.hash !== h) history.replaceState(history.state, '', h); } catch (_) { /* no history API */ }
 }
 
 function ensureChat(state) {
@@ -517,6 +517,13 @@ export async function load(state) {
   const activeId = chat.activeId || bootId || (storedValid ? stored : null) || null;
   chat.activeId = activeId;
   storeActiveId(activeId);
+
+  // Reload / deep link: bring back this thread's saved draft and let it lead RECENT.
+  if (activeId) {
+    if (!state.draft) state.draft = restoreDraft(chat.drafts, activeId);
+    chat.mru = pushMru(chat.mru, activeId);
+    try { persistMru(chat.mru, window.localStorage); } catch (_) { /* storage unavailable */ }
+  }
 
   // fallback model + cwd (best-effort)
   let fallbackModel = '';

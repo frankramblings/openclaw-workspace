@@ -6,7 +6,7 @@ import { esc, map, stripMd } from '../dom.js';
 import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, captureAgeLabel } from './mobile-data.js';
 import { providerLogo } from '../provider-logo.js';
-import { mruRows } from '../switcher.js';
+import { mruRows, mergeLiveFlags } from '../switcher.js';
 
 // compact file tree (shared FS data) for the companion sheet's Files tab
 function fileTree(s) {
@@ -83,7 +83,7 @@ function convListHtml(s) {
   // Local title filter (instant); semantic content hits are appended below.
   // With no filter typed, the most recently opened threads come first (the
   // mobile equivalent of the desktop ⌘K RECENT section, spec 7.3).
-  const recent = q ? [] : mruRows(chat.mru, chat.sessions, chat.activeId, 5);
+  const recent = q ? [] : mergeLiveFlags(mruRows(chat.mru, chat.sessions, chat.activeId, 5), allGroups);
   const groups = q
     ? allGroups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
     : (recent.length ? [{ label: 'RECENT', rows: recent }, ...allGroups] : allGroups);

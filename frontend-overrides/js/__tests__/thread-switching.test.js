@@ -83,6 +83,38 @@ test('newChat saves the leaving draft and resets the hash to #chat', async () =>
   assert.equal(replaced[replaced.length - 1], '#chat');
 });
 
+test('a send drops the thread\'s stored draft', async () => {
+  const state = freshState('sess-a');
+  runtime.state = state;
+  runtime.render = () => {};
+  state.draft = 'about to send';
+  await actions.selectSession('sess-b');
+  await drain();
+  await actions.selectSession('sess-a');
+  await drain();
+  assert.ok(state.live.chat.drafts['sess-a'], 'the round trip left sess-a\'s draft on disk');
+
+  // The buffered send's actual POST fires ~700ms later off a real timer this
+  // test never ticks — stub /api/chat_stream so that if it ever fires it just
+  // hangs (same shape as chat-turn-epoch.test.js's streaming mock) instead of
+  // throwing into an unrelated later test.
+  const savedFetch = globalThis.fetch;
+  globalThis.fetch = (url) => {
+    if (String(url).includes('/api/chat_stream')) {
+      return Promise.resolve({ ok: true, status: 200, body: { getReader: () => ({ read: () => new Promise(() => {}) }) } });
+    }
+    return savedFetch(url);
+  };
+  try {
+    await actions.send();
+    await drain();
+    assert.equal(state.draft, '');
+    assert.equal(state.live.chat.drafts['sess-a'], undefined);
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+});
+
 test('scroll decision is applied after the thread loads', async () => {
   const state = freshState('sess-a');
   runtime.state = state;

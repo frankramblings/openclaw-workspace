@@ -85,6 +85,18 @@ export function mruRows(mru, sessions, activeId, limit = 5) {
   return out;
 }
 
+// Copy live indicator flags from already-annotated sidebar rows onto rows
+// rebuilt from the MRU (the drawer's RECENT group), so a thread never shows
+// a dot in one group and none in another.
+export function mergeLiveFlags(rows, groups) {
+  const byId = new Map();
+  for (const g of (Array.isArray(groups) ? groups : [])) for (const r of (g.rows || [])) if (r && r.id) byId.set(r.id, r);
+  return (Array.isArray(rows) ? rows : []).map((r) => {
+    const a = byId.get(r.id);
+    return a ? { ...r, notify: !!a.notify, working: !!a.working } : { ...r, notify: false, working: false };
+  });
+}
+
 export function renderSwitcher(s) {
   const chat = (s && s.live && s.live.chat) || {};
   const sections = buildSwitcherSections({

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import {
-  buildSwitcherSections, flatRows, clampSel, mruRows, renderSwitcher, RECENT_LIMIT, THREAD_LIMIT,
+  buildSwitcherSections, flatRows, clampSel, mruRows, mergeLiveFlags, renderSwitcher, RECENT_LIMIT, THREAD_LIMIT,
 } from '../redesign/switcher.js';
 
 const S = (id, name, extra = {}) => ({ id, name, created: 1, updated: 1, ...extra });
@@ -65,6 +65,14 @@ test('mruRows produces sidebar-shaped rows', () => {
   assert.deepEqual(rows.map((r) => r.id), ['b', 'a']);
   assert.deepEqual(Object.keys(rows[0]).sort(), ['active', 'endpointId', 'id', 'important', 'model', 'term', 'title'].sort());
   assert.equal(rows[1].active, true);
+});
+
+test('mergeLiveFlags copies notify/working from annotated rows and defaults to false', () => {
+  const rows = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }];
+  const groups = [{ label: 'TODAY', rows: [{ id: 'a', title: 'A', notify: true, working: false }] }];
+  const out = mergeLiveFlags(rows, groups);
+  assert.deepEqual(out.map((r) => [r.id, r.notify, r.working]), [['a', true, false], ['b', false, false]]);
+  assert.equal(rows[0].notify, undefined, 'input rows are not mutated');
 });
 
 test('renderSwitcher marks the selected row and escapes titles', () => {

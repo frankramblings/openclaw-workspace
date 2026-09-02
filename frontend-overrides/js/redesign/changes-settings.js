@@ -24,9 +24,9 @@ export function changesSettingsHtml(model) {
     : `<button class="set-btn" data-act="changesRebuild">Rebuild index</button>`;
   return `
   ${roots || '<div class="set-text">No roots watched.</div>'}
-  <div class="set-field"><span class="k">Add root</span><span class="v"><input class="set-input" data-model="changesRootDraft" value="${esc(m.draftRoot || '')}" placeholder="/absolute/path"> <button class="set-btn primary" data-act="changesAddRoot"${m.saving ? ' disabled' : ''}>Add</button></span></div>
+  <div class="set-field"><span class="k">Add root</span><span class="v"><input class="set-input" data-model="changesRootDraft" value="${esc(m.draftRoot || '')}" placeholder="/absolute/path" style="flex:1;min-width:0;width:100%;background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--fg);font-family:var(--mono)"> <button class="set-btn primary" data-act="changesAddRoot"${m.saving ? ' disabled' : ''}>Add</button></span></div>
   <div class="set-text">Pruned directory names (one per line, wildcards allowed):</div>
-  <textarea class="set-textarea" data-model="changesPruneDraft" rows="6">${esc(m.pruneDraft != null ? m.pruneDraft : (cfg.prune_dirs || []).join('\n'))}</textarea>
+  <textarea class="set-textarea" data-model="changesPruneDraft" rows="6" style="width:100%;box-sizing:border-box;min-height:120px;font-family:var(--mono);font-size:12px">${esc(m.pruneDraft != null ? m.pruneDraft : (cfg.prune_dirs || []).join('\n'))}</textarea>
   <div class="set-buttons"><button class="set-btn" data-act="changesSavePrune"${m.saving ? ' disabled' : ''}>Save prune list</button></div>
   <div class="set-field"><span class="k">Cache</span><span class="v">${esc(Number(stats.blobs) || 0)} cached copies · ${esc(mb(stats.blob_bytes))} · files up to ${esc(Math.round((cfg.max_bytes || 0) / 1024))} KB</span></div>
   <div class="set-buttons">${rebuildBtn}</div>

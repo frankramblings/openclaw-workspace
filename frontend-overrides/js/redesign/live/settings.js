@@ -395,7 +395,16 @@ export const actions = {
   },
   changesSavePrune: async () => {
     const state = runtime.state; const cs = state.live.changesSettings; if (!cs) return;
-    const list = String(state.changesPruneDraft || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    // The generic data-model input handler only ever sets state.changesPruneDraft
+    // when the user actually types in the textarea — clicking "Save prune list"
+    // on an untouched field leaves it undefined. String(undefined || '') used to
+    // silently coerce that into '', sending {prune_dirs: []} and wiping the
+    // saved list even though the textarea displayed the right value. Mirror the
+    // render-side fallback (changes-settings.js's `m.pruneDraft != null ? … :
+    // cfg.prune_dirs`) here: only parse and send when the draft is a real
+    // string; otherwise no-op rather than guess.
+    if (typeof state.changesPruneDraft !== 'string') return;
+    const list = state.changesPruneDraft.split('\n').map((s) => s.trim()).filter(Boolean);
     try { await apiJson('/api/changes/config', { prune_dirs: list }, 'PUT'); } catch (_) { cs.error = 'Save failed.'; }
     await loadChangesSettings(state);
   },

@@ -469,7 +469,23 @@ export async function load(state) {
   const sessions = await apiGet('/api/sessions');
   // Steer capability (Pillar A): cached on state so the busy-composer
   // decision is synchronous. Failure = unavailable, never a thrown load.
-  apiGet('/api/capabilities').then((caps) => { state.caps = caps || {}; }).catch(() => { state.caps = state.caps || {}; });
+  // Capabilities land AFTER a reload has already re-attached a running turn,
+  // and beginTurn computed chat.steerMode from the caps it had at the time
+  // (none) — leaving a stale "Send"/queue composer on a thread that can in
+  // fact be steered. Recompute once the real answer arrives.
+  apiGet('/api/capabilities').then((caps) => {
+    state.caps = caps || {};
+    if (turn && chat.busySessionId && chat.busySessionId === turn.sessionId) {
+      chat.steerMode = busySendMode({
+        busyHere: true,
+        steerAvailable: !!(state.caps.steer && state.caps.steer.available),
+        endpointId: chat.endpointId,
+        hasAttachments: false,
+        forceQueue: false,
+      }) === 'steer';
+      runtime.render();
+    }
+  }).catch(() => { state.caps = state.caps || {}; });
   if (chat.activeId !== enteredActiveId) return;
   const list = Array.isArray(sessions) ? sessions : [];
 
@@ -764,13 +780,79 @@ function flushStreamBuffer() {
 // upstream) and fireSteer's success path (guarded by its caller with
 // `turn && turn.sessionId === sessionId`, since its `await fetch` may
 // resolve after the turn has moved on).
-function closeAsstBubbleForSteer() {
+// Index of a history-sourced user bubble (id `h<i>`, from fetchThread) with
+// exactly `text` that sits AFTER the last history assistant message — i.e.
+// among the thread's trailing messages, which is where a steer persisted
+// mid-turn shows up on a reload. Returns -1 when there is no such bubble.
+// Exported for chat-steer.test.js.
+export function trailingHistorySteerIdx(thread, text) {
+  const list = Array.isArray(thread) ? thread : [];
+  let lastAsst = -1;
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i];
+    if (m && m.role === 'assistant' && /^h\d+$/.test(String(m.id || ''))) lastAsst = i;
+  }
+  for (let i = lastAsst + 1; i < list.length; i++) {
+    const m = list[i];
+    if (m && m.role === 'user' && !m.sys && /^h\d+$/.test(String(m.id || ''))
+        && String(m.text || '') === String(text || '')) return i;
+  }
+  return -1;
+}
+
+// Idempotent per steer id: fireSteer's 200 path and the `user_steer` frame
+// handler both call this within milliseconds of each other for the SAME steer,
+// and a delta arriving between the two would otherwise leave a spurious empty
+// assistant bubble behind. `turn.closedSteerIds` remembers which steer ids
+// already closed a bubble on THIS turn (it dies with the turn, as it should).
+function closeAsstBubbleForSteer(steerId) {
+  if (steerId) {
+    if (!turn.closedSteerIds) turn.closedSteerIds = new Set();
+    if (turn.closedSteerIds.has(steerId)) return;
+    turn.closedSteerIds.add(steerId);
+  }
   flushStreamBuffer();
   if (turn.asstMsg) turn.asstMsg.streaming = false;
   if (turn.thinkStep) finalizeStep(turn.thinkStep);
   if (turn.activity) finalizeTools(turn.activity);
   turn.asstMsg = null; turn.activity = null; turn.thinkStep = null;
   turn.msgId = uniqId('live-');
+}
+
+export const STEER_MISSED_NOTICE =
+  'Gary finished before reading this. It was saved to the thread; send it again if you still need an answer.';
+
+// Honesty rescue (Pillar A, review finding 1/3): a steer that lands after the
+// CLI's last tool boundary — or in the window between the CLI finishing its
+// output and the workspace recorder closing the turn — is accepted by the
+// route (the active-turn gate still passes) but never answered inside this
+// turn. The tell at 'done' is that the LAST message in the thread is a steer
+// bubble with nothing after it. Say so instead of leaving a bare "Steered
+// into the running turn" caption, and refetch history a few seconds later in
+// case the gateway did record a reply this client never saw streamed.
+export function maybeSteerRescue(chat, sessionId) {
+  const list = Array.isArray(chat.thread) ? chat.thread : [];
+  const last = list[list.length - 1];
+  if (!last || last.role !== 'user' || !last.steer || last.steerNotice) return;
+  last.steerNotice = STEER_MISSED_NOTICE;
+  if (!sessionId) return;
+  const before = list.length;
+  const handle = setTimeout(async () => {
+    const state = runtime.state;
+    if (!state) return;
+    const c = ensureChat(state);
+    // Only refetch into a view that is still this thread and still idle — a
+    // new turn (or a thread switch) owns chat.thread now.
+    if (c.activeId !== sessionId || turn) return;
+    try {
+      const t = await fetchThread(sessionId, c.model, c.title);
+      if (c.activeId !== sessionId || turn) return;
+      const thread = dedupeAdjacentUserMessages(t.thread, 'dropped-steer-rescue');
+      if (thread.length > before) { c.thread = thread; runtime.render(); }
+    } catch (_) { /* best-effort — the notice already told the truth */ }
+  }, 3000);
+  // Node's timers keep the process alive; the browser's don't have .unref.
+  if (handle && typeof handle.unref === 'function') handle.unref();
 }
 
 // AskUserQuestion tool_start → card model, or null if not a question tool.
@@ -1115,7 +1197,7 @@ function beginTurn(chat, modelLabel, sessionId) {
   // `epoch` is this turn's identity: closures below capture it and no-op once
   // superseded (see _turnEpoch above).
   const epoch = ++_turnEpoch;
-  turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: uniqId('live-'), lastFrameMs: Date.now(), got404: false };
+  turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: uniqId('live-'), lastFrameMs: Date.now(), got404: false, closedSteerIds: new Set() };
   // The session this running turn belongs to — steer-view.js's
   // steerComposerHints() compares this against chat.activeId to decide
   // whether the composer shows "Steer"/the queue chip for the VIEWED thread
@@ -1209,6 +1291,9 @@ function beginTurn(chat, modelLabel, sessionId) {
           : `Worked for ${a.elapsed} · ${a.steps.length} steps`;
       }
       stopElapsed();
+      // BEFORE the empty-reply notice below, which appends an assistant bubble
+      // and would hide the "steer bubble is last" tell this reads.
+      maybeSteerRescue(chat, turn.sessionId);
       const hadText = turn.asstMsg && String(turn.asstMsg.text || '').trim();
       const hadWork = turn.activity && (turn.activity.steps || []).some((st) => st.kind !== 'think');
       if (!hadText && !hadWork && !turn.got404) {
@@ -1335,10 +1420,26 @@ function beginTurn(chat, modelLabel, sessionId) {
     if (ev.type === 'user_steer') {
       if (!Array.isArray(chat.thread)) chat.thread = [];
       const id = ev.client_id || uniqId('live-u-');
+      const text = ev.text || '';
       if (!chat.thread.some((m) => m.id === id)) {
-        chat.thread.push({ id, role: 'user', text: ev.text || '', time: fmtTime(ev.ts || Date.now()), attach: [], steer: true });
+        // Leave-and-return / reload mid-turn: the steer was persisted the
+        // moment it landed, so fetchThread ALREADY returned it as a history
+        // bubble (id `h<i>`), and now attachTurn replays the same frame with
+        // the live client_id — two copies of one message. client_id dedupe
+        // can't see that, so also look for a same-text history user bubble
+        // sitting AFTER the last history assistant message (i.e. among the
+        // thread's trailing messages, where a mid-turn steer lands). Found →
+        // move it to the current position and caption it, keeping its id.
+        const histIdx = trailingHistorySteerIdx(chat.thread, text);
+        if (histIdx >= 0) {
+          const [existing] = chat.thread.splice(histIdx, 1);
+          existing.steer = true;
+          chat.thread.push(existing);
+        } else {
+          chat.thread.push({ id, role: 'user', text, time: fmtTime(ev.ts || Date.now()), attach: [], steer: true });
+        }
       }
-      closeAsstBubbleForSteer();
+      closeAsstBubbleForSteer(id);
       runtime.wantChatBottom = true;
       throttledRender();
       return;
@@ -1471,13 +1572,17 @@ async function fireSteer(sessionId, text, messageId) {
   try {
     const res = await fetch(`${location.origin}/api/chat/steer/${encodeURIComponent(sessionId)}`, {
       method: 'POST', credentials: 'same-origin',
+      // keepalive: the whole point of a steer is that it lands in a turn that
+      // is already running — if the tab is backgrounded or torn down between
+      // the flush and this request, the browser must still deliver it.
+      keepalive: true,
       body: (() => { const fd = new FormData(); fd.append('message', text); fd.append('client_id', messageId); return fd; })(),
     });
     status = res.status;
     try { body = await res.json(); } catch (_) { body = null; }
     if (res.ok) {
       const m = (chat.thread || []).find((x) => x.id === messageId);
-      if (m && turn && turn.sessionId === sessionId) closeAsstBubbleForSteer();
+      if (m && turn && turn.sessionId === sessionId) closeAsstBubbleForSteer(messageId);
       runtime.render();
       return;
     }
@@ -1684,7 +1789,10 @@ export function flushPending(sessionId, opts) {
     // POST goes to /api/chat/steer instead of opening a second turn.
     const msg = (chat.thread || []).find((m) => m.id === p.messageId);
     if (msg) { delete msg._optimistic; delete msg._deadline; }
-    fireSteer(sid, p.text, p.messageId);
+    // Render before the POST so the countdown ring disappears the instant the
+    // buffer window closes, rather than a network round-trip later.
+    runtime.render();
+    fireSteer(sid, p.text, p.messageId).catch(() => { /* fireSteer handles its own fallbacks */ });
     return;
   }
   if (busy || (crossView && !isPagehide)) {
@@ -1696,7 +1804,15 @@ export function flushPending(sessionId, opts) {
     return;
   }
   const msg = (chat.thread || []).find((m) => m.id === p.messageId);
-  if (msg) { msg.text = p.text; delete msg._optimistic; delete msg._deadline; }
+  // The turn this message was going to steer ENDED inside the buffer window,
+  // so it falls through to the normal send path and starts a brand-new turn.
+  // Drop the steer flag with it — captioning a fresh turn's first message
+  // "Steered into the running turn" would be a lie.
+  if (msg) {
+    msg.text = p.text;
+    delete msg._optimistic; delete msg._deadline;
+    delete msg.steer; delete msg.steerNotice;
+  }
   runtime.render();
   fireSend(sid, p.text, p.attachSnap);
 }

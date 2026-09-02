@@ -1164,3 +1164,4 @@ html.shell-mobile .oc-toast{max-width:none}
 .btn-send .send-lbl { font-size: 12px; font-weight: 600; }
 .btn-queue { font-size: 12px; opacity: .8; margin-right: 6px; }
 .msg-steer-cap { font-size: 11px; color: var(--faint, #8a94a6); margin-top: 4px; letter-spacing: .01em; }
+.msg-steer-notice { font-size: 11px; color: var(--amber, #e0b15a); margin-top: 2px; }

@@ -195,3 +195,86 @@ test('sendQueued on an empty draft does not leave _forceQueue set for the next s
   assert.equal((state.live.chat.queuedList || []).length, 0);
   actions.stopRun && await actions.stopRun();
 });
+
+test('turn ends inside the buffer window → the steer caption is dropped and a normal send fires', async () => {
+  const state = freshState('sess-8');
+  runtime.state = state; runtime.render = () => {};
+  const calls = [];
+  wireFetch(calls, jsonRes(200, { ok: true, steered: true, runId: 'r1' }));
+  await startLiveTurn(state, calls);
+  const before = calls.filter((c) => c.url.includes('/api/chat_stream')).length;
+
+  // Composer submit takes the steer path (turn is live) and arms the 700ms
+  // buffer — but the turn finishes BEFORE the buffer elapses, so flushPending
+  // falls through to the ordinary send path and starts a brand-new turn.
+  state.draft = 'actually use 42';
+  await actions.send();
+  chatMod.__testOnEvent()({ type: 'done' });
+  await tick();
+
+  assert.ok(!calls.some((c) => c.url.includes('/api/chat/steer/')), 'no steer POST');
+  const after = calls.filter((c) => c.url.includes('/api/chat_stream')).length;
+  assert.equal(after, before + 1, 'a normal turn was posted instead');
+  const users = state.live.chat.thread.filter((m) => m.role === 'user');
+  const last = users[users.length - 1];
+  assert.equal(last.text, 'actually use 42');
+  assert.equal(last.steer, undefined, 'no "Steered into the running turn" caption');
+  assert.equal(last.steerNotice, undefined);
+  actions.stopRun && await actions.stopRun();
+});
+
+test('user_steer replay after a reload reuses the history bubble instead of duplicating it', async () => {
+  const state = freshState('sess-9');
+  runtime.state = state; runtime.render = () => {};
+  const calls = [];
+  wireFetch(calls, jsonRes(200, { ok: true }));
+  await startLiveTurn(state, calls);
+
+  // Simulate the reload shape: history (h*) already carries the steer, because
+  // the backend persisted it the moment it landed; the replayed frame then
+  // arrives with a DIFFERENT (live) client_id.
+  const chat = state.live.chat;
+  chat.thread = [
+    { id: 'h5', role: 'user', text: 'do the thing' },
+    { id: 'h6', role: 'assistant', text: 'Working on it.' },
+    { id: 'h7', role: 'user', text: 'use 42' },
+  ];
+  chatMod.__testOnEvent()({ type: 'user_steer', text: 'use 42', client_id: 'live-u-zz', ts: 1 });
+
+  const matches = chat.thread.filter((m) => m.role === 'user' && m.text === 'use 42');
+  assert.equal(matches.length, 1, 'exactly one bubble for the steered text');
+  assert.equal(matches[0].id, 'h7', 'the history bubble was reused, not replaced');
+  assert.equal(matches[0].steer, true);
+  const users = chat.thread.filter((m) => m.role === 'user');
+  assert.equal(users[users.length - 1], matches[0], 'positioned last among users');
+  actions.stopRun && await actions.stopRun();
+});
+
+test('done with no reply after a steer → honesty notice; a reply after the steer → none', async () => {
+  const state = freshState('sess-10');
+  runtime.state = state; runtime.render = () => {};
+  const calls = [];
+  wireFetch(calls, jsonRes(200, { ok: true }));
+  await startLiveTurn(state, calls);
+  let on = chatMod.__testOnEvent();
+  on({ type: 'user_steer', text: 'use 42', client_id: 'live-u-a1', ts: 1 });
+  on({ type: 'done' });
+  let thread = state.live.chat.thread;
+  const steered = thread.find((m) => m.id === 'live-u-a1');
+  assert.ok(steered, 'steer bubble present');
+  assert.equal(steered.steerNotice, chatMod.STEER_MISSED_NOTICE);
+
+  // Same shape, but the model answered after the steer → nothing to warn about.
+  const state2 = freshState('sess-11');
+  runtime.state = state2; runtime.render = () => {};
+  const calls2 = [];
+  wireFetch(calls2, jsonRes(200, { ok: true }));
+  await startLiveTurn(state2, calls2);
+  on = chatMod.__testOnEvent();
+  on({ type: 'user_steer', text: 'use 42', client_id: 'live-u-b1', ts: 1 });
+  on({ delta: 'Using 42.' });
+  on({ type: 'done' });
+  thread = state2.live.chat.thread;
+  assert.ok(!thread.some((m) => m.steerNotice), 'no notice when the reply came after the steer');
+  actions.stopRun && await actions.stopRun();
+});

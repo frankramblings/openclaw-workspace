@@ -29,3 +29,13 @@ test('caption only for steer bubbles, escaped and em-dash free', () => {
   assert.ok(html.includes('Steered into the running turn'));
   assert.ok(!html.includes('—'));
 });
+
+test('steerNotice renders under the caption, escaped', () => {
+  assert.ok(!steerCaptionHtml({ role: 'user', steer: true }).includes('msg-steer-notice'));
+  const html = steerCaptionHtml({ role: 'user', steer: true, steerNotice: 'Gary <b>finished</b>' });
+  assert.ok(html.indexOf('msg-steer-cap') < html.indexOf('msg-steer-notice'));
+  assert.ok(html.includes('Gary &lt;b&gt;finished&lt;/b&gt;'));
+  assert.ok(!html.includes('—'));
+  // A notice without the steer flag renders nothing at all.
+  assert.equal(steerCaptionHtml({ role: 'user', steerNotice: 'x' }), '');
+});

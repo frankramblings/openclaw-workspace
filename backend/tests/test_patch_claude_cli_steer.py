@@ -75,3 +75,13 @@ def test_two_anchors_refuses(tmp_path, capsys):
 def test_missing_dist_dir_is_noop(tmp_path):
     mod = _load()
     assert mod.apply(str(tmp_path / "nope")) == 0
+
+
+def test_non_utf8_sibling_is_skipped_not_fatal(tmp_path):
+    # a binary file sorted before the real bundle must not crash find_file/apply
+    mod = _load()
+    d = _dist(tmp_path)
+    (d / "aaa-binary.js").write_bytes(b"\xff\xfe\x00garbage")
+    assert mod.apply(str(d)) == 0
+    out = (d / "claude-live-session-AbC123.js").read_text(encoding="utf-8")
+    assert out.count(mod.MARKER) == 1

@@ -58,7 +58,7 @@ def find_file(dist_dir):
         try:
             with open(path, encoding="utf-8") as f:
                 s = f.read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         if NEEDLE in s:
             return path, s

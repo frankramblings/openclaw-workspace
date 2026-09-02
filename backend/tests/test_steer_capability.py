@@ -1,4 +1,6 @@
 # backend/tests/test_steer_capability.py
+import pathlib
+
 from backend import capabilities, steer
 
 ANCHORED = ("async function runClaudeLiveSessionTurn(params) {\n"
@@ -33,6 +35,13 @@ def test_absent_when_file_renamed_but_still_found_by_needle(tmp_path):
 
 def test_absent_when_dist_missing(tmp_path):
     assert steer.patch_present(str(tmp_path / "nope")) is False
+
+
+def test_non_utf8_sibling_is_skipped_not_fatal(tmp_path):
+    # a binary file sorted before the real bundle must not crash the scan
+    d = _dist(tmp_path, ANCHORED)
+    (pathlib.Path(d) / "aaa-binary.js").write_bytes(b"\xff\xfe\x00garbage")
+    assert steer.patch_present(d) is True
 
 
 def test_capability_shape_and_snapshot(tmp_path, monkeypatch):

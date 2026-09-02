@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
         ".git", "node_modules", ".venv*", ".venv_*", "__pycache__", ".tmp", ".trash",
         "tmp", "plugins", "mcp", ".attachments", ".chat-attachments",
         ".openclaw-cli-images", ".pi", ".clawhub",
+        ".data", ".claude", ".superpowers",
     ],
     "skip_ext": [
         ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".mp4", ".mov", ".mkv",
@@ -51,11 +52,33 @@ DEFAULT_CONFIG = {
     "max_bytes": 262144,
 }
 
+# Directory names the tracker ALWAYS prunes, whatever the user's config says.
+# load_config() only fills in missing keys, so a changes.json persisted before
+# these names joined DEFAULT_CONFIG would never pick them up; unioning at scan
+# time is what actually keeps the tracker out of its own output.
+_ALWAYS_PRUNE = {".data", ".claude", ".superpowers"}
+
 
 # --- paths -------------------------------------------------------------------
 
 def _base() -> Path:
     return Path(config.DATA_DIR) / "changes"
+
+
+def _ensure_base() -> Path:
+    """Create .data/changes and force it to 0700 on every write path.
+
+    The blob cache re-publishes the CONTENT of 0600 files (Gary's workspace,
+    openclaw.json, meeting notes). The service runs under a 0002 umask, so
+    without this the cache tree is group/world readable and another local
+    account can read everything the tracker has ever cached."""
+    base = _base()
+    os.makedirs(base, exist_ok=True)
+    try:
+        os.chmod(base, 0o700)
+    except OSError:
+        log.warning("changes: cannot chmod 0700 %s", base)
+    return base
 
 
 def _config_path() -> Path:
@@ -114,7 +137,11 @@ def scan_root(root: str, cfg: dict) -> dict[str, tuple[int, int]]:
     out: dict[str, tuple[int, int]] = {}
     max_bytes = int(cfg.get("max_bytes") or DEFAULT_CONFIG["max_bytes"])
     skip_ext = {e.lower() for e in cfg.get("skip_ext") or []}
-    prune = list(cfg.get("prune_dirs") or [])
+    prune = list(cfg.get("prune_dirs") or []) + sorted(_ALWAYS_PRUNE)
+    try:
+        data_real = os.path.realpath(config.DATA_DIR)
+    except OSError:
+        data_real = None
     root = os.path.abspath(root)
     if os.path.isfile(root):
         try:
@@ -139,6 +166,12 @@ def scan_root(root: str, cfg: dict) -> dict[str, tuple[int, int]]:
                 if e.is_symlink():
                     continue
                 if e.is_dir(follow_symlinks=False):
+                    # Never index our own store, at whatever depth it sits
+                    # (in a worktree DATA_DIR is several levels down): every
+                    # turn would otherwise cache the tracker's own writes and
+                    # list them as the turn's changes.
+                    if data_real is not None and os.path.realpath(e.path) == data_real:
+                        continue
                     if not _pruned(e.name, prune):
                         stack.append(e.path)
                     continue
@@ -169,9 +202,12 @@ def _load_index(root: str) -> dict:
 
 
 def _save_index(root: str, idx: dict) -> None:
+    _ensure_base()
     p = index_path(root)
     p.parent.mkdir(parents=True, exist_ok=True)
-    fsutil.atomic_write_json(p, idx)
+    # No indent: indexes are machine-read only and run to tens of thousands of
+    # entries, so pretty-printing costs megabytes of fsynced JSON per turn.
+    fsutil.atomic_write_text(p, json.dumps(idx, ensure_ascii=False))
 
 
 def _hash_and_store(abs_path: str) -> tuple[str | None, bool, int]:
@@ -186,11 +222,36 @@ def _hash_and_store(abs_path: str) -> tuple[str | None, bool, int]:
     if text:
         bp = blob_path(sha)
         if not bp.exists():
+            _ensure_base()
             bp.parent.mkdir(parents=True, exist_ok=True)
-            tmp = bp.with_suffix(".tmp")
-            tmp.write_bytes(data)
-            os.replace(tmp, bp)
+            tmp = bp.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+            try:
+                # O_EXCL + explicit 0600: the cache holds a copy of private
+                # file content, so it must never inherit the service umask.
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                try:
+                    os.write(fd, data)
+                    # fsync before the rename: a correctly named but truncated
+                    # blob after a hard reset would be handed to revert() as a
+                    # pre-image and destroy the user's file.
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                os.replace(tmp, bp)
+            except OSError:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
     return sha, text, len(data)
+
+
+def _abs(root: str, rel: str) -> str:
+    """Absolute path of an indexed entry. A single-file root indexes itself
+    under its basename, so joining root + rel would produce
+    /path/openclaw.json/openclaw.json."""
+    return root if os.path.isfile(root) else os.path.join(root, rel)
 
 
 def refresh_index(root: str, cfg: dict) -> list[dict]:
@@ -204,18 +265,21 @@ def refresh_index(root: str, cfg: dict) -> list[dict]:
         scan = scan_root(root, cfg)
         report: list[dict] = []
         seen = set()
+        dirty = False
         for rel, (mtime_ns, size) in scan.items():
             seen.add(rel)
             prev = files.get(rel)
             if prev and prev[0] == mtime_ns and prev[1] == size:
                 continue
-            sha, diffable, nbytes = _hash_and_store(os.path.join(root, rel))
+            sha, diffable, nbytes = _hash_and_store(_abs(root, rel))
             if sha is None:
                 continue
             if prev and prev[2] == sha:
                 files[rel] = [mtime_ns, size, sha]      # touched, same content
+                dirty = True
                 continue
             files[rel] = [mtime_ns, size, sha]
+            dirty = True
             if not seeded:
                 before = prev[2] if prev else None
                 report.append({
@@ -229,6 +293,7 @@ def refresh_index(root: str, cfg: dict) -> list[dict]:
             if rel in seen:
                 continue
             prev = files.pop(rel)
+            dirty = True
             if not seeded:
                 report.append({
                     "path": rel, "kind": "deleted",
@@ -236,8 +301,12 @@ def refresh_index(root: str, cfg: dict) -> list[dict]:
                     "before_bytes": prev[1], "after_bytes": 0,
                     "diffable": read_blob(prev[2]) is not None,
                 })
-        idx["scanned_ms"] = int(time.time() * 1000)
-        _save_index(root, idx)
+        # Nothing moved: skip the write. A no-op refresh used to rewrite tens
+        # of megabytes of fsynced JSON per turn across the roots. The first
+        # (seeding) refresh must still write so scanned_ms stops being 0.
+        if dirty or idx.get("scanned_ms", 0) == 0:
+            idx["scanned_ms"] = int(time.time() * 1000)
+            _save_index(root, idx)
         return report
 
 
@@ -251,7 +320,9 @@ _ACTIVE: dict[tuple[str, int], dict] = {}
 
 
 def safe_key(session_key: str) -> str:
-    return _SAFE.sub("_", session_key or "")[:120] or "_"
+    out = _SAFE.sub("_", session_key or "")[:120] or "_"
+    # "." and ".." survive the character filter and would escape the turns dir.
+    return "_" if out in (".", "..") else out
 
 
 def record_path(session_key: str, turn_id: int) -> Path:
@@ -288,17 +359,37 @@ def _evict_stale_active(now_ms: int) -> None:
         log.warning("changes: evicting stale active turn %s/%s", k[0], k[1])
 
 
-def turn_started(session_key: str, turn_id: int) -> None:
-    """Absorb whatever changed since the last look (attributed to nobody) and
-    open this turn's window."""
+def turn_started(session_key: str, turn_id: int, deadline: float | None = None) -> None:
+    """Absorb whatever changed since the last look and open this turn's window.
+
+    What moved since the last look belongs to whichever turns were ALREADY
+    running: a turn that starts mid-flight must not silently swallow the other
+    turn's work as "nobody's". `deadline` is a time.monotonic() value; the
+    caller's wait_for cannot stop this thread, so if we get here after the
+    caller already gave up we register nothing (an orphan _ACTIVE entry would
+    flag every later turn `shared` for six hours)."""
     cfg = load_config()
     with _LOCK:
         _evict_stale_active(int(time.time() * 1000))
+        found: list[dict] = []
         for root in cfg.get("roots") or []:
             try:
-                refresh_index(root, cfg)
+                for ch in refresh_index(root, cfg):
+                    found.append(_decorate(ch, os.path.abspath(root)))
             except Exception:  # noqa: BLE001 - one bad root must not stop the rest
                 log.warning("changes: refresh failed for %s", root, exc_info=True)
+        others = list(_ACTIVE.keys())
+        if found and others:
+            shared = len(others) > 1
+            for ok in others:
+                _ACTIVE[ok]["pending"].extend(dict(f, shared=shared) for f in found)
+                if shared:
+                    _ACTIVE[ok].setdefault("shared_with", set()).update(
+                        o[0] for o in others if o[0] != ok[0])
+        if deadline is not None and time.monotonic() > deadline:
+            log.warning("changes: turn_started for %s/%s finished past its deadline, not registering",
+                        session_key, turn_id)
+            return
         _ACTIVE[(session_key, int(turn_id))] = {"started_ms": int(time.time() * 1000), "pending": []}
 
 
@@ -309,6 +400,13 @@ def turn_ended(session_key: str, turn_id: int) -> dict | None:
     key = (session_key, int(turn_id))
     with _LOCK:
         me = _ACTIVE.pop(key, None)
+        # A session runs one turn at a time, so any still-open entry for this
+        # session with a LOWER turn id is an orphan (a turn_started that landed
+        # after its own turn_ended). Drop it, or it flags every later turn
+        # `shared` with itself until the six-hour eviction.
+        for k in [k for k in _ACTIVE if k[0] == session_key and k[1] < int(turn_id)]:
+            _ACTIVE.pop(k, None)
+            log.warning("changes: dropping orphaned active turn %s/%s", k[0], k[1])
         if me is None:
             existing = turn_record(session_key, turn_id)
             if existing is not None:
@@ -334,6 +432,7 @@ def turn_ended(session_key: str, turn_id: int) -> dict | None:
         rec = {"session_key": session_key, "turn_id": int(turn_id),
                "started_ms": me["started_ms"], "ended_ms": int(time.time() * 1000),
                "shared_with": [s for s in shared_with if s != session_key], "files": files}
+        _ensure_base()
         p = record_path(session_key, turn_id)
         p.parent.mkdir(parents=True, exist_ok=True)
         fsutil.atomic_write_json(p, rec)
@@ -360,7 +459,7 @@ def session_turns(session_key: str) -> list[dict]:
                     "added": sum(int(f.get("added") or 0) for f in files),
                     "removed": sum(int(f.get("removed") or 0) for f in files),
                     "shared": any(f.get("shared") for f in files)})
-    out.sort(key=lambda r: (r["ended_ms"] or 0), reverse=True)
+    out.sort(key=lambda r: ((r["ended_ms"] or 0), (r["turn_id"] or 0)), reverse=True)
     return out
 
 
@@ -374,13 +473,15 @@ def diff_for(session_key: str, turn_id: int, path: str) -> dict:
         return {**base, "diffable": False, "text": ""}
     before = read_blob(f.get("before_sha")) or b""
     after = read_blob(f.get("after_sha")) or b""
+    # splitlines() + lineterm="": with keepends, a file lacking a trailing
+    # newline glues its last line onto the next diff line ("-y+z").
     lines = list(difflib.unified_diff(
-        before.decode("utf-8", "replace").splitlines(keepends=True),
-        after.decode("utf-8", "replace").splitlines(keepends=True),
-        fromfile=f"a/{path}", tofile=f"b/{path}", n=3))
-    text = "".join(lines)
+        before.decode("utf-8", "replace").splitlines(),
+        after.decode("utf-8", "replace").splitlines(),
+        fromfile=f"a/{path}", tofile=f"b/{path}", n=3, lineterm=""))
+    text = "\n".join(lines) + ("\n" if lines else "")
     if len(lines) > DIFF_MAX_LINES:
-        text = "".join(lines[:DIFF_MAX_LINES]) + "[diff truncated]\n"
+        text = "\n".join(lines[:DIFF_MAX_LINES]) + "\n[diff truncated]\n"
     return {**base, "diffable": True, "text": text}
 
 
@@ -434,7 +535,7 @@ def revert(session_key: str, turn_id: int, path: str) -> tuple[bool, str]:
         root = f.get("root") or ""
         if not os.path.isabs(root):
             return False, "not_found"
-        abs_path = os.path.join(root, path)
+        abs_path = _abs(root, path)
         kind = f.get("kind")
         current = _sha_of(abs_path)
         if kind == "deleted":
@@ -449,6 +550,14 @@ def revert(session_key: str, turn_id: int, path: str) -> tuple[bool, str]:
                 data = read_blob(f.get("before_sha"))
                 if data is None:
                     return False, "not_diffable"
+                # Verify the cached pre-image before overwriting the user's
+                # file: a blob truncated by a hard reset would otherwise pass
+                # every other check (they all look at the CURRENT file) and be
+                # written over live content.
+                if hashlib.sha256(data).hexdigest() != f.get("before_sha"):
+                    log.error("changes: blob %s does not match its hash, refusing revert of %s",
+                              f.get("before_sha"), abs_path)
+                    return False, "blob_corrupt"
                 _write_bytes_atomic(abs_path, data)
         except OSError:
             return False, "io_error"
@@ -485,12 +594,19 @@ def _read_json_quiet(path: Path) -> dict | None:
     Unlike fsutil.load_json_guarded, does not rename corrupt files."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
     except (OSError, ValueError):
         log.warning("changes: unreadable json %s", path)
         return None
 
 
 _REBUILD = {"running": False, "root": None}
+# Guards re-entry into rebuild(). Checking _REBUILD["running"] is not enough:
+# two requests both read False before either sets it, and the second then
+# serializes on _LOCK and runs a whole second rebuild, doubling the window in
+# which every turn's change scan times out.
+_REBUILD_LOCK = threading.Lock()
 
 
 def _referenced_blobs() -> set[str]:
@@ -516,6 +632,7 @@ def sweep(now_ms: int | None = None, keep_days: int = 30) -> dict:
     cutoff = now - keep_days * 86400 * 1000
     removed_records = 0
     with _LOCK:
+        _ensure_base()
         for p in (_base() / "turns").glob("*/*.json"):
             rec = _read_json_quiet(p)
             ended = int((rec or {}).get("ended_ms") or 0)
@@ -533,8 +650,19 @@ def sweep(now_ms: int | None = None, keep_days: int = 30) -> dict:
                 pass
         refs = _referenced_blobs()
         removed_blobs = 0
+        tmp_cutoff = (now - 3600 * 1000) / 1000.0
         for p in (_base() / "blobs").glob("*/*"):
-            if p.suffix == ".tmp" or p.name in refs:
+            if p.suffix == ".tmp":
+                # Leftovers from a crash mid-write. Anything younger than an
+                # hour may belong to a blob being written right now.
+                try:
+                    if p.stat().st_mtime < tmp_cutoff:
+                        p.unlink()
+                        removed_blobs += 1
+                except OSError:
+                    pass
+                continue
+            if p.name in refs:
                 continue
             try:
                 p.unlink()
@@ -555,20 +683,26 @@ def sweep(now_ms: int | None = None, keep_days: int = 30) -> dict:
 def rebuild() -> dict:
     """Reseed all root indexes from scratch. Holds _LOCK for entire operation
     (live turns stall; in-flight turns lose their baseline). Returns
-    {roots, files}."""
+    {roots, files}, or {busy: True} when a rebuild is already running."""
     cfg = load_config()
-    with _LOCK:
-        _REBUILD.update(running=True, root=None)
-        try:
-            shutil.rmtree(_base() / "index", ignore_errors=True)
-            total = 0
-            for root in cfg.get("roots") or []:
-                _REBUILD["root"] = root
-                refresh_index(root, cfg)
-                total += len(_load_index(root)["files"])
-            return {"roots": len(cfg.get("roots") or []), "files": total}
-        finally:
-            _REBUILD.update(running=False, root=None)
+    if not _REBUILD_LOCK.acquire(blocking=False):
+        return {"busy": True}
+    try:
+        with _LOCK:
+            _REBUILD.update(running=True, root=None)
+            try:
+                _ensure_base()
+                shutil.rmtree(_base() / "index", ignore_errors=True)
+                total = 0
+                for root in cfg.get("roots") or []:
+                    _REBUILD["root"] = root
+                    refresh_index(root, cfg)
+                    total += len(_load_index(root)["files"])
+                return {"roots": len(cfg.get("roots") or []), "files": total}
+            finally:
+                _REBUILD.update(running=False, root=None)
+    finally:
+        _REBUILD_LOCK.release()
 
 
 def stats() -> dict:
@@ -585,8 +719,12 @@ def stats() -> dict:
             pass
     roots = []
     for root in cfg.get("roots") or []:
-        idx = _load_index(root)
-        roots.append({"path": root, "files": len(idx["files"]), "scanned_ms": idx.get("scanned_ms", 0),
+        # _read_json_quiet, not _load_index: reporting status must never
+        # quarantine an index as a side effect of someone opening Settings.
+        idx = _read_json_quiet(index_path(root)) or {}
+        files = idx.get("files")
+        roots.append({"path": root, "files": len(files) if isinstance(files, dict) else 0,
+                      "scanned_ms": idx.get("scanned_ms", 0),
                       "exists": os.path.exists(root)})
     return {"blobs": blobs, "blob_bytes": nbytes, "roots": roots, "rebuild": dict(_REBUILD)}
 

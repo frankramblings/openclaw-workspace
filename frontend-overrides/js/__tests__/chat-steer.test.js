@@ -170,3 +170,28 @@ test('user_steer frame replay: inserts the bubble once and opens a fresh assista
   }
   actions.stopRun && await actions.stopRun();
 });
+
+test('sendQueued on an empty draft does not leave _forceQueue set for the next send', async () => {
+  const state = freshState('sess-7');
+  runtime.state = state; runtime.render = () => {};
+  const calls = [];
+  wireFetch(calls, jsonRes(200, { ok: true, steered: true, runId: 'r1' }));
+  await startLiveTurn(state, calls);
+
+  // Alt+Enter (sendQueued) on an empty composer: nothing to send, and the
+  // forceQueue flag it sets must not survive the early return inside send().
+  state.draft = '';
+  await actions.sendQueued();
+  await tick();
+  assert.ok(!calls.some((c) => c.url.includes('/api/chat/steer/')));
+  assert.equal((state.live.chat.queuedList || []).length, 0);
+
+  // A real send right after must steer normally — proof the flag didn't leak.
+  state.draft = 'now for real';
+  await actions.send();
+  await tick();
+  const steerCall = calls.find((c) => c.url.includes('/api/chat/steer/sess-7'));
+  assert.ok(steerCall, 'steer POST fired on the send after the empty sendQueued');
+  assert.equal((state.live.chat.queuedList || []).length, 0);
+  actions.stopRun && await actions.stopRun();
+});

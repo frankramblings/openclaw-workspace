@@ -755,6 +755,24 @@ function flushStreamBuffer() {
   }
 }
 
+// Close the current assistant bubble so the NEXT delta opens a fresh one
+// below it — used when a message steers into a running turn (Pillar A):
+// flush any buffered stream text into the bubble that's ending, mark it
+// no-longer-streaming, finalize any running think/tool steps, then clear
+// the turn's per-message slots and mint a fresh msgId. Shared by the
+// `user_steer` replay handler (onEvent, always safe — already epoch-guarded
+// upstream) and fireSteer's success path (guarded by its caller with
+// `turn && turn.sessionId === sessionId`, since its `await fetch` may
+// resolve after the turn has moved on).
+function closeAsstBubbleForSteer() {
+  flushStreamBuffer();
+  if (turn.asstMsg) turn.asstMsg.streaming = false;
+  if (turn.thinkStep) finalizeStep(turn.thinkStep);
+  if (turn.activity) finalizeTools(turn.activity);
+  turn.asstMsg = null; turn.activity = null; turn.thinkStep = null;
+  turn.msgId = uniqId('live-');
+}
+
 // AskUserQuestion tool_start → card model, or null if not a question tool.
 export function buildQuestionCardModel(ev) {
   if (!ev || String(ev.tool || '') !== 'AskUserQuestion') return null;
@@ -1306,12 +1324,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       if (!chat.thread.some((m) => m.id === id)) {
         chat.thread.push({ id, role: 'user', text: ev.text || '', time: fmtTime(ev.ts || Date.now()), attach: [], steer: true });
       }
-      flushStreamBuffer();
-      if (turn.asstMsg) turn.asstMsg.streaming = false;
-      if (turn.thinkStep) finalizeStep(turn.thinkStep);
-      if (turn.activity) finalizeTools(turn.activity);
-      turn.asstMsg = null; turn.activity = null; turn.thinkStep = null;
-      turn.msgId = uniqId('live-');
+      closeAsstBubbleForSteer();
       runtime.wantChatBottom = true;
       throttledRender();
       return;
@@ -1450,16 +1463,7 @@ async function fireSteer(sessionId, text, messageId) {
     try { body = await res.json(); } catch (_) { body = null; }
     if (res.ok) {
       const m = (chat.thread || []).find((x) => x.id === messageId);
-      if (m) {
-        flushStreamBuffer();
-        if (turn && turn.sessionId === sessionId) {
-          if (turn.asstMsg) turn.asstMsg.streaming = false;
-          if (turn.thinkStep) finalizeStep(turn.thinkStep);
-          if (turn.activity) finalizeTools(turn.activity);
-          turn.asstMsg = null; turn.activity = null; turn.thinkStep = null;
-          turn.msgId = uniqId('live-');
-        }
-      }
+      if (m && turn && turn.sessionId === sessionId) closeAsstBubbleForSteer();
       runtime.render();
       return;
     }
@@ -2605,6 +2609,13 @@ export const actions = {
   send: async () => {
     const state = runtime.state;
     if (!state) return;
+    // Read-and-clear immediately, before any early return below (uploadGate,
+    // empty-composer) — sendQueued sets this then calls send(); if it only got
+    // cleared past those early-return points, an Alt+Enter on an empty
+    // composer or mid-upload would leave it set and silently force-queue the
+    // user's NEXT, unrelated send even though steering was available for it.
+    const forceQueue = !!state._forceQueue;
+    state._forceQueue = false;
     const text = (state.draft || '').trim();
     // Uploads still in flight (or dead) gate the send — the old snapshot took
     // whatever had RESOLVED, silently sending without the file that was still
@@ -2633,9 +2644,8 @@ export const actions = {
       steerAvailable: !!(state.caps && state.caps.steer && state.caps.steer.available),
       endpointId: chat.endpointId,
       hasAttachments: attachSnap.length > 0,
-      forceQueue: !!state._forceQueue,
+      forceQueue,
     });
-    state._forceQueue = false;
     chat.steerMode = mode === 'steer';
     if (mode === 'queue') {
       chat.queuedList = [...(chat.queuedList || []), { sid: chat.activeId, text, attachSnap }];

@@ -18,4 +18,9 @@ export const runtime = {
   // While false, the streaming patch never touches scrollTop, so scroll-up
   // during a live turn actually holds. See app.js patchMessage + scroll listener.
   chatFollow: true,
+  // Set by selectSession when the thread you are returning to had a saved
+  // scroll position that should be restored instead of jumping to the bottom
+  // (see live/thread-switch.js scrollDecision). render() applies it once and
+  // clears it.
+  restoreScrollTop: null,
 };

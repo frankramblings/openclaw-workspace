@@ -23,6 +23,11 @@ import { beginUploads, resolveUploads, failUploads, sendableAttach, uploadGate }
 import { buildSuggestContext, activitySummary, suggestSurvivesReattach } from './suggest-core.js';
 import { suggestGhost } from '../suggest-ghost.js';
 import {
+  saveDraft, restoreDraft, dropDraft, loadDrafts, persistDrafts,
+  scrollSnapshot, scrollDecision, pushMru, loadMru, persistMru,
+} from './thread-switch.js';
+import { chatHash } from '../routes.js';
+import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
   onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
   toggleCollapsed as stripToggleCollapsed, readCollapsed as stripReadCollapsed,
@@ -202,6 +207,38 @@ function scheduleStripSweep(chat) {
   }, delay);
 }
 
+// Debounced localStorage write for per-thread drafts (spec 7.5: 500 ms).
+let _draftPersistTimer = null;
+function _persistDraftsSoon(chat) {
+  if (_draftPersistTimer) clearTimeout(_draftPersistTimer);
+  _draftPersistTimer = setTimeout(() => {
+    _draftPersistTimer = null;
+    try { persistDrafts(chat.drafts, window.localStorage); } catch (_) { /* storage unavailable */ }
+  }, 500);
+  // Same reasoning as startHbWatchdog() below: Node test files import this
+  // module with no browser tab to keep alive, so an un-refed debounce timer
+  // would otherwise hold the process open (and, worse, can fire in real wall-
+  // clock time in the middle of an unrelated later test's fake-timer window).
+  if (_draftPersistTimer && typeof _draftPersistTimer.unref === 'function') _draftPersistTimer.unref();
+}
+
+// Leaving a thread (switch or new chat): remember its scroll position and
+// stash whatever is in the composer under its id so it is back when you return.
+function _leaveThread(chat, state) {
+  const prev = chat.activeId;
+  if (!prev) return;
+  try {
+    const el = document.querySelector('.chat-thread, .m-thread');
+    if (el) chat.scroll[prev] = scrollSnapshot(el.scrollTop, el.scrollHeight, el.clientHeight);
+  } catch (_) { /* no DOM */ }
+  chat.drafts = saveDraft(chat.drafts, prev, state.draft);
+  _persistDraftsSoon(chat);
+}
+
+function _setHash(h) {
+  try { if (location.hash !== h) history.replaceState(null, '', h); } catch (_) { /* no history API */ }
+}
+
 function ensureChat(state) {
   if (!state.live) state.live = {};
   if (!state.live.chat) state.live.chat = {};
@@ -211,6 +248,11 @@ function ensureChat(state) {
   }
   if (!state.live.chat.chatStripByKey) state.live.chat.chatStripByKey = {};
   if (!Array.isArray(state.live.chat.queuedList)) state.live.chat.queuedList = [];
+  const c = state.live.chat;
+  if (!c.drafts) { try { c.drafts = loadDrafts(window.localStorage); } catch (_) { c.drafts = {}; } }
+  if (!Array.isArray(c.mru)) { try { c.mru = loadMru(window.localStorage); } catch (_) { c.mru = []; } }
+  if (!c.scroll) c.scroll = {};
+  if (!Array.isArray(c.sessions)) c.sessions = [];
   return state.live.chat;
 }
 
@@ -468,13 +510,18 @@ export async function load(state) {
   const sessions = await apiGet('/api/sessions');
   if (chat.activeId !== enteredActiveId) return;
   const list = Array.isArray(sessions) ? sessions : [];
+  chat.sessions = list;
 
   // Restore the session from before the reload. storeActiveId(null) is called
   // when the user explicitly leaves a chat (New Chat, delete), so a null stored
   // value correctly keeps the welcome screen after refresh in those cases.
   const stored = readActiveId();
   const storedValid = stored && list.some((s) => s.id === stored);
-  const activeId = chat.activeId || (storedValid ? stored : null) || null;
+  // A #chat/<id> deep link (routes.js, parsed by app.js at boot) wins over
+  // the remembered thread; it is consumed once so later loads fall through.
+  const bootId = state.bootSessionId && list.some((s) => s.id === state.bootSessionId) ? state.bootSessionId : null;
+  state.bootSessionId = null;
+  const activeId = chat.activeId || bootId || (storedValid ? stored : null) || null;
   chat.activeId = activeId;
   storeActiveId(activeId);
 
@@ -993,6 +1040,7 @@ async function refreshSidebarUsage(state) {
   try {
     const sessions = await apiGet('/api/sessions');
     const list = Array.isArray(sessions) ? sessions : [];
+    chat.sessions = list;
     chat.groups = buildGroups(list, id);
     const name = list.find((s) => s.id === id)?.name;
     if (name) chat.title = name;
@@ -2133,7 +2181,6 @@ function _titleFor(chat, id) {
 function openNotified(id) {
   const state = runtime.state;
   if (state) { state.surface = 'chat'; state.mTab = 'chat'; state.mSub = null; }
-  try { if (location.hash !== '#chat') history.replaceState(null, '', '#chat'); } catch (_) {}
   actions.selectSession(id);
 }
 
@@ -2344,6 +2391,10 @@ export const actions = {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
+    // Captured BEFORE the notified-dot is cleared below: a reply that landed
+    // while you were away means "show me the newest", not "restore my spot".
+    const finishedAway = !!(chat.notified && chat.notified.has(id));
+    _leaveThread(chat, state);
     // Leaving the current thread: detach this client's live reader. The turn
     // keeps running + recording server-side, so nothing is lost — we re-attach
     // below if the thread we're opening has its own in-flight turn.
@@ -2355,6 +2406,10 @@ export const actions = {
     chat.suggest = null;
     saveStripForCurrent(chat);
     chat.activeId = id;
+    state.draft = restoreDraft(chat.drafts, id);
+    chat.mru = pushMru(chat.mru, id);
+    try { persistMru(chat.mru, window.localStorage); } catch (_) { /* storage unavailable */ }
+    _setHash(chatHash(id));
     chat.chatStrip = loadStripForKey(chat, id);
     // Hydrate from server if in-memory strip has no pending tasks (covers fresh
     // PWA loads where chatStripByKey is empty). Runs async so it doesn't block
@@ -2414,7 +2469,9 @@ export const actions = {
       // A reopened session that already has real history (e.g. another tab
       // already sent its first message) shouldn't still show carried bubbles.
       clearBranchPrefixIfStarted(state, chat);
-      runtime.wantChatBottom = true;   // land on the latest message once loaded
+      const dec = scrollDecision(chat.scroll[id], finishedAway);
+      if (dec.bottom) { runtime.wantChatBottom = true; runtime.restoreScrollTop = null; }
+      else { runtime.wantChatBottom = false; runtime.restoreScrollTop = dec.top; }
     } catch (_) {
       // A GENUINE failure (not a race — chat.activeId is still `id`) leaves
       // the PREVIOUS session's thread on screen under this NEW activeId, with
@@ -2447,6 +2504,7 @@ export const actions = {
     const state = runtime.state;
     if (!state) return;
     const chat = ensureChat(state);
+    _leaveThread(chat, state);
     // Detach this client's live reader from whatever thread was streaming, same
     // as selectSession(). The prior turn keeps running + recording server-side
     // (re-attached via reconcileTurn on return); clearing `turn` here means the
@@ -2489,6 +2547,7 @@ export const actions = {
     state.mTab = 'chat';   // mobile shell routes off mTab/mSub (unused on desktop)
     state.mSub = null;
     state.draft = '';
+    _setHash('#chat');
     runtime.render();
     // Focus the composer once the render above has painted it. rAF-guarded:
     // node tests drive this action with no DOM scheduler.
@@ -2539,12 +2598,16 @@ export const actions = {
       chat.queuedList = [...(chat.queuedList || []), { sid: chat.activeId, text, attachSnap }];
       syncQueuedView(chat);
       state.draft = '';
+      chat.drafts = dropDraft(chat.drafts, chat.activeId);
+      _persistDraftsSoon(chat);
       state.pendingAttach = [];
       runtime.render();
       return;
     }
 
     state.draft = '';
+    chat.drafts = dropDraft(chat.drafts, chat.activeId);
+    _persistDraftsSoon(chat);
     state.pendingAttach = []; // consumed by this turn
     const ok = await submitFromComposer(text, attachSnap);
     if (ok === false) {

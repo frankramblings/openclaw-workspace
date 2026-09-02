@@ -495,16 +495,25 @@ function render() {
   // Landing on the newest message means the user is following again — re-arm so a
   // freshly opened/switched thread sticks to the bottom as its reply streams in.
   if (wantBottom) runtime.chatFollow = true;
+  const restoreTop = runtime.restoreScrollTop;
   for (const sel of SCROLL_SELECTORS) {
     const el = root.querySelector(sel);
     if (!el) continue;
     const isChat = sel === '.chat-thread' || el.classList.contains('m-thread');
     if (isChat && wantBottom) { el.scrollTop = el.scrollHeight; continue; }
+    if (isChat && restoreTop != null) {
+      // Returning to a thread you had scrolled up in: put it back where it
+      // was and do not follow the bottom until the user scrolls there.
+      el.scrollTop = restoreTop;
+      runtime.chatFollow = false;
+      continue;
+    }
     const saved = scrollState[sel];
     if (!saved) continue;
     el.scrollTop = saved.stick ? el.scrollHeight : saved.top;
   }
   if (runtime.wantChatBottom && isChatNow) runtime.wantChatBottom = false;
+  if (restoreTop != null && isChatNow) runtime.restoreScrollTop = null;
   _prevChatMounted = isChatNow;
   _prevActiveId = curActiveId;
 

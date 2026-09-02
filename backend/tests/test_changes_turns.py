@@ -88,3 +88,47 @@ def test_diff_is_capped(tmp_path, monkeypatch):
     d = changes.diff_for("sk", 2, "big.txt")
     assert len(d["text"].splitlines()) <= changes.DIFF_MAX_LINES + 1
     assert d["text"].rstrip().endswith("[diff truncated]")
+
+
+def test_no_changes_leaves_shared_with_empty(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    _touch(root / "a.md", "one")
+    _use_root(tmp_path, monkeypatch, root)
+    changes.turn_started("A", 1)
+    changes.turn_ended("A", 1)
+    changes.turn_started("A", 2)
+    changes.turn_started("B", 7)
+    recA = changes.turn_ended("A", 2)
+    assert recA["files"] == [] and recA["shared_with"] == []
+    recB = changes.turn_ended("B", 7)
+    assert recB["shared_with"] == [] and recB["files"] == []
+
+
+def test_repeat_turn_ended_does_not_clobber_the_record(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    _touch(root / "a.md", "one")
+    _use_root(tmp_path, monkeypatch, root)
+    changes.turn_started("sk", 1)
+    changes.turn_ended("sk", 1)
+    changes.turn_started("sk", 2)
+    _touch(root / "a.md", "two")
+    first = changes.turn_ended("sk", 2)
+    assert [f["path"] for f in first["files"]] == ["a.md"]
+    again = changes.turn_ended("sk", 2)
+    assert [f["path"] for f in again["files"]] == ["a.md"]
+    on_disk = changes.turn_record("sk", 2)
+    assert [f["path"] for f in on_disk["files"]] == ["a.md"]
+
+
+def test_stale_active_turn_is_evicted_and_not_shared(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    _touch(root / "a.md", "one")
+    _use_root(tmp_path, monkeypatch, root)
+    changes.turn_started("stuck", 1)
+    key = ("stuck", 1)
+    changes._ACTIVE[key]["started_ms"] -= 7 * 3600 * 1000
+    changes.turn_started("other", 9)
+    assert key not in changes._ACTIVE
+    _touch(root / "a.md", "two")
+    rec = changes.turn_ended("other", 9)
+    assert rec["files"][0]["shared"] is False and rec["shared_with"] == []

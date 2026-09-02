@@ -240,6 +240,7 @@ def refresh_index(root: str, cfg: dict) -> list[dict]:
 # --- turn attribution ----------------------------------------------------------
 
 DIFF_MAX_LINES = 4000
+ACTIVE_MAX_AGE_MS = 6 * 3600 * 1000
 _SAFE = re.compile(r"[^A-Za-z0-9_.-]")
 # (session_key, turn_id) -> {"started_ms": int, "pending": [file dicts]}
 _ACTIVE: dict[tuple[str, int], dict] = {}
@@ -273,11 +274,22 @@ def _decorate(change: dict, root: str) -> dict:
             "shared": False, "reverted": False}
 
 
+def _evict_stale_active(now_ms: int) -> None:
+    """Drop turns that were started but never ended (crashed/abandoned turns),
+    so they stop absorbing every later change as 'shared' forever. Caller
+    must hold _LOCK."""
+    stale = [k for k, v in _ACTIVE.items() if now_ms - v.get("started_ms", now_ms) > ACTIVE_MAX_AGE_MS]
+    for k in stale:
+        _ACTIVE.pop(k, None)
+        log.warning("changes: evicting stale active turn %s/%s", k[0], k[1])
+
+
 def turn_started(session_key: str, turn_id: int) -> None:
     """Absorb whatever changed since the last look (attributed to nobody) and
     open this turn's window."""
     cfg = load_config()
     with _LOCK:
+        _evict_stale_active(int(time.time() * 1000))
         for root in cfg.get("roots") or []:
             try:
                 refresh_index(root, cfg)
@@ -292,7 +304,12 @@ def turn_ended(session_key: str, turn_id: int) -> dict | None:
     cfg = load_config()
     key = (session_key, int(turn_id))
     with _LOCK:
-        me = _ACTIVE.pop(key, None) or {"started_ms": int(time.time() * 1000), "pending": []}
+        me = _ACTIVE.pop(key, None)
+        if me is None:
+            existing = turn_record(session_key, turn_id)
+            if existing is not None:
+                return existing
+            me = {"started_ms": int(time.time() * 1000), "pending": []}
         others = list(_ACTIVE.keys())
         found: list[dict] = []
         for root in cfg.get("roots") or []:
@@ -304,9 +321,10 @@ def turn_ended(session_key: str, turn_id: int) -> dict | None:
         shared = bool(others)
         for f in found:
             f["shared"] = shared
-        for ok in others:
-            _ACTIVE[ok]["pending"].extend(dict(f, shared=True) for f in found)
-            _ACTIVE[ok].setdefault("shared_with", set()).add(session_key)
+        if found:
+            for ok in others:
+                _ACTIVE[ok]["pending"].extend(dict(f, shared=True) for f in found)
+                _ACTIVE[ok].setdefault("shared_with", set()).add(session_key)
         files = list(me.get("pending") or []) + found
         shared_with = sorted(set(me.get("shared_with") or set()) | ({o[0] for o in others} if found else set()))
         rec = {"session_key": session_key, "turn_id": int(turn_id),

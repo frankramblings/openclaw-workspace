@@ -7,7 +7,7 @@ import asyncio
 
 import websockets.exceptions
 
-from . import bridge, config
+from . import bridge, config, steer
 
 # Connection-layer failures that mean "couldn't reach/complete the WS" (vs a
 # RuntimeError, which the bridge raises for a rejected handshake or method error).
@@ -98,6 +98,14 @@ def _check_version(hello: dict | None) -> dict:
     return _ok("openclaw_version", f"{ver}" if ver else "unknown (not reported)")
 
 
+def _check_steer_patch() -> dict:
+    if steer.patch_present():
+        return _ok("steer_patch", "claude-cli steer patch present")
+    return _fail("steer_patch",
+                 "claude-cli steer patch missing: run deploy/gateway-patches/"
+                 "claude-cli-steer.py (see README)")
+
+
 async def run_checks() -> list[dict]:
     reachable, hello = await _check_reachable()
     checks = [reachable, _check_agent_id(), _check_version(hello)]
@@ -105,6 +113,7 @@ async def run_checks() -> list[dict]:
         checks.append(await _check_methods())
     else:
         checks.append(_fail("methods", "skipped (gateway unreachable)", ""))
+    checks.append(_check_steer_patch())
     return checks
 
 

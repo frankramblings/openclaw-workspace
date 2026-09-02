@@ -22,6 +22,7 @@ import { setLiveTurn } from './turn-ref.js';
 import { beginUploads, resolveUploads, failUploads, sendableAttach, uploadGate } from './attach-logic.js';
 import { buildSuggestContext, activitySummary, suggestSurvivesReattach } from './suggest-core.js';
 import { suggestGhost } from '../suggest-ghost.js';
+import { busySendMode, steerFallback } from './steer-logic.js';
 import {
   initStripState, stripReducer, onTurnDone as stripOnTurnDone,
   onUserSend as stripOnUserSend, onSessionSwitch as stripOnSessionSwitch,
@@ -466,6 +467,9 @@ export async function load(state) {
   const enteredActiveId = chat.activeId;
   // sessions list — if this throws, loader keeps the mock.
   const sessions = await apiGet('/api/sessions');
+  // Steer capability (Pillar A): cached on state so the busy-composer
+  // decision is synchronous. Failure = unavailable, never a thrown load.
+  apiGet('/api/capabilities').then((caps) => { state.caps = caps || {}; }).catch(() => { state.caps = state.caps || {}; });
   if (chat.activeId !== enteredActiveId) return;
   const list = Array.isArray(sessions) ? sessions : [];
 
@@ -568,6 +572,7 @@ let liveES = null;           // active EventSource tail (resume / re-attach)
 let renderTimer = null;      // throttle handle for stream deltas
 let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
+let _lastOnEvent = null;     // most recent turn's onEvent — test hook only (see __testOnEvent)
 let _notifyResuming = null;  // session id with a notifier-driven resume in flight
 const _stripPersistTimers = new Map(); // sessionId → pending persist timer
 
@@ -1292,6 +1297,25 @@ function beginTurn(chat, modelLabel, sessionId) {
       throttledRender();
       return;
     }
+    // A message steered into THIS running turn (ours or another tab's). Show
+    // it once (client_id dedupes the sender's optimistic bubble) and close the
+    // current assistant bubble so the continuation opens a fresh one below.
+    if (ev.type === 'user_steer') {
+      if (!Array.isArray(chat.thread)) chat.thread = [];
+      const id = ev.client_id || uniqId('live-u-');
+      if (!chat.thread.some((m) => m.id === id)) {
+        chat.thread.push({ id, role: 'user', text: ev.text || '', time: fmtTime(ev.ts || Date.now()), attach: [], steer: true });
+      }
+      flushStreamBuffer();
+      if (turn.asstMsg) turn.asstMsg.streaming = false;
+      if (turn.thinkStep) finalizeStep(turn.thinkStep);
+      if (turn.activity) finalizeTools(turn.activity);
+      turn.asstMsg = null; turn.activity = null; turn.thinkStep = null;
+      turn.msgId = uniqId('live-');
+      runtime.wantChatBottom = true;
+      throttledRender();
+      return;
+    }
     // prose delta → the assistant's answer (tools/thinking are done by now)
     if (typeof ev.delta === 'string') {
       if (turn.thinkStep) finalizeStep(turn.thinkStep);
@@ -1359,8 +1383,14 @@ function beginTurn(chat, modelLabel, sessionId) {
     // agent_step / metrics / run_alive / stall: ignored
   };
 
+  _lastOnEvent = onEvent;
   return { onEvent, ensureActivity };
 }
+
+// Test hook (Pillar A / Task 6): the current turn's onEvent, so
+// chat-steer.test.js can feed a `user_steer` replay frame without a real
+// SSE/postStream reader. Not used by production code.
+export function __testOnEvent() { return _lastOnEvent; }
 
 // The network half of a send: detach any prior live reader, open a turn, and
 // POST /api/chat_stream. Shared by the immediate path (dispatchSend) and the
@@ -1398,6 +1428,59 @@ function fireSend(sessionId, text, attachSnap) {
     },
     onEvent,
   );
+}
+
+// Steer: inject `text` into the RUNNING turn of `sessionId`. The optimistic
+// bubble is already in the thread (marked steer:true). Success → nothing
+// else to do here: the server appends a user_steer frame that every reader
+// (this tab included, deduped by client_id) consumes, and the next delta
+// opens a fresh assistant bubble. Failure → withdraw the bubble and either
+// send normally (turn already ended) or queue (anything else).
+async function fireSteer(sessionId, text, messageId) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  let status = 0, body = null;
+  try {
+    const res = await fetch(`${location.origin}/api/chat/steer/${encodeURIComponent(sessionId)}`, {
+      method: 'POST', credentials: 'same-origin',
+      body: (() => { const fd = new FormData(); fd.append('message', text); fd.append('client_id', messageId); return fd; })(),
+    });
+    status = res.status;
+    try { body = await res.json(); } catch (_) { body = null; }
+    if (res.ok) {
+      const m = (chat.thread || []).find((x) => x.id === messageId);
+      if (m) {
+        flushStreamBuffer();
+        if (turn && turn.sessionId === sessionId) {
+          if (turn.asstMsg) turn.asstMsg.streaming = false;
+          if (turn.thinkStep) finalizeStep(turn.thinkStep);
+          if (turn.activity) finalizeTools(turn.activity);
+          turn.asstMsg = null; turn.activity = null; turn.thinkStep = null;
+          turn.msgId = uniqId('live-');
+        }
+      }
+      runtime.render();
+      return;
+    }
+  } catch (_) { status = 0; body = null; }
+  const idx = (chat.thread || []).findIndex((x) => x.id === messageId);
+  if (idx >= 0) chat.thread.splice(idx, 1);
+  if (steerFallback(status, body) === 'send') {
+    // no_active_turn: the server just told us, authoritatively, that this
+    // session's turn is already over — the client's local `turn` slot may
+    // still look busy (its stream reader hasn't seen 'done' yet). Fire
+    // immediately via the same unbuffered path flushQueuedFor uses for
+    // "turn just ended, send the next one now" (dispatchSend), not another
+    // 700ms-buffered submitFromComposer — the message already sat through
+    // one buffer window during the steer attempt.
+    await dispatchSend(text, []);
+  } else {
+    chat.queuedList = [...(chat.queuedList || []), { sid: sessionId, text, attachSnap: [] }];
+    syncQueuedView(chat);
+    toast('Could not steer the running turn. Queued to send when it finishes.');
+  }
+  runtime.render();
 }
 
 // Ensure a session exists for the active chat, creating one on first send.
@@ -1459,7 +1542,7 @@ const BUFFER_MS = 700;
 // ONLY when the session couldn't be created (offline first send in a new
 // chat) so the caller can restore the draft — every other early exit means
 // "nothing to send" and returns true.
-async function submitFromComposer(text, attachSnap) {
+async function submitFromComposer(text, attachSnap, opts = {}) {
   const state = runtime.state;
   if (!state) return true;
   const chat = ensureChat(state);
@@ -1478,9 +1561,9 @@ async function submitFromComposer(text, attachSnap) {
   if (!Array.isArray(chat.thread)) chat.thread = [];
   chat.thread.push({
     id: messageId, role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [],
-    _optimistic: true, _deadline: deadline,
+    _optimistic: true, _deadline: deadline, steer: !!opts.steer,
   });
-  chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0 };
+  chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0, steer: !!opts.steer };
   chat.chatStrip = stripOnUserSend(chat.chatStrip);
   clearBranchPrefixIfStarted(state, chat);
   runtime.wantChatBottom = true;
@@ -1578,6 +1661,14 @@ export function flushPending(sessionId, opts) {
   // Either way, the optimistic bubble comes out of the thread (the queued
   // banner represents it now) and the message auto-sends via flushQueuedFor
   // the next time its own thread is active and idle.
+  if (busy && p.steer && !crossView) {
+    // Steer path: the optimistic bubble STAYS (it is the steer message) and the
+    // POST goes to /api/chat/steer instead of opening a second turn.
+    const msg = (chat.thread || []).find((m) => m.id === p.messageId);
+    if (msg) { delete msg._optimistic; delete msg._deadline; }
+    fireSteer(sid, p.text, p.messageId);
+    return;
+  }
   if (busy || (crossView && !isPagehide)) {
     const idx = (chat.thread || []).findIndex((m) => m.id === p.messageId);
     if (idx >= 0) chat.thread.splice(idx, 1);
@@ -2527,20 +2618,37 @@ export const actions = {
     const chat = ensureChat(state);
     chat.suggest = null; // sending (or queueing) consumes any ghost suggestion
 
-    // A turn is already streaming FOR THIS THREAD → queue this message instead of
-    // starting a second turn against the same thread. It shows as a pending
-    // banner the user can edit (recall) or cancel; when the current turn ends it
-    // auto-sends (see flushQueuedFor in the turn-end paths). Appended to the
-    // session-keyed list, so a second queued message never overwrites the
-    // first. A turn streaming in a DIFFERENT thread must NOT gate this send —
-    // that turn keeps running + recording server-side, and dispatchSend()
-    // detaches our reader from it.
-    if (turn && turn.sessionId === chat.activeId) {
+    // A turn is already streaming FOR THIS THREAD → either steer it into the
+    // running turn (claude-cli, capability available, text-only) or queue this
+    // message instead of starting a second turn against the same thread — the
+    // queued banner the user can edit (recall) or cancel; when the current
+    // turn ends it auto-sends (see flushQueuedFor in the turn-end paths).
+    // Appended to the session-keyed list, so a second queued message never
+    // overwrites the first. A turn streaming in a DIFFERENT thread must NOT
+    // gate this send — that turn keeps running + recording server-side, and
+    // dispatchSend() detaches our reader from it.
+    const busyHere = !!(turn && turn.sessionId === chat.activeId);
+    const mode = busySendMode({
+      busyHere,
+      steerAvailable: !!(state.caps && state.caps.steer && state.caps.steer.available),
+      endpointId: chat.endpointId,
+      hasAttachments: attachSnap.length > 0,
+      forceQueue: !!state._forceQueue,
+    });
+    state._forceQueue = false;
+    chat.steerMode = mode === 'steer';
+    if (mode === 'queue') {
       chat.queuedList = [...(chat.queuedList || []), { sid: chat.activeId, text, attachSnap }];
       syncQueuedView(chat);
       state.draft = '';
       state.pendingAttach = [];
       runtime.render();
+      return;
+    }
+    if (mode === 'steer') {
+      state.draft = '';
+      state.pendingAttach = [];
+      await submitFromComposer(text, [], { steer: true });
       return;
     }
 
@@ -2556,6 +2664,15 @@ export const actions = {
       toast('Couldn’t start the chat — check your connection and try again.');
       runtime.render();
     }
+  },
+
+  // Explicit "queue for after": Alt+Enter or the composer chip. Same as send,
+  // with steering forced off for this one message.
+  sendQueued: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    state._forceQueue = true;
+    await actions.send();
   },
 
   // Pull the ACTIVE session's first queued message back into the composer to

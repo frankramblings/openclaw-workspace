@@ -314,6 +314,9 @@ async function fetchThread(id, fallbackModel, name) {
       time: fmtTime(meta.timestamp),
       model: meta.model || model,
       usage: (meta.usage && typeof meta.usage === 'object') ? meta.usage : null,
+      // Providers report usage differently (claude-cli stamps a placeholder
+      // output) — the renderers need to know which one produced this message.
+      provider: meta.provider || null,
       costTotal: (typeof meta.cost === 'number') ? meta.cost : null,
     };
     // Backend rewrites machinery user-messages (followup seeds, injected
@@ -373,18 +376,73 @@ async function fetchThread(id, fallbackModel, name) {
   };
 }
 
+// One GET of a session's usage row. Returns the WHOLE payload (not just the
+// context pct) so the turn-done path can reuse this exact response instead of
+// firing a second identical GET a moment later — see refreshSidebarUsage.
 async function fetchUsage(id) {
   try {
     const u = await apiGet(`/api/sessions/${id}/usage`);
-    if (!u || !u.ok) return undefined;
+    if (!u || !u.ok) return null;
     const chat = ensureChat(runtime.state || {});
     if (id === chat.activeId) {
-      chat.sessionUsage = { totals: u.totals || null, costed: !!u.costed, usedPct: round1(u?.context?.usedPct) };
+      chat.sessionUsage = {
+        totals: u.totals || null,
+        costed: !!u.costed,
+        usedPct: round1(u?.context?.usedPct),
+        provider: u.modelProvider || null,
+      };
     }
-    return round1(u?.context?.usedPct);
+    return u;
   } catch (_) {
-    return undefined;
+    return null;
   }
+}
+
+const usagePctOf = (u) => round1(u?.context?.usedPct);
+
+// Right after a turn the gateway's cost cache for the transcript is often
+// still refreshing, so the usage row comes back empty (backend marks it
+// `pending`). Retry ONCE after this delay; the refresh is sub-second for small
+// transcripts. Overridable from tests via __setUsageRetryMs.
+let USAGE_RETRY_MS = 2000;
+export function __setUsageRetryMs(ms) { USAGE_RETRY_MS = Number(ms) || 0; }
+
+// Apply a session usage payload to the just-finished assistant bubble (and to
+// the header pill when that session is still the one on screen). When the row
+// is not ready yet, schedule exactly one delayed retry.
+function applySessionUsage(u, target, forSessionId, allowRetry) {
+  const chatNow = ensureChat(runtime.state || {});
+  if (u && u.ok) {
+    if (forSessionId === chatNow.activeId) {
+      chatNow.sessionUsage = {
+        totals: u.totals || null,
+        costed: !!u.costed,
+        usedPct: u.context && u.context.usedPct,
+        provider: u.modelProvider || null,
+      };
+    }
+    const t = u.totals;
+    if (!target.usage && t && (Number(t.output) > 0 || Number(t.totalTokens) > 0)) {
+      target.usage = {
+        input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite,
+        _session: true, _provider: u.modelProvider || null,
+      };
+    }
+    throttledRender();
+  }
+  if (!allowRetry) return;
+  const notReady = !u || !u.ok || u.pending || Number(u.totals?.totalTokens) === 0;
+  if (!notReady) return;
+  setTimeout(() => {
+    const chatLater = ensureChat(runtime.state || {});
+    // Only retry while this session is still on screen, and never once a NEWER
+    // turn is running for it (that turn owns the usage row now).
+    if (forSessionId !== chatLater.activeId) return;
+    if (turn && turn.sessionId === forSessionId) return;
+    apiGet(`/api/sessions/${encodeURIComponent(forSessionId)}/usage`)
+      .then((u2) => applySessionUsage(u2, target, forSessionId, false))
+      .catch(() => {});
+  }, USAGE_RETRY_MS);
 }
 
 // Hydrate resolved update_blocks from the server into thread messages so
@@ -574,7 +632,7 @@ export async function load(state) {
     if (chat.activeId !== activeId) return;
     try { await hydrateWarnings(activeId, chat.thread); } catch (_) { /* non-fatal */ }
     if (chat.activeId !== activeId) return;
-    const pct = await fetchUsage(activeId);
+    const pct = usagePctOf(await fetchUsage(activeId));
     if (pct != null && chat.activeId === activeId) chat.usagePct = pct;
   } else {
     chat.thread = [];
@@ -1109,9 +1167,13 @@ async function refreshSidebarUsage(state) {
     if (name) chat.title = name;
   } catch (_) { /* keep */ }
   if (Array.isArray(chat.thread)) chat.subtitle = `${chat.thread.length} messages · ${chat.model || ''}`;
-  const pct = await fetchUsage(id);
-  if (pct != null) chat.usagePct = pct;
+  const u = await fetchUsage(id);
+  const pct = usagePctOf(u);
+  // Guard: the user may have switched threads while the GET was in flight.
+  if (pct != null && chat.activeId === id) chat.usagePct = pct;
   runtime.render();
+  // Hand the payload back so the turn-done path can reuse it (one GET/turn).
+  return { id, usage: u };
 }
 
 // Pure slicing step for branchFromMessage — split out so it's unit-testable
@@ -1310,24 +1372,22 @@ function beginTurn(chat, modelLabel, sessionId) {
       chat.suggest = null; // a finished turn invalidates any "While you wait" ghost
       flushRender();
       if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); chat.busySessionId = null; turn = null; return; }
-      refreshSidebarUsage(runtime.state);
-      // Per-turn usage: prefer what the done frame carries; otherwise fetch the
-      // session's usage row once (the gateway stamps it at turn end).
+      const sidebarDone = refreshSidebarUsage(runtime.state);
+      // Per-turn usage: prefer what the done frame carries; otherwise reuse the
+      // session usage row refreshSidebarUsage just fetched (the gateway stamps
+      // it at turn end) rather than firing an identical second GET.
       if (turn.asstMsg) {
         if (ev.usage && typeof ev.usage === 'object') {
           turn.asstMsg.usage = ev.usage;
         } else if (turn.sessionId) {
           const target = turn.asstMsg;
           const forSessionId = turn.sessionId;
-          apiGet(`/api/sessions/${encodeURIComponent(forSessionId)}/usage`).then((u) => {
-            if (!u || !u.ok) return;
-            const chatNow = ensureChat(runtime.state || {});
-            if (forSessionId === chatNow.activeId) {
-              chatNow.sessionUsage = { totals: u.totals || null, costed: !!u.costed, usedPct: u.context && u.context.usedPct };
-            }
-            if (!target.usage && u.totals && Number(u.totals.output) > 0) target.usage = { input: u.totals.input, output: u.totals.output, cacheRead: u.totals.cacheRead, cacheWrite: u.totals.cacheWrite, _session: true };
-            throttledRender();
-          }).catch(() => {});
+          sidebarDone.then((res) => {
+            if (res && res.id === forSessionId) return res.usage;
+            // The sidebar refreshed a DIFFERENT session (the user switched
+            // threads as the turn landed) — fetch this turn's row ourselves.
+            return apiGet(`/api/sessions/${encodeURIComponent(forSessionId)}/usage`).catch(() => null);
+          }).then((u) => applySessionUsage(u, target, forSessionId, true)).catch(() => {});
         }
       }
       // Follow-up ghost suggestion — only after a CLEAN finish (an explicit
@@ -2607,6 +2667,11 @@ export const actions = {
     // be busy, rather than trusting a stale id no one is attached to.
     turn = null;
     chat.busySessionId = null;
+    // The header pill's tokens/context belong to the thread we're leaving —
+    // drop them so the new thread never shows the old one's numbers while its
+    // own usage row is still in flight.
+    chat.sessionUsage = null;
+    chat.usagePct = undefined;
     _pendingByTurnId.clear();
     chat.rowMenuOpen = null;
     chat.suggest = null;
@@ -2693,7 +2758,7 @@ export const actions = {
     if (chat.activeId !== id) return;
     try { await hydrateWarnings(id, chat.thread); } catch (_) { /* non-fatal */ }
     if (chat.activeId !== id) return;
-    const pct = await fetchUsage(id);
+    const pct = usagePctOf(await fetchUsage(id));
     if (pct != null && chat.activeId === id) chat.usagePct = pct;
     runtime.render();
     // Acknowledge unseen followups for this session (fire-and-forget)
@@ -2713,6 +2778,8 @@ export const actions = {
     stopElapsed();
     turn = null;
     chat.busySessionId = null; // detaching, not ending — see selectSession's comment
+    chat.sessionUsage = null;  // a fresh chat has no usage of its own yet
+    chat.usagePct = undefined;
     _pendingByTurnId.clear();
     const _leavingId = chat.activeId;
     saveStripForCurrent(chat);

@@ -130,9 +130,22 @@ export async function loadUsage(state, days) {
   state.live.usage = { days: n, data: cur.data, error: null };
   try {
     const data = await apiGet(`/api/usage/summary?days=${n}`);
-    state.live.usage = { days: n, data, error: data && data.ok ? null : ((data && data.reason) || 'unknown') };
+    state.live.usage = {
+      days: n,
+      data,
+      fresh: !(data && data.fresh === false),
+      error: data && data.ok ? null : ((data && data.reason) || 'unknown'),
+    };
   } catch (e) {
-    state.live.usage = { days: n, data: null, error: (e && e.message && /→ (\d+)/.test(e.message)) ? `http ${RegExp.$1}` : 'network' };
+    // Prefer the backend's own reason (apiGet attaches the parsed error body)
+    // over the bare HTTP status, so a gateway failure reads as gateway_error.
+    const reason = e && e.body && typeof e.body === 'object' && e.body.reason;
+    const status = e && e.status;
+    state.live.usage = {
+      days: n,
+      data: null,
+      error: reason || (status ? `http ${status}` : 'network'),
+    };
   }
   runtime.render();
 }

@@ -122,6 +122,140 @@ test('a usage fetch resolving AFTER a newer selectSession must not overwrite the
   }
 });
 
+// ---- 1b. done-path session-usage fallback + pending retry -----------------
+//
+// The relay never forwards usage on the `done` frame, so after every turn the
+// client falls back to the session's usage row. Right after a turn that row is
+// often still empty while the gateway's cost cache refreshes (`pending`), so
+// the client retries ONCE. These two tests drive a real turn through the
+// exported __testOnEvent hook (same harness as chat-steer.test.js) with the
+// retry delay shortened via the __setUsageRetryMs test hook.
+
+const tick = async (ms = 750) => { await new Promise((r) => setTimeout(r, ms)); await Promise.resolve(); };
+
+// A session-usage fetch mock that answers `pending` first and the real row on
+// every later call, recording how many times it was asked.
+function wireTurnFetch(sessionId, calls) {
+  const pendingRow = {
+    ok: true, pending: true, modelProvider: 'claude-cli',
+    totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, totalCost: 0, missingCostEntries: 0 },
+    context: { usedPct: null },
+  };
+  const finalRow = {
+    ok: true, pending: false, modelProvider: 'claude-cli',
+    totals: { input: 2, output: 1, cacheRead: 80000, cacheWrite: 1000, totalTokens: 81003, totalCost: 0, missingCostEntries: 1 },
+    context: { usedPct: 40 },
+  };
+  globalThis.fetch = (url) => {
+    const u = String(url);
+    if (u.includes('/api/chat_stream')) return new Promise(() => {});
+    if (u.includes(`/api/sessions/${sessionId}/usage`)) {
+      calls.push(u);
+      return Promise.resolve(jsonRes(calls.length === 1 ? pendingRow : finalRow));
+    }
+    if (u.includes('/api/history/')) return Promise.resolve(jsonRes({ history: [] }));
+    return Promise.resolve(jsonRes({}));
+  };
+  return { pendingRow, finalRow };
+}
+
+test('done with no usage frame: one GET per turn, then a single retry once the gateway cache catches up', async () => {
+  const state = freshState('sess-d');
+  runtime.state = state;
+  runtime.render = () => {};
+  const chat = state.live.chat;
+  const calls = [];
+  wireTurnFetch('sess-d', calls);
+  chatMod.__setUsageRetryMs(20);
+  try {
+    state.draft = 'hello';
+    await actions.send();
+    await tick();                       // buffer elapses → chat_stream POST (hangs)
+    chatMod.__testOnEvent()({ type: 'done' });
+    await drainMicrotasks();
+
+    // Exactly one GET for the turn itself (refreshSidebarUsage's response is
+    // reused by the done path instead of a second identical GET).
+    assert.equal(calls.length, 1, 'one usage GET on the turn itself');
+    const asst = chat.thread.filter((m) => m.role === 'assistant').pop();
+    assert.ok(asst, 'an assistant bubble exists');
+    assert.ok(!asst.usage, 'the pending row leaves the bubble without usage');
+
+    await tick(80);                     // the ~2s retry, shortened for the test
+    await drainMicrotasks();
+    assert.equal(calls.length, 2, 'exactly one retry');
+    assert.ok(asst.usage, 'the retry filled the bubble in');
+    assert.equal(asst.usage._session, true);
+    assert.equal(asst.usage.cacheRead, 80000);
+    assert.equal(asst.usage._provider, 'claude-cli');
+    assert.equal(chat.sessionUsage.totals.totalTokens, 81003);
+    assert.equal(chat.sessionUsage.provider, 'claude-cli');
+  } finally {
+    chatMod.__setUsageRetryMs(2000);
+    actions.stopRun && await actions.stopRun();
+    delete globalThis.fetch;
+  }
+});
+
+test('a thread switch before the retry leaves the newly viewed thread\'s sessionUsage untouched', async () => {
+  const state = freshState('sess-e');
+  runtime.state = state;
+  runtime.render = () => {};
+  const chat = state.live.chat;
+  const calls = [];
+  wireTurnFetch('sess-e', calls);
+  chatMod.__setUsageRetryMs(20);
+  try {
+    state.draft = 'hello';
+    await actions.send();
+    await tick();
+    chatMod.__testOnEvent()({ type: 'done' });
+    await drainMicrotasks();
+    assert.equal(calls.length, 1);
+
+    // The user walks away to another thread before the retry fires.
+    chat.activeId = 'sess-other';
+    chat.sessionUsage = { totals: { totalTokens: 7 }, costed: false, usedPct: 1, provider: 'openai' };
+    await tick(80);
+    await drainMicrotasks();
+
+    assert.equal(calls.length, 1, 'no retry once the session is off screen');
+    assert.equal(chat.sessionUsage.totals.totalTokens, 7,
+      'the other thread\'s usage is untouched');
+    assert.equal(chat.sessionUsage.provider, 'openai');
+  } finally {
+    chatMod.__setUsageRetryMs(2000);
+    actions.stopRun && await actions.stopRun();
+    delete globalThis.fetch;
+  }
+});
+
+// ---- 1c. apiGet attaches the parsed error body (Important 8) --------------
+
+test('apiGet on a 502 carries the backend reason on the thrown error', async () => {
+  const { apiGet } = await import('../redesign/live/api.js');
+  globalThis.fetch = () => Promise.resolve({
+    ok: false, status: 502,
+    headers: { get: () => 'application/json' },
+    json: async () => ({ ok: false, reason: 'gateway_error' }),
+    text: async () => '{}',
+  });
+  try {
+    await assert.rejects(
+      () => apiGet('/api/usage/summary?days=7'),
+      (err) => {
+        assert.equal(err.status, 502);
+        assert.equal(err.body.reason, 'gateway_error');
+        // The historic message format is what other callers match on.
+        assert.match(err.message, /→ 502$/);
+        return true;
+      },
+    );
+  } finally {
+    delete globalThis.fetch;
+  }
+});
+
 // ---- 2. costTotal mapping (Review round 1, Important 2) -------------------
 
 test('history costTotal maps a bare-number metadata.cost (the real backend shape); an object shape is not a number and maps to null', async () => {

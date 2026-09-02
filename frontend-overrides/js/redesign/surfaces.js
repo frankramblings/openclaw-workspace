@@ -18,6 +18,7 @@ import './task-rows.js'; // side-effect: boots the feed subscription and injects
 import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
+import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
 // Fetch caps for the task-6.2 "showing first N" disclosure footer (capNotice,
 // below). NOT imported from the live/*.js modules that own them — every
 // live/*.js file eventually imports api.js, which reads `location.origin` at
@@ -314,7 +315,7 @@ export function chatMsg(m, s, ghostCtx) {
       const remaining = Math.max(0, m._deadline - Date.now());
       pendingRing = `<span class="msg-pending-ring" title="Sending in ${Math.ceil(remaining / 100) / 10}s — edit to change it"></span>`;
     }
-    return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span>${pendingRing}<span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
+    return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span>${pendingRing}<span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}${steerCaptionHtml(m)}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an
@@ -552,7 +553,9 @@ ${esc(d)}</textarea>
           <button class="${agent ? 'active-agent' : ''}" data-act="setMode" data-arg="agent">Agent</button>
           <button class="${!agent ? 'active-chat' : ''}" data-act="setMode" data-arg="chat">Chat</button>
         </div>
-        <button class="btn-send ocbtn" data-act="send" title="Send">${I.send()}</button>
+        ${(() => { const h = steerComposerHints(s); return `
+        ${h.showQueueChip ? `<button class="btn-queue ocbtn" data-act="sendQueued" title="Queue this message to send when the reply finishes (Alt+Enter)">Queue instead</button>` : ''}
+        <button class="btn-send ocbtn${h.steerLabel ? ' steer' : ''}" data-act="send" title="${h.steerLabel ? 'Steer the running turn (Enter)' : 'Send'}">${I.send()}${h.steerLabel ? '<span class="send-lbl">Steer</span>' : ''}</button>`; })()}
       </div>
     </div>
   </div>`;

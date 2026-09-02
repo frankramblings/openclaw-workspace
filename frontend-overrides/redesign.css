@@ -1158,3 +1158,9 @@ html.shell-mobile .oc-toast{max-width:none}
 .atch-chip .atch-spin{display:inline-flex;align-items:center;padding:0 2px 0 8px;color:var(--faint)}
 .atch-chip.atch-failed{border-color:var(--red);background:rgba(240,114,106,.08)}
 .atch-chip.atch-failed .atch-ext,.atch-chip.atch-failed .atch-name{color:var(--red)}
+
+/* Steering (Pillar A) */
+.btn-send.steer { background: var(--teal, #4fe3d1); color: #07131f; gap: 6px; padding-right: 10px; }
+.btn-send .send-lbl { font-size: 12px; font-weight: 600; }
+.btn-queue { font-size: 12px; opacity: .8; margin-right: 6px; }
+.msg-steer-cap { font-size: 11px; color: var(--faint, #8a94a6); margin-top: 4px; letter-spacing: .01em; }

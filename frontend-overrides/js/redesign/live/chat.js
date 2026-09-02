@@ -1116,6 +1116,16 @@ function beginTurn(chat, modelLabel, sessionId) {
   // superseded (see _turnEpoch above).
   const epoch = ++_turnEpoch;
   turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: uniqId('live-'), lastFrameMs: Date.now(), got404: false };
+  // A running turn for this thread — steer-view.js's steerComposerHints() reads
+  // this to decide whether the composer shows "Steer"/the queue chip.
+  chat.busyHere = true;
+  chat.steerMode = busySendMode({
+    busyHere: true,
+    steerAvailable: !!(runtime.state && runtime.state.caps && runtime.state.caps.steer && runtime.state.caps.steer.available),
+    endpointId: chat.endpointId,
+    hasAttachments: false,
+    forceQueue: false,
+  }) === 'steer';
   // A fresh turn for this session supersedes any stop-dedupe record: the
   // stopped bubble now belongs to an OLDER, finished exchange and must stay.
   // (attachTurn consumes the record BEFORE calling beginTurn, so the failed-
@@ -1206,7 +1216,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       }
       chat.suggest = null; // a finished turn invalidates any "While you wait" ghost
       flushRender();
-      if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); turn = null; return; }
+      if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); chat.busyHere = false; turn = null; return; }
       refreshSidebarUsage(runtime.state);
       // Follow-up ghost suggestion — only after a CLEAN finish (an explicit
       // turn_end status of 'ok' AND a real reply; endStatus is undefined when
@@ -1218,6 +1228,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       const doneSid = turn.sessionId;
       const hadQueued = !!queueHead(chat.queuedList, doneSid);
       setLiveTurn(null);
+      chat.busyHere = false;
       turn = null;
       flushQueuedFor(chat, doneSid);
       if (cleanFinish && !hadQueued) fetchSuggestion(chat, 'followup', null);
@@ -1260,6 +1271,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       const errSid = turn.sessionId;     // capture before teardown
       const statusless = !ev.status;     // dropped mid-turn (vs an HTTP-level POST failure)
       setLiveTurn(null);
+      chat.busyHere = false;
       turn = null;
       // Statusless drop on the visible thread: the turn may have COMPLETED
       // server-side while our reader was dead (event_store owns the turn, not
@@ -2771,6 +2783,7 @@ export const actions = {
       a.elapsed = fmtElapsed(a.startMs);
       a.worked = `Stopped after ${a.elapsed} · ${a.steps.length} steps`;
     }
+    if (chat) chat.busyHere = false;
     turn = null;
     // Stop is a deliberate halt — don't auto-fire a queued follow-up. Hand it
     // back to the composer so the user decides whether to send it. Keyed to

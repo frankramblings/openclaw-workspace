@@ -1391,6 +1391,7 @@ root.addEventListener('keydown', (e) => {
   const sendCombo = (e.metaKey || e.ctrlKey) || (fk === 'draft' && !e.shiftKey);
   if (sendCombo) {
     e.preventDefault();
+    if (e.altKey && actions.sendQueued) { actions.sendQueued(); render(); return; }
     if (actions.send) { actions.send(); render(); }
   }
 });

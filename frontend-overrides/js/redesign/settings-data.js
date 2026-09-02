@@ -17,6 +17,7 @@ export const TAB = {
   notifications: ['Notifications', 'Web push on your device', '<circle cx="9" cy="21" r="1"/><path d="M18 8a6 6 0 0 0-9-5.97"/><path d="M13 16h-3V6h3m4-1h.01"/><path d="M17 16h-2V9h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2z"/>'],
   brain: ['Brain', 'Long-term memory and skills', '<path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/>'],
   scheduled: ['Scheduled', 'Recurring jobs', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'],
+  usage: ['Usage', 'Tokens and estimated cost, 7 or 30 days', '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>'],
   appearance: ['Appearance', 'Theme, sidebar, and chat visibility', '<circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 0 20 4 4 0 0 1 0-8 4 4 0 0 0 0-8z"/>'],
   shortcuts: ['Shortcuts', 'Keyboard shortcuts', '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>'],
   account: ['Account', 'Profile, password, and 2FA', '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'],
@@ -105,6 +106,11 @@ export const PANELS = {
   ],
   brain: [card({ title: 'Brain', icon: TAB.brain[2], sub: "__AGENT_NAME__'s long-term memories and skills — browse, edit, pin, and audit them.", launcher: 'Open Brain', launcherAct: 'openBrain', brainPanel: true })],
   scheduled: [card({ title: 'Scheduled', icon: TAB.scheduled[2], sub: 'Recurring jobs — run now, enable/disable, and inspect run history.', launcher: 'Open Scheduled jobs', launcherAct: 'openScheduled', scheduledPanel: true })],
+  usage: [
+    card({ title: 'Token usage', icon: '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>', sub: 'From the gateway usage ledger. Subscription models report tokens only.', rows: [
+      { type: 'liveUsage' },
+    ] }),
+  ],
   appearance: [
     card({ title: 'Theme', icon: TAB.appearance[2], sub: 'Colorways, fonts, density and background effects. Pick an accent below.', rows: [accents()] }),
     card({ title: 'Sidebar', icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>', rows: [vis([['sb-brand', '__AGENT_NAME__', 'Brand'], ['sb-search', 'Search'], ['sb-newchat', 'New Chat'], ['sb-chats', 'Chats'], ['sb-email', 'Email'], ['sb-tools', 'Tools'], ['sb-brain', 'Brain'], ['sb-cal', 'Calendar'], ['sb-research', 'Deep Research'], ['sb-library', 'Library'], ['sb-notes', 'Notes'], ['sb-theme', 'Theme'], ['sb-user', 'User'], ['sb-settings', 'Settings']])] }),
@@ -156,7 +162,7 @@ export const PANELS = {
 // grouped section nav with dividers + ADMIN label
 export const NAV_GROUPS = [
   ['services', 'ai', 'search'], 'div',
-  ['integrations', 'email', 'reminders', 'notifications', 'brain', 'scheduled'], 'div',
+  ['integrations', 'email', 'reminders', 'notifications', 'brain', 'scheduled', 'usage'], 'div',
   ['appearance', 'shortcuts'], 'div',
   ['account'], 'div',
   { label: 'ADMIN', ids: ['tools', 'users', 'system'] },

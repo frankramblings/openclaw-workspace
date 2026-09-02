@@ -115,6 +115,26 @@ export async function load(state) {
       if (bag.search_result_count != null) state.searchResultCount = Number(bag.search_result_count);
     }
   } catch (_) { /* keep default ui */ }
+
+  // 3) Settings → Usage: token/cost summary from the gateway usage ledger.
+  loadUsage(state).catch(() => {});
+}
+
+// Settings → Usage: GET /api/usage/summary?days=7|30 into state.live.usage.
+// Fire-and-forget from load(); also called directly by the usageDays /
+// usageRetry actions below.
+export async function loadUsage(state, days) {
+  state.live = state.live || {};
+  const cur = state.live.usage || { days: 7, data: null, error: null };
+  const n = days || cur.days || 7;
+  state.live.usage = { days: n, data: cur.data, error: null };
+  try {
+    const data = await apiGet(`/api/usage/summary?days=${n}`);
+    state.live.usage = { days: n, data, error: data && data.ok ? null : ((data && data.reason) || 'unknown') };
+  } catch (e) {
+    state.live.usage = { days: n, data: null, error: (e && e.message && /→ (\d+)/.test(e.message)) ? `http ${RegExp.$1}` : 'network' };
+  }
+  runtime.render();
 }
 
 export const actions = {
@@ -319,4 +339,8 @@ export const actions = {
       runtime.render();
     }
   },
+
+  // Settings → Usage: day-range toggle and error-state retry.
+  usageDays: (n) => { loadUsage(runtime.state, Number(n) === 30 ? 30 : 7); },
+  usageRetry: () => { loadUsage(runtime.state); },
 };

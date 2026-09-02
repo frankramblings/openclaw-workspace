@@ -1169,3 +1169,10 @@ html.shell-mobile .oc-toast{max-width:none}
 /* Usage (Pillar A, task 3) */
 .msg-meta .usage { margin-left: 8px; font-size: 11px; color: var(--faint, #8a94a6); font-family: var(--mono, ui-monospace, monospace); opacity: 0; transition: opacity .15s; }
 .msg-asst:hover .msg-meta .usage, .msg-asst:focus-within .msg-meta .usage { opacity: 1; }
+
+/* Settings → Usage (Pillar A, task 4) */
+.usage-seg { display: flex; gap: 6px; margin-bottom: 10px; }
+.usage-chart { display: flex; align-items: flex-end; gap: 4px; height: 120px; padding: 8px 4px; border: 1px solid var(--border, #3b6d96); border-radius: 8px; margin-bottom: 10px; }
+.usage-col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 0; }
+.usage-bar { width: 70%; background: var(--teal, #4fe3d1); border-radius: 3px 3px 0 0; min-height: 2px; }
+.usage-day { font-size: 9px; color: var(--faint, #8a94a6); margin-top: 4px; white-space: nowrap; }

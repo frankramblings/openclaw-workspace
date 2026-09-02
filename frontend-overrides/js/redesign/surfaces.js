@@ -20,6 +20,7 @@ import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
 import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
 import { usageLine, usageTitle, sessionTotalsLine } from './usage-view.js';
+import { usagePanelHtml } from './usage-panel.js';
 // Fetch caps for the task-6.2 "showing first N" disclosure footer (capNotice,
 // below). NOT imported from the live/*.js modules that own them — every
 // live/*.js file eventually imports api.js, which reads `location.origin` at
@@ -1210,6 +1211,11 @@ function settingsSurface(s) {
         const groups = s.live?.modelGroups || [];
         if (!groups.length) return '<div class="set-text set-live-empty">Model list hasn’t loaded yet — it fills in from the gateway when chat boots.</div>';
         return groups.map((g) => `<div class="set-endpoint"><span class="ico" style="background:var(--tealtint);color:var(--teal)">${esc(String(g.ep || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?')}</span><div style="min-width:0;flex:1"><div class="nm">${esc(g.ep)}</div><div class="det">${esc(g.models.map((m) => m.name).join(', '))}</div></div><span class="st" style="color:var(--green)"><span class="d" style="background:var(--green)"></span>Active</span></div>`).join('');
+      }
+      case 'liveUsage': {
+        const u = s.live?.usage;
+        if (!u) return '<div class="set-text set-live-empty">Loading usage…</div>';
+        return usagePanelHtml({ days: u.days || 7, daily: (u.data && u.data.daily) || [], totals: u.data && u.data.totals, costed: !!(u.data && u.data.costed), error: u.error });
       }
       case 'liveDefault': {
         const def = s.live?.defaultModel || '';

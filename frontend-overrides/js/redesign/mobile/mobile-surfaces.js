@@ -17,6 +17,7 @@ import { questionCardHtml } from '../live/question-card.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 import { currentHealth, healthDotColor } from '../live/health.js';
 import { steerComposerHints, steerCaptionHtml } from '../steer-view.js';
+import { usageLine, usageTitle } from '../usage-view.js';
 
 // Task 2.1: mobile counterpart to surfaces.js's loadErrorBlock — same
 // "Couldn't load X, Retry" contract (data-act="retrySurface" clears the
@@ -160,7 +161,7 @@ export function mChatMsg(m, s, ghostCtx) {
     : '';
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${ghostHtml}</div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${(() => { const line = usageLine(m.usage, null); return line ? `<div class="m-usage" title="${esc(usageTitle(m.usage))}">${esc(line)}</div>` : ''; })()}${ghostHtml}</div>`
   + `</div>`;
 }
 

@@ -313,6 +313,8 @@ async function fetchThread(id, fallbackModel, name) {
       text: h.content || '',
       time: fmtTime(meta.timestamp),
       model: meta.model || model,
+      usage: (meta.usage && typeof meta.usage === 'object') ? meta.usage : null,
+      costTotal: (meta.cost && typeof meta.cost.total === 'number') ? meta.cost.total : null,
     };
     // Backend rewrites machinery user-messages (followup seeds, injected
     // session-continuation seeds — see backend/syschatter.py) to a compact ⚙️
@@ -375,6 +377,8 @@ async function fetchUsage(id) {
   try {
     const u = await apiGet(`/api/sessions/${id}/usage`);
     if (!u || !u.ok) return undefined;
+    const chat = ensureChat(runtime.state || {});
+    chat.sessionUsage = { totals: u.totals || null, costed: !!u.costed, usedPct: round1(u?.context?.usedPct) };
     return round1(u?.context?.usedPct);
   } catch (_) {
     return undefined;
@@ -1305,6 +1309,22 @@ function beginTurn(chat, modelLabel, sessionId) {
       flushRender();
       if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); chat.busySessionId = null; turn = null; return; }
       refreshSidebarUsage(runtime.state);
+      // Per-turn usage: prefer what the done frame carries; otherwise fetch the
+      // session's usage row once (the gateway stamps it at turn end).
+      if (turn.asstMsg) {
+        if (ev.usage && typeof ev.usage === 'object') {
+          turn.asstMsg.usage = ev.usage;
+        } else if (turn.sessionId) {
+          const target = turn.asstMsg;
+          apiGet(`/api/sessions/${encodeURIComponent(turn.sessionId)}/usage`).then((u) => {
+            if (!u || !u.ok) return;
+            const chatNow = ensureChat(runtime.state || {});
+            chatNow.sessionUsage = { totals: u.totals || null, costed: !!u.costed, usedPct: u.context && u.context.usedPct };
+            if (!target.usage && u.totals && Number(u.totals.output) > 0) target.usage = { input: u.totals.input, output: u.totals.output, cacheRead: u.totals.cacheRead, cacheWrite: u.totals.cacheWrite, _session: true };
+            throttledRender();
+          }).catch(() => {});
+        }
+      }
       // Follow-up ghost suggestion — only after a CLEAN finish (an explicit
       // turn_end status of 'ok' AND a real reply; endStatus is undefined when
       // the stream dropped, and hadText/hadWork are false on the empty-reply

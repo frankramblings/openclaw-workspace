@@ -866,6 +866,25 @@ async def gateway_hello(timeout: float = 10.0) -> dict:
     return hello.get("payload") or {}
 
 
+async def steer_turn(session_key: str, message: str) -> dict:
+    """Inject `message` into the session's RUNNING turn. With the gateway in
+    steer mode and the claude-cli steer patch installed, a chat.send that
+    lands while the run is active is written to the live Claude Code stdin and
+    delivered after the current tool result; the run keeps its runId, so the
+    turn's existing relay carries the continuation. The gateway acks
+    {runId, status:"started"} before dispatch for every chat.send, so an ok
+    ack means "delivered to the gateway", not "already injected". Throwaway
+    socket on purpose: never the warm one (a steer must not steal or pin it)."""
+    text = message.replace("\x00", "") if isinstance(message, str) else message
+    params = {
+        "sessionKey": session_key,
+        "message": text,
+        "deliver": False,
+        "idempotencyKey": uuid.uuid4().hex,
+    }
+    return await gateway_call("chat.send", params, timeout=20.0)
+
+
 # --- Model catalog: real gateway model list, mapped to the SPA's picker shape -
 
 _PROVIDER_META = {
@@ -903,7 +922,11 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
 # `anthropic` endpoint can be backed by a long-lived setup-token, not only a
 # metered API key, so hiding it forces the PWA onto the short-lived Claude CLI
 # OAuth path even after setup-token auth is configured.
-_HIDDEN_ENDPOINTS = set()
+# local-lms (Qwen2.5-VL on kamino) is wired ONLY for utility completions —
+# chat titles + composer suggestions via the direct path (backend/local_llm.py),
+# which bypasses the picker entirely. It's a tools-less 7B and makes a poor
+# interactive chat model, so keep it OUT of the chat model dropdown.
+_HIDDEN_ENDPOINTS = {"local-lms"}
 
 # Per-provider model ids to hide from the picker even if the gateway lists them.
 # `google/gemini-3.1-pro-preview` is present in the catalog but 429s on the free
@@ -1123,8 +1146,25 @@ def _project_session_usage(spa_session_id: str, session_key: str,
     if output_tokens is None:
         output_tokens = live.get("outputTokens")
 
+    def _num(v):
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+
+    totals = {k: _num(usage.get(k)) for k in
+              ("input", "output", "cacheRead", "cacheWrite", "totalTokens", "totalCost", "missingCostEntries")}
+    costed = totals["missingCostEntries"] == 0 and totals["totalTokens"] > 0
+
+    # Right after a turn the gateway's cost cache for this transcript is still
+    # refreshing: the row comes back with `usage: undefined` and a top-level
+    # cacheStatus of refreshing/partial/stale. Surface that as `pending` so the
+    # client knows an empty row is "not yet", not "nothing", and can retry.
+    raw_cache_status = (payload or {}).get("cacheStatus")
+    cache_status = (raw_cache_status.get("status")
+                    if isinstance(raw_cache_status, dict) else None)
+    pending = cache_status not in (None, "fresh")
+
     return {
         "ok": True,
+        "pending": pending,
         "sessionId": spa_session_id,
         "model": model,
         "modelProvider": provider,
@@ -1141,6 +1181,8 @@ def _project_session_usage(spa_session_id: str, session_key: str,
             "errors": int(msgs.get("errors") or 0),
         },
         "context": context,
+        "totals": totals,
+        "costed": costed,
         "updatedAt": (live.get("updatedAt") or (payload or {}).get("updatedAt")
                       or row.get("updatedAt")),
     }

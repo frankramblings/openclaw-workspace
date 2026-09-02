@@ -7,6 +7,7 @@ import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, captureAgeLabel } from './mobile-data.js';
 import { providerLogo } from '../provider-logo.js';
 import { mruRows, mergeLiveFlags } from '../switcher.js';
+import { changesPaneHtml } from '../changes-view.js';
 
 // compact file tree (shared FS data) for the companion sheet's Files tab
 function fileTree(s) {
@@ -31,7 +32,8 @@ function fileTree(s) {
 }
 
 export function renderCompanionSheet(s) {
-  const onTerm = s.companionTab !== 'files';
+  const onChanges = s.companionTab === 'changes';
+  const onTerm = s.companionTab !== 'files' && !onChanges;
   const closing = !!s.companionSheetClosing;
   return `
   <div class="m-scrim${closing ? ' closing' : ''}" data-act="closeCompanion" aria-hidden="true"></div>
@@ -40,11 +42,13 @@ export function renderCompanionSheet(s) {
     <div class="m-seg-row">
       <div class="seg">
         <span class="${onTerm ? 'active' : ''}" data-act="companionTab" data-arg="terminal">Terminal</span>
-        <span class="${!onTerm ? 'active' : ''}" data-act="companionTab" data-arg="files">Files</span>
+        <span class="${!onTerm && !onChanges ? 'active' : ''}" data-act="companionTab" data-arg="files">Files</span>
+        <span class="${onChanges ? 'active' : ''}" data-act="companionTab" data-arg="changes">Changes</span>
       </div>
       <button class="m-sheet-x" data-act="closeCompanion">${I.x(15)}</button>
     </div>
-    ${onTerm ? `
+    ${onChanges ? `<div class="m-changes">${changesPaneHtml(s.live?.changes)}</div>`
+      : onTerm ? `
     <div class="m-term" style="display:flex;flex-direction:column;padding:0">
       <div class="cwd" style="padding:8px 16px 4px">~/.openclaw/workspace · this chat</div>
       <div style="flex:1;min-height:0" data-term-mount></div>

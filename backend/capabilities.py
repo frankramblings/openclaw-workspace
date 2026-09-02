@@ -8,7 +8,7 @@ import os
 import shutil
 from pathlib import Path
 
-from . import calendar_config, config
+from . import calendar_config, config, steer
 from .inbox import settings as _inbox_settings
 
 CORE_TABS = ["chat", "memory", "skills", "cron", "sessions", "notes", "documents", "models"]
@@ -76,4 +76,5 @@ def snapshot() -> dict:
     out["email"] = _email()
     out["calendar"] = _calendar()
     out["inbox"] = _inbox()
+    out["steer"] = steer.capability()
     return out

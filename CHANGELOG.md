@@ -11,6 +11,12 @@ This milestone (branch `v2-installable`) makes the workspace a first-class
 installable product that any OpenClaw user can run against their own gateway,
 not just the original maintainer's setup.
 
+### Pillar A: Agent control loop (real steering, 2026-09)
+
+- Chat: real steering. While Gary is working on a claude-cli chat, Enter injects your message into the running turn (Claude Code style); Alt+Enter or "Queue instead" keeps today's queue. Needs the `claude-cli-steer` gateway patch (deploy/gateway-patches).
+- Usage: hover or tap an assistant message for its tokens; the thread's context pill shows session totals; Settings → Usage charts 7 or 30 days from the gateway ledger (dollars only when every entry was priced).
+- Changes review: every turn ends with a "Changes · n files · +a −r" card; expand for per-file diffs, a companion Changes tab, and a guarded Revert. Works for edits made by any tool, including shell heredocs. Settings → Changes controls the watched folders.
+
 ### Phase 1 — Genericization (already merged to main)
 
 - All maintainer-specific identifiers removed from source and committed assets.

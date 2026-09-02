@@ -22,6 +22,7 @@ import { setLiveTurn } from './turn-ref.js';
 import { beginUploads, resolveUploads, failUploads, sendableAttach, uploadGate } from './attach-logic.js';
 import { buildSuggestContext, activitySummary, suggestSurvivesReattach } from './suggest-core.js';
 import { suggestGhost } from '../suggest-ghost.js';
+import { busySendMode, steerFallback } from './steer-logic.js';
 import {
   saveDraft, restoreDraft, dropDraft, loadDrafts, persistDrafts,
   scrollSnapshot, scrollDecision, pushMru, loadMru, persistMru,
@@ -34,6 +35,7 @@ import {
   sweepAgents as stripSweepAgents, renderChatStrip,
 } from '../chat-strip.js';
 import { buildSwitcherSections, flatRows, clampSel } from '../switcher.js';
+import { afterTurn as changesAfterTurn, attachHistory as changesAttachHistory } from './changes.js';
 
 // The throttled per-token render only patches the active message bubble in
 // place — it does NOT re-render `.composer-wrap`, which is where the strip
@@ -347,6 +349,11 @@ async function fetchThread(id, fallbackModel, name) {
       text: h.content || '',
       time: fmtTime(meta.timestamp),
       model: meta.model || model,
+      usage: (meta.usage && typeof meta.usage === 'object') ? meta.usage : null,
+      // Providers report usage differently (claude-cli stamps a placeholder
+      // output) — the renderers need to know which one produced this message.
+      provider: meta.provider || null,
+      costTotal: (typeof meta.cost === 'number') ? meta.cost : null,
     };
     // Backend rewrites machinery user-messages (followup seeds, injected
     // session-continuation seeds — see backend/syschatter.py) to a compact ⚙️
@@ -405,14 +412,73 @@ async function fetchThread(id, fallbackModel, name) {
   };
 }
 
+// One GET of a session's usage row. Returns the WHOLE payload (not just the
+// context pct) so the turn-done path can reuse this exact response instead of
+// firing a second identical GET a moment later — see refreshSidebarUsage.
 async function fetchUsage(id) {
   try {
     const u = await apiGet(`/api/sessions/${id}/usage`);
-    if (!u || !u.ok) return undefined;
-    return round1(u?.context?.usedPct);
+    if (!u || !u.ok) return null;
+    const chat = ensureChat(runtime.state || {});
+    if (id === chat.activeId) {
+      chat.sessionUsage = {
+        totals: u.totals || null,
+        costed: !!u.costed,
+        usedPct: round1(u?.context?.usedPct),
+        provider: u.modelProvider || null,
+      };
+    }
+    return u;
   } catch (_) {
-    return undefined;
+    return null;
   }
+}
+
+const usagePctOf = (u) => round1(u?.context?.usedPct);
+
+// Right after a turn the gateway's cost cache for the transcript is often
+// still refreshing, so the usage row comes back empty (backend marks it
+// `pending`). Retry ONCE after this delay; the refresh is sub-second for small
+// transcripts. Overridable from tests via __setUsageRetryMs.
+let USAGE_RETRY_MS = 2000;
+export function __setUsageRetryMs(ms) { USAGE_RETRY_MS = Number(ms) || 0; }
+
+// Apply a session usage payload to the just-finished assistant bubble (and to
+// the header pill when that session is still the one on screen). When the row
+// is not ready yet, schedule exactly one delayed retry.
+function applySessionUsage(u, target, forSessionId, allowRetry) {
+  const chatNow = ensureChat(runtime.state || {});
+  if (u && u.ok) {
+    if (forSessionId === chatNow.activeId) {
+      chatNow.sessionUsage = {
+        totals: u.totals || null,
+        costed: !!u.costed,
+        usedPct: u.context && u.context.usedPct,
+        provider: u.modelProvider || null,
+      };
+    }
+    const t = u.totals;
+    if (!target.usage && t && (Number(t.output) > 0 || Number(t.totalTokens) > 0)) {
+      target.usage = {
+        input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: t.cacheWrite,
+        _session: true, _provider: u.modelProvider || null,
+      };
+    }
+    throttledRender();
+  }
+  if (!allowRetry) return;
+  const notReady = !u || !u.ok || u.pending || Number(u.totals?.totalTokens) === 0;
+  if (!notReady) return;
+  setTimeout(() => {
+    const chatLater = ensureChat(runtime.state || {});
+    // Only retry while this session is still on screen, and never once a NEWER
+    // turn is running for it (that turn owns the usage row now).
+    if (forSessionId !== chatLater.activeId) return;
+    if (turn && turn.sessionId === forSessionId) return;
+    apiGet(`/api/sessions/${encodeURIComponent(forSessionId)}/usage`)
+      .then((u2) => applySessionUsage(u2, target, forSessionId, false))
+      .catch(() => {});
+  }, USAGE_RETRY_MS);
 }
 
 // Hydrate resolved update_blocks from the server into thread messages so
@@ -501,6 +567,25 @@ export async function load(state) {
   const enteredActiveId = chat.activeId;
   // sessions list — if this throws, loader keeps the mock.
   const sessions = await apiGet('/api/sessions');
+  // Steer capability (Pillar A): cached on state so the busy-composer
+  // decision is synchronous. Failure = unavailable, never a thrown load.
+  // Capabilities land AFTER a reload has already re-attached a running turn,
+  // and beginTurn computed chat.steerMode from the caps it had at the time
+  // (none) — leaving a stale "Send"/queue composer on a thread that can in
+  // fact be steered. Recompute once the real answer arrives.
+  apiGet('/api/capabilities').then((caps) => {
+    state.caps = caps || {};
+    if (turn && chat.busySessionId && chat.busySessionId === turn.sessionId) {
+      chat.steerMode = busySendMode({
+        busyHere: true,
+        steerAvailable: !!(state.caps.steer && state.caps.steer.available),
+        endpointId: chat.endpointId,
+        hasAttachments: false,
+        forceQueue: false,
+      }) === 'steer';
+      runtime.render();
+    }
+  }).catch(() => { state.caps = state.caps || {}; });
   if (chat.activeId !== enteredActiveId) return;
   const list = Array.isArray(sessions) ? sessions : [];
   chat.sessions = list;
@@ -560,6 +645,7 @@ export async function load(state) {
       chat.subtitle = t.subtitle;
       chat.model = t.model || fallbackModel;
       runtime.wantChatBottom = true;   // land on the latest message after refresh
+      changesAttachHistory(state, activeId, chat.thread).catch(() => {});
     } catch (_) {
       if (chat.activeId === activeId) {
         chat.thread = chat.thread || [];
@@ -595,7 +681,7 @@ export async function load(state) {
     if (chat.activeId !== activeId) return;
     try { await hydrateWarnings(activeId, chat.thread); } catch (_) { /* non-fatal */ }
     if (chat.activeId !== activeId) return;
-    const pct = await fetchUsage(activeId);
+    const pct = usagePctOf(await fetchUsage(activeId));
     if (pct != null && chat.activeId === activeId) chat.usagePct = pct;
   } else {
     chat.thread = [];
@@ -615,6 +701,7 @@ let liveES = null;           // active EventSource tail (resume / re-attach)
 let renderTimer = null;      // throttle handle for stream deltas
 let elapsedTimer = null;     // ticks the "Working… Ns" elapsed clock
 let turn = null;             // per-send activity state (see send())
+let _lastOnEvent = null;     // most recent turn's onEvent — test hook only (see __testOnEvent)
 let _notifyResuming = null;  // session id with a notifier-driven resume in flight
 const _stripPersistTimers = new Map(); // sessionId → pending persist timer
 
@@ -795,6 +882,90 @@ function flushStreamBuffer() {
     turn.asstMsg.text += turn.pending;
     turn.pending = '';
   }
+}
+
+// Close the current assistant bubble so the NEXT delta opens a fresh one
+// below it — used when a message steers into a running turn (Pillar A):
+// flush any buffered stream text into the bubble that's ending, mark it
+// no-longer-streaming, finalize any running think/tool steps, then clear
+// the turn's per-message slots and mint a fresh msgId. Shared by the
+// `user_steer` replay handler (onEvent, always safe — already epoch-guarded
+// upstream) and fireSteer's success path (guarded by its caller with
+// `turn && turn.sessionId === sessionId`, since its `await fetch` may
+// resolve after the turn has moved on).
+// Index of a history-sourced user bubble (id `h<i>`, from fetchThread) with
+// exactly `text` that sits AFTER the last history assistant message — i.e.
+// among the thread's trailing messages, which is where a steer persisted
+// mid-turn shows up on a reload. Returns -1 when there is no such bubble.
+// Exported for chat-steer.test.js.
+export function trailingHistorySteerIdx(thread, text) {
+  const list = Array.isArray(thread) ? thread : [];
+  let lastAsst = -1;
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i];
+    if (m && m.role === 'assistant' && /^h\d+$/.test(String(m.id || ''))) lastAsst = i;
+  }
+  for (let i = lastAsst + 1; i < list.length; i++) {
+    const m = list[i];
+    if (m && m.role === 'user' && !m.sys && /^h\d+$/.test(String(m.id || ''))
+        && String(m.text || '') === String(text || '')) return i;
+  }
+  return -1;
+}
+
+// Idempotent per steer id: fireSteer's 200 path and the `user_steer` frame
+// handler both call this within milliseconds of each other for the SAME steer,
+// and a delta arriving between the two would otherwise leave a spurious empty
+// assistant bubble behind. `turn.closedSteerIds` remembers which steer ids
+// already closed a bubble on THIS turn (it dies with the turn, as it should).
+function closeAsstBubbleForSteer(steerId) {
+  if (steerId) {
+    if (!turn.closedSteerIds) turn.closedSteerIds = new Set();
+    if (turn.closedSteerIds.has(steerId)) return;
+    turn.closedSteerIds.add(steerId);
+  }
+  flushStreamBuffer();
+  if (turn.asstMsg) turn.asstMsg.streaming = false;
+  if (turn.thinkStep) finalizeStep(turn.thinkStep);
+  if (turn.activity) finalizeTools(turn.activity);
+  turn.asstMsg = null; turn.activity = null; turn.thinkStep = null;
+  turn.msgId = uniqId('live-');
+}
+
+export const STEER_MISSED_NOTICE =
+  'Gary finished before reading this. It was saved to the thread; send it again if you still need an answer.';
+
+// Honesty rescue (Pillar A, review finding 1/3): a steer that lands after the
+// CLI's last tool boundary — or in the window between the CLI finishing its
+// output and the workspace recorder closing the turn — is accepted by the
+// route (the active-turn gate still passes) but never answered inside this
+// turn. The tell at 'done' is that the LAST message in the thread is a steer
+// bubble with nothing after it. Say so instead of leaving a bare "Steered
+// into the running turn" caption, and refetch history a few seconds later in
+// case the gateway did record a reply this client never saw streamed.
+export function maybeSteerRescue(chat, sessionId) {
+  const list = Array.isArray(chat.thread) ? chat.thread : [];
+  const last = list[list.length - 1];
+  if (!last || last.role !== 'user' || !last.steer || last.steerNotice) return;
+  last.steerNotice = STEER_MISSED_NOTICE;
+  if (!sessionId) return;
+  const before = list.length;
+  const handle = setTimeout(async () => {
+    const state = runtime.state;
+    if (!state) return;
+    const c = ensureChat(state);
+    // Only refetch into a view that is still this thread and still idle — a
+    // new turn (or a thread switch) owns chat.thread now.
+    if (c.activeId !== sessionId || turn) return;
+    try {
+      const t = await fetchThread(sessionId, c.model, c.title);
+      if (c.activeId !== sessionId || turn) return;
+      const thread = dedupeAdjacentUserMessages(t.thread, 'dropped-steer-rescue');
+      if (thread.length > before) { c.thread = thread; runtime.render(); }
+    } catch (_) { /* best-effort — the notice already told the truth */ }
+  }, 3000);
+  // Node's timers keep the process alive; the browser's don't have .unref.
+  if (handle && typeof handle.unref === 'function') handle.unref();
 }
 
 // AskUserQuestion tool_start → card model, or null if not a question tool.
@@ -1046,9 +1217,13 @@ async function refreshSidebarUsage(state) {
     if (name) chat.title = name;
   } catch (_) { /* keep */ }
   if (Array.isArray(chat.thread)) chat.subtitle = `${chat.thread.length} messages · ${chat.model || ''}`;
-  const pct = await fetchUsage(id);
-  if (pct != null) chat.usagePct = pct;
+  const u = await fetchUsage(id);
+  const pct = usagePctOf(u);
+  // Guard: the user may have switched threads while the GET was in flight.
+  if (pct != null && chat.activeId === id) chat.usagePct = pct;
   runtime.render();
+  // Hand the payload back so the turn-done path can reuse it (one GET/turn).
+  return { id, usage: u };
 }
 
 // Pure slicing step for branchFromMessage — split out so it's unit-testable
@@ -1080,7 +1255,7 @@ export function clearBranchPrefixIfStarted(state, chat) {
   }
 }
 
-async function createSession(model) {
+async function createSession(model, endpointId) {
   let endpoint_url = '';
   let endpoint_id = '';
   let m = model;
@@ -1090,6 +1265,11 @@ async function createSession(model) {
     endpoint_id = dc?.endpoint_id || '';
     if (!m) m = dc?.model || '';
   } catch (_) { /* ignore */ }
+  // The picked model owns its endpoint (chat.endpointId). Using the
+  // default-chat endpoint instead cross-pairs a non-default model (e.g. a
+  // local/Kamino model with the claude-cli endpoint), which the /api/session
+  // guard rejects with a 400 → "Couldn't start the chat". Honor the selection.
+  if (endpointId) endpoint_id = endpointId;
   const res = await apiForm('/api/session', {
     name: 'New chat',
     model: m,
@@ -1140,7 +1320,19 @@ function beginTurn(chat, modelLabel, sessionId) {
   // `epoch` is this turn's identity: closures below capture it and no-op once
   // superseded (see _turnEpoch above).
   const epoch = ++_turnEpoch;
-  turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: uniqId('live-'), lastFrameMs: Date.now(), got404: false };
+  turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: uniqId('live-'), lastFrameMs: Date.now(), got404: false, closedSteerIds: new Set() };
+  // The session this running turn belongs to — steer-view.js's
+  // steerComposerHints() compares this against chat.activeId to decide
+  // whether the composer shows "Steer"/the queue chip for the VIEWED thread
+  // (a turn busy in another thread must not paint this thread's composer).
+  chat.busySessionId = turn.sessionId || chat.activeId || null;
+  chat.steerMode = busySendMode({
+    busyHere: true,
+    steerAvailable: !!(runtime.state && runtime.state.caps && runtime.state.caps.steer && runtime.state.caps.steer.available),
+    endpointId: chat.endpointId,
+    hasAttachments: false,
+    forceQueue: false,
+  }) === 'steer';
   // A fresh turn for this session supersedes any stop-dedupe record: the
   // stopped bubble now belongs to an OLDER, finished exchange and must stay.
   // (attachTurn consumes the record BEFORE calling beginTurn, so the failed-
@@ -1222,6 +1414,9 @@ function beginTurn(chat, modelLabel, sessionId) {
           : `Worked for ${a.elapsed} · ${a.steps.length} steps`;
       }
       stopElapsed();
+      // BEFORE the empty-reply notice below, which appends an assistant bubble
+      // and would hide the "steer bubble is last" tell this reads.
+      maybeSteerRescue(chat, turn.sessionId);
       const hadText = turn.asstMsg && String(turn.asstMsg.text || '').trim();
       const hadWork = turn.activity && (turn.activity.steps || []).some((st) => st.kind !== 'think');
       if (!hadText && !hadWork && !turn.got404) {
@@ -1231,8 +1426,29 @@ function beginTurn(chat, modelLabel, sessionId) {
       }
       chat.suggest = null; // a finished turn invalidates any "While you wait" ghost
       flushRender();
-      if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); turn = null; return; }
-      refreshSidebarUsage(runtime.state);
+      // Changes review (Pillar A, task 8): the change-tracking window around
+      // this turn closes server-side a beat after `done` — poll for the
+      // record and attach it to the just-finished bubble once it lands.
+      if (turn.asstMsg && turn.turnId != null) changesAfterTurn(turn.sessionId, turn.turnId, turn.asstMsg).catch(() => {});
+      if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); chat.busySessionId = null; turn = null; return; }
+      const sidebarDone = refreshSidebarUsage(runtime.state);
+      // Per-turn usage: prefer what the done frame carries; otherwise reuse the
+      // session usage row refreshSidebarUsage just fetched (the gateway stamps
+      // it at turn end) rather than firing an identical second GET.
+      if (turn.asstMsg) {
+        if (ev.usage && typeof ev.usage === 'object') {
+          turn.asstMsg.usage = ev.usage;
+        } else if (turn.sessionId) {
+          const target = turn.asstMsg;
+          const forSessionId = turn.sessionId;
+          sidebarDone.then((res) => {
+            if (res && res.id === forSessionId) return res.usage;
+            // The sidebar refreshed a DIFFERENT session (the user switched
+            // threads as the turn landed) — fetch this turn's row ourselves.
+            return apiGet(`/api/sessions/${encodeURIComponent(forSessionId)}/usage`).catch(() => null);
+          }).then((u) => applySessionUsage(u, target, forSessionId, true)).catch(() => {});
+        }
+      }
       // Follow-up ghost suggestion — only after a CLEAN finish (an explicit
       // turn_end status of 'ok' AND a real reply; endStatus is undefined when
       // the stream dropped, and hadText/hadWork are false on the empty-reply
@@ -1240,9 +1456,16 @@ function beginTurn(chat, modelLabel, sessionId) {
       // queued (flushQueuedFor fires a queued message into a new turn, which
       // would immediately invalidate the suggestion anyway).
       const cleanFinish = turn.endStatus === 'ok' && !!(hadText || hadWork);
+      // Notify push-to-talk (ptt.js) so it can auto-speak this reply in voice mode.
+      if (cleanFinish && turn.asstMsg && turn.asstMsg.id && String(turn.asstMsg.text || '').trim()) {
+        try {
+          window.dispatchEvent(new CustomEvent('gary:reply-complete', { detail: { id: turn.asstMsg.id } }));
+        } catch (_) { /* non-fatal */ }
+      }
       const doneSid = turn.sessionId;
       const hadQueued = !!queueHead(chat.queuedList, doneSid);
       setLiveTurn(null);
+      chat.busySessionId = null;
       turn = null;
       flushQueuedFor(chat, doneSid);
       if (cleanFinish && !hadQueued) fetchSuggestion(chat, 'followup', null);
@@ -1285,6 +1508,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       const errSid = turn.sessionId;     // capture before teardown
       const statusless = !ev.status;     // dropped mid-turn (vs an HTTP-level POST failure)
       setLiveTurn(null);
+      chat.busySessionId = null;
       turn = null;
       // Statusless drop on the visible thread: the turn may have COMPLETED
       // server-side while our reader was dead (event_store owns the turn, not
@@ -1337,6 +1561,36 @@ function beginTurn(chat, modelLabel, sessionId) {
       ensureActivity();
       if (!turn.thinkStep || turn.thinkStep.state !== 'running') turn.thinkStep = newStep('think');
       turn.thinkStep.body = (turn.thinkStep.body || '') + ev.delta;
+      throttledRender();
+      return;
+    }
+    // A message steered into THIS running turn (ours or another tab's). Show
+    // it once (client_id dedupes the sender's optimistic bubble) and close the
+    // current assistant bubble so the continuation opens a fresh one below.
+    if (ev.type === 'user_steer') {
+      if (!Array.isArray(chat.thread)) chat.thread = [];
+      const id = ev.client_id || uniqId('live-u-');
+      const text = ev.text || '';
+      if (!chat.thread.some((m) => m.id === id)) {
+        // Leave-and-return / reload mid-turn: the steer was persisted the
+        // moment it landed, so fetchThread ALREADY returned it as a history
+        // bubble (id `h<i>`), and now attachTurn replays the same frame with
+        // the live client_id — two copies of one message. client_id dedupe
+        // can't see that, so also look for a same-text history user bubble
+        // sitting AFTER the last history assistant message (i.e. among the
+        // thread's trailing messages, where a mid-turn steer lands). Found →
+        // move it to the current position and caption it, keeping its id.
+        const histIdx = trailingHistorySteerIdx(chat.thread, text);
+        if (histIdx >= 0) {
+          const [existing] = chat.thread.splice(histIdx, 1);
+          existing.steer = true;
+          chat.thread.push(existing);
+        } else {
+          chat.thread.push({ id, role: 'user', text, time: fmtTime(ev.ts || Date.now()), attach: [], steer: true });
+        }
+      }
+      closeAsstBubbleForSteer(id);
+      runtime.wantChatBottom = true;
       throttledRender();
       return;
     }
@@ -1407,8 +1661,14 @@ function beginTurn(chat, modelLabel, sessionId) {
     // agent_step / metrics / run_alive / stall: ignored
   };
 
+  _lastOnEvent = onEvent;
   return { onEvent, ensureActivity };
 }
+
+// Test hook (Pillar A / Task 6): the current turn's onEvent, so
+// chat-steer.test.js can feed a `user_steer` replay frame without a real
+// SSE/postStream reader. Not used by production code.
+export function __testOnEvent() { return _lastOnEvent; }
 
 // The network half of a send: detach any prior live reader, open a turn, and
 // POST /api/chat_stream. Shared by the immediate path (dispatchSend) and the
@@ -1448,12 +1708,60 @@ function fireSend(sessionId, text, attachSnap) {
   );
 }
 
+// Steer: inject `text` into the RUNNING turn of `sessionId`. The optimistic
+// bubble is already in the thread (marked steer:true). Success → nothing
+// else to do here: the server appends a user_steer frame that every reader
+// (this tab included, deduped by client_id) consumes, and the next delta
+// opens a fresh assistant bubble. Failure → withdraw the bubble and either
+// send normally (turn already ended) or queue (anything else).
+async function fireSteer(sessionId, text, messageId) {
+  const state = runtime.state;
+  if (!state) return;
+  const chat = ensureChat(state);
+  let status = 0, body = null;
+  try {
+    const res = await fetch(`${location.origin}/api/chat/steer/${encodeURIComponent(sessionId)}`, {
+      method: 'POST', credentials: 'same-origin',
+      // keepalive: the whole point of a steer is that it lands in a turn that
+      // is already running — if the tab is backgrounded or torn down between
+      // the flush and this request, the browser must still deliver it.
+      keepalive: true,
+      body: (() => { const fd = new FormData(); fd.append('message', text); fd.append('client_id', messageId); return fd; })(),
+    });
+    status = res.status;
+    try { body = await res.json(); } catch (_) { body = null; }
+    if (res.ok) {
+      const m = (chat.thread || []).find((x) => x.id === messageId);
+      if (m && turn && turn.sessionId === sessionId) closeAsstBubbleForSteer(messageId);
+      runtime.render();
+      return;
+    }
+  } catch (_) { status = 0; body = null; }
+  const idx = (chat.thread || []).findIndex((x) => x.id === messageId);
+  if (idx >= 0) chat.thread.splice(idx, 1);
+  if (steerFallback(status, body) === 'send') {
+    // no_active_turn: the server just told us, authoritatively, that this
+    // session's turn is already over — the client's local `turn` slot may
+    // still look busy (its stream reader hasn't seen 'done' yet). Fire
+    // immediately via the same unbuffered path flushQueuedFor uses for
+    // "turn just ended, send the next one now" (dispatchSend), not another
+    // 700ms-buffered submitFromComposer — the message already sat through
+    // one buffer window during the steer attempt.
+    await dispatchSend(text, []);
+  } else {
+    chat.queuedList = [...(chat.queuedList || []), { sid: sessionId, text, attachSnap: [] }];
+    syncQueuedView(chat);
+    toast('Could not steer the running turn. Queued to send when it finishes.');
+  }
+  runtime.render();
+}
+
 // Ensure a session exists for the active chat, creating one on first send.
 // Returns the session id, or null if creation failed.
 async function ensureSessionId(chat) {
   if (chat.activeId) return chat.activeId;
   try {
-    const id = await createSession(chat.model);
+    const id = await createSession(chat.model, chat.endpointId);
     if (!id) return null;
     chat.activeId = id;
     storeActiveId(id);
@@ -1507,7 +1815,7 @@ const BUFFER_MS = 700;
 // ONLY when the session couldn't be created (offline first send in a new
 // chat) so the caller can restore the draft — every other early exit means
 // "nothing to send" and returns true.
-async function submitFromComposer(text, attachSnap) {
+async function submitFromComposer(text, attachSnap, opts = {}) {
   const state = runtime.state;
   if (!state) return true;
   const chat = ensureChat(state);
@@ -1526,9 +1834,9 @@ async function submitFromComposer(text, attachSnap) {
   if (!Array.isArray(chat.thread)) chat.thread = [];
   chat.thread.push({
     id: messageId, role: 'user', text, time: fmtTime(Date.now()), attach: attachSnap || [],
-    _optimistic: true, _deadline: deadline,
+    _optimistic: true, _deadline: deadline, steer: !!opts.steer,
   });
-  chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0 };
+  chat.pendingSend = { messageId, text, attachSnap: attachSnap || [], sessionId, deadline, timerId: 0, steer: !!opts.steer };
   chat.chatStrip = stripOnUserSend(chat.chatStrip);
   clearBranchPrefixIfStarted(state, chat);
   runtime.wantChatBottom = true;
@@ -1626,6 +1934,17 @@ export function flushPending(sessionId, opts) {
   // Either way, the optimistic bubble comes out of the thread (the queued
   // banner represents it now) and the message auto-sends via flushQueuedFor
   // the next time its own thread is active and idle.
+  if (busy && p.steer && !crossView) {
+    // Steer path: the optimistic bubble STAYS (it is the steer message) and the
+    // POST goes to /api/chat/steer instead of opening a second turn.
+    const msg = (chat.thread || []).find((m) => m.id === p.messageId);
+    if (msg) { delete msg._optimistic; delete msg._deadline; }
+    // Render before the POST so the countdown ring disappears the instant the
+    // buffer window closes, rather than a network round-trip later.
+    runtime.render();
+    fireSteer(sid, p.text, p.messageId).catch(() => { /* fireSteer handles its own fallbacks */ });
+    return;
+  }
   if (busy || (crossView && !isPagehide)) {
     const idx = (chat.thread || []).findIndex((m) => m.id === p.messageId);
     if (idx >= 0) chat.thread.splice(idx, 1);
@@ -1635,7 +1954,15 @@ export function flushPending(sessionId, opts) {
     return;
   }
   const msg = (chat.thread || []).find((m) => m.id === p.messageId);
-  if (msg) { msg.text = p.text; delete msg._optimistic; delete msg._deadline; }
+  // The turn this message was going to steer ENDED inside the buffer window,
+  // so it falls through to the normal send path and starts a brand-new turn.
+  // Drop the steer flag with it — captioning a fresh turn's first message
+  // "Steered into the running turn" would be a lie.
+  if (msg) {
+    msg.text = p.text;
+    delete msg._optimistic; delete msg._deadline;
+    delete msg.steer; delete msg.steerNotice;
+  }
   runtime.render();
   fireSend(sid, p.text, p.attachSnap);
 }
@@ -1741,6 +2068,7 @@ function finalizeLocal(chat, interrupted) {
     turn.asstMsg.notice = 'This turn was interrupted by a backend restart — the reply may be incomplete.';
   }
   setLiveTurn(null);
+  chat.busySessionId = null;
   turn = null;
   stopElapsed();
   if (chat.chatStrip) { chat.chatStrip = stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }
@@ -2461,7 +2789,18 @@ export const actions = {
     // below if the thread we're opening has its own in-flight turn.
     stopLive();
     stopElapsed();
+    // Detaching, not ending: the turn (if any) keeps running server-side.
+    // Null busySessionId anyway — this client no longer has a live `turn`
+    // to steer/queue into, and reconcileTurn (below) re-derives the truth
+    // via beginTurn if this (or the destination) thread turns out to still
+    // be busy, rather than trusting a stale id no one is attached to.
     turn = null;
+    chat.busySessionId = null;
+    // The header pill's tokens/context belong to the thread we're leaving —
+    // drop them so the new thread never shows the old one's numbers while its
+    // own usage row is still in flight.
+    chat.sessionUsage = null;
+    chat.usagePct = undefined;
     _pendingByTurnId.clear();
     chat.rowMenuOpen = null;
     chat.suggest = null;
@@ -2533,6 +2872,7 @@ export const actions = {
       const dec = scrollDecision(chat.scroll[id], finishedAway);
       if (dec.bottom) { runtime.wantChatBottom = true; runtime.restoreScrollTop = null; }
       else { runtime.wantChatBottom = false; runtime.restoreScrollTop = dec.top; }
+      changesAttachHistory(state, id, chat.thread).catch(() => {});
     } catch (_) {
       // A GENUINE failure (not a race — chat.activeId is still `id`) leaves
       // the PREVIOUS session's thread on screen under this NEW activeId, with
@@ -2554,7 +2894,7 @@ export const actions = {
     if (chat.activeId !== id) return;
     try { await hydrateWarnings(id, chat.thread); } catch (_) { /* non-fatal */ }
     if (chat.activeId !== id) return;
-    const pct = await fetchUsage(id);
+    const pct = usagePctOf(await fetchUsage(id));
     if (pct != null && chat.activeId === id) chat.usagePct = pct;
     runtime.render();
     // Acknowledge unseen followups for this session (fire-and-forget)
@@ -2574,6 +2914,9 @@ export const actions = {
     stopLive();
     stopElapsed();
     turn = null;
+    chat.busySessionId = null; // detaching, not ending — see selectSession's comment
+    chat.sessionUsage = null;  // a fresh chat has no usage of its own yet
+    chat.usagePct = undefined;
     _pendingByTurnId.clear();
     const _leavingId = chat.activeId;
     saveStripForCurrent(chat);
@@ -2634,6 +2977,13 @@ export const actions = {
   send: async () => {
     const state = runtime.state;
     if (!state) return;
+    // Read-and-clear immediately, before any early return below (uploadGate,
+    // empty-composer) — sendQueued sets this then calls send(); if it only got
+    // cleared past those early-return points, an Alt+Enter on an empty
+    // composer or mid-upload would leave it set and silently force-queue the
+    // user's NEXT, unrelated send even though steering was available for it.
+    const forceQueue = !!state._forceQueue;
+    state._forceQueue = false;
     const text = (state.draft || '').trim();
     // Uploads still in flight (or dead) gate the send — the old snapshot took
     // whatever had RESOLVED, silently sending without the file that was still
@@ -2647,15 +2997,25 @@ export const actions = {
     const chat = ensureChat(state);
     chat.suggest = null; // sending (or queueing) consumes any ghost suggestion
 
-    // A turn is already streaming FOR THIS THREAD → queue this message instead of
-    // starting a second turn against the same thread. It shows as a pending
-    // banner the user can edit (recall) or cancel; when the current turn ends it
-    // auto-sends (see flushQueuedFor in the turn-end paths). Appended to the
-    // session-keyed list, so a second queued message never overwrites the
-    // first. A turn streaming in a DIFFERENT thread must NOT gate this send —
-    // that turn keeps running + recording server-side, and dispatchSend()
-    // detaches our reader from it.
-    if (turn && turn.sessionId === chat.activeId) {
+    // A turn is already streaming FOR THIS THREAD → either steer it into the
+    // running turn (claude-cli, capability available, text-only) or queue this
+    // message instead of starting a second turn against the same thread — the
+    // queued banner the user can edit (recall) or cancel; when the current
+    // turn ends it auto-sends (see flushQueuedFor in the turn-end paths).
+    // Appended to the session-keyed list, so a second queued message never
+    // overwrites the first. A turn streaming in a DIFFERENT thread must NOT
+    // gate this send — that turn keeps running + recording server-side, and
+    // dispatchSend() detaches our reader from it.
+    const busyHere = !!(turn && turn.sessionId === chat.activeId);
+    const mode = busySendMode({
+      busyHere,
+      steerAvailable: !!(state.caps && state.caps.steer && state.caps.steer.available),
+      endpointId: chat.endpointId,
+      hasAttachments: attachSnap.length > 0,
+      forceQueue,
+    });
+    chat.steerMode = mode === 'steer';
+    if (mode === 'queue') {
       chat.queuedList = [...(chat.queuedList || []), { sid: chat.activeId, text, attachSnap }];
       syncQueuedView(chat);
       state.draft = '';
@@ -2663,6 +3023,12 @@ export const actions = {
       _persistDraftsNow(chat);
       state.pendingAttach = [];
       runtime.render();
+      return;
+    }
+    if (mode === 'steer') {
+      state.draft = '';
+      state.pendingAttach = [];
+      await submitFromComposer(text, [], { steer: true });
       return;
     }
 
@@ -2680,6 +3046,15 @@ export const actions = {
       toast('Couldn’t start the chat — check your connection and try again.');
       runtime.render();
     }
+  },
+
+  // Explicit "queue for after": Alt+Enter or the composer chip. Same as send,
+  // with steering forced off for this one message.
+  sendQueued: async () => {
+    const state = runtime.state;
+    if (!state) return;
+    state._forceQueue = true;
+    await actions.send();
   },
 
   // Pull the ACTIVE session's first queued message back into the composer to
@@ -2768,6 +3143,7 @@ export const actions = {
       a.elapsed = fmtElapsed(a.startMs);
       a.worked = `Stopped after ${a.elapsed} · ${a.steps.length} steps`;
     }
+    if (chat) chat.busySessionId = null;
     turn = null;
     // Stop is a deliberate halt — don't auto-fire a queued follow-up. Hand it
     // back to the composer so the user decides whether to send it. Keyed to

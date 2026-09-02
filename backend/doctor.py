@@ -7,7 +7,7 @@ import asyncio
 
 import websockets.exceptions
 
-from . import bridge, config
+from . import bridge, config, steer
 
 # Connection-layer failures that mean "couldn't reach/complete the WS" (vs a
 # RuntimeError, which the bridge raises for a rejected handshake or method error).
@@ -98,6 +98,22 @@ def _check_version(hello: dict | None) -> dict:
     return _ok("openclaw_version", f"{ver}" if ver else "unknown (not reported)")
 
 
+def _check_steer_patch() -> dict:
+    """OPTIONAL check: the steer patch is a nice-to-have (mid-turn steering).
+    Without it the workspace works exactly as before — the composer just
+    queues instead of steering — so a missing patch must NOT make the whole
+    doctor run fail (scripts/doctor.sh exit 1 on every fresh install). The
+    FAIL line + hint still print; summarize() ignores it for the top-level ok."""
+    if steer.patch_present():
+        check = _ok("steer_patch", "claude-cli steer patch present")
+    else:
+        check = _fail("steer_patch",
+                      "claude-cli steer patch missing: run deploy/gateway-patches/"
+                      "claude-cli-steer.py (see README)")
+    check["optional"] = True
+    return check
+
+
 async def run_checks() -> list[dict]:
     reachable, hello = await _check_reachable()
     checks = [reachable, _check_agent_id(), _check_version(hello)]
@@ -105,8 +121,13 @@ async def run_checks() -> list[dict]:
         checks.append(await _check_methods())
     else:
         checks.append(_fail("methods", "skipped (gateway unreachable)", ""))
+    checks.append(_check_steer_patch())
     return checks
 
 
 def summarize(checks: list[dict]) -> dict:
-    return {"ok": all(c["ok"] for c in checks), "checks": checks}
+    """Top-level `ok` covers only checks that are REQUIRED for the workspace to
+    work. Checks marked `optional` still report their own ok/detail/hint (and
+    still print as FAIL lines) but never flip the overall verdict."""
+    return {"ok": all(c["ok"] for c in checks if not c.get("optional")),
+            "checks": checks}

@@ -115,6 +115,58 @@ export async function load(state) {
       if (bag.search_result_count != null) state.searchResultCount = Number(bag.search_result_count);
     }
   } catch (_) { /* keep default ui */ }
+
+  // 3) Settings → Usage: token/cost summary from the gateway usage ledger.
+  loadUsage(state).catch(() => {});
+
+  // 4) Settings → Changes: watched roots, prune list, cache size.
+  loadChangesSettings(state).catch(() => {});
+}
+
+// Settings → Usage: GET /api/usage/summary?days=7|30 into state.live.usage.
+// Fire-and-forget from load(); also called directly by the usageDays /
+// usageRetry actions below.
+export async function loadUsage(state, days) {
+  state.live = state.live || {};
+  const cur = state.live.usage || { days: 7, data: null, error: null };
+  const n = days || cur.days || 7;
+  state.live.usage = { days: n, data: cur.data, error: null };
+  try {
+    const data = await apiGet(`/api/usage/summary?days=${n}`);
+    state.live.usage = {
+      days: n,
+      data,
+      fresh: !(data && data.fresh === false),
+      error: data && data.ok ? null : ((data && data.reason) || 'unknown'),
+    };
+  } catch (e) {
+    // Prefer the backend's own reason (apiGet attaches the parsed error body)
+    // over the bare HTTP status, so a gateway failure reads as gateway_error.
+    const reason = e && e.body && typeof e.body === 'object' && e.body.reason;
+    const status = e && e.status;
+    state.live.usage = {
+      days: n,
+      data: null,
+      error: reason || (status ? `http ${status}` : 'network'),
+    };
+  }
+  runtime.render();
+}
+
+// Settings → Changes: watched roots / prune list / cache stats from the
+// change-review backend into state.live.changesSettings. Fire-and-forget
+// from load(); also re-called after every write below so the panel reflects
+// what the backend actually saved rather than an optimistic guess.
+export async function loadChangesSettings(state) {
+  state.live = state.live || {};
+  const cur = state.live.changesSettings || { config: null, stats: null, saving: false, error: null, rebuild: { running: false } };
+  try {
+    const [c, s] = await Promise.all([apiGet('/api/changes/config'), apiGet('/api/changes/stats')]);
+    state.live.changesSettings = { ...cur, config: c.config, stats: s, rebuild: s.rebuild || { running: false }, error: null };
+  } catch (e) {
+    state.live.changesSettings = { ...cur, error: 'Could not load change-review settings.' };
+  }
+  runtime.render();
 }
 
 export const actions = {
@@ -318,5 +370,48 @@ export const actions = {
       runtime.state.inboxToast = { msg, undoTs: null };
       runtime.render();
     }
+  },
+
+  // Settings → Usage: day-range toggle and error-state retry.
+  usageDays: (n) => { loadUsage(runtime.state, Number(n) === 30 ? 30 : 7); },
+  usageRetry: () => { loadUsage(runtime.state); },
+
+  // Settings → Changes: add/remove watched roots, save the prune list, and
+  // trigger a rebuild. Every write re-fetches config+stats (loadChangesSettings)
+  // instead of trusting an optimistic guess, so the panel always shows what
+  // the backend actually saved.
+  changesAddRoot: async () => {
+    const state = runtime.state; const cs = state.live.changesSettings; if (!cs || !cs.config) return;
+    const p = String(state.changesRootDraft || '').trim(); if (!p) return;
+    cs.saving = true; runtime.render();
+    try { await apiJson('/api/changes/config', { roots: [...cs.config.roots, p] }, 'PUT'); state.changesRootDraft = ''; }
+    catch (e) { cs.error = /400/.test(String(e && e.message)) ? 'Root must be an absolute path.' : 'Save failed.'; }
+    cs.saving = false; await loadChangesSettings(state);
+  },
+  changesRemoveRoot: async (path) => {
+    const state = runtime.state; const cs = state.live.changesSettings; if (!cs || !cs.config) return;
+    try { await apiJson('/api/changes/config', { roots: cs.config.roots.filter((r) => r !== path) }, 'PUT'); } catch (_) { cs.error = 'Save failed.'; }
+    await loadChangesSettings(state);
+  },
+  changesSavePrune: async () => {
+    const state = runtime.state; const cs = state.live.changesSettings; if (!cs) return;
+    // The generic data-model input handler only ever sets state.changesPruneDraft
+    // when the user actually types in the textarea — clicking "Save prune list"
+    // on an untouched field leaves it undefined. String(undefined || '') used to
+    // silently coerce that into '', sending {prune_dirs: []} and wiping the
+    // saved list even though the textarea displayed the right value. Mirror the
+    // render-side fallback (changes-settings.js's `m.pruneDraft != null ? … :
+    // cfg.prune_dirs`) here: only parse and send when the draft is a real
+    // string; otherwise no-op rather than guess.
+    if (typeof state.changesPruneDraft !== 'string') return;
+    const list = state.changesPruneDraft.split('\n').map((s) => s.trim()).filter(Boolean);
+    try { await apiJson('/api/changes/config', { prune_dirs: list }, 'PUT'); } catch (_) { cs.error = 'Save failed.'; }
+    await loadChangesSettings(state);
+  },
+  changesRebuild: async () => {
+    const state = runtime.state; const cs = state.live.changesSettings; if (!cs) return;
+    cs.rebuild = { running: true, root: 'all roots' }; runtime.render();
+    try { await apiJson('/api/changes/rebuild', {}); } catch (_) { cs.error = 'Rebuild failed or already running.'; }
+    await loadChangesSettings(state);
   },
 };

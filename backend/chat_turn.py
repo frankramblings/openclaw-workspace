@@ -32,7 +32,7 @@ import logging
 import re
 import time
 
-from . import (bridge, config, draft_mode, event_store, local_llm,
+from . import (bridge, changes, config, draft_mode, event_store, local_llm,
                promise_guard, push, sessions_store, terminals, turn_state,
                websearch)
 from .attachments import _terminal_attachments
@@ -42,6 +42,41 @@ from .attachments import _terminal_attachments
 # logger name identical is part of "no behavior change" — log filters and the
 # observability test that pins turn-close warnings to backend.app stay valid.
 _log = logging.getLogger("backend.app")
+
+
+CHANGES_TIMEOUT_S = 5.0
+_CHANGES_TASKS: set = set()
+
+
+async def changes_begin(session_key: str, turn_id: int) -> None:
+    """Open the change-review window for this turn. Bounded and never raises:
+    a slow or failing scan must not delay or break the turn.
+
+    The deadline is passed through because wait_for cannot stop the worker
+    thread: without it a scan that finishes after we gave up would register an
+    _ACTIVE entry for a turn that has already ended."""
+    try:
+        deadline = time.monotonic() + CHANGES_TIMEOUT_S
+        await asyncio.wait_for(asyncio.to_thread(changes.turn_started, session_key, turn_id, deadline),
+                               CHANGES_TIMEOUT_S)
+    except Exception:  # noqa: BLE001 - includes TimeoutError
+        _log.warning("changes.turn_started skipped for %s/%s", session_key, turn_id, exc_info=True)
+
+
+def changes_end_later(session_key: str, turn_id: int, *, delay: float = 1.5) -> asyncio.Task:
+    """Close the window after a short settle so late writes (editors flushing,
+    a final `tee`) land inside the turn. Detached: the turn is already done."""
+    async def _run():
+        try:
+            await asyncio.sleep(delay)
+            await asyncio.wait_for(asyncio.to_thread(changes.turn_ended, session_key, turn_id),
+                                   CHANGES_TIMEOUT_S * 4)
+        except Exception:  # noqa: BLE001
+            _log.warning("changes.turn_ended failed for %s/%s", session_key, turn_id, exc_info=True)
+    task = asyncio.create_task(_run())
+    _CHANGES_TASKS.add(task)
+    task.add_done_callback(_CHANGES_TASKS.discard)
+    return task
 
 
 # Idle keepalive for the POST tail (seconds): a `: keepalive` comment keeps
@@ -336,6 +371,11 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
     done_emitted = False
     status = "ok"
     try:
+        # Inside the try/finally (not before it): changes.turn_started can be
+        # slow on a cold cache (it seeds), and a Stop landing while we're still
+        # awaiting it must still hit the finally below so turn_end/[DONE] and
+        # the turn_state/turn_tasks cleanup are never skipped.
+        await changes_begin(session_key, turn_id)
         async for chunk in source:
             # Collect response text for push notification
             try:
@@ -371,6 +411,7 @@ async def record_turn(session_key: str, source, *, turn_tasks: dict) -> None:
         except Exception:  # noqa: BLE001 - ledger I/O must never break the turn
             _log.warning("turn_state.turn_ended failed for session %s -- "
                          "continuing", session_key, exc_info=True)
+        changes_end_later(session_key, turn_id)
         turn_tasks.pop(session_key, None)
 
 

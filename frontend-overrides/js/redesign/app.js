@@ -133,7 +133,12 @@ let _convFilterRenderTimer = null;  // mobile: coalesce conv-search re-renders
 // NOTE: 'quick' must stay in the DEBOUNCED set, not here — the desktop
 // calendar renders its "↵ Add" button conditionally on state.quick, so a
 // full render skip would freeze the button out of the DOM while typing.
-const PLAIN_SHEET_FIELDS = new Set(['captureDraft', 'composeTo', 'composeSubject', 'composeBody']);
+// changesRootDraft / changesPruneDraft belong here too: Settings re-renders
+// its whole panel per keystroke, and neither field has any dependent view to
+// catch up. The DOM holds the typed value and changesAddRoot /
+// changesSavePrune read it back from state.
+const PLAIN_SHEET_FIELDS = new Set(['captureDraft', 'composeTo', 'composeSubject', 'composeBody',
+  'changesRootDraft', 'changesPruneDraft']);
 // These DO have a results list that must eventually catch up with what
 // was typed, so instead of skipping forever they get one coalesced render
 // after a short typing pause — the same idea as convFilter's own (mobile-
@@ -1444,6 +1449,7 @@ root.addEventListener('keydown', (e) => {
   const sendCombo = (e.metaKey || e.ctrlKey) || (fk === 'draft' && !e.shiftKey);
   if (sendCombo) {
     e.preventDefault();
+    if (e.altKey && actions.sendQueued) { actions.sendQueued(); render(); return; }
     if (actions.send) { actions.send(); render(); }
   }
 });
@@ -1588,6 +1594,25 @@ function setMobileKb(on) {
   state.keyboard = on;
   const app = root.querySelector('.m-app');
   if (app) app.classList.toggle('kb-up', on);
+  syncVisualViewport();
+}
+
+// iOS does NOT shrink the layout viewport when the software keyboard opens, so
+// .m-app (height:100%) keeps its full-screen box and the composer — the bottom
+// flex child — ends up BEHIND the keyboard, untappable (can't hit Send or the
+// suggestion chip). visualViewport DOES report the shrunk visible area, so mirror
+// its height into --vvh; the .m-app.kb-up rule caps the app to it, lifting the
+// composer flush above the keyboard. offsetTop covers the case where iOS also
+// shifts the layout viewport up.
+function syncVisualViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  document.documentElement.style.setProperty('--vvh', (vv.height + vv.offsetTop) + 'px');
+}
+if (window.visualViewport && !window.__vvKbWired) {
+  window.__vvKbWired = true;
+  window.visualViewport.addEventListener('resize', syncVisualViewport);
+  window.visualViewport.addEventListener('scroll', syncVisualViewport);
 }
 root.addEventListener('focusin', (e) => {
   if (isMobile() && e.target.getAttribute && e.target.getAttribute('data-focus') === 'mdraft' && !state.keyboard) {

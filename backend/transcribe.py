@@ -1,7 +1,8 @@
-"""Speech-to-text transcription via OpenAI Whisper API."""
+"""Speech-to-text transcription — local-first (kamino Whisper), OpenAI fallback."""
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 import httpx
@@ -9,6 +10,27 @@ import httpx
 from . import config
 
 _log = logging.getLogger(__name__)
+
+# Local Whisper (MLX on kamino, Metal). Set GARY_STT_BASE="" to disable and force
+# the OpenAI path. Contract: POST /asr multipart audio_file -> {"text": ...}.
+_KAMINO_STT = os.environ.get("GARY_STT_BASE", "http://100.97.60.15:9000")
+
+
+def _local_base() -> str:
+    return (_KAMINO_STT or "").rstrip("/")
+
+
+async def _transcribe_local(filename: str, content_type: str, data: bytes) -> str:
+    """Transcribe via the local kamino Whisper service. Raises on any failure."""
+    base = _local_base()
+    if not base:
+        raise TranscribeError("local STT disabled")
+    url = f"{base}/asr?task=transcribe&language=en&output=json&encode=true"
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.post(url, files={"audio_file": (filename or "clip", data, content_type)})
+    if r.status_code != 200:
+        raise TranscribeError(f"local STT error: {r.status_code}")
+    return (r.json().get("text") or "").strip()
 
 
 class TranscribeError(Exception):
@@ -34,8 +56,8 @@ def _read_key() -> Optional[str]:
 
 
 def supported() -> bool:
-    """Check if transcription is supported (OpenAI key configured)."""
-    return bool(_read_key())
+    """Supported if a local Whisper base is configured OR an OpenAI key exists."""
+    return bool(_local_base()) or bool(_read_key())
 
 
 async def transcribe(filename: str, content_type: str, data: bytes) -> str:
@@ -52,9 +74,19 @@ async def transcribe(filename: str, content_type: str, data: bytes) -> str:
     Raises:
         TranscribeError: if the request fails upstream or key is missing
     """
+    # Local-first: try kamino Whisper (Metal, private, zero cloud egress).
+    if _local_base():
+        try:
+            text = await _transcribe_local(filename, content_type, data)
+            if text:
+                return text
+            _log.info("local STT returned empty; falling back")
+        except Exception as e:  # noqa: BLE001 - fall through to OpenAI if configured
+            _log.info("local STT failed (%s); falling back to OpenAI", type(e).__name__)
+
     key = _read_key()
     if not key:
-        raise TranscribeError("transcription not supported (no OpenAI key)")
+        raise TranscribeError("transcription not supported (no local STT or OpenAI key)")
 
     # Map content-type to file extension for the multipart field
     ext_map = {

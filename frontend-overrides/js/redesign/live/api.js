@@ -29,7 +29,18 @@ export class ApiError extends Error {
 /** GET → parsed JSON (throws on non-2xx). */
 export async function apiGet(path, { signal } = {}) {
   const res = await fetch(BASE + path, { credentials: 'same-origin', signal });
-  if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
+  if (!res.ok) {
+    // Keep the historic message format (callers match /→ (\d+)/ on it) but
+    // carry the parsed body and status so a caller can read a structured
+    // `reason` (e.g. Settings → Usage showing "gateway_error") without
+    // re-fetching.
+    let body = null;
+    try { body = await parse(res); } catch (_) { body = null; }
+    const err = new Error(`GET ${path} → ${res.status}`);
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
   return parse(res);
 }
 

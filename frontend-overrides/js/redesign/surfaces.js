@@ -19,6 +19,11 @@ import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
 import { renderSwitcher } from './switcher.js';
+import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
+import { usageLine, usageTitle, sessionTotalsLine } from './usage-view.js';
+import { usagePanelHtml } from './usage-panel.js';
+import { changesCardHtml } from './changes-view.js';
+import { changesSettingsHtml } from './changes-settings.js';
 // Fetch caps for the task-6.2 "showing first N" disclosure footer (capNotice,
 // below). NOT imported from the live/*.js modules that own them — every
 // live/*.js file eventually imports api.js, which reads `location.origin` at
@@ -130,7 +135,7 @@ function convListBody(s) {
       <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">help me organize these thoughts</span></div>
       <div class="conv-group"><span class="sect-label">YESTERDAY</span></div>
       <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">Punny Names for OpenClaw</span></div>
-      <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Claude Code on Ubuntu</span></div>`;
+      <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Codex on Ubuntu</span></div>`;
   }
   const q = (s.convFilter || '').trim().toLowerCase();
   const groups2 = q
@@ -315,7 +320,7 @@ export function chatMsg(m, s, ghostCtx) {
       const remaining = Math.max(0, m._deadline - Date.now());
       pendingRing = `<span class="msg-pending-ring" title="Sending in ${Math.ceil(remaining / 100) / 10}s — edit to change it"></span>`;
     }
-    return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span>${pendingRing}<span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
+    return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span>${pendingRing}<span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}${steerCaptionHtml(m)}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an
@@ -368,7 +373,8 @@ export function chatMsg(m, s, ghostCtx) {
     return `<span class="turn-pending-pill" title="${esc(title)}"><span class="turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
   const ghostHtml = (ghostCtx && ghostCtx.msgId === m.id) ? (ghostCtx.html || '') : '';
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span></div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
+  const changesHtml = m.changes ? changesCardHtml(m.changes, { expanded: !!(s.live?.changes?.expanded && s.live.changes.expanded.has(m.changes.turn_id)) }) : '';
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span>${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); return line ? `<span class="usage" title="${esc((m.usage && m.usage._session ? 'session so far · ' : '') + usageTitle(m.usage, uOpts))}">${esc(line)}</span>` : ''; })()}</div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${changesHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
 }
 
 
@@ -546,7 +552,7 @@ ${esc(d)}</textarea>
       <div class="composer-row">
         <button class="icon-btn ocbtn" data-act="toggleSlash" title="More tools">${I.plus()}</button>
         <label class="icon-btn ocbtn" title="Attach files" style="cursor:pointer;display:inline-flex;align-items:center"><input type="file" data-upload multiple style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></label>
-        ${pct != null ? `<div class="ctx-meter" title="Context used"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>` : ''}
+        ${pct != null ? `<div class="ctx-meter" title="${esc(sessionTotalsLine(chat.sessionUsage?.totals, !!chat.sessionUsage?.costed, { provider: chat.sessionUsage?.provider }) || 'Context used')}"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>` : ''}
         <div class="oc-spacer"></div>
         <button class="icon-btn ocbtn" data-act="toggleIncognito" title="${s.incognito ? 'Incognito ON — this chat is not saved' : 'Incognito — don’t save this chat'}" style="${s.incognito ? 'color:var(--violet)' : ''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7"/><path d="M2 12s3 7 10 7 10-7 10-7"/><circle cx="12" cy="12" r="2.5"/>${s.incognito ? '<line x1="3" y1="3" x2="21" y2="21"/>' : ''}</svg></button>
         <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="model-btn-name">${esc(currentModelLabel(s, model) || '…')}</span>${I.chevDownSm()}</button>
@@ -554,7 +560,9 @@ ${esc(d)}</textarea>
           <button class="${agent ? 'active-agent' : ''}" data-act="setMode" data-arg="agent">Agent</button>
           <button class="${!agent ? 'active-chat' : ''}" data-act="setMode" data-arg="chat">Chat</button>
         </div>
-        <button class="btn-send ocbtn" data-act="send" title="Send">${I.send()}</button>
+        ${(() => { const h = steerComposerHints(s); return `
+        ${h.showQueueChip ? `<button class="btn-queue ocbtn" data-act="sendQueued" title="Queue this message to send when the reply finishes (Alt+Enter)">Queue instead</button>` : ''}
+        <button class="btn-send ocbtn${h.steerLabel ? ' steer' : ''}" data-act="send" title="${h.steerLabel ? 'Steer the running turn (Enter)' : 'Send'}">${I.send()}${h.steerLabel ? '<span class="send-lbl">Steer</span>' : ''}</button>`; })()}
       </div>
     </div>
   </div>`;
@@ -1208,6 +1216,23 @@ function settingsSurface(s) {
         const groups = s.live?.modelGroups || [];
         if (!groups.length) return '<div class="set-text set-live-empty">Model list hasn’t loaded yet — it fills in from the gateway when chat boots.</div>';
         return groups.map((g) => `<div class="set-endpoint"><span class="ico" style="background:var(--tealtint);color:var(--teal)">${esc(String(g.ep || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || '?')}</span><div style="min-width:0;flex:1"><div class="nm">${esc(g.ep)}</div><div class="det">${esc(g.models.map((m) => m.name).join(', '))}</div></div><span class="st" style="color:var(--green)"><span class="d" style="background:var(--green)"></span>Active</span></div>`).join('');
+      }
+      case 'liveUsage': {
+        const u = s.live?.usage;
+        if (!u) return '<div class="set-text set-live-empty">Loading usage…</div>';
+        return usagePanelHtml({ days: u.days || 7, daily: (u.data && u.data.daily) || [], totals: u.data && u.data.totals, costed: !!(u.data && u.data.costed), fresh: u.fresh !== false, error: u.error });
+      }
+      case 'liveChanges': {
+        // The generic data-model handler (app.js) writes typed drafts straight
+        // to top-level state (state.changesRootDraft / state.changesPruneDraft)
+        // — not into state.live.changesSettings — and these two fields aren't
+        // in app.js's PLAIN_SHEET_FIELDS skip-list, so every keystroke here
+        // still triggers a full render(). Feeding the live draft back in as
+        // model.draftRoot/pruneDraft keeps the rebuilt input/textarea showing
+        // exactly what was just typed instead of snapping back to the last
+        // saved value.
+        const cs = s.live?.changesSettings || null;
+        return changesSettingsHtml(cs ? { ...cs, draftRoot: s.changesRootDraft || '', pruneDraft: s.changesPruneDraft } : null);
       }
       case 'liveDefault': {
         const def = s.live?.defaultModel || '';

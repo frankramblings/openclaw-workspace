@@ -50,9 +50,14 @@ _CHANGES_TASKS: set = set()
 
 async def changes_begin(session_key: str, turn_id: int) -> None:
     """Open the change-review window for this turn. Bounded and never raises:
-    a slow or failing scan must not delay or break the turn."""
+    a slow or failing scan must not delay or break the turn.
+
+    The deadline is passed through because wait_for cannot stop the worker
+    thread: without it a scan that finishes after we gave up would register an
+    _ACTIVE entry for a turn that has already ended."""
     try:
-        await asyncio.wait_for(asyncio.to_thread(changes.turn_started, session_key, turn_id),
+        deadline = time.monotonic() + CHANGES_TIMEOUT_S
+        await asyncio.wait_for(asyncio.to_thread(changes.turn_started, session_key, turn_id, deadline),
                                CHANGES_TIMEOUT_S)
     except Exception:  # noqa: BLE001 - includes TimeoutError
         _log.warning("changes.turn_started skipped for %s/%s", session_key, turn_id, exc_info=True)

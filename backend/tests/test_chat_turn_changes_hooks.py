@@ -13,11 +13,11 @@ def anyio_backend():
 @pytest.mark.anyio
 async def test_begin_calls_changes_in_thread_and_never_raises(monkeypatch):
     seen = []
-    monkeypatch.setattr(changes, "turn_started", lambda sk, tid: seen.append((sk, tid)))
+    monkeypatch.setattr(changes, "turn_started", lambda sk, tid, deadline=None: seen.append((sk, tid)))
     await chat_turn.changes_begin("sk", 4)
     assert seen == [("sk", 4)]
 
-    def boom(sk, tid):
+    def boom(sk, tid, deadline=None):
         raise RuntimeError("disk")
     monkeypatch.setattr(changes, "turn_started", boom)
     await chat_turn.changes_begin("sk", 5)          # no raise
@@ -27,7 +27,7 @@ async def test_begin_calls_changes_in_thread_and_never_raises(monkeypatch):
 async def test_begin_is_bounded(monkeypatch):
     import time as _t
     monkeypatch.setattr(chat_turn, "CHANGES_TIMEOUT_S", 0.05)
-    monkeypatch.setattr(changes, "turn_started", lambda sk, tid: _t.sleep(0.5))
+    monkeypatch.setattr(changes, "turn_started", lambda sk, tid, deadline=None: _t.sleep(0.5))
     t0 = asyncio.get_event_loop().time()
     await chat_turn.changes_begin("sk", 6)
     assert asyncio.get_event_loop().time() - t0 < 0.4

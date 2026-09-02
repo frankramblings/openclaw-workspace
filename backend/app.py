@@ -232,7 +232,8 @@ async def _lifespan(_app: FastAPI):
         # finish, which would raise "set changed size during iteration" if we
         # iterated them live while cancelling.
         await workspace_watch.stop()
-        remaining = list(_TURN_TASKS.values()) + list(_BG_TASKS)
+        remaining = (list(_TURN_TASKS.values()) + list(_BG_TASKS)
+                     + list(chat_turn._CHANGES_TASKS))
         for t in remaining:
             t.cancel()
         if remaining:

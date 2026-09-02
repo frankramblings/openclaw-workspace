@@ -11,6 +11,10 @@ This milestone (branch `v2-installable`) makes the workspace a first-class
 installable product that any OpenClaw user can run against their own gateway,
 not just the original maintainer's setup.
 
+### Pillar A: Agent control loop (real steering, 2026-09)
+
+- Chat: real steering. While Gary is working on a claude-cli chat, Enter injects your message into the running turn (Claude Code style); Alt+Enter or "Queue instead" keeps today's queue. Needs the `claude-cli-steer` gateway patch (deploy/gateway-patches).
+
 ### Phase 1 — Genericization (already merged to main)
 
 - All maintainer-specific identifiers removed from source and committed assets.

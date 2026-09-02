@@ -48,6 +48,15 @@ surfaces a clear "method not found" message rather than a version-number compari
 This means the workspace works with any OpenClaw that speaks the listed methods,
 regardless of its release tag.
 
+### Steering (2026-09)
+
+A message sent while a claude-cli turn is running is injected into that turn:
+`POST /api/chat/steer/{id}` → `chat.send` on the active session → the gateway's
+steer queue → (patched) claude-cli reply handle `queueMessage` → Claude Code
+stdin, delivered after the current tool result. The patch lives in
+`deploy/gateway-patches/`; `GET /api/capabilities` reports `steer` only when the
+running bundle carries it. Sessions on other runtimes keep the client-side queue.
+
 ## The app (`backend/app.py`)
 
 A FastAPI application that:

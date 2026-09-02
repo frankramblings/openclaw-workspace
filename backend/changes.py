@@ -11,10 +11,12 @@ functions further down (Task 2). Gary's workspace has huge untracked trees
 only holds text files up to max_bytes."""
 from __future__ import annotations
 
+import difflib
 import fnmatch
 import hashlib
 import logging
 import os
+import re
 import threading
 import time
 from pathlib import Path
@@ -233,3 +235,128 @@ def refresh_index(root: str, cfg: dict) -> list[dict]:
         idx["scanned_ms"] = int(time.time() * 1000)
         _save_index(root, idx)
         return report
+
+
+# --- turn attribution ----------------------------------------------------------
+
+DIFF_MAX_LINES = 4000
+_SAFE = re.compile(r"[^A-Za-z0-9_.-]")
+# (session_key, turn_id) -> {"started_ms": int, "pending": [file dicts]}
+_ACTIVE: dict[tuple[str, int], dict] = {}
+
+
+def safe_key(session_key: str) -> str:
+    return _SAFE.sub("_", session_key or "")[:120] or "_"
+
+
+def record_path(session_key: str, turn_id: int) -> Path:
+    return _base() / "turns" / safe_key(session_key) / f"{int(turn_id)}.json"
+
+
+def _line_counts(before: bytes | None, after: bytes | None) -> tuple[int, int]:
+    b = before.decode("utf-8", "replace").splitlines() if before else []
+    a = after.decode("utf-8", "replace").splitlines() if after else []
+    added = removed = 0
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, b, a, autojunk=False).get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += i2 - i1
+        if tag in ("replace", "insert"):
+            added += j2 - j1
+    return added, removed
+
+
+def _decorate(change: dict, root: str) -> dict:
+    before = read_blob(change.get("before_sha")) if change.get("diffable") else None
+    after = read_blob(change.get("after_sha")) if change.get("diffable") else None
+    added, removed = _line_counts(before, after) if change.get("diffable") else (0, 0)
+    return {**change, "root": root, "added": added, "removed": removed,
+            "shared": False, "reverted": False}
+
+
+def turn_started(session_key: str, turn_id: int) -> None:
+    """Absorb whatever changed since the last look (attributed to nobody) and
+    open this turn's window."""
+    cfg = load_config()
+    with _LOCK:
+        for root in cfg.get("roots") or []:
+            try:
+                refresh_index(root, cfg)
+            except Exception:  # noqa: BLE001 - one bad root must not stop the rest
+                log.warning("changes: refresh failed for %s", root, exc_info=True)
+        _ACTIVE[(session_key, int(turn_id))] = {"started_ms": int(time.time() * 1000), "pending": []}
+
+
+def turn_ended(session_key: str, turn_id: int) -> dict | None:
+    """Close this turn's window: refresh every root, attribute what moved to
+    every turn active right now (shared when more than one), persist records."""
+    cfg = load_config()
+    key = (session_key, int(turn_id))
+    with _LOCK:
+        me = _ACTIVE.pop(key, None) or {"started_ms": int(time.time() * 1000), "pending": []}
+        others = list(_ACTIVE.keys())
+        found: list[dict] = []
+        for root in cfg.get("roots") or []:
+            try:
+                for ch in refresh_index(root, cfg):
+                    found.append(_decorate(ch, os.path.abspath(root)))
+            except Exception:  # noqa: BLE001
+                log.warning("changes: refresh failed for %s", root, exc_info=True)
+        shared = bool(others)
+        for f in found:
+            f["shared"] = shared
+        for ok in others:
+            _ACTIVE[ok]["pending"].extend(dict(f, shared=True) for f in found)
+            _ACTIVE[ok].setdefault("shared_with", set()).add(session_key)
+        files = list(me.get("pending") or []) + found
+        shared_with = sorted(set(me.get("shared_with") or set()) | ({o[0] for o in others} if found else set()))
+        rec = {"session_key": session_key, "turn_id": int(turn_id),
+               "started_ms": me["started_ms"], "ended_ms": int(time.time() * 1000),
+               "shared_with": [s for s in shared_with if s != session_key], "files": files}
+        p = record_path(session_key, turn_id)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fsutil.atomic_write_json(p, rec)
+        return rec
+
+
+def turn_record(session_key: str, turn_id: int) -> dict | None:
+    rec = fsutil.load_json_guarded(record_path(session_key, turn_id), None, logger=log)
+    return rec if isinstance(rec, dict) else None
+
+
+def session_turns(session_key: str) -> list[dict]:
+    d = _base() / "turns" / safe_key(session_key)
+    out = []
+    if not d.is_dir():
+        return out
+    for p in d.glob("*.json"):
+        rec = fsutil.load_json_guarded(p, None, logger=log)
+        if not isinstance(rec, dict):
+            continue
+        files = rec.get("files") or []
+        out.append({"turn_id": rec.get("turn_id"), "started_ms": rec.get("started_ms"),
+                    "ended_ms": rec.get("ended_ms"), "files": len(files),
+                    "added": sum(int(f.get("added") or 0) for f in files),
+                    "removed": sum(int(f.get("removed") or 0) for f in files),
+                    "shared": any(f.get("shared") for f in files)})
+    out.sort(key=lambda r: (r["ended_ms"] or 0), reverse=True)
+    return out
+
+
+def diff_for(session_key: str, turn_id: int, path: str) -> dict:
+    rec = turn_record(session_key, turn_id)
+    f = next((x for x in (rec or {}).get("files", []) if x.get("path") == path), None)
+    if not f:
+        return {"diffable": False, "text": "", "before_bytes": 0, "after_bytes": 0, "kind": None}
+    base = {"kind": f.get("kind"), "before_bytes": f.get("before_bytes", 0), "after_bytes": f.get("after_bytes", 0)}
+    if not f.get("diffable"):
+        return {**base, "diffable": False, "text": ""}
+    before = read_blob(f.get("before_sha")) or b""
+    after = read_blob(f.get("after_sha")) or b""
+    lines = list(difflib.unified_diff(
+        before.decode("utf-8", "replace").splitlines(keepends=True),
+        after.decode("utf-8", "replace").splitlines(keepends=True),
+        fromfile=f"a/{path}", tofile=f"b/{path}", n=3))
+    text = "".join(lines)
+    if len(lines) > DIFF_MAX_LINES:
+        text = "".join(lines[:DIFF_MAX_LINES]) + "[diff truncated]\n"
+    return {**base, "diffable": True, "text": text}

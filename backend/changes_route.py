@@ -39,12 +39,21 @@ async def changes_diff(session: str = "", turn: int = 0, path: str = ""):
 @router.post("/api/changes/revert")
 async def changes_revert(payload: dict = Body(default=None)):
     p = payload or {}
+    try:
+        turn = int(p.get("turn") or 0)
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=422, content={"ok": False, "reason": "turn must be an integer"})
     ok, reason = await asyncio.to_thread(changes.revert, _sk(str(p.get("session") or "")),
-                                         int(p.get("turn") or 0), str(p.get("path") or ""))
+                                         turn, str(p.get("path") or ""))
     if ok:
         return {"ok": True}
     status = 404 if reason == "not_found" else 409
     return JSONResponse(status_code=status, content={"ok": False, "reason": reason})
+
+
+def _nested(inner: str, outer: str) -> bool:
+    """True when `inner` sits under `outer` (both normalized absolute paths)."""
+    return inner.startswith(outer.rstrip(os.sep) + os.sep)
 
 
 @router.get("/api/changes/config")
@@ -60,7 +69,20 @@ async def changes_config_put(payload: dict = Body(default=None)):
         roots = p["roots"]
         if not isinstance(roots, list) or not all(isinstance(r, str) and os.path.isabs(r) for r in roots):
             return JSONResponse(status_code=400, content={"ok": False, "reason": "roots must be absolute paths"})
-        cfg["roots"] = [os.path.normpath(r) for r in roots]
+        norm: list[str] = []
+        for r in roots:
+            n = os.path.normpath(r)
+            if n == os.sep:
+                return JSONResponse(status_code=400, content={
+                    "ok": False, "reason": "/ cannot be watched"})
+            if n in norm:
+                continue                      # duplicate, silently collapse
+            for other in norm:
+                if _nested(n, other) or _nested(other, n):
+                    return JSONResponse(status_code=400, content={
+                        "ok": False, "reason": f"{n} overlaps {other}; every change would be listed twice"})
+            norm.append(n)
+        cfg["roots"] = norm
     for key in ("prune_dirs", "skip_ext"):
         if key in p:
             v = p[key]
@@ -81,9 +103,11 @@ async def changes_config_put(payload: dict = Body(default=None)):
 
 @router.post("/api/changes/rebuild")
 async def changes_rebuild():
-    if changes._REBUILD.get("running"):
-        return JSONResponse(status_code=409, content={"ok": False, "reason": "rebuild_running"})
+    # rebuild() itself owns the re-entrancy check (a check here would race two
+    # concurrent POSTs into two full rebuilds); it reports back with busy.
     out = await asyncio.to_thread(changes.rebuild)
+    if out.get("busy"):
+        return JSONResponse(status_code=409, content={"ok": False, "reason": "rebuild_running"})
     return {"ok": True, **out}
 
 

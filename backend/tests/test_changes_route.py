@@ -59,5 +59,5 @@ def test_stats_and_rebuild(client, monkeypatch):
     assert client.get("/api/changes/stats").json()["blobs"] == 0
     monkeypatch.setattr(changes, "rebuild", lambda: {"roots": 0, "files": 0})
     assert client.post("/api/changes/rebuild").json() == {"ok": True, "roots": 0, "files": 0}
-    monkeypatch.setattr(changes, "_REBUILD", {"running": True, "root": "/x"})
+    monkeypatch.setattr(changes, "rebuild", lambda: {"busy": True})
     assert client.post("/api/changes/rebuild").status_code == 409

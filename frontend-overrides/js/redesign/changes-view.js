@@ -34,7 +34,9 @@ export function changesCardHtml(rec, opts = {}) {
 }
 
 export function diffHtml(text) {
-  const lines = String(text || '').split('\n');
+  // Strip a trailing \r so a CRLF file's diff does not render stray carriage
+  // returns inside every line.
+  const lines = String(text || '').split('\n').map((l) => l.replace(/\r$/, ''));
   if (lines.length && lines[lines.length - 1] === '') lines.pop();
   const out = lines.map((l) => {
     let cls = 'ctx';

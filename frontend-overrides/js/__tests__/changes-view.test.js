@@ -82,3 +82,9 @@ test('attachChangesToThread skips messages outside window', () => {
   const m = attachChangesToThread(thread, turns);
   assert.equal(m.size, 0);
 });
+
+test('diffHtml strips the carriage return from a CRLF diff', () => {
+  const h = diffHtml('@@ -1 +1 @@\r\n-old\r\n+new\r\n');
+  assert.ok(!h.includes('\r'), 'no carriage returns should survive into the markup');
+  assert.ok(h.includes('>-old<') && h.includes('>+new<'));
+});

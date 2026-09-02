@@ -25,7 +25,7 @@ async function fetchRecord(sessionId, turnId) {
 // Fix round 1, finding 1: this runs 2.5-7.5 s after `done`, which is plenty of
 // time for the user to have switched to another thread. `msg` is the SAME
 // object that's already in whatever thread array holds it (or none, if the
-// user navigated away entirely), so setting msg.changes is always safe — but
+// user navigated away entirely), so setting msg.changes is always safe, but
 // state.live.changes belongs to whichever session is ACTIVE right now, and
 // must never be clobbered with a stale, no-longer-active session's turn.
 export async function afterTurn(sessionId, turnId, msg, opts = {}) {
@@ -36,7 +36,11 @@ export async function afterTurn(sessionId, turnId, msg, opts = {}) {
     let rec = null;
     try { rec = await fetchRecord(sessionId, turnId); } catch (_) { rec = null; }
     if (rec) {
-      if (rec.files && rec.files.length) msg.changes = rec;
+      // Most turns change nothing. A zero-file record renders no card, and
+      // attachHistory filters files > 0, so inserting one here would fill the
+      // companion list with "Turn N, 0 files" rows until the next refresh.
+      if (!rec.files || !rec.files.length) return;
+      msg.changes = rec;
       const state = runtime.state;
       const activeId = state && state.live && state.live.chat && state.live.chat.activeId;
       if (activeId === sessionId) {
@@ -51,7 +55,7 @@ export async function afterTurn(sessionId, turnId, msg, opts = {}) {
 }
 
 // Fix round 1, finding 4: fetch every missing record concurrently (was one
-// await per turn, serially) — this runs on every thread open, selectSession,
+// await per turn, serially). This runs on every thread open, selectSession,
 // and manual refresh.
 export async function attachHistory(state, sessionId, thread) {
   if (!sessionId || !Array.isArray(thread)) return;
@@ -85,7 +89,7 @@ async function openPath(turnId, path) {
   let rec = c.records[turnId];
   if (!rec) {
     // Fix round 1, finding 3: changesOpen/changesTurn dispatch this
-    // fire-and-forget (data-act handlers aren't awaited) — an unguarded
+    // fire-and-forget (data-act handlers aren't awaited), an unguarded
     // throw here became an unhandled rejection with no visible error state.
     try {
       rec = await fetchRecord(sid, turnId);
@@ -99,11 +103,15 @@ async function openPath(turnId, path) {
   c.error = null;
   c.open = { turn: Number(turnId), record: rec, path: path || null, diff: null };
   state.compTab = 'changes'; state.compSplit = false; state.compHidden = false;
+  // Read the shell class app.js latches at boot, not a media query of our own:
+  // a 1024 px query disagrees with the app's 768 px latch, so between 769 and
+  // 1024 px the desktop path was also opening the mobile sheet. Same pattern
+  // as live/email.js.
   try {
-    if (globalThis.matchMedia && matchMedia('(max-width: 1024px)').matches) {
+    if (globalThis.document && document.documentElement.classList.contains('shell-mobile')) {
       state.companionTab = 'changes'; state.companionSheetOpen = true; state.companionSheetClosing = false;
     }
-  } catch (_) { /* no matchMedia in the test environment */ }
+  } catch (_) { /* no document in the test environment */ }
   if (path) {
     try { c.open.diff = await apiGet(`/api/changes/diff?session=${encodeURIComponent(sid)}&turn=${encodeURIComponent(turnId)}&path=${encodeURIComponent(path)}`); }
     catch (_) { c.open.diff = { diffable: false, text: '' }; }
@@ -136,24 +144,31 @@ export const actions = {
   changesRevert: async (arg) => {
     const i = String(arg).indexOf(':');
     const turn = Number(String(arg).slice(0, i)); const path = String(arg).slice(i + 1);
-    if (typeof globalThis.confirm === 'function' && !globalThis.confirm(`Revert ${path} to how it was before this turn?`)) return;
+    // Capture the session BEFORE the confirm dialog: the revert must target
+    // the thread the user was looking at when they clicked.
     const state = runtime.state; const sid = state.live.chat.activeId;
+    if (typeof globalThis.confirm === 'function' && !globalThis.confirm(`Revert ${path} to how it was before this turn?`)) return;
     // Fix round 1, finding 2: only the actual revert POST belongs in this
-    // try — a refresh fetch failing AFTER a successful revert must never
+    // try: a refresh fetch failing AFTER a successful revert must never
     // read back as "Revert failed."
     try {
       await apiJson('/api/changes/revert', { session: sid, turn, path });
     } catch (e) {
-      const msg = /409/.test(String(e && e.message)) ? 'The file changed since this turn. Nothing was reverted.' : 'Revert failed.';
+      // apiJson throws ApiError, which carries the HTTP status; match on that
+      // rather than regexing the message text.
+      const msg = (e && e.status) === 409 ? 'The file changed since this turn. Nothing was reverted.' : 'Revert failed.';
       if (runtime.actions && runtime.actions.toast) runtime.actions.toast(msg); else console.warn(msg);
       return;
     }
     if (runtime.actions && runtime.actions.toast) runtime.actions.toast(`Reverted ${path}`);
     // Best-effort refresh: openPath already refetches this exact record (and
-    // now handles its own fetch failures — finding 3), so reuse it instead of
+    // now handles its own fetch failures, finding 3), so reuse it instead of
     // a second full attachHistory pass (finding 4). Propagate the refreshed
     // record onto the matching c.turns row and the thread bubble that
     // already carries this turn's card, so both pick up e.g. "reverted".
+    // The confirm dialog can sit open long enough for a thread switch, and
+    // openPath reads the CURRENT activeId. Same guard afterTurn uses.
+    if (state.live.chat.activeId !== sid) return;
     try {
       const c = ensure(state, sid);
       delete c.records[turn];

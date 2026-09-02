@@ -156,3 +156,81 @@ test('attachHistory fetches missing turn records concurrently, not one at a time
   assert.equal(thread[1].changes.turn_id, 2);
   assert.equal(thread[2].changes.turn_id, 3);
 });
+
+test('opening a path uses the shell-mobile latch, not a media query, for the sheet', async () => {
+  wire({ '/api/changes/turn': jsonRes(200, { ok: true, record: REC }), '/api/changes/diff': jsonRes(200, { ok: true, diffable: true, text: 'x' }) });
+  const state = { live: { chat: { activeId: 's1', thread: [] } } };
+  runtime.state = state; runtime.render = () => {};
+  const classes = new Set();
+  const prevDoc = globalThis.document;
+  // A 1024 px media query would have matched here; the shell latch must not.
+  globalThis.matchMedia = () => ({ matches: true });
+  globalThis.document = { querySelector: () => null, documentElement: { classList: { contains: (c) => classes.has(c) } } };
+  try {
+    await mod.actions.changesOpen('5:a.md');
+    assert.notEqual(state.companionSheetOpen, true);
+    classes.add('shell-mobile');
+    await mod.actions.changesOpen('5:a.md');
+    assert.equal(state.companionSheetOpen, true);
+    assert.equal(state.companionTab, 'changes');
+  } finally {
+    globalThis.document = prevDoc;
+    delete globalThis.matchMedia;
+  }
+});
+
+test('afterTurn ignores a zero-file record instead of listing it', async () => {
+  wire({ '/api/changes/turn': jsonRes(200, { ok: true, record: { turn_id: 7, started_ms: 1, ended_ms: 2, files: [] } }) });
+  const state = { live: { chat: { activeId: 's1', thread: [] } } };
+  runtime.state = state; runtime.render = () => {};
+  const msg = { id: 'a1', role: 'assistant' };
+  await mod.afterTurn('s1', 7, msg, { delays: [0] });
+  assert.equal(msg.changes, undefined);
+  assert.equal((state.live.changes && state.live.changes.turns || []).length, 0);
+});
+
+test('changesRevert with a cancelled confirm makes no request', async () => {
+  const calls = wire({});
+  const state = { live: { chat: { activeId: 's1', thread: [] } } };
+  runtime.state = state; runtime.render = () => {};
+  const prev = globalThis.confirm;
+  globalThis.confirm = () => false;
+  try {
+    await mod.actions.changesRevert('5:a.md');
+  } finally {
+    if (prev === undefined) delete globalThis.confirm; else globalThis.confirm = prev;
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('changesRevert reads 409 off the error status, not the message text', async () => {
+  wire({ '/api/changes/revert': jsonRes(409, { ok: false, reason: 'file_changed_since' }) });
+  const state = { live: { chat: { activeId: 's1', thread: [] } } };
+  runtime.state = state; runtime.render = () => {};
+  const toasts = [];
+  runtime.actions = { toast: (m) => toasts.push(m) };
+  const prev = globalThis.confirm;
+  globalThis.confirm = () => true;
+  try {
+    await mod.actions.changesRevert('5:a.md');
+  } finally {
+    if (prev === undefined) delete globalThis.confirm; else globalThis.confirm = prev;
+    runtime.actions = undefined;
+  }
+  assert.match(toasts[0], /changed since this turn/);
+});
+
+test('changesRevert stops refreshing when the thread switched during the confirm', async () => {
+  const calls = wire({ '/api/changes/revert': jsonRes(200, { ok: true }) });
+  const state = { live: { chat: { activeId: 's1', thread: [] } } };
+  runtime.state = state; runtime.render = () => {};
+  const prev = globalThis.confirm;
+  globalThis.confirm = () => { state.live.chat.activeId = 's2'; return true; };
+  try {
+    await mod.actions.changesRevert('5:a.md');
+  } finally {
+    if (prev === undefined) delete globalThis.confirm; else globalThis.confirm = prev;
+  }
+  assert.equal(calls.filter((c) => c.url.includes('/api/changes/turn')).length, 0);
+  assert.equal(calls.filter((c) => c.url.includes('/api/changes/diff')).length, 0);
+});

@@ -15,5 +15,5 @@ echo "-- steering --"
 curl -s -X POST "$HOST/api/chat/steer/$SID" -F "message=The number is 42." -F "client_id=livefire-1"; echo
 wait "$READER" || true
 echo "-- frames of interest --"
-grep -E '"type": ?"user_steer"|NUMBER=' "$OUT" | head -5
+grep -E '"type": ?"user_steer"|NUMBER=' "$OUT" | head -5 || true
 if grep -q 'NUMBER=42' "$OUT"; then echo "PASS: steer landed inside the running turn"; else echo "FAIL: reply did not use the steer (see $OUT)"; exit 1; fi

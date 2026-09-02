@@ -884,6 +884,7 @@ const MODAL_OPEN_ACTIONS = new Set([
 ]);
 const MODAL_CLOSE_ACTIONS = new Set([
   'closeCompose', 'closeReader', 'closeCompanion', 'closeCapture', 'closeModelSheet', 'closeDrawer', 'closeSwitcher',
+  'switcherPick', // picking a row closes the switcher too (see closeSwitcher inside it)
 ]);
 
 // render() rebuilds root.innerHTML wholesale (see render(), above), so a raw

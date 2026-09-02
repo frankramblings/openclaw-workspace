@@ -54,9 +54,13 @@ def test_projection_trims_to_contract_and_drops_extras():
         "updatedAt": "2026-06-18T12:00:00Z",
     }, None)
 
-    # (1) Exactly the expected top-level keys/values.
+    # (1) Exactly the expected top-level keys/values. Task 2 (session totals)
+    # added "totals"/"costed" to the contract, so "cacheRead" is now a
+    # legitimately-surfaced field (see the leak check below) rather than one
+    # that must be dropped.
     assert set(out.keys()) == {
-        "ok", "sessionId", "model", "modelProvider", "usage", "context", "updatedAt",
+        "ok", "sessionId", "model", "modelProvider", "usage", "context",
+        "totals", "costed", "updatedAt",
     }
     assert out["ok"] is True
     assert out["sessionId"] == "1fe81698ef72"
@@ -73,6 +77,17 @@ def test_projection_trims_to_contract_and_drops_extras():
         "toolCalls": 7,
         "errors": 1,
     }
+
+    assert out["totals"] == {
+        "input": 12000,
+        "output": 3400,
+        "cacheRead": 9999,
+        "cacheWrite": 0,
+        "totalTokens": 20000,
+        "totalCost": 0.1234567,
+        "missingCostEntries": 0,
+    }
+    assert out["costed"] is True
 
     # (3) opus → 200000 window; (4) usedPct = 20000/200000*100 = 10.0.
     assert out["context"]["windowTokens"] == 200000
@@ -93,9 +108,12 @@ def test_projection_trims_to_contract_and_drops_extras():
     }
 
     # (2) None of the extra gateway fields leak anywhere in the output tree.
+    # "cacheRead"/9999 excluded from this list: Task 2's `totals` block now
+    # legitimately surfaces cacheRead (asserted above), so it's no longer a
+    # leak to guard against.
     flat = repr(out)
-    for leaked in ("cacheRead", "modelUsage", "dailyBreakdown", "origin",
-                   "channel", "messageCounts", "9999"):
+    for leaked in ("modelUsage", "dailyBreakdown", "origin",
+                   "channel", "messageCounts"):
         assert leaked not in flat, f"extra gateway field leaked: {leaked}"
 
 

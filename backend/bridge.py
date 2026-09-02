@@ -1142,6 +1142,13 @@ def _project_session_usage(spa_session_id: str, session_key: str,
     if output_tokens is None:
         output_tokens = live.get("outputTokens")
 
+    def _num(v):
+        return v if isinstance(v, (int, float)) else 0
+
+    totals = {k: _num(usage.get(k)) for k in
+              ("input", "output", "cacheRead", "cacheWrite", "totalTokens", "totalCost", "missingCostEntries")}
+    costed = totals["missingCostEntries"] == 0 and totals["totalTokens"] > 0
+
     return {
         "ok": True,
         "sessionId": spa_session_id,
@@ -1160,6 +1167,8 @@ def _project_session_usage(spa_session_id: str, session_key: str,
             "errors": int(msgs.get("errors") or 0),
         },
         "context": context,
+        "totals": totals,
+        "costed": costed,
         "updatedAt": (live.get("updatedAt") or (payload or {}).get("updatedAt")
                       or row.get("updatedAt")),
     }

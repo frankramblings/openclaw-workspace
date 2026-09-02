@@ -70,6 +70,17 @@ A FastAPI application that:
 Config resolution lives in `backend/config.py`: env var → `~/.openclaw/openclaw.json`
 → default. Secrets only ever come from the gateway config or the environment.
 
+### Change review (2026-09)
+
+`backend/changes.py` observes the filesystem around every turn: per watched
+root an index (path → mtime, size, sha256) plus a content-addressed cache of
+the last seen text content. The turn recorder refreshes at turn start
+(absorbing between-turn writes) and 1.5 s after turn end (this turn's change
+set, flagged `shared` when another turn was active). Diffs are computed on
+request from the cached blobs; revert restores the turn's before-state only if
+the file has not moved on. Roots and prune list live in `.data/changes.json`
+(Settings → Changes). It never uses git.
+
 ## The frontend: vendor + overrides + bake
 
 The UI is a vanilla-JS SPA. It is assembled, not hand-edited in place:

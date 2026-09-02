@@ -938,9 +938,19 @@ async def steer_chat(session_id: str, message: str = Form(...),
     relaying). On success a `user_steer` frame is appended to the event store
     so every reader of this turn (the sender, other tabs, a post-reload
     resume) shows the message at the point it was sent."""
-    text = (message or "").strip()
+    # NUL bytes would poison the stream-json line the gateway patch writes into
+    # the CLI's stdin; strip them BEFORE the empty check so a NUL-only body is
+    # rejected as empty rather than "steered".
+    text = (message or "").replace("\x00", "").strip()
     if not text:
         return JSONResponse(status_code=400, content={"ok": False, "reason": "empty_message"})
+    # client_id is echoed verbatim into an SSE frame every open tab parses, so
+    # keep it to the shape our own uniqId() mints: at most 64 chars of
+    # [A-Za-z0-9_-], anything else dropped (empty string if nothing remains).
+    client_id = "".join(
+        c for c in (client_id or "")
+        if c.isascii() and (c.isalnum() or c in "_-")
+    )[:64]
     rec = sessions_store.get(session_id)
     session_key = rec["sessionKey"] if rec else config.web_session_key()
     task = _TURN_TASKS.get(session_key)

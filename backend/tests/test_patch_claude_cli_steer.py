@@ -77,6 +77,26 @@ def test_missing_dist_dir_is_noop(tmp_path):
     assert mod.apply(str(tmp_path / "nope")) == 0
 
 
+def test_unwritable_target_warns_and_exits_zero(tmp_path, capsys):
+    # The write is the last step that can still raise (not root / read-only
+    # mount / full disk). It runs as a gateway ExecStartPre, so it must warn
+    # and return 0 rather than take the gateway down over an optional patch.
+    import os
+    if os.geteuid() == 0:
+        import pytest
+        pytest.skip("root ignores the read-only mode bit")
+    mod = _load()
+    d = _dist(tmp_path)
+    target = d / "claude-live-session-AbC123.js"
+    target.chmod(0o444)
+    try:
+        assert mod.apply(str(d)) == 0
+    finally:
+        target.chmod(0o644)
+    assert "could not write" in capsys.readouterr().err
+    assert mod.MARKER not in target.read_text(encoding="utf-8")
+
+
 def test_non_utf8_sibling_is_skipped_not_fatal(tmp_path):
     # a binary file sorted before the real bundle must not crash find_file/apply
     mod = _load()

@@ -68,3 +68,25 @@ def test_bad_url_is_structured_fail_not_crash(monkeypatch):
 def test_aggregate_ok_is_and_of_fatals(monkeypatch):
     res = _run(monkeypatch, hello=ConnectionRefusedError())
     assert doctor.summarize(res)["ok"] is False
+
+
+def test_missing_steer_patch_is_optional_and_does_not_fail_the_run(monkeypatch):
+    # The claude-cli steer patch is optional: without it the workspace still
+    # works (the composer queues instead of steering). It must report its own
+    # FAIL line + hint but never make scripts/doctor.sh exit 1 on a fresh
+    # install (which printed "doctor reported issues" from scripts/setup.sh).
+    monkeypatch.setattr(doctor.steer, "patch_present", lambda dist_dir=None: False)
+    res = _run(monkeypatch, hello={"version": "2026.6.1"}, call=lambda m: {"ok": True})
+    steer_check = _check(res, "steer_patch")
+    assert steer_check["ok"] is False
+    assert steer_check["optional"] is True
+    assert "claude-cli-steer.py" in steer_check["detail"]
+    assert doctor.summarize(res)["ok"] is True
+
+
+def test_non_optional_failure_still_flips_summary_ok(monkeypatch):
+    monkeypatch.setattr(doctor.steer, "patch_present", lambda dist_dir=None: True)
+    res = _run(monkeypatch, hello={"version": "2026.6.1"}, call=lambda m: {"ok": True})
+    assert doctor.summarize(res)["ok"] is True
+    res.append({"id": "made_up", "ok": False, "detail": "", "hint": ""})
+    assert doctor.summarize(res)["ok"] is False

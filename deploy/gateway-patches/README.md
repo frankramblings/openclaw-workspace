@@ -17,10 +17,13 @@ Install (Frank, once):
 Then add to `~/.config/systemd/user/openclaw-gateway.service.d/claude-cli-steer.conf`:
 
     [Service]
-    ExecStartPre=/usr/bin/sudo -n /usr/bin/python3 /home/frank/.openclaw/patches/claude-cli-steer.py
+    ExecStartPre=-/usr/bin/sudo -n /usr/bin/python3 /home/frank/.openclaw/patches/claude-cli-steer.py
 
-and `systemctl --user daemon-reload`. The shared dist means Marissa's gateway
-picks the patch up on her next restart; do not restart her unit.
+and `systemctl --user daemon-reload`. The leading `-` is deliberate: steering is
+optional, and a failing pre-step must never keep the gateway down. The shared
+dist means Marissa's gateway picks the patch up on her next restart; do not
+restart her unit.
 
-Verify: `grep -c 'CLI_STEER' /usr/lib/node_modules/openclaw/dist/claude-live-session-*.js` prints 1,
+Verify: `grep -l 'CLI_STEER' /usr/lib/node_modules/openclaw/dist/claude-live-session-*.js`
+prints exactly one path (there are two matching files; only the real bundle is patched),
 and `GET /api/capabilities` reports `"steer": {"available": true}`.

@@ -13,6 +13,11 @@ class _Live:
         return False
 
 
+class _Done:
+    def done(self):
+        return True
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -100,3 +105,60 @@ def test_502_when_gateway_rejects_and_no_frame(client, cli_session, steerable, m
     assert r.status_code == 502
     assert r.json()["reason"] == "gateway_error"
     assert _frames(sk) == []
+
+
+def test_409_when_task_present_but_already_finished(client, cli_session, steerable,
+                                                    monkeypatch):
+    # The task slot is only cleared after the recorder closes the turn, so a
+    # finished-but-not-yet-reaped task must read as "no active turn", not as a
+    # steerable one (the client then just sends normally).
+    monkeypatch.setattr(app_module, "_TURN_TASKS", {cli_session["sessionKey"]: _Done()})
+    r = client.post(f"/api/chat/steer/{cli_session['id']}", data={"message": "hi"})
+    assert r.status_code == 409
+    assert r.json()["reason"] == "no_active_turn"
+
+
+def test_nul_only_message_is_empty_not_steered(client, cli_session, steerable,
+                                               monkeypatch):
+    monkeypatch.setattr(app_module, "_TURN_TASKS", {cli_session["sessionKey"]: _Live()})
+    r = client.post(f"/api/chat/steer/{cli_session['id']}", data={"message": "\x00 \x00"})
+    assert r.status_code == 400
+    assert r.json()["reason"] == "empty_message"
+
+
+def test_text_nul_stripped_and_client_id_sanitized(client, cli_session, steerable,
+                                                   monkeypatch):
+    sk = cli_session["sessionKey"]
+    monkeypatch.setattr(app_module, "_TURN_TASKS", {sk: _Live()})
+    sent = {}
+
+    async def fake_steer(session_key, message):
+        sent["msg"] = message
+        return {"runId": "r1"}
+
+    monkeypatch.setattr(bridge, "steer_turn", fake_steer)
+    event_store.drop_session(sk)
+    r = client.post(f"/api/chat/steer/{cli_session['id']}", data={
+        "message": "use\x0042", "client_id": "live-u_9<script>é" + "z" * 80})
+    assert r.status_code == 200
+    assert sent["msg"] == "use42"
+    frame = _frames(sk)[0]
+    assert frame["text"] == "use42"
+    assert frame["client_id"] == ("live-u_9scriptz" + "z" * 79)[:64]
+    assert len(frame["client_id"]) == 64
+
+
+def test_client_id_of_only_junk_becomes_empty(client, cli_session, steerable,
+                                              monkeypatch):
+    sk = cli_session["sessionKey"]
+    monkeypatch.setattr(app_module, "_TURN_TASKS", {sk: _Live()})
+
+    async def fake_steer(session_key, message):
+        return {"runId": "r1"}
+
+    monkeypatch.setattr(bridge, "steer_turn", fake_steer)
+    event_store.drop_session(sk)
+    r = client.post(f"/api/chat/steer/{cli_session['id']}",
+                    data={"message": "hi", "client_id": "<<>>!!"})
+    assert r.status_code == 200
+    assert _frames(sk)[0]["client_id"] == ""

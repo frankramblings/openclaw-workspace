@@ -79,8 +79,17 @@ def apply(dist_dir):
         print("[claude-cli-steer] WARN: expected 1 patch target, found %d in %s "
               "- skipping (bundle shape changed?)" % (n, path), file=sys.stderr)
         return 0
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(s.replace(TARGET, PATCHED, 1))
+    # The write is the one step that can still raise (not run as root, a
+    # read-only mount, a full disk). Never let that exit non-zero: this runs as
+    # an ExecStartPre and a failing pre-step would keep the gateway down over
+    # an OPTIONAL patch.
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(s.replace(TARGET, PATCHED, 1))
+    except OSError as e:
+        print("[claude-cli-steer] WARN: could not write %s (%s) - skipping "
+              "(run as root?)" % (path, e), file=sys.stderr)
+        return 0
     print("[claude-cli-steer] patched %s" % path)
     return 0
 

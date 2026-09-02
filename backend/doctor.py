@@ -99,11 +99,19 @@ def _check_version(hello: dict | None) -> dict:
 
 
 def _check_steer_patch() -> dict:
+    """OPTIONAL check: the steer patch is a nice-to-have (mid-turn steering).
+    Without it the workspace works exactly as before — the composer just
+    queues instead of steering — so a missing patch must NOT make the whole
+    doctor run fail (scripts/doctor.sh exit 1 on every fresh install). The
+    FAIL line + hint still print; summarize() ignores it for the top-level ok."""
     if steer.patch_present():
-        return _ok("steer_patch", "claude-cli steer patch present")
-    return _fail("steer_patch",
-                 "claude-cli steer patch missing: run deploy/gateway-patches/"
-                 "claude-cli-steer.py (see README)")
+        check = _ok("steer_patch", "claude-cli steer patch present")
+    else:
+        check = _fail("steer_patch",
+                      "claude-cli steer patch missing: run deploy/gateway-patches/"
+                      "claude-cli-steer.py (see README)")
+    check["optional"] = True
+    return check
 
 
 async def run_checks() -> list[dict]:
@@ -118,4 +126,8 @@ async def run_checks() -> list[dict]:
 
 
 def summarize(checks: list[dict]) -> dict:
-    return {"ok": all(c["ok"] for c in checks), "checks": checks}
+    """Top-level `ok` covers only checks that are REQUIRED for the workspace to
+    work. Checks marked `optional` still report their own ok/detail/hint (and
+    still print as FAIL lines) but never flip the overall verdict."""
+    return {"ok": all(c["ok"] for c in checks if not c.get("optional")),
+            "checks": checks}

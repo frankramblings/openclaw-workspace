@@ -29,6 +29,7 @@ import {
   toggleCollapsed as stripToggleCollapsed, readCollapsed as stripReadCollapsed,
   sweepAgents as stripSweepAgents, renderChatStrip,
 } from '../chat-strip.js';
+import { afterTurn as changesAfterTurn, attachHistory as changesAttachHistory } from './changes.js';
 
 // The throttled per-token render only patches the active message bubble in
 // place — it does NOT re-render `.composer-wrap`, which is where the strip
@@ -597,6 +598,7 @@ export async function load(state) {
       chat.subtitle = t.subtitle;
       chat.model = t.model || fallbackModel;
       runtime.wantChatBottom = true;   // land on the latest message after refresh
+      changesAttachHistory(state, activeId, chat.thread).catch(() => {});
     } catch (_) {
       if (chat.activeId === activeId) {
         chat.thread = chat.thread || [];
@@ -1371,6 +1373,10 @@ function beginTurn(chat, modelLabel, sessionId) {
       }
       chat.suggest = null; // a finished turn invalidates any "While you wait" ghost
       flushRender();
+      // Changes review (Pillar A, task 8): the change-tracking window around
+      // this turn closes server-side a beat after `done` — poll for the
+      // record and attach it to the just-finished bubble once it lands.
+      if (turn.asstMsg && turn.turnId != null) changesAfterTurn(turn.sessionId, turn.turnId, turn.asstMsg).catch(() => {});
       if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); chat.busySessionId = null; turn = null; return; }
       const sidebarDone = refreshSidebarUsage(runtime.state);
       // Per-turn usage: prefer what the done frame carries; otherwise reuse the
@@ -2737,6 +2743,7 @@ export const actions = {
       // already sent its first message) shouldn't still show carried bubbles.
       clearBranchPrefixIfStarted(state, chat);
       runtime.wantChatBottom = true;   // land on the latest message once loaded
+      changesAttachHistory(state, id, chat.thread).catch(() => {});
     } catch (_) {
       // A GENUINE failure (not a race — chat.activeId is still `id`) leaves
       // the PREVIOUS session's thread on screen under this NEW activeId, with

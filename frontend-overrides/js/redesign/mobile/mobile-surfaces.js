@@ -18,6 +18,7 @@ import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 import { currentHealth, healthDotColor } from '../live/health.js';
 import { steerComposerHints, steerCaptionHtml } from '../steer-view.js';
 import { usageLine, usageTitle } from '../usage-view.js';
+import { changesCardHtml } from '../changes-view.js';
 
 // Task 2.1: mobile counterpart to surfaces.js's loadErrorBlock — same
 // "Couldn't load X, Retry" contract (data-act="retrySurface" clears the
@@ -159,9 +160,10 @@ export function mChatMsg(m, s, ghostCtx) {
         toolId: m.questionCard.toolId || '',
       })
     : '';
+  const changesHtml = m.changes ? changesCardHtml(m.changes, { expanded: !!(s.live?.changes?.expanded && s.live.changes.expanded.has(m.changes.turn_id)) }) : '';
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); if (!line) return ''; // the title attribute is invisible on iOS, so the "session so far"
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${changesHtml}${assistantToolbar(m, s)}${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); if (!line) return ''; // the title attribute is invisible on iOS, so the "session so far"
       // caveat has to live in the visible text on mobile.
       const vis = (m.usage && m.usage._session ? 'session ' : '') + line;
       return `<div class="m-usage" title="${esc(usageTitle(m.usage, uOpts))}">${esc(vis)}</div>`; })()}${ghostHtml}</div>`

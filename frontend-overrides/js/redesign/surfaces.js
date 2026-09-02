@@ -21,6 +21,7 @@ import { renderChatStrip } from './chat-strip.js';
 import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
 import { usageLine, usageTitle, sessionTotalsLine } from './usage-view.js';
 import { usagePanelHtml } from './usage-panel.js';
+import { changesCardHtml } from './changes-view.js';
 // Fetch caps for the task-6.2 "showing first N" disclosure footer (capNotice,
 // below). NOT imported from the live/*.js modules that own them — every
 // live/*.js file eventually imports api.js, which reads `location.origin` at
@@ -370,7 +371,8 @@ export function chatMsg(m, s, ghostCtx) {
     return `<span class="turn-pending-pill" title="${esc(title)}"><span class="turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
   const ghostHtml = (ghostCtx && ghostCtx.msgId === m.id) ? (ghostCtx.html || '') : '';
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span>${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); return line ? `<span class="usage" title="${esc((m.usage && m.usage._session ? 'session so far · ' : '') + usageTitle(m.usage, uOpts))}">${esc(line)}</span>` : ''; })()}</div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
+  const changesHtml = m.changes ? changesCardHtml(m.changes, { expanded: !!(s.live?.changes?.expanded && s.live.changes.expanded.has(m.changes.turn_id)) }) : '';
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span>${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); return line ? `<span class="usage" title="${esc((m.usage && m.usage._session ? 'session so far · ' : '') + usageTitle(m.usage, uOpts))}">${esc(line)}</span>` : ''; })()}</div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${changesHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
 }
 
 

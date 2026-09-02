@@ -1077,3 +1077,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 
 /* ---- usage (Pillar A, task 3) ---------------------------------------------- */
 .m-usage { font-size: 11px; color: var(--faint, #8a94a6); font-family: var(--mono, ui-monospace, monospace); margin-top: 4px; }
+
+/* ---- per-turn change review (Pillar A, task 8) ------------------------------ */
+.m-changes { flex: 1; min-height: 0; overflow: auto; }
+.m-changes pre.diff { font-size: 11px; }

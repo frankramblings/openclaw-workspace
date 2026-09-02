@@ -15,6 +15,7 @@ import asyncio
 import difflib
 import fnmatch
 import hashlib
+import json
 import logging
 import os
 import re
@@ -479,18 +480,28 @@ def revert(session_key: str, turn_id: int, path: str) -> tuple[bool, str]:
 
 # --- maintenance ---------------------------------------------------------------
 
+def _read_json_quiet(path: Path) -> dict | None:
+    """Read JSON file, log warning on parse error, return None (not corrupted file).
+    Unlike fsutil.load_json_guarded, does not rename corrupt files."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        log.warning("changes: unreadable json %s", path)
+        return None
+
+
 _REBUILD = {"running": False, "root": None}
 
 
 def _referenced_blobs() -> set[str]:
     refs: set[str] = set()
     for p in (_base() / "index").glob("*.json"):
-        idx = fsutil.load_json_guarded(p, None, logger=log)
+        idx = _read_json_quiet(p)
         for v in ((idx or {}).get("files") or {}).values():
             if isinstance(v, list) and len(v) == 3 and v[2]:
                 refs.add(v[2])
     for p in (_base() / "turns").glob("*/*.json"):
-        rec = fsutil.load_json_guarded(p, None, logger=log)
+        rec = _read_json_quiet(p)
         for f in (rec or {}).get("files") or []:
             for k in ("before_sha", "after_sha"):
                 if f.get(k):
@@ -499,12 +510,14 @@ def _referenced_blobs() -> set[str]:
 
 
 def sweep(now_ms: int | None = None, keep_days: int = 30) -> dict:
+    """Drop turn records older than keep_days, orphan blobs, and quarantine files.
+    Returns {records_removed, blobs_removed, index_quarantines_removed}."""
     now = now_ms if now_ms is not None else int(time.time() * 1000)
     cutoff = now - keep_days * 86400 * 1000
     removed_records = 0
     with _LOCK:
         for p in (_base() / "turns").glob("*/*.json"):
-            rec = fsutil.load_json_guarded(p, None, logger=log)
+            rec = _read_json_quiet(p)
             ended = int((rec or {}).get("ended_ms") or 0)
             if not rec or ended < cutoff:
                 try:
@@ -512,6 +525,12 @@ def sweep(now_ms: int | None = None, keep_days: int = 30) -> dict:
                     removed_records += 1
                 except OSError:
                     pass
+        for p in (_base() / "turns").glob("*/*.corrupt-*"):
+            try:
+                p.unlink()
+                removed_records += 1
+            except OSError:
+                pass
         refs = _referenced_blobs()
         removed_blobs = 0
         for p in (_base() / "blobs").glob("*/*"):
@@ -522,10 +541,21 @@ def sweep(now_ms: int | None = None, keep_days: int = 30) -> dict:
                 removed_blobs += 1
             except OSError:
                 pass
-    return {"records_removed": removed_records, "blobs_removed": removed_blobs}
+        removed_index_quarantines = 0
+        for p in (_base() / "index").glob("*.corrupt-*"):
+            try:
+                p.unlink()
+                removed_index_quarantines += 1
+            except OSError:
+                pass
+    return {"records_removed": removed_records, "blobs_removed": removed_blobs,
+            "index_quarantines_removed": removed_index_quarantines}
 
 
 def rebuild() -> dict:
+    """Reseed all root indexes from scratch. Holds _LOCK for entire operation
+    (live turns stall; in-flight turns lose their baseline). Returns
+    {roots, files}."""
     cfg = load_config()
     with _LOCK:
         _REBUILD.update(running=True, root=None)
@@ -542,6 +572,8 @@ def rebuild() -> dict:
 
 
 def stats() -> dict:
+    """Report blob cache size and per-root index status. Returns {blobs,
+    blob_bytes, roots: [{path, files, scanned_ms, exists}], rebuild: {running, root}}."""
     cfg = load_config()
     blobs = 0
     nbytes = 0
@@ -560,6 +592,8 @@ def stats() -> dict:
 
 
 async def sweep_loop() -> None:
+    """Run sweep() periodically: after 600 s (10 min) on startup, then every
+    86400 s (1 day). Executes on thread pool to avoid blocking."""
     await asyncio.sleep(600)
     while True:
         try:

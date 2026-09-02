@@ -30,7 +30,8 @@ def test_sweep_drops_old_records_and_orphan_blobs(tmp_path, monkeypatch):
     old_sha = changes.turn_record("sk", 2)["files"][0]["before_sha"]
     assert changes.read_blob(old_sha) == b"one"
     # young record: nothing removed, old blob still referenced by the record
-    assert changes.sweep(keep_days=30) == {"records_removed": 0, "blobs_removed": 0}
+    out = changes.sweep(keep_days=30)
+    assert out["records_removed"] == 0 and out["blobs_removed"] == 0
     # age the record past retention: record goes, orphan blob "one" goes, "two" stays (in index)
     far = int(time.time() * 1000) + 40 * 86400 * 1000
     out = changes.sweep(now_ms=far, keep_days=30)
@@ -51,3 +52,46 @@ def test_rebuild_and_stats(tmp_path, monkeypatch):
     assert st["blobs"] == 2 and st["blob_bytes"] == 6
     assert st["roots"][0]["files"] == 2 and st["roots"][0]["exists"] is True
     assert st["rebuild"]["running"] is False
+
+
+def test_sweep_removes_corrupt_record_file(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    _touch(root / "a.md", "one")
+    _cfg(monkeypatch, root)
+    changes.turn_started("sk", 1)
+    changes.turn_ended("sk", 1)
+    changes.turn_started("sk", 2)
+    _touch(root / "a.md", "two")
+    changes.turn_ended("sk", 2)
+    safe_key = changes.safe_key("sk")
+    record_dir = changes._base() / "turns" / safe_key
+    corrupt_record = record_dir / "9.json"
+    corrupt_record.parent.mkdir(parents=True, exist_ok=True)
+    corrupt_record.write_bytes(b"{not json")
+    assert corrupt_record.exists()
+    far = int(time.time() * 1000) + 40 * 86400 * 1000
+    out = changes.sweep(now_ms=far, keep_days=30)
+    assert corrupt_record.exists() is False
+    assert out["records_removed"] == 3
+    quarantine_files = list(record_dir.glob("*.corrupt-*"))
+    assert len(quarantine_files) == 0
+
+
+def test_sweep_removes_corrupt_index_file(tmp_path, monkeypatch):
+    root = tmp_path / "ws"
+    _touch(root / "a.md", "data")
+    _cfg(monkeypatch, root)
+    changes.refresh_index(str(root), changes.load_config())
+    import hashlib
+    only_in_corrupt_sha = hashlib.sha256(b"only_in_corrupt").hexdigest()
+    blob_path = changes.blob_path(only_in_corrupt_sha)
+    blob_path.parent.mkdir(parents=True, exist_ok=True)
+    blob_path.write_bytes(b"only_in_corrupt")
+    idx_dir = changes._base() / "index"
+    root_key = changes.root_key(str(root))
+    corrupt_idx = idx_dir / f"{root_key}.corrupt-fake"
+    corrupt_idx.write_text('{"files": {"x.txt": [0, 15, "' + only_in_corrupt_sha + '"]}}')
+    out = changes.sweep()
+    assert corrupt_idx.exists() is False
+    assert blob_path.exists() is False
+    assert out["index_quarantines_removed"] == 1

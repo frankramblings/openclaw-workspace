@@ -11,6 +11,7 @@ import { runtime } from './runtime.js';
 const MODULES = {
   chat: 'chat',
   companion: 'companion',
+  changes: 'changes',
   inbox: 'inbox',
   email: 'email',
   calendar: 'calendar',
@@ -172,6 +173,7 @@ export async function loadSurface(name, { state, actions, render, force = false 
   if (name === 'chat') {
     loadSurface('companion', { state, actions, render, force });
     loadSurface('settings', { state, actions, render, force });
+    loadSurface('changes', { state, actions, render, force });
   }
   return result;
 }

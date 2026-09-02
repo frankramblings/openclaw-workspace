@@ -131,7 +131,12 @@ let _convFilterRenderTimer = null;  // mobile: coalesce conv-search re-renders
 // NOTE: 'quick' must stay in the DEBOUNCED set, not here — the desktop
 // calendar renders its "↵ Add" button conditionally on state.quick, so a
 // full render skip would freeze the button out of the DOM while typing.
-const PLAIN_SHEET_FIELDS = new Set(['captureDraft', 'composeTo', 'composeSubject', 'composeBody']);
+// changesRootDraft / changesPruneDraft belong here too: Settings re-renders
+// its whole panel per keystroke, and neither field has any dependent view to
+// catch up. The DOM holds the typed value and changesAddRoot /
+// changesSavePrune read it back from state.
+const PLAIN_SHEET_FIELDS = new Set(['captureDraft', 'composeTo', 'composeSubject', 'composeBody',
+  'changesRootDraft', 'changesPruneDraft']);
 // These DO have a results list that must eventually catch up with what
 // was typed, so instead of skipping forever they get one coalesced render
 // after a short typing pause — the same idea as convFilter's own (mobile-
@@ -1391,6 +1396,7 @@ root.addEventListener('keydown', (e) => {
   const sendCombo = (e.metaKey || e.ctrlKey) || (fk === 'draft' && !e.shiftKey);
   if (sendCombo) {
     e.preventDefault();
+    if (e.altKey && actions.sendQueued) { actions.sendQueued(); render(); return; }
     if (actions.send) { actions.send(); render(); }
   }
 });

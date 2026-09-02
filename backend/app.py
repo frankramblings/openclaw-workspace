@@ -24,10 +24,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
+from . import (branch_context, bridge, capabilities, changes, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup,
-               monitor, pending_tokens, promise_guard, push, sessions_store, syschatter,
-               task_ingest, task_registry, terminals, turn_state, websearch)
+               monitor, pending_tokens, promise_guard, push, sessions_store, steer,
+               syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -59,6 +59,8 @@ from .tasks_route import router as tasks_router
 from .transcribe_routes import router as transcribe_router
 from .voice import router as voice_router
 from .palette_routes import router as palette_router
+from .usage_route import router as usage_router
+from .changes_route import router as changes_router
 from . import workspace_files
 # Attachment subsystem (Task 19): image/text extraction, HEIC→JPEG, persistence.
 # app.py keeps the to_thread call sites (they dispatch the blocking work here off
@@ -191,6 +193,9 @@ async def _lifespan(_app: FastAPI):
     # Progress-UX mirror loop: tmp/jobs/*.json + share/tasks/*/progress.json
     # into task_registry, once per process (see task_ingest.py).
     ingest_task = asyncio.create_task(task_ingest.ingest_loop())
+    # Changes review: daily sweep of the turn-diff index/blob store (expiry +
+    # orphan cleanup). See backend/changes.py.
+    changes_sweep_task = asyncio.create_task(changes.sweep_loop())
     # Filesystem watcher for the doc editor's live-refresh (broadcasts to
     # /api/workspace/watch subscribers). Cheap Rust-backed inotify; one task.
     workspace_watch.start_watcher()
@@ -213,7 +218,8 @@ async def _lifespan(_app: FastAPI):
         search_task.cancel()
         followup_task.cancel()
         ingest_task.cancel()
-        for t in (task, search_task, followup_task, ingest_task):
+        changes_sweep_task.cancel()
+        for t in (task, search_task, followup_task, ingest_task, changes_sweep_task):
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         # Own every other task we've spun up over the app's life so nothing is
@@ -226,7 +232,8 @@ async def _lifespan(_app: FastAPI):
         # finish, which would raise "set changed size during iteration" if we
         # iterated them live while cancelling.
         await workspace_watch.stop()
-        remaining = list(_TURN_TASKS.values()) + list(_BG_TASKS)
+        remaining = (list(_TURN_TASKS.values()) + list(_BG_TASKS)
+                     + list(chat_turn._CHANGES_TASKS))
         for t in remaining:
             t.cancel()
         if remaining:
@@ -287,6 +294,8 @@ app.include_router(tasks_router)
 app.include_router(transcribe_router)
 app.include_router(voice_router)
 app.include_router(palette_router)
+app.include_router(usage_router)
+app.include_router(changes_router)
 
 # Active gateway runs by sessionKey, so the Stop button can chat.abort the run
 # server-side. chat.js already POSTs /api/chat/stop/<sid> on explicit Stop
@@ -925,6 +934,54 @@ async def stop_chat(session_id: str):
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502,
                             content={"ok": False, "error": f"{exc!r}"})
+
+
+@app.post("/api/chat/steer/{session_id}")
+async def steer_chat(session_id: str, message: str = Form(...),
+                     client_id: str = Form(default="")):
+    """Inject a message into this chat's RUNNING turn (real steering, no
+    abort). Gates, in order: a turn must be active for the session (else the
+    client just sends normally), the gateway must carry the claude-cli steer
+    patch and the session must run on claude-cli (else the client queues as
+    before, so nothing is ever absorbed into a follow-up run the bridge is not
+    relaying). On success a `user_steer` frame is appended to the event store
+    so every reader of this turn (the sender, other tabs, a post-reload
+    resume) shows the message at the point it was sent."""
+    # NUL bytes would poison the stream-json line the gateway patch writes into
+    # the CLI's stdin; strip them BEFORE the empty check so a NUL-only body is
+    # rejected as empty rather than "steered".
+    text = (message or "").replace("\x00", "").strip()
+    if not text:
+        return JSONResponse(status_code=400, content={"ok": False, "reason": "empty_message"})
+    # client_id is echoed verbatim into an SSE frame every open tab parses, so
+    # keep it to the shape our own uniqId() mints: at most 64 chars of
+    # [A-Za-z0-9_-], anything else dropped (empty string if nothing remains).
+    client_id = "".join(
+        c for c in (client_id or "")
+        if c.isascii() and (c.isalnum() or c in "_-")
+    )[:64]
+    rec = sessions_store.get(session_id)
+    session_key = rec["sessionKey"] if rec else config.web_session_key()
+    task = _TURN_TASKS.get(session_key)
+    if task is None or task.done():
+        return JSONResponse(status_code=409, content={"ok": False, "reason": "no_active_turn"})
+    if not steer.session_can_steer(rec):
+        return JSONResponse(status_code=409, content={
+            "ok": False, "reason": "steer_unavailable",
+            "detail": "steering needs a claude-cli session"})
+    if not steer.patch_present():
+        return JSONResponse(status_code=409, content={
+            "ok": False, "reason": "steer_unavailable",
+            "detail": "gateway steer patch not installed"})
+    try:
+        ack = await bridge.steer_turn(session_key, text)
+    except Exception as exc:  # noqa: BLE001 - surface the gateway failure honestly
+        return JSONResponse(status_code=502, content={
+            "ok": False, "reason": "gateway_error", "detail": f"{exc!r}"})
+    event_store.append(session_key, bridge._sse({
+        "type": "user_steer", "text": text, "client_id": client_id or "",
+        "ts": int(time.time() * 1000)}))
+    return {"ok": True, "steered": True, "runId": (ack or {}).get("runId")}
 
 
 @app.get("/api/models")

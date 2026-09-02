@@ -4,6 +4,7 @@
 import { I, icon } from './icons.js';
 import { esc, map, when } from './dom.js';
 import { AVATAR, EXT_COLOR } from './data.js';
+import { changesPaneHtml } from './changes-view.js';
 
 // effective tab for a surface (agent tab suppressed on chat; chat defaults Terminal)
 export function effectiveTab(s) {
@@ -123,6 +124,7 @@ export function renderCompanion(s) {
   if (split) body = splitPane(s);
   else if (tab === 'terminal') body = TERM_SUBHEAD + TERM_BODY;
   else if (tab === 'files') body = filesPane(s);
+  else if (tab === 'changes') body = changesPaneHtml(s.live?.changes);
   else body = garyPane();
 
   return `
@@ -131,6 +133,7 @@ export function renderCompanion(s) {
     <div class="comp-tabs">
       <button class="${tabCls('terminal')}" data-act="compTab" data-arg="terminal">${I.terminal()}Terminal</button>
       <button class="${tabCls('files')}" data-act="compTab" data-arg="files">${I.folder(14, 'currentColor')}Files</button>
+      <button class="${tabCls('changes')}" data-act="compTab" data-arg="changes">${icon('<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>', { size: 14, sw: 1.9 })}Changes</button>
       ${when(showGary, `<button class="${tabCls('gary')} gary" data-act="compTab" data-arg="gary"><span class="gicon"><img src="${AVATAR}" alt="" decoding="sync" loading="eager"></span>__AGENT_NAME__</button>`)}
       <div class="oc-spacer"></div>
       <button class="comp-ctl${split ? ' on' : ''}" data-act="toggleSplit" title="Split — terminal over files">${I.split()}</button>
@@ -148,6 +151,7 @@ export function renderReveal(s) {
     <div class="reveal-div"></div>
     <button class="reveal-icon ocbtn" data-act="compTab" data-arg="terminal" title="Terminal">${I.terminal(16)}</button>
     <button class="reveal-icon ocbtn" data-act="compTab" data-arg="files" title="Files">${I.folder(16, 'currentColor')}</button>
+    <button class="reveal-icon ocbtn" data-act="compTab" data-arg="changes" title="Changes">${icon('<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>', { size: 16, sw: 1.9 })}</button>
     ${when(showGary, `<button class="reveal-icon ocbtn" data-act="compTab" data-arg="gary" title="__AGENT_NAME__"><span class="reveal-gicon"><img src="${AVATAR}" alt="" decoding="sync" loading="eager"></span></button>`)}
   </div>`;
 }

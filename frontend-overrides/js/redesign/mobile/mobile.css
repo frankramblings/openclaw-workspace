@@ -1080,3 +1080,15 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-attach-row .m-attach-chip.uploading { opacity: .8; }
 .m-attach-row .m-attach-chip.uploading .fl-svg { color: var(--faint); flex: none; }
 .m-attach-row .m-attach-chip.failed { border-color: var(--red); color: var(--red); }
+
+/* ---- steering (Pillar A) --------------------------------------------------- */
+.m-send.steer { background: var(--teal, #4fe3d1); color: #07131f; }
+.msg-steer-notice { font-size: 11px; color: var(--amber, #e0b15a); margin-top: 2px; }
+.m-queue-chip { font-size: 12px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border, #3b6d96); background: transparent; color: var(--fg, #eee); margin-right: 6px; }
+
+/* ---- usage (Pillar A, task 3) ---------------------------------------------- */
+.m-usage { font-size: 11px; color: var(--faint, #8a94a6); font-family: var(--mono, ui-monospace, monospace); margin-top: 4px; }
+
+/* ---- per-turn change review (Pillar A, task 8) ------------------------------ */
+.m-changes { flex: 1; min-height: 0; overflow: auto; }
+.m-changes pre.diff { font-size: 11px; }

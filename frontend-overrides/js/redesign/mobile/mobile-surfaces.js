@@ -16,6 +16,9 @@ import { detailEndpoint } from '../live/inbox-detail.js';
 import { questionCardHtml } from '../live/question-card.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
 import { currentHealth, healthDotColor } from '../live/health.js';
+import { steerComposerHints, steerCaptionHtml } from '../steer-view.js';
+import { usageLine, usageTitle } from '../usage-view.js';
+import { changesCardHtml } from '../changes-view.js';
 
 // Task 2.1: mobile counterpart to surfaces.js's loadErrorBlock — same
 // "Couldn't load X, Retry" contract (data-act="retrySurface" clears the
@@ -109,7 +112,7 @@ export function mChatMsg(m, s, ghostCtx) {
     const ring = pending ? `<span class="m-msg-pending-ring" title="Sending…"></span>` : '';
     const chip = pending ? `<button class="m-msg-edit-chip" data-act="editPendingOnMobile" data-arg="${esc(m.id)}">Tap to edit</button>` : '';
     const meta = pending ? `<div class="m-msg-user-meta">${ring}${chip}</div>` : '';
-    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '').replace(/\n/g, '<br>')}</div>${meta}</div>`;
+    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '').replace(/\n/g, '<br>')}${steerCaptionHtml(m)}</div>${meta}</div>`;
   }
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
   // Promise guard (Phase 3, mirrors surfaces.js): amber nudge when a reply
@@ -157,9 +160,13 @@ export function mChatMsg(m, s, ghostCtx) {
         toolId: m.questionCard.toolId || '',
       })
     : '';
+  const changesHtml = m.changes ? changesCardHtml(m.changes, { expanded: !!(s.live?.changes?.expanded && s.live.changes.expanded.has(m.changes.turn_id)) }) : '';
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${ghostHtml}</div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${changesHtml}${assistantToolbar(m, s)}${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); if (!line) return ''; // the title attribute is invisible on iOS, so the "session so far"
+      // caveat has to live in the visible text on mobile.
+      const vis = (m.usage && m.usage._session ? 'session ' : '') + line;
+      return `<div class="m-usage" title="${esc(usageTitle(m.usage, uOpts))}">${esc(vis)}</div>`; })()}${ghostHtml}</div>`
   + `</div>`;
 }
 
@@ -258,7 +265,9 @@ export function mChat(s) {
       <label class="m-round-btn bordered" title="Attach photo or file"><input type="file" data-upload multiple style="display:none">${I.plus(16)}</label>
       <div class="ta-wrap">${mGhostComposer}<textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message __AGENT_NAME__…">
 ${esc(s.draft || '')}</textarea></div>
-      <button class="m-send${s.mobileEditingPending ? ' editing' : ''}" data-act="send">${I.send(16)}${s.mobileEditingPending ? `<span class="m-send-lbl">Save</span>` : ''}</button>
+      ${(() => { const h = steerComposerHints(s); return `
+      ${h.showQueueChip ? `<button class="m-queue-chip" data-act="sendQueued">Queue instead</button>` : ''}
+      <button class="m-send${s.mobileEditingPending ? ' editing' : ''}${h.steerLabel ? ' steer' : ''}" data-act="send">${I.send(16)}${s.mobileEditingPending ? `<span class="m-send-lbl">Save</span>` : (h.steerLabel ? `<span class="m-send-lbl">Steer</span>` : '')}</button>`; })()}
     </div>
   </div>
   ${sheetHtml}`;

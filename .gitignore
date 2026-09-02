@@ -59,3 +59,6 @@ frontend-overrides/.redesign.css.*
 # frontend-next build artifacts
 frontend-next/node_modules/
 frontend-next/dist/
+
+# SDD scratch (ledgers, briefs, review packages)
+.superpowers/

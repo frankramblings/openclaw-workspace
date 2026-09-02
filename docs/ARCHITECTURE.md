@@ -48,6 +48,15 @@ surfaces a clear "method not found" message rather than a version-number compari
 This means the workspace works with any OpenClaw that speaks the listed methods,
 regardless of its release tag.
 
+### Steering (2026-09)
+
+A message sent while a claude-cli turn is running is injected into that turn:
+`POST /api/chat/steer/{id}` → `chat.send` on the active session → the gateway's
+steer queue → (patched) claude-cli reply handle `queueMessage` → Claude Code
+stdin, delivered after the current tool result. The patch lives in
+`deploy/gateway-patches/`; `GET /api/capabilities` reports `steer` only when the
+running bundle carries it. Sessions on other runtimes keep the client-side queue.
+
 ## The app (`backend/app.py`)
 
 A FastAPI application that:
@@ -60,6 +69,17 @@ A FastAPI application that:
 
 Config resolution lives in `backend/config.py`: env var → `~/.openclaw/openclaw.json`
 → default. Secrets only ever come from the gateway config or the environment.
+
+### Change review (2026-09)
+
+`backend/changes.py` observes the filesystem around every turn: per watched
+root an index (path → mtime, size, sha256) plus a content-addressed cache of
+the last seen text content. The turn recorder refreshes at turn start
+(absorbing between-turn writes) and 1.5 s after turn end (this turn's change
+set, flagged `shared` when another turn was active). Diffs are computed on
+request from the cached blobs; revert restores the turn's before-state only if
+the file has not moved on. Roots and prune list live in `.data/changes.json`
+(Settings → Changes). It never uses git.
 
 ## The frontend: vendor + overrides + bake
 

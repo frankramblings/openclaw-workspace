@@ -57,11 +57,13 @@ def test_projection_trims_to_contract_and_drops_extras():
     # (1) Exactly the expected top-level keys/values. Task 2 (session totals)
     # added "totals"/"costed" to the contract, so "cacheRead" is now a
     # legitimately-surfaced field (see the leak check below) rather than one
-    # that must be dropped.
+    # that must be dropped. The fix round added "pending" (the gateway's cost
+    # cache is still refreshing) for the client's one-shot retry.
     assert set(out.keys()) == {
-        "ok", "sessionId", "model", "modelProvider", "usage", "context",
-        "totals", "costed", "updatedAt",
+        "ok", "pending", "sessionId", "model", "modelProvider", "usage",
+        "context", "totals", "costed", "updatedAt",
     }
+    assert out["pending"] is False
     assert out["ok"] is True
     assert out["sessionId"] == "1fe81698ef72"
     assert out["model"] == "claude-opus-4-8"

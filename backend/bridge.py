@@ -1143,14 +1143,24 @@ def _project_session_usage(spa_session_id: str, session_key: str,
         output_tokens = live.get("outputTokens")
 
     def _num(v):
-        return v if isinstance(v, (int, float)) else 0
+        return v if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
 
     totals = {k: _num(usage.get(k)) for k in
               ("input", "output", "cacheRead", "cacheWrite", "totalTokens", "totalCost", "missingCostEntries")}
     costed = totals["missingCostEntries"] == 0 and totals["totalTokens"] > 0
 
+    # Right after a turn the gateway's cost cache for this transcript is still
+    # refreshing: the row comes back with `usage: undefined` and a top-level
+    # cacheStatus of refreshing/partial/stale. Surface that as `pending` so the
+    # client knows an empty row is "not yet", not "nothing", and can retry.
+    raw_cache_status = (payload or {}).get("cacheStatus")
+    cache_status = (raw_cache_status.get("status")
+                    if isinstance(raw_cache_status, dict) else None)
+    pending = cache_status not in (None, "fresh")
+
     return {
         "ok": True,
+        "pending": pending,
         "sessionId": spa_session_id,
         "model": model,
         "modelProvider": provider,

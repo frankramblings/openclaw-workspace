@@ -16,7 +16,7 @@ ALLOWED_DAYS = (7, 30)
 def _int(v) -> int:
     """Best-effort int coercion for gateway-supplied fields: a malformed
     payload (wrong type, garbage string) degrades to 0 rather than raising."""
-    if isinstance(v, (int, float)):
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
         return int(v)
     return 0
 
@@ -40,11 +40,18 @@ async def usage_summary(days: str = "7"):
     daily = [d for d in raw_daily if isinstance(d, dict)] if isinstance(raw_daily, list) else []
     missing = _int(totals.get("missingCostEntries"))
     total_tokens = _int(totals.get("totalTokens"))
+    # The gateway's own ledger cache can be mid-refresh (cacheStatus
+    # refreshing/partial/stale), in which case these numbers are incomplete and
+    # the UI must not claim otherwise.
+    raw_cache_status = payload.get("cacheStatus")
+    cache_status = (raw_cache_status.get("status")
+                    if isinstance(raw_cache_status, dict) else None)
     return {
         "ok": True,
         "days": n,
         "daily": daily,
         "totals": totals,
+        "fresh": cache_status in (None, "fresh"),
         "costed": missing == 0 and total_tokens > 0,
         "updatedAt": payload.get("updatedAt"),
     }

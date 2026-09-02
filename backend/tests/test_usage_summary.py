@@ -82,6 +82,37 @@ def test_malformed_totals_and_daily_degrade_gracefully(client, monkeypatch):
     assert body["costed"] is False
 
 
+def test_fresh_reflects_the_gateway_cache_status(client, monkeypatch):
+    """A mid-refresh ledger must be reported as not fresh so the panel stops
+    claiming the tokens are complete."""
+    async def stale(method, params=None, timeout=30.0):
+        return dict(SAMPLE, cacheStatus={"status": "refreshing"})
+
+    monkeypatch.setattr(bridge, "gateway_call", stale)
+    assert client.get("/api/usage/summary?days=7").json()["fresh"] is False
+
+    async def fresh(method, params=None, timeout=30.0):
+        return dict(SAMPLE, cacheStatus={"status": "fresh"})
+
+    monkeypatch.setattr(bridge, "gateway_call", fresh)
+    assert client.get("/api/usage/summary?days=7").json()["fresh"] is True
+
+    async def silent(method, params=None, timeout=30.0):
+        return SAMPLE
+
+    monkeypatch.setattr(bridge, "gateway_call", silent)
+    assert client.get("/api/usage/summary?days=7").json()["fresh"] is True
+
+
+def test_boolean_totals_are_not_numbers(client, monkeypatch):
+    async def fake_call(method, params=None, timeout=30.0):
+        return dict(SAMPLE, totals={"missingCostEntries": False, "totalTokens": True})
+
+    monkeypatch.setattr(bridge, "gateway_call", fake_call)
+    # totalTokens=True must coerce to 0, so the response is not "costed".
+    assert client.get("/api/usage/summary?days=7").json()["costed"] is False
+
+
 def test_non_numeric_missing_cost_entries_is_not_costed(client, monkeypatch):
     payload = dict(SAMPLE, totals={"missingCostEntries": "abc"})
 

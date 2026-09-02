@@ -22,6 +22,12 @@ async function fetchRecord(sessionId, turnId) {
 }
 
 // After `done`: the server closes the window ~1.5 s later, so poll a few times.
+// Fix round 1, finding 1: this runs 2.5-7.5 s after `done`, which is plenty of
+// time for the user to have switched to another thread. `msg` is the SAME
+// object that's already in whatever thread array holds it (or none, if the
+// user navigated away entirely), so setting msg.changes is always safe — but
+// state.live.changes belongs to whichever session is ACTIVE right now, and
+// must never be clobbered with a stale, no-longer-active session's turn.
 export async function afterTurn(sessionId, turnId, msg, opts = {}) {
   if (!sessionId || turnId == null || !msg) return;
   const delays = opts.delays || [2500, 2000, 3000];
@@ -30,17 +36,23 @@ export async function afterTurn(sessionId, turnId, msg, opts = {}) {
     let rec = null;
     try { rec = await fetchRecord(sessionId, turnId); } catch (_) { rec = null; }
     if (rec) {
-      const state = runtime.state;
-      const c = ensure(state, sessionId);
-      c.records[rec.turn_id] = rec;
       if (rec.files && rec.files.length) msg.changes = rec;
-      if (!c.turns.some((t) => t.turn_id === rec.turn_id)) c.turns.unshift({ turn_id: rec.turn_id, started_ms: rec.started_ms, ended_ms: rec.ended_ms, files: rec.files.length, added: rec.files.reduce((a, f) => a + (f.added || 0), 0), removed: rec.files.reduce((a, f) => a + (f.removed || 0), 0), shared: rec.files.some((f) => f.shared) });
-      runtime.render();
+      const state = runtime.state;
+      const activeId = state && state.live && state.live.chat && state.live.chat.activeId;
+      if (activeId === sessionId) {
+        const c = ensure(state, sessionId);
+        c.records[rec.turn_id] = rec;
+        if (!c.turns.some((t) => t.turn_id === rec.turn_id)) c.turns.unshift({ turn_id: rec.turn_id, started_ms: rec.started_ms, ended_ms: rec.ended_ms, files: rec.files.length, added: rec.files.reduce((a, f) => a + (f.added || 0), 0), removed: rec.files.reduce((a, f) => a + (f.removed || 0), 0), shared: rec.files.some((f) => f.shared) });
+        runtime.render();
+      }
       return;
     }
   }
 }
 
+// Fix round 1, finding 4: fetch every missing record concurrently (was one
+// await per turn, serially) — this runs on every thread open, selectSession,
+// and manual refresh.
 export async function attachHistory(state, sessionId, thread) {
   if (!sessionId || !Array.isArray(thread)) return;
   const c = ensure(state, sessionId);
@@ -48,13 +60,16 @@ export async function attachHistory(state, sessionId, thread) {
   try { const r = await apiGet(`/api/changes/session?session=${encodeURIComponent(sessionId)}`); turns = (r && r.turns) || []; c.error = null; } catch (e) { c.error = 'network'; return; }
   c.turns = turns.filter((t) => t.files > 0);
   const map = attachChangesToThread(thread, c.turns);
-  for (const [msgId, t] of map) {
-    const m = thread.find((x) => x.id === msgId);
-    if (!m) continue;
+  await Promise.all(Array.from(map.entries()).map(async ([msgId, t]) => {
     let rec = c.records[t.turn_id];
-    if (!rec) { try { rec = await fetchRecord(sessionId, t.turn_id); } catch (_) { rec = null; } }
-    if (rec) { c.records[t.turn_id] = rec; m.changes = rec; }
-  }
+    if (!rec) {
+      try { rec = await fetchRecord(sessionId, t.turn_id); } catch (_) { rec = null; }
+      if (rec) c.records[t.turn_id] = rec;
+    }
+    if (!rec) return;
+    const m = thread.find((x) => x.id === msgId);
+    if (m) m.changes = rec;
+  }));
   runtime.render();
 }
 
@@ -68,7 +83,20 @@ async function openPath(turnId, path) {
   const sid = state.live.chat.activeId;
   const c = ensure(state, sid);
   let rec = c.records[turnId];
-  if (!rec) { rec = await fetchRecord(sid, turnId); if (rec) c.records[turnId] = rec; }
+  if (!rec) {
+    // Fix round 1, finding 3: changesOpen/changesTurn dispatch this
+    // fire-and-forget (data-act handlers aren't awaited) — an unguarded
+    // throw here became an unhandled rejection with no visible error state.
+    try {
+      rec = await fetchRecord(sid, turnId);
+      if (rec) c.records[turnId] = rec;
+    } catch (e) {
+      c.error = (e && e.status) || 'network';
+      runtime.render();
+      return;
+    }
+  }
+  c.error = null;
   c.open = { turn: Number(turnId), record: rec, path: path || null, diff: null };
   state.compTab = 'changes'; state.compSplit = false; state.compHidden = false;
   try {
@@ -110,15 +138,43 @@ export const actions = {
     const turn = Number(String(arg).slice(0, i)); const path = String(arg).slice(i + 1);
     if (typeof globalThis.confirm === 'function' && !globalThis.confirm(`Revert ${path} to how it was before this turn?`)) return;
     const state = runtime.state; const sid = state.live.chat.activeId;
+    // Fix round 1, finding 2: only the actual revert POST belongs in this
+    // try — a refresh fetch failing AFTER a successful revert must never
+    // read back as "Revert failed."
     try {
       await apiJson('/api/changes/revert', { session: sid, turn, path });
-      const c = ensure(state, sid);
-      delete c.records[turn];
-      await openPath(turn, path);
-      await attachHistory(state, sid, state.live.chat.thread || []);
     } catch (e) {
       const msg = /409/.test(String(e && e.message)) ? 'The file changed since this turn. Nothing was reverted.' : 'Revert failed.';
       if (runtime.actions && runtime.actions.toast) runtime.actions.toast(msg); else console.warn(msg);
+      return;
     }
+    if (runtime.actions && runtime.actions.toast) runtime.actions.toast(`Reverted ${path}`);
+    // Best-effort refresh: openPath already refetches this exact record (and
+    // now handles its own fetch failures — finding 3), so reuse it instead of
+    // a second full attachHistory pass (finding 4). Propagate the refreshed
+    // record onto the matching c.turns row and the thread bubble that
+    // already carries this turn's card, so both pick up e.g. "reverted".
+    try {
+      const c = ensure(state, sid);
+      delete c.records[turn];
+      await openPath(turn, path);
+      const rec = c.records[turn];
+      if (rec) {
+        const ti = c.turns.findIndex((t) => t.turn_id === turn);
+        if (ti !== -1) {
+          c.turns[ti] = {
+            ...c.turns[ti],
+            files: rec.files.length,
+            added: rec.files.reduce((a, f) => a + (f.added || 0), 0),
+            removed: rec.files.reduce((a, f) => a + (f.removed || 0), 0),
+            shared: rec.files.some((f) => f.shared),
+          };
+        }
+        const thread = state.live.chat.thread || [];
+        const tm = thread.find((x) => x.changes && x.changes.turn_id === turn);
+        if (tm) tm.changes = rec;
+        runtime.render();
+      }
+    } catch (_) { /* refresh is best-effort */ }
   },
 };

@@ -17,6 +17,7 @@ import hashlib
 import logging
 import os
 import re
+import stat
 import threading
 import time
 from pathlib import Path
@@ -401,8 +402,20 @@ def _write_bytes_atomic(abs_path: str, data: bytes) -> None:
     p = Path(abs_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".revert-tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, p)
+    try:
+        tmp.write_bytes(data)
+        try:
+            mode = stat.S_IMODE(os.stat(abs_path).st_mode)
+            os.chmod(tmp, mode)
+        except OSError:
+            pass  # target didn't exist yet (deleted case) - default mode is fine
+        os.replace(tmp, p)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def revert(session_key: str, turn_id: int, path: str) -> tuple[bool, str]:
@@ -416,6 +429,8 @@ def revert(session_key: str, turn_id: int, path: str) -> tuple[bool, str]:
         if not f.get("diffable") and f.get("kind") != "added":
             return False, "not_diffable"
         root = f.get("root") or ""
+        if not os.path.isabs(root):
+            return False, "not_found"
         abs_path = os.path.join(root, path)
         kind = f.get("kind")
         current = _sha_of(abs_path)
@@ -434,17 +449,26 @@ def revert(session_key: str, turn_id: int, path: str) -> tuple[bool, str]:
                 _write_bytes_atomic(abs_path, data)
         except OSError:
             return False, "io_error"
-        # keep the index in step so the next turn does not report the revert
+        # keep the index in step so the next turn does not report the revert,
+        # but never write a half-seeded index: scanned_ms == 0 with this path
+        # absent means the index is missing/corrupt/never scanned, and adding
+        # just this one entry would poison refresh_index's seed detection
+        # (scanned_ms == 0 and not files), making the next turn report every
+        # other file in the root as newly added. Leave it alone and let the
+        # next refresh_index() reseed normally.
         idx = _load_index(root)
-        if kind == "added":
-            idx["files"].pop(path, None)
+        if idx.get("scanned_ms", 0) == 0 and path not in idx.get("files", {}):
+            log.debug("changes: skipping index update for %s, unseeded index at %s will reseed", path, root)
         else:
-            try:
-                st = os.stat(abs_path)
-                idx["files"][path] = [st.st_mtime_ns, st.st_size, f.get("before_sha")]
-            except OSError:
+            if kind == "added":
                 idx["files"].pop(path, None)
-        _save_index(root, idx)
+            else:
+                try:
+                    st = os.stat(abs_path)
+                    idx["files"][path] = [st.st_mtime_ns, st.st_size, f.get("before_sha")]
+                except OSError:
+                    idx["files"].pop(path, None)
+            _save_index(root, idx)
         f["reverted"] = True
         fsutil.atomic_write_json(record_path(session_key, turn_id), rec)
         _notify_watch(abs_path)

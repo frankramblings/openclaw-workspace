@@ -207,19 +207,11 @@ function scheduleStripSweep(chat) {
   }, delay);
 }
 
-// Debounced localStorage write for per-thread drafts (spec 7.5: 500 ms).
-let _draftPersistTimer = null;
-function _persistDraftsSoon(chat) {
-  if (_draftPersistTimer) clearTimeout(_draftPersistTimer);
-  _draftPersistTimer = setTimeout(() => {
-    _draftPersistTimer = null;
-    try { persistDrafts(chat.drafts, window.localStorage); } catch (_) { /* storage unavailable */ }
-  }, 500);
-  // Same reasoning as startHbWatchdog() below: Node test files import this
-  // module with no browser tab to keep alive, so an un-refed debounce timer
-  // would otherwise hold the process open (and, worse, can fire in real wall-
-  // clock time in the middle of an unrelated later test's fake-timer window).
-  if (_draftPersistTimer && typeof _draftPersistTimer.unref === 'function') _draftPersistTimer.unref();
+// Persist per-thread drafts. Called only on a thread switch, a new chat, or
+// a send, never per keystroke, so a synchronous write is fine and avoids a
+// module-level timer (which node:test mock.timers sessions cannot share).
+function _persistDraftsNow(chat) {
+  try { persistDrafts(chat.drafts, window.localStorage); } catch (_) { /* storage unavailable */ }
 }
 
 // Leaving a thread (switch or new chat): remember its scroll position and
@@ -232,7 +224,7 @@ function _leaveThread(chat, state) {
     if (el) chat.scroll[prev] = scrollSnapshot(el.scrollTop, el.scrollHeight, el.clientHeight);
   } catch (_) { /* no DOM */ }
   chat.drafts = saveDraft(chat.drafts, prev, state.draft);
-  _persistDraftsSoon(chat);
+  _persistDraftsNow(chat);
 }
 
 function _setHash(h) {
@@ -2599,7 +2591,7 @@ export const actions = {
       syncQueuedView(chat);
       state.draft = '';
       chat.drafts = dropDraft(chat.drafts, chat.activeId);
-      _persistDraftsSoon(chat);
+      _persistDraftsNow(chat);
       state.pendingAttach = [];
       runtime.render();
       return;
@@ -2607,7 +2599,7 @@ export const actions = {
 
     state.draft = '';
     chat.drafts = dropDraft(chat.drafts, chat.activeId);
-    _persistDraftsSoon(chat);
+    _persistDraftsNow(chat);
     state.pendingAttach = []; // consumed by this turn
     const ok = await submitFromComposer(text, attachSnap);
     if (ok === false) {

@@ -29,6 +29,19 @@ test('error state is honest and offers retry', () => {
   assert.ok(html.includes('data-act="usageRetry"'));
 });
 
+test('a stale gateway ledger says so and holds back dollars + the completeness claim', () => {
+  const html = usagePanelHtml({ days: 7, daily, totals: { input: 3800, output: 1200, totalTokens: 5000, totalCost: 2.5, missingCostEntries: 0 }, costed: true, fresh: false, error: null });
+  assert.ok(html.includes('Updating from the gateway ledger'));
+  assert.ok(!html.includes('$2.50'));
+  assert.ok(!html.includes('Tokens above are complete.'));
+});
+
+test('a fresh ledger keeps the costed output unchanged', () => {
+  const html = usagePanelHtml({ days: 7, daily, totals: { input: 3800, output: 1200, totalTokens: 5000, totalCost: 2.5, missingCostEntries: 0 }, costed: true, fresh: true, error: null });
+  assert.ok(html.includes('$2.50'));
+  assert.ok(!html.includes('Updating from the gateway ledger'));
+});
+
 test('no em dashes in copy', () => {
   const html = usagePanelHtml({ days: 7, daily, totals: { input: 1, output: 1, totalTokens: 2, totalCost: 0, missingCostEntries: 0 }, costed: false, error: null });
   assert.ok(!html.includes('—'));

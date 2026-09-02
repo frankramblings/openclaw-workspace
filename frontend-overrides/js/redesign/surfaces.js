@@ -370,7 +370,7 @@ export function chatMsg(m, s, ghostCtx) {
     return `<span class="turn-pending-pill" title="${esc(title)}"><span class="turn-pending-spin">${fortress(14)}</span>${n === 1 ? 'pending' : n}</span>`;
   })();
   const ghostHtml = (ghostCtx && ghostCtx.msgId === m.id) ? (ghostCtx.html || '') : '';
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span>${(() => { const line = usageLine(m.usage, null); return line ? `<span class="usage" title="${esc((m.usage && m.usage._session ? 'session so far · ' : '') + usageTitle(m.usage))}">${esc(line)}</span>` : ''; })()}</div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span>${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); return line ? `<span class="usage" title="${esc((m.usage && m.usage._session ? 'session so far · ' : '') + usageTitle(m.usage, uOpts))}">${esc(line)}</span>` : ''; })()}</div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
 }
 
 
@@ -547,7 +547,7 @@ ${esc(d)}</textarea>
       <div class="composer-row">
         <button class="icon-btn ocbtn" data-act="toggleSlash" title="More tools">${I.plus()}</button>
         <label class="icon-btn ocbtn" title="Attach files" style="cursor:pointer;display:inline-flex;align-items:center"><input type="file" data-upload multiple style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></label>
-        ${pct != null ? `<div class="ctx-meter" title="${esc(sessionTotalsLine(chat.sessionUsage?.totals, !!chat.sessionUsage?.costed) || 'Context used')}"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>` : ''}
+        ${pct != null ? `<div class="ctx-meter" title="${esc(sessionTotalsLine(chat.sessionUsage?.totals, !!chat.sessionUsage?.costed, { provider: chat.sessionUsage?.provider }) || 'Context used')}"><div class="track"><div class="fill" style="width:${pct}%"></div></div><span class="pct">${pct}%</span></div>` : ''}
         <div class="oc-spacer"></div>
         <button class="icon-btn ocbtn" data-act="toggleIncognito" title="${s.incognito ? 'Incognito ON — this chat is not saved' : 'Incognito — don’t save this chat'}" style="${s.incognito ? 'color:var(--violet)' : ''}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7"/><path d="M2 12s3 7 10 7 10-7 10-7"/><circle cx="12" cy="12" r="2.5"/>${s.incognito ? '<line x1="3" y1="3" x2="21" y2="21"/>' : ''}</svg></button>
         <button class="model-btn ocbtn" data-act="toggleModelMenu" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="model-btn-name">${esc(currentModelLabel(s, model) || '…')}</span>${I.chevDownSm()}</button>
@@ -1215,7 +1215,7 @@ function settingsSurface(s) {
       case 'liveUsage': {
         const u = s.live?.usage;
         if (!u) return '<div class="set-text set-live-empty">Loading usage…</div>';
-        return usagePanelHtml({ days: u.days || 7, daily: (u.data && u.data.daily) || [], totals: u.data && u.data.totals, costed: !!(u.data && u.data.costed), error: u.error });
+        return usagePanelHtml({ days: u.days || 7, daily: (u.data && u.data.daily) || [], totals: u.data && u.data.totals, costed: !!(u.data && u.data.costed), fresh: u.fresh !== false, error: u.error });
       }
       case 'liveDefault': {
         const def = s.live?.defaultModel || '';

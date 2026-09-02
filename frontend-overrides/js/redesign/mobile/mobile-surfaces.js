@@ -161,7 +161,10 @@ export function mChatMsg(m, s, ghostCtx) {
     : '';
   return `<div class="m-msg-asst" data-msg-id="${esc(m.id)}"${streamAttr}>`
     + `<div class="m-msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__"></div>`
-    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${(() => { const line = usageLine(m.usage, null); return line ? `<div class="m-usage" title="${esc(usageTitle(m.usage))}">${esc(line)}</div>` : ''; })()}${ghostHtml}</div>`
+    + `<div class="m-md" style="min-width:0">${renderActivity(m, s)}${paras}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${assistantToolbar(m, s)}${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); if (!line) return ''; // the title attribute is invisible on iOS, so the "session so far"
+      // caveat has to live in the visible text on mobile.
+      const vis = (m.usage && m.usage._session ? 'session ' : '') + line;
+      return `<div class="m-usage" title="${esc(usageTitle(m.usage, uOpts))}">${esc(vis)}</div>`; })()}${ghostHtml}</div>`
   + `</div>`;
 }
 

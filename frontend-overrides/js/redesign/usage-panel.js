@@ -5,6 +5,9 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':
 
 export function usagePanelHtml(model) {
   const { days, daily = [], totals, costed, error } = model || {};
+  // `fresh` is false while the gateway's own cost ledger is still refreshing —
+  // the numbers below are then incomplete, so we say so and hold the dollars.
+  const fresh = !(model && model.fresh === false);
   const seg = `<div class="usage-seg"><button class="set-btn${days === 7 ? ' primary' : ''}" data-act="usageDays" data-arg="7">7 days</button><button class="set-btn${days === 30 ? ' primary' : ''}" data-act="usageDays" data-arg="30">30 days</button></div>`;
   if (error) {
     return `${seg}<div class="set-text">Usage could not be loaded (${esc(error)}). <button class="set-btn" data-act="usageRetry">Retry</button></div>`;
@@ -18,9 +21,14 @@ export function usagePanelHtml(model) {
   }).join('');
   const t = totals || {};
   const missing = Number(t.missingCostEntries) || 0;
-  const cost = costed
-    ? `<div class="set-field"><span class="k">Estimated cost</span><span class="v">$${(Number(t.totalCost) || 0).toFixed(2)}</span></div>`
-    : `<div class="set-text">Cost not available for subscription models (${missing} uncosted ${missing === 1 ? 'entry' : 'entries'} in this period). Tokens above are complete.</div>`;
+  let cost;
+  if (!fresh) {
+    cost = `<div class="set-text">Updating from the gateway ledger…</div>`;
+  } else if (costed) {
+    cost = `<div class="set-field"><span class="k">Estimated cost</span><span class="v">$${(Number(t.totalCost) || 0).toFixed(2)}</span></div>`;
+  } else {
+    cost = `<div class="set-text">Cost not available for subscription models (${missing} uncosted ${missing === 1 ? 'entry' : 'entries'} in this period). Tokens above are complete.</div>`;
+  }
   return `${seg}
   <div class="usage-chart">${bars || '<div class="set-text">No usage recorded in this period.</div>'}</div>
   <div class="set-field"><span class="k">Input</span><span class="v">${fmtTokens(t.input)}</span></div>

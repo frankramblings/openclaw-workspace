@@ -28,3 +28,36 @@ test('sessionTotalsLine hides dollars unless costed', () => {
   assert.equal(sessionTotalsLine(t, true), 'Session: ↑1.2M ↓84k · $1.23');
   assert.equal(sessionTotalsLine(null, true), '');
 });
+
+// --- Fix round: claude-cli reports placeholder input/output ---------------
+// Its real prompt volume sits in cacheRead/cacheWrite, so the up-arrow is the
+// prompt-side total and the down-arrow is dropped (no fake "↓1").
+
+test('claude-cli: up-arrow is input + cacheRead + cacheWrite, no down-arrow', () => {
+  const u = { input: 2, output: 1, cacheRead: 80000, cacheWrite: 1060 };
+  assert.equal(usageLine(u, null, { provider: 'claude-cli' }), '↑81.1k');
+  assert.equal(usageLine(u, 41, { provider: 'claude-cli' }), '↑81.1k · 41% ctx');
+});
+
+test('other providers keep both arrows and the same prompt-side arithmetic', () => {
+  const u = { input: 2, output: 1200, cacheRead: 80000, cacheWrite: 1060 };
+  assert.equal(usageLine(u, null, { provider: 'openai' }), '↑81.1k ↓1.2k');
+  assert.equal(usageLine(u, null), '↑81.1k ↓1.2k');
+});
+
+test('a wholly empty record still renders nothing', () => {
+  assert.equal(usageLine({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, 41, { provider: 'claude-cli' }), '');
+});
+
+test('usageTitle keeps the raw four and flags the missing claude-cli output', () => {
+  const u = { input: 2, output: 1, cacheRead: 80000, cacheWrite: 1060 };
+  assert.equal(usageTitle(u, { provider: 'claude-cli' }),
+    'input 2 · output 1 · cache read 80,000 · cache write 1,060 · output not reported by claude-cli');
+  assert.ok(!usageTitle(u, { provider: 'openai' }).includes('not reported'));
+});
+
+test('sessionTotalsLine follows the same arithmetic and omission rule', () => {
+  const t = { input: 2, output: 1, cacheRead: 1200000, cacheWrite: 0, totalCost: 1.234 };
+  assert.equal(sessionTotalsLine(t, false, { provider: 'claude-cli' }), 'Session: ↑1.2M');
+  assert.equal(sessionTotalsLine(t, true, { provider: 'openai' }), 'Session: ↑1.2M ↓1 · $1.23');
+});

@@ -14,7 +14,7 @@ not just the original maintainer's setup.
 ### Pillar A: Agent control loop (real steering, 2026-09)
 
 - Chat: real steering. While Gary is working on a claude-cli chat, Enter injects your message into the running turn (Claude Code style); Alt+Enter or "Queue instead" keeps today's queue. Needs the `claude-cli-steer` gateway patch (deploy/gateway-patches).
-- Usage: hover or tap an assistant message for its tokens; the thread's context pill shows session totals; Settings > Usage charts 7 or 30 days from the gateway ledger (dollars only when every entry was priced).
+- Usage: hover or tap an assistant message for its tokens; the thread's context pill shows session totals; Settings → Usage charts 7 or 30 days from the gateway ledger (dollars only when every entry was priced).
 
 ### Phase 1 — Genericization (already merged to main)
 

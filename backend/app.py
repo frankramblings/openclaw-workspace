@@ -26,8 +26,8 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup,
-               monitor, pending_tokens, promise_guard, push, sessions_store, syschatter,
-               task_ingest, task_registry, terminals, turn_state, websearch)
+               monitor, pending_tokens, promise_guard, push, sessions_store, steer,
+               syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -925,6 +925,44 @@ async def stop_chat(session_id: str):
     except Exception as exc:  # noqa: BLE001
         return JSONResponse(status_code=502,
                             content={"ok": False, "error": f"{exc!r}"})
+
+
+@app.post("/api/chat/steer/{session_id}")
+async def steer_chat(session_id: str, message: str = Form(...),
+                     client_id: str = Form(default="")):
+    """Inject a message into this chat's RUNNING turn (real steering, no
+    abort). Gates, in order: a turn must be active for the session (else the
+    client just sends normally), the gateway must carry the claude-cli steer
+    patch and the session must run on claude-cli (else the client queues as
+    before, so nothing is ever absorbed into a follow-up run the bridge is not
+    relaying). On success a `user_steer` frame is appended to the event store
+    so every reader of this turn (the sender, other tabs, a post-reload
+    resume) shows the message at the point it was sent."""
+    text = (message or "").strip()
+    if not text:
+        return JSONResponse(status_code=400, content={"ok": False, "reason": "empty_message"})
+    rec = sessions_store.get(session_id)
+    session_key = rec["sessionKey"] if rec else config.web_session_key()
+    task = _TURN_TASKS.get(session_key)
+    if task is None or task.done():
+        return JSONResponse(status_code=409, content={"ok": False, "reason": "no_active_turn"})
+    if not steer.session_can_steer(rec):
+        return JSONResponse(status_code=409, content={
+            "ok": False, "reason": "steer_unavailable",
+            "detail": "steering needs a claude-cli session"})
+    if not steer.patch_present():
+        return JSONResponse(status_code=409, content={
+            "ok": False, "reason": "steer_unavailable",
+            "detail": "gateway steer patch not installed"})
+    try:
+        ack = await bridge.steer_turn(session_key, text)
+    except Exception as exc:  # noqa: BLE001 - surface the gateway failure honestly
+        return JSONResponse(status_code=502, content={
+            "ok": False, "reason": "gateway_error", "detail": f"{exc!r}"})
+    event_store.append(session_key, bridge._sse({
+        "type": "user_steer", "text": text, "client_id": client_id or "",
+        "ts": int(time.time() * 1000)}))
+    return {"ok": True, "steered": True, "runId": (ack or {}).get("runId")}
 
 
 @app.get("/api/models")

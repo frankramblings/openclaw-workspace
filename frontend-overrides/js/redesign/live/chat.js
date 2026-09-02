@@ -33,6 +33,7 @@ import {
   toggleCollapsed as stripToggleCollapsed, readCollapsed as stripReadCollapsed,
   sweepAgents as stripSweepAgents, renderChatStrip,
 } from '../chat-strip.js';
+import { buildSwitcherSections, flatRows, clampSel } from '../switcher.js';
 
 // The throttled per-token render only patches the active message bubble in
 // place — it does NOT re-render `.composer-wrap`, which is where the strip
@@ -2325,8 +2326,22 @@ function buildTranscriptHtml(title, thread, meta) {
 </body></html>`;
 }
 
-let _convSearchTimer = null;
-let _convSearchSeq = 0;
+// One debounced /api/search pipeline, keyed per caller slot so the sidebar
+// filter and the ⌘K switcher never cancel each other's in-flight query.
+const _convSearchSlot = { timer: null, seq: 0 };
+const _switcherSearchSlot = { timer: null, seq: 0 };
+function _semanticSearch(slot, q, apply) {
+  if (slot.timer) { clearTimeout(slot.timer); slot.timer = null; }
+  const seq = ++slot.seq;
+  slot.timer = setTimeout(async () => {
+    let res = [];
+    try { res = await apiGet(`/api/search?q=${encodeURIComponent(q)}&limit=20`); }
+    catch (_) { res = []; }
+    if (seq !== slot.seq) return;   // a newer keystroke superseded this one
+    apply(Array.isArray(res) ? res : []);
+    runtime.render();
+  }, 280);
+}
 // GET /api/models in-flight guard for loadModelOptions: the mobile sheet
 // re-fires the loader on every open (and on its tap-to-retry row), and two
 // concurrent GETs would interleave their catalog rebuilds. One at a time —
@@ -2364,19 +2379,66 @@ export const actions = {
     if (!chat) return;
     const q = (query || '').trim();
     chat.searchQuery = q;
-    if (_convSearchTimer) { clearTimeout(_convSearchTimer); _convSearchTimer = null; }
-    if (q.length < 2) { chat.searchResults = null; chat.searchLoading = false; return; }
+    if (q.length < 2) {
+      if (_convSearchSlot.timer) { clearTimeout(_convSearchSlot.timer); _convSearchSlot.timer = null; }
+      _convSearchSlot.seq += 1;
+      chat.searchResults = null; chat.searchLoading = false; return;
+    }
     chat.searchLoading = true;
-    const seq = ++_convSearchSeq;
-    _convSearchTimer = setTimeout(async () => {
-      let res = [];
-      try { res = await apiGet(`/api/search?q=${encodeURIComponent(q)}&limit=20`); }
-      catch (_) { res = []; }
-      if (seq !== _convSearchSeq) return;  // a newer keystroke superseded this one
-      chat.searchResults = Array.isArray(res) ? res : [];
-      chat.searchLoading = false;
-      runtime.render();
-    }, 280);
+    _semanticSearch(_convSearchSlot, q, (res) => { chat.searchResults = res; chat.searchLoading = false; });
+  },
+
+  // ⌘K switcher (spec 7.3). Sections are rebuilt from state by switcher.js on
+  // every render; these actions only own open/close, the query, and the
+  // highlighted index.
+  openSwitcher: () => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    chat.switcherOpen = true; chat.switcherSel = 0; chat.switcherResults = null;
+    state.switchQuery = '';
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => { const el = document.querySelector('[data-focus="switchQuery"]'); if (el) el.focus(); });
+    }
+  },
+  closeSwitcher: () => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    chat.switcherOpen = false; chat.switcherResults = null; chat.switcherSel = 0;
+    state.switchQuery = '';
+    _switcherSearchSlot.seq += 1;
+    if (_switcherSearchSlot.timer) { clearTimeout(_switcherSearchSlot.timer); _switcherSearchSlot.timer = null; }
+  },
+  switcherQuery: (text) => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    const q = String(text || '').trim();
+    chat.switcherSel = 0;
+    if (q.length < 2) { chat.switcherResults = null; _switcherSearchSlot.seq += 1; return; }
+    _semanticSearch(_switcherSearchSlot, q, (res) => { chat.switcherResults = res; });
+  },
+  switcherMove: (delta) => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    const n = flatRows(buildSwitcherSections({
+      query: state.switchQuery, sessions: chat.sessions, mru: chat.mru,
+      searchResults: chat.switcherResults, activeId: chat.activeId, projects: chat.projects,
+    })).length;
+    chat.switcherSel = clampSel((chat.switcherSel || 0) + (Number(delta) || 0), n);
+  },
+  switcherPick: (id) => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    let pick = id || null;
+    if (!pick) {
+      const rows = flatRows(buildSwitcherSections({
+        query: state.switchQuery, sessions: chat.sessions, mru: chat.mru,
+        searchResults: chat.switcherResults, activeId: chat.activeId, projects: chat.projects,
+      }));
+      const r = rows[clampSel(chat.switcherSel, rows.length)];
+      pick = r ? r.id : null;
+    }
+    actions.closeSwitcher();
+    if (pick && pick !== chat.activeId) actions.selectSession(pick);
   },
 
   selectSession: async (id) => {

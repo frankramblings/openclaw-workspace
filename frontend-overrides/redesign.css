@@ -47,6 +47,7 @@
      rename: values and relative order are unchanged from before this pass. */
   --z-ghost:2; --z-ptr:5; --z-res-pop:20; --z-row-raised:30; --z-toast-mobile:39;
   --z-dropdown:40; --z-sheet:41; --z-drawer-scrim:44; --z-drawer:45; --z-files-menu:60;
+  --z-switcher-scrim:70; --z-switcher:71;
   --z-msg-sheet-scrim:90; --z-msg-sheet:91; --z-install-hint:200; --z-threads-hint:201;
   --z-threads-hint-btn:202; --z-drop-overlay:9998; --z-toast:9999; --z-imgview:10000;
   --z-loader:99999;
@@ -1158,3 +1159,14 @@ html.shell-mobile .oc-toast{max-width:none}
 .atch-chip .atch-spin{display:inline-flex;align-items:center;padding:0 2px 0 8px;color:var(--faint)}
 .atch-chip.atch-failed{border-color:var(--red);background:rgba(240,114,106,.08)}
 .atch-chip.atch-failed .atch-ext,.atch-chip.atch-failed .atch-name{color:var(--red)}
+
+/* ⌘K thread switcher (spec 7.3) */
+.oc-switcher-scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:var(--z-switcher-scrim)}
+.oc-switcher{position:fixed;left:50%;top:12vh;transform:translateX(-50%);width:min(560px,92vw);max-height:70vh;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--bd);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.5);z-index:var(--z-switcher);overflow:hidden}
+.oc-switcher .sw-search{margin:10px 10px 4px;height:38px}
+.oc-switcher .sw-search input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit;font-size:14px}
+.sw-list{overflow:auto;padding:0 8px 8px;min-height:60px}
+.sw-row .sw-proj{margin-left:auto;flex:none;font-size:11px;color:var(--faint);white-space:nowrap}
+.sw-row .conv-hit{display:flex;flex-direction:column;min-width:0;gap:2px}
+.sw-row .conv-hit-snip{font-size:12px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sw-foot{display:flex;gap:14px;padding:6px 14px;border-top:1px solid var(--bd);font-size:11px;color:var(--faint)}

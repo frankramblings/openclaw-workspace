@@ -18,6 +18,7 @@ import './task-rows.js'; // side-effect: boots the feed subscription and injects
 import { renderMarkdown } from './markdown.js';
 import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
+import { renderSwitcher } from './switcher.js';
 // Fetch caps for the task-6.2 "showing first N" disclosure footer (capNotice,
 // below). NOT imported from the live/*.js modules that own them — every
 // live/*.js file eventually imports api.js, which reads `location.origin` at
@@ -506,6 +507,7 @@ export function chatSurface(s) {
   const isEmpty = msgs.length === 0;
 
   return `
+  ${when(chat.switcherOpen, renderSwitcher(s))}
   <div class="chat-head">
     <div style="min-width:0;flex:1">
       <div class="ttl">${esc(title)}</div>

@@ -854,6 +854,7 @@ const MODAL_SURFACES = [
   // conv drawer paints over any sheet (mobile-app.js renders it last), the
   // sheets are mutually exclusive in practice (closeSheets()), and the two
   // desktop overlays live on separate screens from the mobile sheets.
+  { open: (s) => !isMobile() && !!(s.live && s.live.chat && s.live.chat.switcherOpen), selector: '.oc-switcher', close: 'closeSwitcher' },
   { open: (s) => isMobile() && !!s.mDrawerOpen, selector: '[data-conv-drawer]', close: 'closeDrawer' },
   { open: (s) => isMobile() && !!s.mModelSheetOpen, selector: '.m-sheet.model-sheet', close: 'closeModelSheet' },
   { open: (s) => isMobile() && !!s.quickCaptureOpen, selector: '.m-sheet.capture', close: 'closeCapture' },
@@ -879,10 +880,10 @@ function topmostModal() {
 // user's next move.
 const MODAL_OPEN_ACTIONS = new Set([
   'composeNew', 'composeReply', 'composeAiDraft', 'openReader',
-  'openCompanion', 'openCapture', 'openModelSheet', 'openConvDrawer', 'openConvSheet',
+  'openCompanion', 'openCapture', 'openModelSheet', 'openConvDrawer', 'openConvSheet', 'openSwitcher',
 ]);
 const MODAL_CLOSE_ACTIONS = new Set([
-  'closeCompose', 'closeReader', 'closeCompanion', 'closeCapture', 'closeModelSheet', 'closeDrawer',
+  'closeCompose', 'closeReader', 'closeCompanion', 'closeCapture', 'closeModelSheet', 'closeDrawer', 'closeSwitcher',
 ]);
 
 // render() rebuilds root.innerHTML wholesale (see render(), above), so a raw
@@ -1111,6 +1112,11 @@ root.addEventListener('input', (e) => {
       return;
     }
   }
+  if (field === 'switchQuery') {
+    if (actions.switcherQuery) actions.switcherQuery(t.value);
+    render();   // desktop only (the switcher never renders on mobile); focus is restored by data-focus
+    return;
+  }
 
   // Task 4.4: quick-capture / compose-sheet / filter-box fields skip the full
   // re-render entirely (state is already synced above); the filter/search
@@ -1328,6 +1334,19 @@ root.addEventListener('keydown', (e) => {
   const t = e.target;
   if (!t || !t.getAttribute) return;
   const fk = t.getAttribute('data-focus');
+  if (fk === 'switchQuery') {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (actions.switcherMove) { actions.switcherMove(e.key === 'ArrowDown' ? 1 : -1); render(); }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (actions.switcherPick) { actions.switcherPick(); render(); }
+      return;
+    }
+    return;   // Escape is handled by the modal path in the global handler
+  }
   if (fk !== 'draft' && fk !== 'mdraft') return;
 
   // Slash-command autocomplete (mechanic 4 — desktop only, fk==='draft'; the
@@ -1483,6 +1502,14 @@ document.addEventListener('keydown', (e) => {
     // targets are background elements (still in the DOM behind the compose
     // overlay etc.); focusing one would silently escape the trap.
     if (topmostModal()) return;
+    // Chat surface, desktop: ⌘K is the thread switcher (spec 7.3). Elsewhere
+    // it keeps focusing that surface's search/filter input.
+    if (state.surface === 'chat' && !isMobile() && actions.openSwitcher) {
+      e.preventDefault();
+      actions.openSwitcher();
+      render();
+      return;
+    }
     const el = root.querySelector('[data-model="convFilter"],[data-model="notesFilter"],[data-model="libQuery"],[data-model="emailQuery"]');
     if (el) { e.preventDefault(); el.focus(); }
     return;

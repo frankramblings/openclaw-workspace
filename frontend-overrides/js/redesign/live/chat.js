@@ -1116,9 +1116,11 @@ function beginTurn(chat, modelLabel, sessionId) {
   // superseded (see _turnEpoch above).
   const epoch = ++_turnEpoch;
   turn = { epoch, sessionId: sessionId || chat.activeId || null, asstMsg: null, activity: null, thinkStep: null, byTid: {}, stepN: 0, msgId: uniqId('live-'), lastFrameMs: Date.now(), got404: false };
-  // A running turn for this thread — steer-view.js's steerComposerHints() reads
-  // this to decide whether the composer shows "Steer"/the queue chip.
-  chat.busyHere = true;
+  // The session this running turn belongs to — steer-view.js's
+  // steerComposerHints() compares this against chat.activeId to decide
+  // whether the composer shows "Steer"/the queue chip for the VIEWED thread
+  // (a turn busy in another thread must not paint this thread's composer).
+  chat.busySessionId = turn.sessionId || chat.activeId || null;
   chat.steerMode = busySendMode({
     busyHere: true,
     steerAvailable: !!(runtime.state && runtime.state.caps && runtime.state.caps.steer && runtime.state.caps.steer.available),
@@ -1216,7 +1218,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       }
       chat.suggest = null; // a finished turn invalidates any "While you wait" ghost
       flushRender();
-      if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); chat.busyHere = false; turn = null; return; }
+      if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); chat.busySessionId = null; turn = null; return; }
       refreshSidebarUsage(runtime.state);
       // Follow-up ghost suggestion — only after a CLEAN finish (an explicit
       // turn_end status of 'ok' AND a real reply; endStatus is undefined when
@@ -1228,7 +1230,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       const doneSid = turn.sessionId;
       const hadQueued = !!queueHead(chat.queuedList, doneSid);
       setLiveTurn(null);
-      chat.busyHere = false;
+      chat.busySessionId = null;
       turn = null;
       flushQueuedFor(chat, doneSid);
       if (cleanFinish && !hadQueued) fetchSuggestion(chat, 'followup', null);
@@ -1271,7 +1273,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       const errSid = turn.sessionId;     // capture before teardown
       const statusless = !ev.status;     // dropped mid-turn (vs an HTTP-level POST failure)
       setLiveTurn(null);
-      chat.busyHere = false;
+      chat.busySessionId = null;
       turn = null;
       // Statusless drop on the visible thread: the turn may have COMPLETED
       // server-side while our reader was dead (event_store owns the turn, not
@@ -1800,6 +1802,7 @@ function finalizeLocal(chat, interrupted) {
     turn.asstMsg.notice = 'This turn was interrupted by a backend restart — the reply may be incomplete.';
   }
   setLiveTurn(null);
+  chat.busySessionId = null;
   turn = null;
   stopElapsed();
   if (chat.chatStrip) { chat.chatStrip = stripOnTurnDone(chat.chatStrip); patchChatStrip(chat); }
@@ -2456,7 +2459,13 @@ export const actions = {
     // below if the thread we're opening has its own in-flight turn.
     stopLive();
     stopElapsed();
+    // Detaching, not ending: the turn (if any) keeps running server-side.
+    // Null busySessionId anyway — this client no longer has a live `turn`
+    // to steer/queue into, and reconcileTurn (below) re-derives the truth
+    // via beginTurn if this (or the destination) thread turns out to still
+    // be busy, rather than trusting a stale id no one is attached to.
     turn = null;
+    chat.busySessionId = null;
     _pendingByTurnId.clear();
     chat.rowMenuOpen = null;
     chat.suggest = null;
@@ -2562,6 +2571,7 @@ export const actions = {
     stopLive();
     stopElapsed();
     turn = null;
+    chat.busySessionId = null; // detaching, not ending — see selectSession's comment
     _pendingByTurnId.clear();
     const _leavingId = chat.activeId;
     saveStripForCurrent(chat);
@@ -2783,7 +2793,7 @@ export const actions = {
       a.elapsed = fmtElapsed(a.startMs);
       a.worked = `Stopped after ${a.elapsed} · ${a.steps.length} steps`;
     }
-    if (chat) chat.busyHere = false;
+    if (chat) chat.busySessionId = null;
     turn = null;
     // Stop is a deliberate halt — don't auto-fire a queued follow-up. Hand it
     // back to the composer so the user decides whether to send it. Keyed to

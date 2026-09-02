@@ -3,17 +3,22 @@ import assert from 'node:assert';
 import { steerComposerHints, steerCaptionHtml } from '../redesign/steer-view.js';
 
 test('busy + steer mode → Steer label and the queue chip', () => {
-  const s = { live: { chat: { steerMode: true, busyHere: true } } };
+  const s = { live: { chat: { steerMode: true, busySessionId: 's1', activeId: 's1' } } };
   assert.deepEqual(steerComposerHints(s), { steerLabel: true, showQueueChip: true });
 });
 
 test('busy without steer mode → normal Send, no chip', () => {
-  const s = { live: { chat: { steerMode: false, busyHere: true } } };
+  const s = { live: { chat: { steerMode: false, busySessionId: 's1', activeId: 's1' } } };
   assert.deepEqual(steerComposerHints(s), { steerLabel: false, showQueueChip: false });
 });
 
 test('idle → normal Send, no chip even if steerMode is stale', () => {
-  const s = { live: { chat: { steerMode: true, busyHere: false } } };
+  const s = { live: { chat: { steerMode: true, busySessionId: null, activeId: 's1' } } };
+  assert.deepEqual(steerComposerHints(s), { steerLabel: false, showQueueChip: false });
+});
+
+test('busy in another thread → viewed thread is not the busy one, no hints', () => {
+  const s = { live: { chat: { steerMode: true, busySessionId: 's1', activeId: 's2' } } };
   assert.deepEqual(steerComposerHints(s), { steerLabel: false, showQueueChip: false });
 });
 

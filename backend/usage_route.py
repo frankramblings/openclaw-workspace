@@ -13,6 +13,14 @@ router = APIRouter()
 ALLOWED_DAYS = (7, 30)
 
 
+def _int(v) -> int:
+    """Best-effort int coercion for gateway-supplied fields: a malformed
+    payload (wrong type, garbage string) degrades to 0 rather than raising."""
+    if isinstance(v, (int, float)):
+        return int(v)
+    return 0
+
+
 @router.get("/api/usage/summary")
 async def usage_summary(days: str = "7"):
     try:
@@ -26,13 +34,16 @@ async def usage_summary(days: str = "7"):
     except Exception as exc:  # noqa: BLE001 - report the gateway failure honestly
         return JSONResponse(status_code=502, content={
             "ok": False, "reason": "gateway_error", "detail": f"{exc!r}"})
-    totals = payload.get("totals") or {}
-    missing = int(totals.get("missingCostEntries") or 0)
-    total_tokens = int(totals.get("totalTokens") or 0)
+    raw_totals = payload.get("totals")
+    totals = raw_totals if isinstance(raw_totals, dict) else {}
+    raw_daily = payload.get("daily")
+    daily = [d for d in raw_daily if isinstance(d, dict)] if isinstance(raw_daily, list) else []
+    missing = _int(totals.get("missingCostEntries"))
+    total_tokens = _int(totals.get("totalTokens"))
     return {
         "ok": True,
         "days": n,
-        "daily": [d for d in (payload.get("daily") or []) if isinstance(d, dict)],
+        "daily": daily,
         "totals": totals,
         "costed": missing == 0 and total_tokens > 0,
         "updatedAt": payload.get("updatedAt"),

@@ -65,3 +65,30 @@ def test_gateway_failure_is_502(client, monkeypatch):
     r = client.get("/api/usage/summary?days=7")
     assert r.status_code == 502
     assert r.json()["reason"] == "gateway_error"
+
+
+def test_malformed_totals_and_daily_degrade_gracefully(client, monkeypatch):
+    malformed = dict(SAMPLE, totals=[1, 2, 3], daily=5)
+
+    async def fake_call(method, params=None, timeout=30.0):
+        return malformed
+
+    monkeypatch.setattr(bridge, "gateway_call", fake_call)
+    r = client.get("/api/usage/summary?days=7")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["totals"] == {}
+    assert body["daily"] == []
+    assert body["costed"] is False
+
+
+def test_non_numeric_missing_cost_entries_is_not_costed(client, monkeypatch):
+    payload = dict(SAMPLE, totals={"missingCostEntries": "abc"})
+
+    async def fake_call(method, params=None, timeout=30.0):
+        return payload
+
+    monkeypatch.setattr(bridge, "gateway_call", fake_call)
+    r = client.get("/api/usage/summary?days=7")
+    assert r.status_code == 200
+    assert r.json()["costed"] is False

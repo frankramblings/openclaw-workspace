@@ -117,7 +117,7 @@ export const PANELS = {
     // real, working global shortcut (see app.js's keydown listeners); the sub
     // just says so instead of advertising a feature that doesn't exist.
     card({ title: 'Keyboard Shortcuts', icon: TAB.shortcuts[2], sub: 'Global shortcuts — not yet customizable.', rows: [
-      shortcut('New chat', ['⌘', '⇧', 'O']), shortcut('Search / command palette', ['⌘', 'K']), shortcut('Toggle sidebar', ['⌘', '\\']),
+      shortcut('New chat', ['⌘', '⇧', 'O']), shortcut('Switch conversation (chat) / search', ['⌘', 'K']), shortcut('Toggle sidebar', ['⌘', '\\']),
       shortcut('Send message', ['⌘', '↵']), shortcut('New line', ['⇧', '↵']), shortcut('Open settings', ['⌘', ',']),
       shortcut('Incognito mode', ['⌘', '⇧', 'I']), shortcut('Focus composer', ['/']),
     ] }),

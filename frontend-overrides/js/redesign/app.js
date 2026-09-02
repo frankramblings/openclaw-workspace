@@ -6,6 +6,7 @@
 
 import { I } from './icons.js';
 import { esc, when } from './dom.js';
+import { parseHash, chatHash, SURFACES } from './routes.js';
 import { AVATAR, filterSlashCommands } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
 import { renderCenter, renderChatList, chatMsg, inboxToastHtml } from './surfaces.js';
@@ -38,6 +39,7 @@ const state = {
   railExpanded: false,
   // chat
   draft: '', forceSlash: false, chatMode: 'agent',
+  switchQuery: '', bootSessionId: null,
   // slash-command autocomplete keyboard state (Arrow/Enter/Escape — see app.js
   // keydown wiring): slashSel is the highlighted command's name; slashDismissed
   // lets Escape close the dropdown without erasing the typed "/text".
@@ -1627,9 +1629,11 @@ function swapInPlace(el, html) {
 // ---- boot -----------------------------------------------------------------
 // Deep-link the initial surface from the hash (e.g. #calendar), and keep the
 // hash in sync as the user navigates so views are shareable / reloadable.
-const SURFACES = ['chat', 'inbox', 'email', 'calendar', 'research', 'library', 'notes', 'settings'];
-const fromHash = (location.hash || '').replace('#', '');
-if (SURFACES.includes(fromHash)) state.surface = fromHash;
+// routes.js owns the hash grammar ('#<surface>' and '#chat/<sessionId>').
+const _boot = parseHash(location.hash);
+if (_boot.surface) state.surface = _boot.surface;
+if (_boot.sessionId) state.bootSessionId = _boot.sessionId;   // consumed once by live/chat.js load()
+const fromHash = _boot.special || _boot.surface || '';
 
 // Seed the mobile shell from the same hash: primary tabs map directly; the
 // desktop-only surfaces land under "More" (calendar opens its agenda screen).
@@ -1644,7 +1648,11 @@ function seedMobileFromHash(h) {
 seedMobileFromHash(fromHash);
 
 const _go = actions.go;
-actions.go = (surface) => { _go(surface); if (location.hash !== '#' + surface) history.replaceState(null, '', '#' + surface); };
+actions.go = (surface) => {
+  _go(surface);
+  const want = surface === 'chat' ? chatHash(state.live && state.live.chat && state.live.chat.activeId) : '#' + surface;
+  if (location.hash !== want) history.replaceState(null, '', want);
+};
 
 window.addEventListener('online', () => { state.isOnline = true; render(); });
 window.addEventListener('offline', () => { state.isOnline = false; render(); });
@@ -1662,11 +1670,35 @@ window.addEventListener('focus', syncBadge);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncBadge(); });
 
 window.addEventListener('hashchange', () => {
-  const h = (location.hash || '').replace('#', '');
-  if (SURFACES.includes(h) && h !== state.surface) { state.surface = h; seedMobileFromHash(h); render(); }
-  else if ((h === 'more' || h === 'capture')) { seedMobileFromHash(h); render(); }
+  const p = parseHash(location.hash);
+  if (p.surface && p.surface !== state.surface) { state.surface = p.surface; seedMobileFromHash(p.surface); render(); }
+  else if (p.special) { seedMobileFromHash(p.special); render(); }
+  // '#chat/<id>' from a notification tap, a pasted link, or the SW's navigate
+  // message: open that thread if it is one we know (or the list is not loaded
+  // yet, in which case selectSession fetches it). Unknown ids fall back to
+  // the bare chat surface silently (spec 8).
+  if (p.surface === 'chat' && p.sessionId && actions.selectSession) {
+    const chat = state.live && state.live.chat;
+    const known = !chat || !Array.isArray(chat.sessions) || !chat.sessions.length || chat.sessions.some((s) => s.id === p.sessionId);
+    if (!known) history.replaceState(null, '', '#chat');
+    else if (!chat || chat.activeId !== p.sessionId) actions.selectSession(p.sessionId);
+  }
   loadActive();
 });
+
+// sw.js's notificationclick posts {type:'navigate', url} when WindowClient.
+// navigate() is unavailable; applying the hash routes through the listener
+// above, so a notification tap lands on its thread either way.
+if (navigator.serviceWorker && navigator.serviceWorker.addEventListener) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    const d = (e && e.data) || {};
+    if (d.type !== 'navigate' || typeof d.url !== 'string') return;
+    try {
+      const u = new URL(d.url, location.origin);
+      if (u.origin === location.origin && u.hash) location.hash = u.hash;
+    } catch (_) { /* malformed url */ }
+  });
+}
 
 render();
 loadActive(); // kick off live data for the initial surface

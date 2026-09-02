@@ -866,6 +866,25 @@ async def gateway_hello(timeout: float = 10.0) -> dict:
     return hello.get("payload") or {}
 
 
+async def steer_turn(session_key: str, message: str) -> dict:
+    """Inject `message` into the session's RUNNING turn. With the gateway in
+    steer mode and the claude-cli steer patch installed, a chat.send that
+    lands while the run is active is written to the live Claude Code stdin and
+    delivered after the current tool result; the run keeps its runId, so the
+    turn's existing relay carries the continuation. The gateway acks
+    {runId, status:"started"} before dispatch for every chat.send, so an ok
+    ack means "delivered to the gateway", not "already injected". Throwaway
+    socket on purpose: never the warm one (a steer must not steal or pin it)."""
+    text = message.replace("\x00", "") if isinstance(message, str) else message
+    params = {
+        "sessionKey": session_key,
+        "message": text,
+        "deliver": False,
+        "idempotencyKey": uuid.uuid4().hex,
+    }
+    return await gateway_call("chat.send", params, timeout=20.0)
+
+
 # --- Model catalog: real gateway model list, mapped to the SPA's picker shape -
 
 _PROVIDER_META = {

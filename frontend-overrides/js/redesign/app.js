@@ -892,6 +892,15 @@ const MODAL_CLOSE_ACTIONS = new Set([
 // re-locatable selector instead (the same data-act[+data-arg] the trigger was
 // dispatched on, or its id) and re-query it once the closing render has run.
 let _modalFocusReturn = null;
+// Keyboard-opened modals (the ⌘K switcher) never pass through the click
+// delegator that captures a trigger element, so remember the focused
+// field's data-focus key instead and return there on close.
+let _switcherFocusKey = null;
+function armSwitcherFocus() {
+  const el = document.activeElement;
+  const key = el && el.getAttribute ? el.getAttribute('data-focus') : null;
+  _switcherFocusKey = key || 'draft';
+}
 function focusLocator(el) {
   if (!el || !el.getAttribute) return null;
   const act = el.getAttribute('data-act');
@@ -905,12 +914,25 @@ function focusLocator(el) {
 }
 function restoreModalFocus() {
   _pendingModalFocus = false;
-  if (!_modalFocusReturn) return;
-  const sel = _modalFocusReturn;
-  _modalFocusReturn = null;
-  let el = null;
-  try { el = root.querySelector(sel); } catch (_) { el = null; }
-  if (el && el.focus) el.focus({ preventScroll: true });
+  if (_modalFocusReturn) {
+    const sel = _modalFocusReturn;
+    _modalFocusReturn = null;
+    let el = null;
+    try { el = root.querySelector(sel); } catch (_) { el = null; }
+    if (el && el.focus) { el.focus({ preventScroll: true }); return; }
+  }
+  // No click-captured trigger (or it no longer exists) — fall back to the
+  // field that was focused when a keyboard shortcut opened the modal.
+  if (_switcherFocusKey) {
+    const key = _switcherFocusKey;
+    _switcherFocusKey = null;
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        const el = root.querySelector(`[data-focus="${key}"]`);
+        if (el && el.focus) el.focus({ preventScroll: true });
+      });
+    }
+  }
 }
 // Move focus INTO a just-opened modal (its first focusable element) instead
 // of leaving it wherever the render() rebuild happened to drop it — otherwise
@@ -1342,7 +1364,7 @@ root.addEventListener('keydown', (e) => {
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (actions.switcherPick) { actions.switcherPick(); render(); }
+      if (actions.switcherPick) { actions.switcherPick(); render(); restoreModalFocus(); }
       return;
     }
     return;   // Escape is handled by the modal path in the global handler
@@ -1506,6 +1528,7 @@ document.addEventListener('keydown', (e) => {
     // it keeps focusing that surface's search/filter input.
     if (state.surface === 'chat' && !isMobile() && actions.openSwitcher) {
       e.preventDefault();
+      armSwitcherFocus();
       actions.openSwitcher();
       render();
       return;

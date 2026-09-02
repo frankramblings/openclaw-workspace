@@ -5,7 +5,7 @@ vault; its helpers read the module globals at call time, so monkeypatching the
 two globals redirects every read/write/snapshot into tmp_path."""
 import pytest
 
-from backend import config, documents, sessions_store
+from backend import changes, config, documents, sessions_store
 
 
 @pytest.fixture(autouse=True)
@@ -16,9 +16,23 @@ def _isolated_data_dir(tmp_path, monkeypatch):
     made the spinoff-dedupe test fail forever after. _STORE_FILE is computed
     at import so patch the module global; spinoff.log and friends resolve
     config.DATA_DIR at call time so patching the config global covers them.
-    Tests that point these at their own tmp paths simply override this."""
+    Tests that point these at their own tmp paths simply override this.
+
+    backend.changes needs the same treatment now that chat_turn's recorder
+    calls it for real on every turn (Task 5): DEFAULT_CONFIG["roots"] lists
+    Frank's actual home-directory paths, and _ACTIVE is a plain module-level
+    dict, not scoped by DATA_DIR. Left alone, any route test that drives a
+    real (unmocked) turn would refresh_index() those real directories, and a
+    turn whose changes.turn_ended never runs (the detached changes_end_later
+    task gets cancelled when a test's short-lived event loop closes before
+    its 1.5s settle delay elapses) leaves a stale entry in _ACTIVE that makes
+    an unrelated later test's turn look 'shared' with a turn that has nothing
+    to do with it. Tests that want real scanning already pass their own
+    roots via changes.load_config/_use_root, so they're unaffected."""
     monkeypatch.setattr(sessions_store, "_STORE_FILE", tmp_path / "sessions.json")
     monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(changes, "DEFAULT_CONFIG", {**changes.DEFAULT_CONFIG, "roots": []})
+    monkeypatch.setattr(changes, "_ACTIVE", {})
 
 
 @pytest.fixture

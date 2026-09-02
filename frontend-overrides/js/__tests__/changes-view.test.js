@@ -45,19 +45,40 @@ test('pane with an open diff and revert button states', () => {
   assert.ok(err.includes('Changes could not be loaded'));
 });
 
-test('attachChangesToThread matches by timestamp window', () => {
+test('attachChangesToThread picks last message in window', () => {
   const thread = [
-    { id: 'u1', role: 'user' }, { id: 'a1', role: 'assistant', _ts: 1000 },
-    { id: 'u2', role: 'user' }, { id: 'a2', role: 'assistant', _ts: 5000 },
-    { id: 'a3', role: 'assistant' },
+    { id: 'a1', role: 'assistant', _ts: 100 },
+    { id: 'a2', role: 'assistant', _ts: 200 },
+    { id: 'a3', role: 'assistant', _ts: 300 },
   ];
   const turns = [
-    { turn_id: 1, started_ms: 900, ended_ms: 1200 },
-    { turn_id: 2, started_ms: 4900, ended_ms: 6000 },
-    { turn_id: 3, started_ms: 9000, ended_ms: 9500 },
+    { turn_id: 1, started_ms: 50, ended_ms: 350 },
   ];
   const m = attachChangesToThread(thread, turns);
-  assert.equal(m.get('a1').turn_id, 1);
-  assert.equal(m.get('a2').turn_id, 2);
-  assert.equal(m.size, 2);
+  assert.equal(m.size, 1);
+  assert.equal(m.get('a3').turn_id, 1);
+});
+
+test('attachChangesToThread later turn wins contested message', () => {
+  const thread = [
+    { id: 'a1', role: 'assistant', _ts: 500 },
+  ];
+  const turns = [
+    { turn_id: 1, started_ms: 400, ended_ms: 600 },
+    { turn_id: 2, started_ms: 400, ended_ms: 600 },
+  ];
+  const m = attachChangesToThread(thread, turns);
+  assert.equal(m.get('a1').turn_id, 2);
+});
+
+test('attachChangesToThread skips messages outside window', () => {
+  const thread = [
+    { id: 'a1', role: 'assistant', _ts: 100 },
+    { id: 'a2', role: 'assistant', _ts: 900 },
+  ];
+  const turns = [
+    { turn_id: 1, started_ms: 100000, ended_ms: 101000 },
+  ];
+  const m = attachChangesToThread(thread, turns);
+  assert.equal(m.size, 0);
 });

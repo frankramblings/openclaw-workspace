@@ -75,14 +75,7 @@ export function attachChangesToThread(thread, turns) {
     const lo = (Number(t.started_ms) || 0) - 60000;
     const hi = (Number(t.ended_ms) || 0) + 5000;
     let best = null;
-    for (const m of asst) {
-      if (m._ts >= lo && m._ts <= hi) {
-        if (!out.has(m.id)) {
-          best = m;
-          break;
-        }
-      }
-    }
+    for (const m of asst) if (m._ts >= lo && m._ts <= hi) best = m;
     if (best) out.set(best.id, t);
   }
   return out;

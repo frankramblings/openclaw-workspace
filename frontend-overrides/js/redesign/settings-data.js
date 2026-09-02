@@ -18,6 +18,7 @@ export const TAB = {
   brain: ['Brain', 'Long-term memory and skills', '<path d="M12 2a7 7 0 0 1 7 7c0 2.4-1.2 4.5-3 5.7V17a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2.3C6.2 13.5 5 11.4 5 9a7 7 0 0 1 7-7z"/>'],
   scheduled: ['Scheduled', 'Recurring jobs', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'],
   usage: ['Usage', 'Tokens and estimated cost, 7 or 30 days', '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>'],
+  changes: ['Changes', 'Which folders change review watches', '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>'],
   appearance: ['Appearance', 'Theme, sidebar, and chat visibility', '<circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 0 20 4 4 0 0 1 0-8 4 4 0 0 0 0-8z"/>'],
   shortcuts: ['Shortcuts', 'Keyboard shortcuts', '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>'],
   account: ['Account', 'Profile, password, and 2FA', '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'],
@@ -111,6 +112,11 @@ export const PANELS = {
       { type: 'liveUsage' },
     ] }),
   ],
+  changes: [
+    card({ title: 'Watched roots', icon: TAB.changes[2], sub: 'Files under these paths are tracked per turn. Virtualenvs, media and big trees are pruned by name.', rows: [
+      { type: 'liveChanges' },
+    ] }),
+  ],
   appearance: [
     card({ title: 'Theme', icon: TAB.appearance[2], sub: 'Colorways, fonts, density and background effects. Pick an accent below.', rows: [accents()] }),
     card({ title: 'Sidebar', icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>', rows: [vis([['sb-brand', '__AGENT_NAME__', 'Brand'], ['sb-search', 'Search'], ['sb-newchat', 'New Chat'], ['sb-chats', 'Chats'], ['sb-email', 'Email'], ['sb-tools', 'Tools'], ['sb-brain', 'Brain'], ['sb-cal', 'Calendar'], ['sb-research', 'Deep Research'], ['sb-library', 'Library'], ['sb-notes', 'Notes'], ['sb-theme', 'Theme'], ['sb-user', 'User'], ['sb-settings', 'Settings']])] }),
@@ -162,7 +168,7 @@ export const PANELS = {
 // grouped section nav with dividers + ADMIN label
 export const NAV_GROUPS = [
   ['services', 'ai', 'search'], 'div',
-  ['integrations', 'email', 'reminders', 'notifications', 'brain', 'scheduled', 'usage'], 'div',
+  ['integrations', 'email', 'reminders', 'notifications', 'brain', 'scheduled', 'usage', 'changes'], 'div',
   ['appearance', 'shortcuts'], 'div',
   ['account'], 'div',
   { label: 'ADMIN', ids: ['tools', 'users', 'system'] },

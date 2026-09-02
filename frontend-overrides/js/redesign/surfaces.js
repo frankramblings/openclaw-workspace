@@ -22,6 +22,7 @@ import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
 import { usageLine, usageTitle, sessionTotalsLine } from './usage-view.js';
 import { usagePanelHtml } from './usage-panel.js';
 import { changesCardHtml } from './changes-view.js';
+import { changesSettingsHtml } from './changes-settings.js';
 // Fetch caps for the task-6.2 "showing first N" disclosure footer (capNotice,
 // below). NOT imported from the live/*.js modules that own them — every
 // live/*.js file eventually imports api.js, which reads `location.origin` at
@@ -1218,6 +1219,18 @@ function settingsSurface(s) {
         const u = s.live?.usage;
         if (!u) return '<div class="set-text set-live-empty">Loading usage…</div>';
         return usagePanelHtml({ days: u.days || 7, daily: (u.data && u.data.daily) || [], totals: u.data && u.data.totals, costed: !!(u.data && u.data.costed), fresh: u.fresh !== false, error: u.error });
+      }
+      case 'liveChanges': {
+        // The generic data-model handler (app.js) writes typed drafts straight
+        // to top-level state (state.changesRootDraft / state.changesPruneDraft)
+        // — not into state.live.changesSettings — and these two fields aren't
+        // in app.js's PLAIN_SHEET_FIELDS skip-list, so every keystroke here
+        // still triggers a full render(). Feeding the live draft back in as
+        // model.draftRoot/pruneDraft keeps the rebuilt input/textarea showing
+        // exactly what was just typed instead of snapping back to the last
+        // saved value.
+        const cs = s.live?.changesSettings || null;
+        return changesSettingsHtml(cs ? { ...cs, draftRoot: s.changesRootDraft || '', pruneDraft: s.changesPruneDraft } : null);
       }
       case 'liveDefault': {
         const def = s.live?.defaultModel || '';

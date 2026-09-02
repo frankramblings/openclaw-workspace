@@ -11,12 +11,14 @@ functions further down (Task 2). Gary's workspace has huge untracked trees
 only holds text files up to max_bytes."""
 from __future__ import annotations
 
+import asyncio
 import difflib
 import fnmatch
 import hashlib
 import logging
 import os
 import re
+import shutil
 import stat
 import threading
 import time
@@ -473,3 +475,96 @@ def revert(session_key: str, turn_id: int, path: str) -> tuple[bool, str]:
         fsutil.atomic_write_json(record_path(session_key, turn_id), rec)
         _notify_watch(abs_path)
         return True, "ok"
+
+
+# --- maintenance ---------------------------------------------------------------
+
+_REBUILD = {"running": False, "root": None}
+
+
+def _referenced_blobs() -> set[str]:
+    refs: set[str] = set()
+    for p in (_base() / "index").glob("*.json"):
+        idx = fsutil.load_json_guarded(p, None, logger=log)
+        for v in ((idx or {}).get("files") or {}).values():
+            if isinstance(v, list) and len(v) == 3 and v[2]:
+                refs.add(v[2])
+    for p in (_base() / "turns").glob("*/*.json"):
+        rec = fsutil.load_json_guarded(p, None, logger=log)
+        for f in (rec or {}).get("files") or []:
+            for k in ("before_sha", "after_sha"):
+                if f.get(k):
+                    refs.add(f[k])
+    return refs
+
+
+def sweep(now_ms: int | None = None, keep_days: int = 30) -> dict:
+    now = now_ms if now_ms is not None else int(time.time() * 1000)
+    cutoff = now - keep_days * 86400 * 1000
+    removed_records = 0
+    with _LOCK:
+        for p in (_base() / "turns").glob("*/*.json"):
+            rec = fsutil.load_json_guarded(p, None, logger=log)
+            ended = int((rec or {}).get("ended_ms") or 0)
+            if not rec or ended < cutoff:
+                try:
+                    p.unlink()
+                    removed_records += 1
+                except OSError:
+                    pass
+        refs = _referenced_blobs()
+        removed_blobs = 0
+        for p in (_base() / "blobs").glob("*/*"):
+            if p.suffix == ".tmp" or p.name in refs:
+                continue
+            try:
+                p.unlink()
+                removed_blobs += 1
+            except OSError:
+                pass
+    return {"records_removed": removed_records, "blobs_removed": removed_blobs}
+
+
+def rebuild() -> dict:
+    cfg = load_config()
+    with _LOCK:
+        _REBUILD.update(running=True, root=None)
+        try:
+            shutil.rmtree(_base() / "index", ignore_errors=True)
+            total = 0
+            for root in cfg.get("roots") or []:
+                _REBUILD["root"] = root
+                refresh_index(root, cfg)
+                total += len(_load_index(root)["files"])
+            return {"roots": len(cfg.get("roots") or []), "files": total}
+        finally:
+            _REBUILD.update(running=False, root=None)
+
+
+def stats() -> dict:
+    cfg = load_config()
+    blobs = 0
+    nbytes = 0
+    for p in (_base() / "blobs").glob("*/*"):
+        try:
+            nbytes += p.stat().st_size
+            blobs += 1
+        except OSError:
+            pass
+    roots = []
+    for root in cfg.get("roots") or []:
+        idx = _load_index(root)
+        roots.append({"path": root, "files": len(idx["files"]), "scanned_ms": idx.get("scanned_ms", 0),
+                      "exists": os.path.exists(root)})
+    return {"blobs": blobs, "blob_bytes": nbytes, "roots": roots, "rebuild": dict(_REBUILD)}
+
+
+async def sweep_loop() -> None:
+    await asyncio.sleep(600)
+    while True:
+        try:
+            out = await asyncio.to_thread(sweep)
+            log.info("changes sweep: %s", out)
+        except Exception:  # noqa: BLE001
+            log.warning("changes sweep failed", exc_info=True)
+        await asyncio.sleep(86400)

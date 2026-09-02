@@ -314,7 +314,7 @@ async function fetchThread(id, fallbackModel, name) {
       time: fmtTime(meta.timestamp),
       model: meta.model || model,
       usage: (meta.usage && typeof meta.usage === 'object') ? meta.usage : null,
-      costTotal: (meta.cost && typeof meta.cost.total === 'number') ? meta.cost.total : null,
+      costTotal: (typeof meta.cost === 'number') ? meta.cost : null,
     };
     // Backend rewrites machinery user-messages (followup seeds, injected
     // session-continuation seeds — see backend/syschatter.py) to a compact ⚙️
@@ -378,7 +378,9 @@ async function fetchUsage(id) {
     const u = await apiGet(`/api/sessions/${id}/usage`);
     if (!u || !u.ok) return undefined;
     const chat = ensureChat(runtime.state || {});
-    chat.sessionUsage = { totals: u.totals || null, costed: !!u.costed, usedPct: round1(u?.context?.usedPct) };
+    if (id === chat.activeId) {
+      chat.sessionUsage = { totals: u.totals || null, costed: !!u.costed, usedPct: round1(u?.context?.usedPct) };
+    }
     return round1(u?.context?.usedPct);
   } catch (_) {
     return undefined;
@@ -1316,10 +1318,13 @@ function beginTurn(chat, modelLabel, sessionId) {
           turn.asstMsg.usage = ev.usage;
         } else if (turn.sessionId) {
           const target = turn.asstMsg;
-          apiGet(`/api/sessions/${encodeURIComponent(turn.sessionId)}/usage`).then((u) => {
+          const forSessionId = turn.sessionId;
+          apiGet(`/api/sessions/${encodeURIComponent(forSessionId)}/usage`).then((u) => {
             if (!u || !u.ok) return;
             const chatNow = ensureChat(runtime.state || {});
-            chatNow.sessionUsage = { totals: u.totals || null, costed: !!u.costed, usedPct: u.context && u.context.usedPct };
+            if (forSessionId === chatNow.activeId) {
+              chatNow.sessionUsage = { totals: u.totals || null, costed: !!u.costed, usedPct: u.context && u.context.usedPct };
+            }
             if (!target.usage && u.totals && Number(u.totals.output) > 0) target.usage = { input: u.totals.input, output: u.totals.output, cacheRead: u.totals.cacheRead, cacheWrite: u.totals.cacheWrite, _session: true };
             throttledRender();
           }).catch(() => {});

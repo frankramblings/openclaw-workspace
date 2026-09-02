@@ -83,6 +83,17 @@ def create(name: str | None = None, model: str | None = None,
            endpoint_url: str | None = None, endpoint_id: str | None = None,
            origin: str | None = None, speed: str | None = None) -> dict:
     sid = uuid.uuid4().hex[:12]
+    prefix = config.web_session_prefix()
+    # Local (Kamino/MLX) models: small ones (Qwen3-14B) can't hold Gary's
+    # bootstrap + tool schemas → route to the lightweight `qwen` agent (tools
+    # off, tiny workspace). Bigger local models (Qwen3-30B MoE, 256k context)
+    # can ride the full `main` agent instead — user chose this on purpose.
+    m_norm = (model or "").rsplit("/", 1)[-1]
+    LIGHT_LOCAL_MODELS = {"Qwen3-14B-4bit", "GLM-4-9B-0414-4bit"}
+    local_chat = (model or "").startswith("local/") or (endpoint_id or "") == "local"
+    light_local = local_chat and m_norm in LIGHT_LOCAL_MODELS
+    if light_local:
+        prefix = "agent:qwen:web"
     rec = {
         "id": sid,
         "name": name or "New chat",
@@ -90,7 +101,7 @@ def create(name: str | None = None, model: str | None = None,
         # thinking depth: fast|normal|deep (web toggle); a pending-chat toggle
         # click arrives here at materialization so it isn't silently dropped.
         "speed": speed if speed in ("fast", "normal", "deep") else "normal",
-        "sessionKey": f"{config.web_session_prefix()}-{sid}",
+        "sessionKey": f"{prefix}-{sid}",
         "endpoint_url": endpoint_url or config.gateway_ws_url(),
         "endpoint_id": endpoint_id or "openclaw",
         "folder": None,
@@ -102,8 +113,12 @@ def create(name: str | None = None, model: str | None = None,
         # handoff. The sidebar hides non-user origins unless engaged.
         "origin": origin,
         # Per-session Gary-terminal override: None = inherit the global
-        # default; True/False = explicit on/off for this chat.
-        "gary_terminal": None,
+        # default; True/False = explicit on/off for this chat. Light local
+        # chats (tools-off qwen agent) force it OFF: the terminal-control
+        # preamble derails the small local model, which parrots a fake
+        # `{"output":...}` instead of answering. The bigger local model runs
+        # as full Gary, so it inherits the global default like everything else.
+        "gary_terminal": False if light_local else None,
     }
     with _LOCK:
         data = _load()

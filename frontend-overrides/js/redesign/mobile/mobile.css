@@ -282,6 +282,11 @@ html.native .m-tabbar {
   border-width: 0;
   overflow: hidden;
 }
+/* Cap the app to the visual viewport while the keyboard is up so the composer
+   (bottom flex child) lifts above the iOS keyboard instead of hiding behind it.
+   --vvh is written by syncVisualViewport() in redesign/app.js; falls back to the
+   full layout height on browsers without visualViewport. */
+.m-app.kb-up { height: var(--vvh, 100%); }
 .m-app.kb-up .m-composer .bar { border-color: color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
 .m-app.kb-up .m-scroll-btm { bottom: 78px; }
 
@@ -311,7 +316,13 @@ html.native .m-tabbar {
      message (Gary talking to Frank, not composer text) */
 .m-composer .ta-wrap { flex: 1 1 auto; min-width: 0; position: relative; display: flex; }
 .m-composer .ta-wrap textarea { width: 100%; }
-.m-composer .ghost-suggest { position: absolute; left: 0; max-width: calc(100% - 36px); top: 50%; transform: translateY(-50%); color: var(--violet); background: rgba(169,155,245,.1); border: 1px solid rgba(169,155,245,.25); border-radius: 999px; padding: 5px 10px; font-size: 13px; font-weight: 400; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; z-index: var(--z-ghost); -webkit-tap-highlight-color: transparent; }
+/* Bigger tap target: was padding 5px 10px / 13px (~27px tall). Grown to a
+   comfortable full-bar-height pill so it's easy to thumb. The chip is centered
+   over the textarea (translateY -50%), so extra vertical padding + min-height
+   expand it symmetrically without shifting layout; box-sizing keeps min-height
+   honest. Can't hit the 44pt ideal without making the whole composer bar
+   taller, so this matches the bar's interior height (~40px) instead. */
+.m-composer .ghost-suggest { box-sizing: border-box; position: absolute; left: 0; max-width: calc(100% - 36px); top: 50%; transform: translateY(-50%); display: flex; align-items: center; min-height: 40px; color: var(--violet); background: rgba(169,155,245,.1); border: 1px solid rgba(169,155,245,.25); border-radius: 999px; padding: 8px 14px; font-size: 14px; font-weight: 400; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; z-index: var(--z-ghost); -webkit-tap-highlight-color: transparent; }
 .m-composer .ghost-suggest:active { opacity: .55; }
 .m-composer .ta-wrap:has(.ghost-suggest) textarea::placeholder { color: transparent; }
 .m-composer .ta-wrap:has(textarea:not(:placeholder-shown)) .ghost-suggest { display: none; }

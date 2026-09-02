@@ -903,7 +903,11 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
 # `anthropic` endpoint can be backed by a long-lived setup-token, not only a
 # metered API key, so hiding it forces the PWA onto the short-lived Claude CLI
 # OAuth path even after setup-token auth is configured.
-_HIDDEN_ENDPOINTS = set()
+# local-lms (Qwen2.5-VL on kamino) is wired ONLY for utility completions —
+# chat titles + composer suggestions via the direct path (backend/local_llm.py),
+# which bypasses the picker entirely. It's a tools-less 7B and makes a poor
+# interactive chat model, so keep it OUT of the chat model dropdown.
+_HIDDEN_ENDPOINTS = {"local-lms"}
 
 # Per-provider model ids to hide from the picker even if the gateway lists them.
 # `google/gemini-3.1-pro-preview` is present in the catalog but 429s on the free

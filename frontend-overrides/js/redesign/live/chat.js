@@ -1032,7 +1032,7 @@ export function clearBranchPrefixIfStarted(state, chat) {
   }
 }
 
-async function createSession(model) {
+async function createSession(model, endpointId) {
   let endpoint_url = '';
   let endpoint_id = '';
   let m = model;
@@ -1042,6 +1042,11 @@ async function createSession(model) {
     endpoint_id = dc?.endpoint_id || '';
     if (!m) m = dc?.model || '';
   } catch (_) { /* ignore */ }
+  // The picked model owns its endpoint (chat.endpointId). Using the
+  // default-chat endpoint instead cross-pairs a non-default model (e.g. a
+  // local/Kamino model with the claude-cli endpoint), which the /api/session
+  // guard rejects with a 400 → "Couldn't start the chat". Honor the selection.
+  if (endpointId) endpoint_id = endpointId;
   const res = await apiForm('/api/session', {
     name: 'New chat',
     model: m,
@@ -1192,6 +1197,12 @@ function beginTurn(chat, modelLabel, sessionId) {
       // queued (flushQueuedFor fires a queued message into a new turn, which
       // would immediately invalidate the suggestion anyway).
       const cleanFinish = turn.endStatus === 'ok' && !!(hadText || hadWork);
+      // Notify push-to-talk (ptt.js) so it can auto-speak this reply in voice mode.
+      if (cleanFinish && turn.asstMsg && turn.asstMsg.id && String(turn.asstMsg.text || '').trim()) {
+        try {
+          window.dispatchEvent(new CustomEvent('gary:reply-complete', { detail: { id: turn.asstMsg.id } }));
+        } catch (_) { /* non-fatal */ }
+      }
       const doneSid = turn.sessionId;
       const hadQueued = !!queueHead(chat.queuedList, doneSid);
       setLiveTurn(null);
@@ -1405,7 +1416,7 @@ function fireSend(sessionId, text, attachSnap) {
 async function ensureSessionId(chat) {
   if (chat.activeId) return chat.activeId;
   try {
-    const id = await createSession(chat.model);
+    const id = await createSession(chat.model, chat.endpointId);
     if (!id) return null;
     chat.activeId = id;
     storeActiveId(id);

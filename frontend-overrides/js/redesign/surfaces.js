@@ -129,7 +129,7 @@ function convListBody(s) {
       <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">help me organize these thoughts</span></div>
       <div class="conv-group"><span class="sect-label">YESTERDAY</span></div>
       <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">Punny Names for OpenClaw</span></div>
-      <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Claude Code on Ubuntu</span></div>`;
+      <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Codex on Ubuntu</span></div>`;
   }
   const q = (s.convFilter || '').trim().toLowerCase();
   const groups2 = q

@@ -1526,6 +1526,25 @@ function setMobileKb(on) {
   state.keyboard = on;
   const app = root.querySelector('.m-app');
   if (app) app.classList.toggle('kb-up', on);
+  syncVisualViewport();
+}
+
+// iOS does NOT shrink the layout viewport when the software keyboard opens, so
+// .m-app (height:100%) keeps its full-screen box and the composer — the bottom
+// flex child — ends up BEHIND the keyboard, untappable (can't hit Send or the
+// suggestion chip). visualViewport DOES report the shrunk visible area, so mirror
+// its height into --vvh; the .m-app.kb-up rule caps the app to it, lifting the
+// composer flush above the keyboard. offsetTop covers the case where iOS also
+// shifts the layout viewport up.
+function syncVisualViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  document.documentElement.style.setProperty('--vvh', (vv.height + vv.offsetTop) + 'px');
+}
+if (window.visualViewport && !window.__vvKbWired) {
+  window.__vvKbWired = true;
+  window.visualViewport.addEventListener('resize', syncVisualViewport);
+  window.visualViewport.addEventListener('scroll', syncVisualViewport);
 }
 root.addEventListener('focusin', (e) => {
   if (isMobile() && e.target.getAttribute && e.target.getAttribute('data-focus') === 'mdraft' && !state.keyboard) {

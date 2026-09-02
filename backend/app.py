@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import (branch_context, bridge, capabilities, chat_search, chat_turn, config,
+from . import (branch_context, bridge, capabilities, changes, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup,
                monitor, pending_tokens, promise_guard, push, sessions_store, steer,
                syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
@@ -192,6 +192,9 @@ async def _lifespan(_app: FastAPI):
     # Progress-UX mirror loop: tmp/jobs/*.json + share/tasks/*/progress.json
     # into task_registry, once per process (see task_ingest.py).
     ingest_task = asyncio.create_task(task_ingest.ingest_loop())
+    # Changes review: daily sweep of the turn-diff index/blob store (expiry +
+    # orphan cleanup). See backend/changes.py.
+    changes_sweep_task = asyncio.create_task(changes.sweep_loop())
     # Filesystem watcher for the doc editor's live-refresh (broadcasts to
     # /api/workspace/watch subscribers). Cheap Rust-backed inotify; one task.
     workspace_watch.start_watcher()
@@ -214,7 +217,8 @@ async def _lifespan(_app: FastAPI):
         search_task.cancel()
         followup_task.cancel()
         ingest_task.cancel()
-        for t in (task, search_task, followup_task, ingest_task):
+        changes_sweep_task.cancel()
+        for t in (task, search_task, followup_task, ingest_task, changes_sweep_task):
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         # Own every other task we've spun up over the app's life so nothing is

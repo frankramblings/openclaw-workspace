@@ -378,3 +378,74 @@ def diff_for(session_key: str, turn_id: int, path: str) -> dict:
     if len(lines) > DIFF_MAX_LINES:
         text = "".join(lines[:DIFF_MAX_LINES]) + "[diff truncated]\n"
     return {**base, "diffable": True, "text": text}
+
+
+# --- revert ------------------------------------------------------------------
+
+def _notify_watch(abs_path: str) -> None:
+    try:
+        from . import workspace_watch
+        workspace_watch.publish_change(abs_path)
+    except Exception:  # noqa: BLE001 - editor refresh is a nicety
+        pass
+
+
+def _sha_of(abs_path: str) -> str | None:
+    try:
+        return hashlib.sha256(Path(abs_path).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _write_bytes_atomic(abs_path: str, data: bytes) -> None:
+    p = Path(abs_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + ".revert-tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, p)
+
+
+def revert(session_key: str, turn_id: int, path: str) -> tuple[bool, str]:
+    with _LOCK:
+        rec = turn_record(session_key, turn_id)
+        f = next((x for x in (rec or {}).get("files", []) if x.get("path") == path), None)
+        if not rec or not f:
+            return False, "not_found"
+        if f.get("reverted"):
+            return False, "already_reverted"
+        if not f.get("diffable") and f.get("kind") != "added":
+            return False, "not_diffable"
+        root = f.get("root") or ""
+        abs_path = os.path.join(root, path)
+        kind = f.get("kind")
+        current = _sha_of(abs_path)
+        if kind == "deleted":
+            if current is not None:
+                return False, "file_changed_since"
+        elif current != f.get("after_sha"):
+            return False, "file_changed_since"
+        try:
+            if kind == "added":
+                os.remove(abs_path)
+            else:
+                data = read_blob(f.get("before_sha"))
+                if data is None:
+                    return False, "not_diffable"
+                _write_bytes_atomic(abs_path, data)
+        except OSError:
+            return False, "io_error"
+        # keep the index in step so the next turn does not report the revert
+        idx = _load_index(root)
+        if kind == "added":
+            idx["files"].pop(path, None)
+        else:
+            try:
+                st = os.stat(abs_path)
+                idx["files"][path] = [st.st_mtime_ns, st.st_size, f.get("before_sha")]
+            except OSError:
+                idx["files"].pop(path, None)
+        _save_index(root, idx)
+        f["reverted"] = True
+        fsutil.atomic_write_json(record_path(session_key, turn_id), rec)
+        _notify_watch(abs_path)
+        return True, "ok"

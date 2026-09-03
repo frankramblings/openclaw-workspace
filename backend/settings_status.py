@@ -1,6 +1,6 @@
 """Settings: read-only Connections view.
 
-Surfaces what's actually wired — email (himalaya) and calendar (Google) — so
+Surfaces what's actually wired: email (himalaya) and calendar (Google), so
 the Settings tab reflects reality. All read-only: no gateway config writes, so
 no risk to the gateway/Signal. The email/calendar config is managed by their
 own wiring (himalaya config.toml, google-calendar-mcp), so the POST/save

@@ -13,7 +13,6 @@ Every write: kill switch -> validate -> config.get (hash + current servers)
 new list applies on the agent's next turn), never a restart."""
 from __future__ import annotations
 
-import logging
 import re
 from pathlib import Path
 from urllib.parse import urlparse
@@ -23,7 +22,6 @@ from fastapi import APIRouter, Body
 from . import agent_config_store as store
 from . import gateway_admin as gw
 
-_log = logging.getLogger(__name__)
 router = APIRouter()
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -113,6 +111,8 @@ def validate_new_server(body) -> tuple[str, dict]:
         parts = urlparse(url) if isinstance(url, str) else None
         if parts is None or parts.scheme not in ("http", "https") or not parts.netloc:
             raise BadRequest("url must be an http(s) URL")
+        if parts.username or parts.password or "@" in parts.netloc:
+            raise BadRequest("url must not contain credentials")
         transport = body.get("transport", "streamable-http")
         if transport not in HTTP_TRANSPORTS:
             raise BadRequest("transport must be streamable-http or sse")
@@ -179,6 +179,8 @@ def mcp_patch_fragment(name: str, server: dict | None) -> dict:
 
 
 def _gateway_info(result: dict) -> dict:
+    if not isinstance(result, dict):
+        return {}
     return {k: result.get(k) for k in ("path", "restart", "restartRequired", "reload") if k in result}
 
 
@@ -202,6 +204,10 @@ async def _write(name: str, server: dict | None, action: str, must_exist: bool):
             text = Path(path).read_text(encoding="utf-8")
         except (OSError, TypeError) as exc:
             raise BackupFailed(f"cannot read {path!r} for the pre-write backup: {exc}") from exc
+        # A stale-hash retry re-enters this loop and backs up again: the first
+        # backup is still a truthful pre-write copy of what was on disk at that
+        # moment, and the second is the truthful pre-write copy for the retried
+        # attempt. Both are kept (pruned to the newest 20, same as any backup).
         entry = store.backup("openclaw-json", "config", text,
                              {"action": action, "name": name, "hash": snap.get("hash")})
         try:
@@ -247,6 +253,7 @@ async def add_server(body: dict = Body(default=None)):
     try:
         result, _, backup_id = await _write(name, server, "add", must_exist=False)
     except FileExistsError:
+        store.audit("mcp.add", name, False, detail="already exists")
         return gw.fail(409, "exists", f"MCP server {name!r} already exists")
     except BackupFailed as exc:
         store.audit("mcp.add", name, False, detail=str(exc))
@@ -271,6 +278,7 @@ async def remove_server(name: str):
     try:
         result, _, backup_id = await _write(name, None, "remove", must_exist=True)
     except LookupError:
+        store.audit("mcp.remove", name, False, detail="not configured")
         return gw.fail(404, "not_found", f"MCP server {name!r} is not configured")
     except BackupFailed as exc:
         store.audit("mcp.remove", name, False, detail=str(exc))
@@ -296,6 +304,7 @@ async def set_server_enabled(name: str, body: dict = Body(default=None)):
     try:
         result, before, backup_id = await _write(name, {"enabled": enabled}, "enabled", must_exist=True)
     except LookupError:
+        store.audit("mcp.enabled", name, False, detail="not configured")
         return gw.fail(404, "not_found", f"MCP server {name!r} is not configured")
     except BackupFailed as exc:
         store.audit("mcp.enabled", name, False, detail=str(exc), enabled=enabled)

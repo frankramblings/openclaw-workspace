@@ -97,6 +97,7 @@ def test_validate_stdio_server_with_args_env_cwd_enabled():
     ({"name": "a"}, "exactly one of url or command"),
     ({"name": "a", "url": "https://x/", "command": "y"}, "exactly one of url or command"),
     ({"name": "a", "url": "ftp://x/"}, "http(s)"),
+    ({"name": "a", "url": "https://user:pw@x/"}, "credentials"),
     ({"name": "a", "url": "https://x/", "transport": "stdio"}, "transport"),
     ({"name": "a", "url": "https://x/", "args": ["z"]}, "args only applies"),
     ({"name": "a", "command": "c", "transport": "sse"}, "transport does not apply"),
@@ -149,6 +150,7 @@ def test_add_existing_is_409_without_patch_or_backup(client, monkeypatch, cfg):
     r = client.post("/api/mcp/servers", json={"name": "wistia", "url": "https://x/"})
     assert r.status_code == 409 and r.json()["error"] == "exists"
     assert fake.calls_for("config.patch") == [] and store.list_backups("openclaw-json", "config") == []
+    assert store.recent_audit()[0]["action"] == "mcp.add" and store.recent_audit()[0]["ok"] is False
 
 
 def test_add_bad_body_is_400_before_gateway(client, monkeypatch, cfg):
@@ -229,6 +231,8 @@ def test_remove_missing_is_404(client, monkeypatch, cfg):
     r = client.delete("/api/mcp/servers/nope")
     assert r.status_code == 404 and r.json()["error"] == "not_found"
     assert fake.calls_for("config.patch") == []
+    assert store.list_backups("openclaw-json", "config") == []
+    assert store.recent_audit()[0]["action"] == "mcp.remove" and store.recent_audit()[0]["ok"] is False
 
 
 def test_remove_bad_name_is_400(client, monkeypatch, cfg):

@@ -1,7 +1,6 @@
 """Projects API (spec §5): CRUD over projects_store plus the one-time backfill."""
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, Body
@@ -11,14 +10,6 @@ from . import project_classify, projects_store, sessions_store
 
 log = logging.getLogger(__name__)
 router = APIRouter()
-_BG: set[asyncio.Task] = set()
-
-
-def _spawn(coro) -> asyncio.Task:
-    task = asyncio.create_task(coro)
-    _BG.add(task)
-    task.add_done_callback(_BG.discard)
-    return task
 
 
 @router.get("/api/projects")
@@ -69,11 +60,13 @@ async def delete_project(pid: str):
 
 @router.post("/api/projects/backfill")
 async def backfill(payload: dict = Body(default=None)):
+    from . import app as app_module  # deferred: app imports this module
+
     if project_classify.backfill_running():
         return {"status": "running"}
     try:
         since = int((payload or {}).get("since_days") or 90)
     except (TypeError, ValueError):
         since = 90
-    _spawn(project_classify.backfill(since_days=max(1, since)))
+    app_module._spawn(project_classify.backfill(since_days=max(1, since)))
     return {"status": "started"}

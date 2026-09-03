@@ -106,3 +106,12 @@ test('amendment D: filtering expands a collapsed project and shows the filtered 
   assert.ok(filteredHtml.includes('data-arg="pc1"'));
   assert.ok(!filteredHtml.includes('data-arg="pc0"'));
 });
+
+test('task 8: a row is draggable and carries the session id for the drop handler', () => {
+  const html = renderChatList(buildState());
+  const argIdx = html.indexOf('data-arg="o1"');
+  const rowStart = html.lastIndexOf('<div class="conv-row', argIdx);
+  const rowTag = html.slice(rowStart, html.indexOf('>', rowStart) + 1);
+  assert.ok(rowTag.includes('draggable="true"'), rowTag);
+  assert.ok(rowTag.includes('data-drag-session="o1"'), rowTag);
+});

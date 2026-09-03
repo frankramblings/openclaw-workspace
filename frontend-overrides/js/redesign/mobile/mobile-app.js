@@ -176,10 +176,37 @@ export function mobileActions(state) {
     // you just started — pull a fresh list so a newly-created (or out-of-band)
     // thread is always there, regardless of send-timing. Fire-and-forget: the
     // drawer opens instantly and re-renders when the list lands.
-    openConvSheet: () => { closeSheets(); state.mDrawerOpen = true; if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions(); },
+    openConvSheet: () => {
+      closeSheets();
+      state.mDrawerOpen = true;
+      // Land on the active thread's project (spec 3, mobile): the group model
+      // already expands it; scroll its header into view after the render.
+      const pid = runtime.state && runtime.state.live && runtime.state.live.chat && runtime.state.live.chat.folder;
+      if (pid && typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-conv-drawer] [data-proj-anchor="${pid}"]`);
+          if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+        });
+      }
+      if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions();
+    },
     // Edge-swipe conversation drawer (the finger-tracked open/close lives in
     // wireMobileGestures; these handle the tap affordances / scrim dismiss).
-    openConvDrawer: (side) => { closeSheets(); state.mDrawerSide = (side === 'right' ? 'right' : 'left'); state.mDrawerOpen = true; if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions(); },
+    openConvDrawer: (side) => {
+      closeSheets();
+      state.mDrawerSide = (side === 'right' ? 'right' : 'left');
+      state.mDrawerOpen = true;
+      // Land on the active thread's project (spec 3, mobile): the group model
+      // already expands it; scroll its header into view after the render.
+      const pid = runtime.state && runtime.state.live && runtime.state.live.chat && runtime.state.live.chat.folder;
+      if (pid && typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => {
+          const el = document.querySelector(`[data-conv-drawer] [data-proj-anchor="${pid}"]`);
+          if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' });
+        });
+      }
+      if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions();
+    },
     closeDrawer: () => { state.mDrawerOpen = false; },
     mSelectSession: (id) => { state.mDrawerOpen = false; if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(id); },
     openModelSheet: async () => {

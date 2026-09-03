@@ -19,6 +19,15 @@ test('mobile chat model chip shows a placeholder, not the mock id, before live d
   assert.match(html, /m-model-name">…</);
 });
 
+test('task 8: mobile chat header prefixes the title with the project name when filed', () => {
+  const filed = mChat({
+    live: { projects: [{ id: 'p1', name: 'Plex' }], chat: { folder: 'p1', title: 'Fix the remux' } },
+  });
+  assert.match(filed, /<span class="m-ttl-proj">Plex › <\/span>/);
+  const noProj = mChat({ live: { chat: { title: 'Fix the remux' } } });
+  assert.doesNotMatch(noProj, /m-ttl-proj/);
+});
+
 test('inbox icon affordances use SVG/app glyphs, not colored emoji', () => {
   // A calendar invite renders all three icon affordances (open/snooze/gary).
   const invite = { id: '7', source: 'calendar', actions: [], meta: {} };

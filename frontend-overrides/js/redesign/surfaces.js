@@ -152,7 +152,7 @@ function convListBody(s) {
     const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
     const badgeInner = r.term ? '∿' : (rowLogo || 'G');
     const badgeClass = 'conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
-    return `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}${r.depth ? ` depth${r.depth}` : ''}" data-act="selectSession" data-arg="${esc(r.id)}">`
+    return `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}${r.depth ? ` depth${r.depth}` : ''}" data-act="selectSession" data-arg="${esc(r.id)}" draggable="true" data-drag-session="${esc(r.id)}">`
     + `<span class="${badgeClass}">${badgeInner}</span>`
     + `<span class="conv-title">${esc(r.title)}</span>`
     + (r.notify ? `<span class="conv-dot notify" title="Reply finished"></span>`

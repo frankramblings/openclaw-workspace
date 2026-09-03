@@ -104,11 +104,22 @@ function convListHtml(s) {
   // (M5), which closes over it, so it's never read before assignment.
   const rowTabindex = s.mDrawerOpen ? '0' : '-1';
   const header = (g) => {
-    if (g.kind === 'open') return `<div class="m-conv-grp open">OPEN <span class="m-conv-cnt">${g.meta.count}</span></div>`;
+    if (g.kind === 'open') {
+      // Amendment E (mobile mirror of desktop amendment D): while filtering,
+      // the count reflects what's actually rendered (post-filter rows), not
+      // the unfiltered meta count.
+      const count = q ? g.rows.length : g.meta.count;
+      return `<div class="m-conv-grp open">OPEN <span class="m-conv-cnt">${count}</span></div>`;
+    }
     if (g.kind === 'project') {
       const m = g.meta;
-      return `<div class="m-conv-grp project${m.collapsed ? ' collapsed' : ''}" data-act="toggleProject" data-arg="${esc(m.id)}" data-proj-anchor="${esc(m.id)}" role="button" tabindex="${rowTabindex}">`
-        + `<span class="m-proj-chev">▸</span>${esc(g.label)} <span class="m-conv-cnt">${m.count}</span>`
+      // Amendment E: a filter match inside a collapsed project must not stay
+      // hidden, so filtering forces every project group open and its count
+      // to the number of rows actually shown.
+      const collapsed = q ? false : m.collapsed;
+      const count = q ? g.rows.length : m.count;
+      return `<div class="m-conv-grp project${collapsed ? ' collapsed' : ''}" data-act="toggleProject" data-arg="${esc(m.id)}" data-proj-anchor="${esc(m.id)}" role="button" tabindex="${rowTabindex}" aria-expanded="${!collapsed}">`
+        + `<span class="m-proj-chev">▸</span>${esc(g.label)} <span class="m-conv-cnt">${count}</span>`
         + (m.working ? `<span class="m-proj-pip working">${m.working}</span>` : '')
         + (m.unseen ? `<span class="m-proj-pip unseen">${m.unseen}</span>` : '')
         + `</div>`;
@@ -128,7 +139,7 @@ function convListHtml(s) {
       : r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
   </div>`;
   };
-  const titleHtml = map(groups, (g) => header(g) + (g.kind === 'project' && g.meta.collapsed ? '' : map(g.rows || [], convRow)));
+  const titleHtml = map(groups, (g) => header(g) + ((g.kind === 'project' && g.meta.collapsed && !q) ? '' : map(g.rows || [], convRow)));
   const msgHtml = mConvSemanticHits(s, groups, rowTabindex);
   if (!allGroups.length) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations yet.</div>';
   if (q && !groups.length && !msgHtml) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations match.</div>';

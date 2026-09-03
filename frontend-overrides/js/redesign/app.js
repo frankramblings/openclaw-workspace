@@ -1347,6 +1347,36 @@ function showDrop(on) {
   }
   if (_dropOverlay) _dropOverlay.classList.toggle('show', on);
 }
+// Drag a conversation row onto a project header to file it (spec 6.2).
+// Uses a private MIME type so the file-drop handlers below ignore it.
+const SESSION_DND = 'text/x-oc-session';
+root.addEventListener('dragstart', (e) => {
+  const row = e.target && e.target.closest && e.target.closest('[data-drag-session]');
+  if (!row || !e.dataTransfer) return;
+  e.dataTransfer.setData(SESSION_DND, row.getAttribute('data-drag-session'));
+  e.dataTransfer.effectAllowed = 'move';
+});
+const dragHasSession = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf(SESSION_DND) !== -1);
+root.addEventListener('dragover', (e) => {
+  if (!dragHasSession(e)) return;
+  const head = e.target.closest && e.target.closest('[data-proj-anchor]');
+  root.querySelectorAll('.conv-group.drop-target').forEach((el) => { if (el !== head) el.classList.remove('drop-target'); });
+  if (!head) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  head.classList.add('drop-target');
+});
+root.addEventListener('drop', (e) => {
+  if (!dragHasSession(e)) return;
+  const head = e.target.closest && e.target.closest('[data-proj-anchor]');
+  root.querySelectorAll('.conv-group.drop-target').forEach((el) => el.classList.remove('drop-target'));
+  if (!head) return;
+  e.preventDefault();
+  const sid = e.dataTransfer.getData(SESSION_DND);
+  const pid = head.getAttribute('data-proj-anchor');
+  if (sid && pid && actions.moveToProject) { actions.moveToProject(`${sid}|${pid}`); render(); }
+});
+
 const dragHasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') !== -1);
 root.addEventListener('dragover', (e) => {
   if (!dragHasFiles(e)) return;

@@ -119,6 +119,7 @@ html.shell-mobile #oc-root { height: 100%; }
 .m-gary-id { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; background: none; border: none; padding: 0; margin: 0; cursor: pointer; font-family: inherit; text-align: left; }
 .m-conv-title { display: flex; align-items: center; gap: 5px; max-width: 100%; }
 .m-conv-title .t { font-size: 15px; font-weight: 600; line-height: 1.15; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-ttl-proj { color: var(--faint); font-weight: 500; }
 .m-conv-caret { flex: none; font-size: 9px; color: var(--mut); }
 .m-conv-sub { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--mut); }
 .m-conv-sub .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex: none; }

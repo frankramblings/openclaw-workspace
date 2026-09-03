@@ -10,6 +10,7 @@ import { renderActivity } from '../chat-activity.js';
 import { renderChatStrip } from '../chat-strip.js';
 import { renderMarkdown } from '../markdown.js';
 import { providerLogo } from '../provider-logo.js';
+import { projectName } from '../project-menu.js';
 import { suggestGhost } from '../suggest-ghost.js';
 import { cardActions, cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
@@ -247,7 +248,7 @@ export function mChat(s) {
     <div class="m-gary">
       <button class="m-icon-btn m-hide-kb m-nav-btn" data-act="openConvSheet" title="Chats" aria-label="Chats">${icon('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>', { size: 18, sw: 1.9 })}</button>
       <button class="m-gary-id" data-act="openConvSheet" title="Switch conversation">
-        <div class="m-conv-title"><span class="t">${esc(s.live?.chat?.title || 'New chat')}</span></div>
+        <div class="m-conv-title"><span class="t">${(() => { const pl = projectName(s.live?.projects || [], s.live?.chat?.folder); return pl ? `<span class="m-ttl-proj">${esc(pl)} › </span>` : ''; })()}${esc(s.live?.chat?.title || 'New chat')}</span></div>
         <div class="m-conv-sub"><span class="dot" style="background:${healthDotColor(currentHealth())}"></span>__AGENT_NAME__ · ${esc(currentHealth())}</div>
       </button>
       <button class="m-model-chip ocbtn" data-act="openModelSheet" title="Switch model"><span class="model-provider-logo">${modelLogo}</span><span class="m-model-name">${esc(modelLabel || '…')}</span></button>

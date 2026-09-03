@@ -17,6 +17,12 @@ not just the original maintainer's setup.
 - Usage: hover or tap an assistant message for its tokens; the thread's context pill shows session totals; Settings → Usage charts 7 or 30 days from the gateway ledger (dollars only when every entry was priced).
 - Changes review: every turn ends with a "Changes · n files · +a −r" card; expand for per-file diffs, a companion Changes tab, and a guarded Revert. Works for edits made by any tool, including shell heredocs. Settings → Changes controls the watched folders.
 
+### Pillar B: Thread organization (OPEN shelf + Projects, 2026-09)
+
+- Sidebar: an automatic OPEN shelf (threads you sent to in the last 48 h, running, queued, or active; cap 8) sits above PROJECTS and the date buckets, with live working/unseen pips, ⌥1..9 slot shortcuts, ⌥[ ] cycling, and a × on hover to leave the shelf. Sessions gain `opened` and `parent_id` (schema v2, migrates in place).
+- Projects: threads file themselves into projects at title time via the local title model (precision over recall); a one-time backfill seeds the starter list and files the last 90 days by title. Corrections: row kebab → Move to, drag a row onto a project header, `New project…` inline. Header reads `Project › Thread`, forks show `↳ from <parent>`. Settings → Projects lists, renames, archives, deletes, and re-runs the backfill. Mobile drawer mirrors the sections and lands on the active project.
+- Routes: `POST /api/session/{id}/close`, `POST /api/session/{id}/unfile`, `/api/projects` CRUD, `POST /api/projects/backfill`. Filing never counts as activity (`updated` untouched).
+
 ### Phase 1 — Genericization (already merged to main)
 
 - All maintainer-specific identifiers removed from source and committed assets.

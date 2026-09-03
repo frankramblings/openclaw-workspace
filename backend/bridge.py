@@ -851,6 +851,33 @@ async def gateway_call(method: str, params: dict | None = None,
     return res.get("payload") or {}
 
 
+async def gateway_call_result(method: str, params: dict | None = None,
+                              timeout: float = 30.0) -> dict:
+    """Like gateway_call but returns the whole response frame
+    {"ok": bool, "payload": dict | list, "error": {"code", "message"} | None}
+    instead of raising on ok=false, so admin routes can map the gateway's
+    error code and message onto an HTTP status. Connection failures, a
+    rejected handshake (RuntimeError) and the deadline (TimeoutError) still
+    raise, exactly as in gateway_call."""
+    url = config.gateway_ws_url()
+    async with asyncio.timeout(timeout):
+        async with websockets.connect(url, max_size=None, open_timeout=30,
+                                      ping_interval=None) as ws:
+            await _wait_for_challenge(ws)
+            hello = await _request(ws, "connect", _connect_params())
+            if not hello.get("ok"):
+                raise RuntimeError(f"gateway connect failed: {hello}")
+            res = await _request(ws, method, params or {})
+    ok = bool(res.get("ok"))
+    err = res.get("error") if isinstance(res.get("error"), dict) else None
+    if not ok and err is None:
+        err = {"code": "UNKNOWN", "message": json.dumps(res)[:500]}
+    payload = res.get("payload")
+    if payload is None:
+        payload = {}
+    return {"ok": ok, "payload": payload, "error": err}
+
+
 async def gateway_hello(timeout: float = 10.0) -> dict:
     """Connect + auth and return the gateway's connect-response payload (version,
     capabilities, …) without making a further call. Raises RuntimeError on a

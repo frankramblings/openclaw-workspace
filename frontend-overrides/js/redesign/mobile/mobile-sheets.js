@@ -87,10 +87,26 @@ function convListHtml(s) {
   // Local title filter (instant); semantic content hits are appended below.
   // With no filter typed, the most recently opened threads come first (the
   // mobile equivalent of the desktop ⌘K RECENT section, spec 7.3).
-  const recent = q ? [] : mergeLiveFlags(mruRows(chat.mru, chat.sessions, chat.activeId, 5), allGroups);
+  // OPEN (from thread-groups.js) now leads the drawer; the Phase 1 RECENT
+  // group stays only when there is no OPEN section, so first-run users still
+  // get something above the date buckets.
+  const hasOpen = allGroups.some((g) => g.kind === 'open');
+  const recent = (q || hasOpen) ? [] : mergeLiveFlags(mruRows(chat.mru, chat.sessions, chat.activeId, 5), allGroups);
   const groups = q
     ? allGroups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
-    : (recent.length ? [{ label: 'RECENT', rows: recent }, ...allGroups] : allGroups);
+    : (recent.length ? [{ kind: 'recent', label: 'RECENT', rows: recent, meta: {} }, ...allGroups] : allGroups);
+  const header = (g) => {
+    if (g.kind === 'open') return `<div class="m-conv-grp open">OPEN <span class="m-conv-cnt">${g.meta.count}</span></div>`;
+    if (g.kind === 'project') {
+      const m = g.meta;
+      return `<div class="m-conv-grp project${m.collapsed ? ' collapsed' : ''}" data-act="toggleProject" data-arg="${esc(m.id)}" data-proj-anchor="${esc(m.id)}" role="button" tabindex="${rowTabindex}">`
+        + `<span class="m-proj-chev">▸</span>${esc(g.label)} <span class="m-conv-cnt">${m.count}</span>`
+        + (m.working ? `<span class="m-proj-pip working">${m.working}</span>` : '')
+        + (m.unseen ? `<span class="m-proj-pip unseen">${m.unseen}</span>` : '')
+        + `</div>`;
+    }
+    return `<div class="m-conv-grp">${esc(g.label)}</div>`;
+  };
   // The edge-swipe drawer (renderConvDrawer, below) stays in the DOM even
   // while closed — finger-tracked off-screen rather than removed — so its
   // rows must NOT be in the tab order while hidden, or a keyboard user could
@@ -102,15 +118,16 @@ function convListHtml(s) {
     const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
     const badgeInner = r.term ? '∿' : (rowLogo || 'G');
     const badgeClass = 'm-conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
-    return `<div class="m-conv-row ocrow${r.active ? ' active' : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}" tabindex="${rowTabindex}" role="button">
+    return `<div class="m-conv-row ocrow${r.active ? ' active' : ''}${r.depth ? ` depth${r.depth}` : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}" tabindex="${rowTabindex}" role="button">
     <span class="${badgeClass}">${badgeInner}</span>
     <span class="m-conv-row-title">${esc(r.title)}</span>
     ${r.notify ? `<span class="m-conv-dot notify" title="Reply finished"></span>`
       : r.working ? `<span class="m-conv-spin working" title="Working…">${fortress(14)}</span>`
+      : r.queued ? `<span class="m-conv-dot queued" title="Message queued"></span>`
       : r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
   </div>`;
   };
-  const titleHtml = map(groups, (g) => `<div class="m-conv-grp">${esc(g.label)}</div>${map(g.rows || [], convRow)}`);
+  const titleHtml = map(groups, (g) => header(g) + (g.kind === 'project' && g.meta.collapsed ? '' : map(g.rows || [], convRow)));
   const msgHtml = mConvSemanticHits(s, groups, rowTabindex);
   if (!allGroups.length) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations yet.</div>';
   if (q && !groups.length && !msgHtml) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations match.</div>';

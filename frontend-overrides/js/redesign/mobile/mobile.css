@@ -1092,3 +1092,17 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 /* ---- per-turn change review (Pillar A, task 8) ------------------------------ */
 .m-changes { flex: 1; min-height: 0; overflow: auto; }
 .m-changes pre.diff { font-size: 11px; }
+
+/* ---- drawer: OPEN shelf + project sections (thread-org phase 2, task 6) --- */
+.m-conv-grp { display: flex; align-items: center; gap: 6px; }
+.m-conv-grp.open { color: var(--teal); }
+.m-conv-cnt { font-family: var(--mono); font-weight: 500; color: var(--faint); }
+.m-conv-grp.project { cursor: pointer; padding-top: 12px; }
+.m-proj-chev { display: inline-block; width: 10px; transition: transform var(--dur-micro) var(--ease-standard); transform: rotate(90deg); }
+.m-conv-grp.project.collapsed .m-proj-chev { transform: rotate(0deg); }
+.m-proj-pip { font-family: var(--mono); font-size: 10px; padding: 0 5px; border-radius: 6px; }
+.m-proj-pip.working { color: var(--teal); background: var(--tealtint); }
+.m-proj-pip.unseen { color: var(--blue); background: color-mix(in srgb, var(--blue) 15%, transparent); }
+.m-conv-row.depth1 { padding-left: 24px; }
+.m-conv-row.depth2 { padding-left: 38px; }
+.m-conv-dot.queued { background: var(--gold); }

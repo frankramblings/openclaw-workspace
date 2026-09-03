@@ -35,6 +35,7 @@ import {
   sweepAgents as stripSweepAgents, renderChatStrip,
 } from '../chat-strip.js';
 import { buildSwitcherSections, flatRows, clampSel } from '../switcher.js';
+import { buildThreadGroups } from '../thread-groups.js';
 import { afterTurn as changesAfterTurn, attachHistory as changesAttachHistory } from './changes.js';
 
 // The throttled per-token render only patches the active message bubble in
@@ -118,70 +119,30 @@ function fmtTime(ts) {
   return `${h}:${m} ${ap}`;
 }
 
-function startOfDay(t) {
-  const d = new Date(t);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+const EXPANDED_KEY = 'oc-proj-expanded';
+function _loadExpanded() {
+  try { const arr = JSON.parse(localStorage.getItem(EXPANDED_KEY) || '[]'); return new Set(Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : []); }
+  catch (_) { return new Set(); }
+}
+function _persistExpanded(set) {
+  try { localStorage.setItem(EXPANDED_KEY, JSON.stringify([...set])); } catch (_) { /* storage unavailable */ }
 }
 
-const _MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
-  'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
-
-// Date bucket label for a session. Recent conversations get named buckets;
-// anything older than "last week" is grouped by month so the full history
-// stays reachable by scrolling (no hard cap — see buildGroups).
-function bucketFor(updated, now) {
-  const today = startOfDay(now);
-  const yesterday = today - 86400000;
-  // Week starts Monday, local time.
-  const dow = (new Date(now).getDay() + 6) % 7;
-  const weekStart = today - dow * 86400000;
-  const lastWeekStart = weekStart - 7 * 86400000;
-  const u = startOfDay(updated || 0);
-  if (u >= today) return 'TODAY';
-  if (u >= yesterday) return 'YESTERDAY';
-  if (u >= weekStart) return 'THIS WEEK';
-  if (u >= lastWeekStart) return 'LAST WEEK';
-  const d = new Date(updated || 0);
-  const yr = d.getFullYear();
-  return yr === new Date(now).getFullYear()
-    ? _MONTHS[d.getMonth()]
-    : `${_MONTHS[d.getMonth()]} ${yr}`;
-}
-
-// Build the sidebar conversation groups from the FULL session list. Favorites
-// float to a ★ PINNED group; everything else is date-bucketed. There is no
-// item cap — all (non-archived) sessions render, and .conv-scroll scrolls the
-// whole history. Sessions arrive newest-first, so Map insertion order yields
-// TODAY → YESTERDAY → THIS WEEK → LAST WEEK → months (newest → oldest).
-function buildGroups(sessions, activeId) {
-  const now = Date.now();
-  const pinned = [];
-  const byLabel = new Map();
-  // Sort newest-activity first (the API sorts by `created`, but recency of the
-  // last message is what the date buckets and row order should reflect).
-  const ordered = [...sessions].sort(
-    (a, b) => (b.updated || b.created || 0) - (a.updated || a.created || 0));
-  for (const s of ordered) {
-    if (s.archived) continue;
-    const row = {
-      id: s.id,
-      title: s.name || 'New chat',
-      term: !!s.gary_terminal,
-      active: s.id === activeId,
-      important: !!s.important,
-      model: s.model || '',
-      endpointId: s.endpoint_id || '',
-    };
-    if (s.important) { pinned.push(row); continue; }
-    const label = bucketFor(s.updated, now);
-    if (!byLabel.has(label)) byLabel.set(label, []);
-    byLabel.get(label).push(row);
-  }
-  const groups = [];
-  if (pinned.length) groups.push({ label: '★ PINNED', rows: pinned });
-  for (const [label, rows] of byLabel) groups.push({ label, rows });
-  return groups;
+// Rebuild the sidebar/drawer sections from the raw session list plus the live
+// sets (running turns, finished-while-away, queued sends). Cheap enough to run
+// on every notifier tick; the renderers read chat.groups as before.
+function rebuildGroups(chat, activeId) {
+  const state = runtime.state;
+  chat.groups = buildThreadGroups({
+    sessions: chat.sessions || [],
+    projects: (state && state.live && state.live.projects) || [],
+    running: chat.activeTurns || new Set(),
+    notified: chat.notified || new Set(),
+    queued: new Set((chat.queuedList || []).map((q) => q.sid)),
+    now: Date.now(),
+    activeId: activeId === undefined ? chat.activeId : activeId,
+    expanded: chat.expandedProjects || new Set(),
+  });
 }
 
 function round1(n) {
@@ -248,6 +209,7 @@ function ensureChat(state) {
   if (!Array.isArray(c.mru)) { try { c.mru = loadMru(window.localStorage); } catch (_) { c.mru = []; } }
   if (!c.scroll) c.scroll = {};
   if (!Array.isArray(c.sessions)) c.sessions = [];
+  if (!(c.expandedProjects instanceof Set)) c.expandedProjects = _loadExpanded();
   return state.live.chat;
 }
 
@@ -627,8 +589,7 @@ export async function load(state) {
   } catch (_) { /* ignore */ }
   if (chat.activeId !== activeId) return;
 
-  chat.groups = buildGroups(list, activeId);
-  annotateConvRows(chat);     // reflect any known working/finished dots
+  rebuildGroups(chat, activeId);
   startNotifier();            // begin cross-session turn polling (singleton)
 
   const activeSession = list.find((s) => s.id === activeId);
@@ -1212,7 +1173,7 @@ async function refreshSidebarUsage(state) {
     const sessions = await apiGet('/api/sessions');
     const list = Array.isArray(sessions) ? sessions : [];
     chat.sessions = list;
-    chat.groups = buildGroups(list, id);
+    rebuildGroups(chat, id);
     const name = list.find((s) => s.id === id)?.name;
     if (name) chat.title = name;
   } catch (_) { /* keep */ }
@@ -1829,6 +1790,11 @@ async function submitFromComposer(text, attachSnap, opts = {}) {
   const sessionId = await ensureSessionId(chat);
   if (!sessionId) return false;
 
+  // OPEN shelf: the server stamps `opened` on this send (app.py chat_stream);
+  // mirror it now so the row moves up without waiting for the next reload.
+  const rec = (chat.sessions || []).find((s) => s.id === sessionId);
+  if (rec) { rec.opened = Date.now(); rebuildGroups(chat); }
+
   const messageId = uniqId('live-u-');
   const deadline = Date.now() + BUFFER_MS;
   if (!Array.isArray(chat.thread)) chat.thread = [];
@@ -2427,19 +2393,6 @@ export function shouldSuppressFinishedToasts(droppedCount, justReconnected) {
   return !!justReconnected || droppedCount > 2;
 }
 
-// Stamp notify/working flags onto the already-built sidebar rows so a re-render
-// shows the dots without rebuilding the whole list.
-function annotateConvRows(chat) {
-  const notified = chat.notified || new Set();
-  const working = chat.activeTurns || new Set();
-  for (const g of (chat.groups || [])) {
-    for (const r of (g.rows || [])) {
-      r.notify = notified.has(r.id) && !r.active;
-      r.working = working.has(r.id) && !r.active;
-    }
-  }
-}
-
 async function _notifyTick() {
   const state = runtime.state;
   if (!state) return;
@@ -2489,7 +2442,7 @@ async function _notifyTick() {
       .finally(() => { _notifyResuming = null; });
   }
   _prevActive = now;
-  if (changed) { annotateConvRows(chat); runtime.render(); }
+  if (changed) { rebuildGroups(chat); runtime.render(); }
 }
 
 // Start the poller once (singleton). Called from load() at boot.
@@ -2776,6 +2729,50 @@ export const actions = {
     if (pick && pick !== chat.activeId) actions.selectSession(pick);
   },
 
+  // OPEN shelf (spec 7.2)
+  rebuildThreadGroups: () => { const state = runtime.state; if (!state) return; rebuildGroups(ensureChat(state)); },
+  closeOpen: async (id) => {
+    const state = runtime.state; if (!state || !id) return;
+    const chat = ensureChat(state);
+    const rec = (chat.sessions || []).find((s) => s.id === id);
+    const prev = rec ? rec.opened : null;
+    if (rec) rec.opened = null;
+    rebuildGroups(chat);
+    runtime.render();
+    try { await apiJson(`/api/session/${encodeURIComponent(id)}/close`, {}); }
+    catch (_) {
+      if (rec) rec.opened = prev;
+      rebuildGroups(chat);
+      runtime.render();
+      toast('Couldn’t update the Open list. Try again.');
+    }
+  },
+  selectOpenSlot: (n) => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    const open = (chat.groups || []).find((g) => g.kind === 'open');
+    const row = open && open.rows.find((r) => r.slot === Number(n));
+    if (row && row.id !== chat.activeId) return actions.selectSession(row.id);
+  },
+  cycleOpen: (delta) => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    const open = (chat.groups || []).find((g) => g.kind === 'open');
+    if (!open || !open.rows.length) return;
+    const n = open.rows.length;
+    const cur = open.rows.findIndex((r) => r.id === chat.activeId);
+    const next = cur === -1 ? 0 : (((cur + (Number(delta) || 0)) % n) + n) % n;
+    const row = open.rows[next];
+    if (row && row.id !== chat.activeId) return actions.selectSession(row.id);
+  },
+  toggleProject: (pid) => {
+    const state = runtime.state; if (!state || !pid) return;
+    const chat = ensureChat(state);
+    if (chat.expandedProjects.has(pid)) chat.expandedProjects.delete(pid); else chat.expandedProjects.add(pid);
+    _persistExpanded(chat.expandedProjects);
+    rebuildGroups(chat);
+  },
+
   selectSession: async (id) => {
     const state = runtime.state;
     if (!state || !id) return;
@@ -2839,12 +2836,7 @@ export const actions = {
       const raw = localStorage.getItem(branchPrefixKey(id));
       state.branchPrefix = raw ? JSON.parse(raw) : null;
     } catch (_) { state.branchPrefix = null; }
-    if (Array.isArray(chat.groups)) {
-      for (const g of chat.groups) {
-        for (const r of g.rows) r.active = r.id === id;
-      }
-    }
-    annotateConvRows(chat);     // refresh row dots NOW so the green one clears
+    rebuildGroups(chat, id);
     runtime.render();
 
     let name;
@@ -2938,9 +2930,7 @@ export const actions = {
     chat.thread = [];
     chat.title = 'New chat';
     state.branchPrefix = null; // a fresh chat carries no branch context
-    if (Array.isArray(chat.groups)) {
-      for (const g of chat.groups) for (const r of g.rows) r.active = false;
-    }
+    rebuildGroups(chat, null);
     chat.subtitle = `0 messages · ${chat.model || ''}`;
     // Canonical shape (task 3.10): this is THE newChat — app.js's pre-merge
     // stub only mirrors the visible half (chat surface + cleared draft +

@@ -1218,3 +1218,22 @@ pre.diff .del { background: rgba(255,107,107,.14); color: var(--red, #ff6b6b); }
 pre.diff .hunk { color: var(--teal, #4fe3d1); }
 pre.diff .meta { color: var(--faint, #8a94a6); }
 .chg-empty { padding: 10px; color: var(--faint, #8a94a6); font-size: 12px; }
+
+/* Sidebar sections (spec 7.1/7.2) */
+.conv-group{display:flex;align-items:center;gap:6px}
+.sect-count{font-size:11px;color:var(--faint);font-family:var(--mono)}
+.conv-group.project{cursor:pointer;border-radius:8px}
+.conv-group.project:hover{background:var(--row-hover,color-mix(in srgb,var(--fg) 5%,transparent))}
+.proj-chev{display:inline-block;width:12px;color:var(--faint);font-size:11px;transition:transform var(--dur-micro) var(--ease-standard);transform:rotate(90deg)}
+.conv-group.project.collapsed .proj-chev{transform:rotate(0deg)}
+.proj-name{color:var(--mut);letter-spacing:.04em;text-transform:none;font-size:12px}
+.proj-pip{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--faint);font-family:var(--mono)}
+.proj-pip.working{color:var(--teal)}
+.proj-pip .conv-dot{width:6px;height:6px}
+.conv-row.depth1{padding-left:24px}
+.conv-row.depth2{padding-left:38px}
+.conv-slot{flex:none;font-size:10px;color:var(--faint);font-family:var(--mono);opacity:0}
+.conv-row:hover .conv-slot,.conv-row:focus-within .conv-slot{opacity:1}
+.conv-close{flex:none;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:none;background:none;color:var(--faint);border-radius:6px;opacity:0;cursor:pointer}
+.conv-row:hover .conv-close,.conv-row:focus-within .conv-close{opacity:1}
+.conv-close:hover{color:var(--fg);background:color-mix(in srgb,var(--fg) 10%,transparent)}

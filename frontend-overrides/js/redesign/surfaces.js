@@ -141,34 +141,44 @@ function convListBody(s) {
   const groups2 = q
     ? groups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
     : groups;
-  // Alpha sort flattens the date groups into a single A–Z list; Recent keeps groups.
-  const sorted = s.convSort === 'alpha'
-    ? [{ label: 'A–Z', rows: groups2.flatMap((g) => g.rows || []).slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' })) }]
-    : groups2;
+  // Alpha sort now sorts within each section (spec 7.1) instead of flattening
+  // the date groups into a single A–Z list.
+  const alpha = (rows) => rows.slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' }));
+  const sorted = s.convSort === 'alpha' ? groups2.map((g) => ({ ...g, rows: alpha(g.rows || []) })) : groups2;
   const rowMenuOpen = s.live?.chat?.rowMenuOpen;
-  // M6: a message queued in a session you've since switched away from (see
-  // live/chat.js's session-keyed chat.queuedList) is otherwise invisible until
-  // you happen to reopen that thread. A small dot on its row says "something's
-  // waiting here" — read-only off state.live.chat.queuedList, never written.
-  const queuedSids = new Set((s.live?.chat?.queuedList || []).map((q) => q.sid));
   const convRow = (r) => {
     const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
     const badgeInner = r.term ? '∿' : (rowLogo || 'G');
     const badgeClass = 'conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
-    return `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}" data-act="selectSession" data-arg="${esc(r.id)}">`
+    return `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}${r.depth ? ` depth${r.depth}` : ''}" data-act="selectSession" data-arg="${esc(r.id)}">`
     + `<span class="${badgeClass}">${badgeInner}</span>`
     + `<span class="conv-title">${esc(r.title)}</span>`
     + (r.notify ? `<span class="conv-dot notify" title="Reply finished"></span>`
         : r.working ? `<span class="conv-spin working" title="Working…">${fortress(15)}</span>`
-        : (!r.active && queuedSids.has(r.id)) ? `<span class="conv-dot queued" title="Message queued — sends when the reply finishes"></span>` : '')
+        : r.queued ? `<span class="conv-dot queued" title="Message queued — sends when the reply finishes"></span>` : '')
     + (r.important ? `<span class="conv-fav" aria-hidden="true">${I.star(13, true)}</span>` : '')
+    + (r.slot ? `<span class="conv-slot" title="Option+${r.slot}">⌥${r.slot}</span>` : '')
+    + (r.slot ? `<button class="conv-close" data-act="closeOpen" data-arg="${esc(r.id)}" title="Remove from Open" aria-label="Remove from Open">${I.x(12)}</button>` : '')
     + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
     + (rowMenuOpen === r.id ? convMenu(r) : '')
     + `</div>`;
   };
-  const titleHtml = map(sorted, (g, gi) => `
-    <div class="conv-group${gi === 0 ? ' top' : ''}"><span class="sect-label">${esc(g.label)}</span></div>
-    ${map(g.rows, convRow)}`);
+  const header = (g, gi) => {
+    const top = gi === 0 ? ' top' : '';
+    if (g.kind === 'open') return `<div class="conv-group open${top}"><span class="sect-label">OPEN</span><span class="sect-count">${g.meta.count}</span></div>`;
+    if (g.kind === 'project') {
+      const m = g.meta;
+      return `<div class="conv-group project${top}${m.collapsed ? ' collapsed' : ''}" data-act="toggleProject" data-arg="${esc(m.id)}" data-proj-anchor="${esc(m.id)}" role="button" tabindex="0" aria-expanded="${!m.collapsed}">`
+        + `<span class="proj-chev">▸</span>`
+        + `<span class="sect-label proj-name">${esc(g.label)}</span>`
+        + `<span class="sect-count">${m.count}</span>`
+        + (m.working ? `<span class="proj-pip working" title="${m.working} working">${fortress(12)}${m.working}</span>` : '')
+        + (m.unseen ? `<span class="proj-pip unseen" title="${m.unseen} finished while away"><span class="conv-dot notify"></span>${m.unseen}</span>` : '')
+        + `</div>`;
+    }
+    return `<div class="conv-group${top}"><span class="sect-label">${esc(g.label)}</span></div>`;
+  };
+  const titleHtml = map(sorted, (g, gi) => header(g, gi) + (g.kind === 'project' && g.meta.collapsed ? '' : map(g.rows, convRow)));
   const msgHtml = semanticHits(s, groups2);
   if (q && !groups2.length && !msgHtml) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
   return titleHtml + msgHtml;

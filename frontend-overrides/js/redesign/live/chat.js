@@ -1240,6 +1240,11 @@ async function refreshSidebarUsage(state) {
     const sessions = await apiGet('/api/sessions');
     const list = Array.isArray(sessions) ? sessions : [];
     chat.sessions = list;
+    // I3: re-mirror onto the header (project pill, parent link) every time
+    // chat.sessions is replaced here -- otherwise a filing that lands
+    // between two of these refetches stays invisible until something else
+    // happens to call _mirrorSessionMeta.
+    _mirrorSessionMeta(chat, chat.activeId);
     _pruneOpenedLocal(chat);
     rebuildGroups(chat, id);
     const name = list.find((s) => s.id === id)?.name;
@@ -1253,6 +1258,35 @@ async function refreshSidebarUsage(state) {
   runtime.render();
   // Hand the payload back so the turn-done path can reuse it (one GET/turn).
   return { id, usage: u };
+}
+
+// I3: chat_turn.py spawns project_classify.file_session off the turn's
+// critical path at the same moment the AI title lands (see the title-time
+// hook, spec 6.1) -- the classifier can still be running when `done` reaches
+// this client, so refreshSidebarUsage's own refetch (right on `done`) can
+// miss a filing that finishes a beat later. When a turn lands a new title
+// (the same signal the server uses to fire the classifier), schedule ONE
+// more /api/sessions pass ~5s later so the filing lands on screen without
+// waiting for an unrelated refresh. Keeps at most one pending timer on
+// `chat` -- a later call clears whatever was still pending -- and unref()s
+// the handle (Node) so a test process can exit without waiting on it.
+function _scheduleProjectFilingRefetch(chat) {
+  if (chat._filingRefetchTimer) {
+    try { clearTimeout(chat._filingRefetchTimer); } catch (_) { /* not a real timer handle */ }
+    chat._filingRefetchTimer = null;
+  }
+  const handle = setTimeout(() => {
+    chat._filingRefetchTimer = null;
+    apiGet('/api/sessions').then((sessions) => {
+      const list = Array.isArray(sessions) ? sessions : [];
+      chat.sessions = list;
+      _mirrorSessionMeta(chat, chat.activeId);
+      rebuildGroups(chat, chat.activeId);
+      runtime.render();
+    }).catch(() => { /* best-effort */ });
+  }, 5000);
+  if (handle && typeof handle.unref === 'function') handle.unref();
+  chat._filingRefetchTimer = handle;
 }
 
 // Pure slicing step for branchFromMessage — split out so it's unit-testable
@@ -1460,7 +1494,17 @@ function beginTurn(chat, modelLabel, sessionId) {
       // record and attach it to the just-finished bubble once it lands.
       if (turn.asstMsg && turn.turnId != null) changesAfterTurn(turn.sessionId, turn.turnId, turn.asstMsg).catch(() => {});
       if (turn.got404) { setLiveTurn(null); actions.reloadSessions(); chat.busySessionId = null; turn = null; return; }
+      // I3: capture the title BEFORE the refetch below so a landed AI title
+      // (the same moment the server spawns the classifier) can be detected
+      // once it resolves -- see _scheduleProjectFilingRefetch.
+      const _titleBeforeDone = chat.title;
+      const _titleTrackId = chat.activeId;
       const sidebarDone = refreshSidebarUsage(runtime.state);
+      sidebarDone.then((res) => {
+        if (res && res.id === _titleTrackId && chat.title !== _titleBeforeDone) {
+          _scheduleProjectFilingRefetch(chat);
+        }
+      }).catch(() => {});
       // Per-turn usage: prefer what the done frame carries; otherwise reuse the
       // session usage row refreshSidebarUsage just fetched (the gateway stamps
       // it at turn end) rather than firing an identical second GET.
@@ -2949,6 +2993,19 @@ export const actions = {
     try {
       const r = await apiJson('/api/projects/backfill', {});
       toast(r && r.status === 'running' ? 'Backfill is already running.' : 'Backfill started. Conversations file in the background.');
+      // I4: the route now seeds synchronously before it responds, so the
+      // seeds are already there the moment this POST resolves -- refetch so
+      // Settings/the sidebar show them right away instead of staying empty
+      // until some unrelated refresh happens to land.
+      const state = runtime.state;
+      if (state) {
+        try {
+          const projects = await apiGet('/api/projects');
+          state.live.projects = Array.isArray(projects) ? projects : [];
+        } catch (_) { /* best-effort */ }
+        rebuildGroups(ensureChat(state));
+        runtime.render();
+      }
     } catch (_) { toast('Couldn’t start the backfill.'); }
   },
 
@@ -2982,6 +3039,12 @@ export const actions = {
     chat.suggest = null;
     saveStripForCurrent(chat);
     chat.activeId = id;
+    // I2: mirror from chat.sessions (already local) right away so the header
+    // prefix/parent-link never show the OLD thread's project/parent for the
+    // beat before the /api/sessions refetch below lands -- and still hold
+    // correct data if that refetch fails outright (the catch below used to
+    // skip mirroring entirely).
+    _mirrorSessionMeta(chat, id);
     state.draft = restoreDraft(chat.drafts, id);
     chat.mru = pushMru(chat.mru, id);
     try { persistMru(chat.mru, window.localStorage); } catch (_) { /* storage unavailable */ }

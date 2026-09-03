@@ -30,7 +30,7 @@ globalThis.fetch = (url, opts) => {
 };
 
 const { runtime } = await import('../redesign/live/runtime.js');
-const { actions } = await import('../redesign/live/chat.js');
+const { actions, flushPending, __testOnEvent } = await import('../redesign/live/chat.js');
 const drain = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r)); };
 
 function freshState(activeId) {
@@ -46,6 +46,27 @@ test('selectSession mirrors folder and parent onto chat', async () => {
   await drain();
   assert.equal(state.live.chat.folder, 'p-aaaaaaaa');
   assert.equal(state.live.chat.parentId, 'a');
+});
+
+test('selectSession mirrors folder and parent from the LOCAL record even when the /api/sessions refetch fails', async () => {
+  const state = freshState('a');
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) => {
+    const u = String(url); const method = (opts && opts.method) || 'GET';
+    if (u.endsWith('/api/sessions')) return Promise.reject(new Error('network down'));
+    if (u.includes('/api/sessions/')) return Promise.resolve(jsonRes({}));
+    if (u.includes('/api/history/')) return Promise.resolve(jsonRes({ history: [] }));
+    calls.push({ u, method, body: opts && opts.body });
+    return Promise.resolve(jsonRes({}));
+  };
+  try {
+    await actions.selectSession('b');
+    await drain();
+    assert.equal(state.live.chat.folder, 'p-aaaaaaaa', 'folder mirrored from the local record, not the failed refetch');
+    assert.equal(state.live.chat.parentId, 'a');
+  } finally {
+    globalThis.fetch = origFetch;
+  }
 });
 
 test('moveToProject is optimistic and PATCHes folder; empty target unfiles', async () => {
@@ -91,4 +112,100 @@ test('archiveProject flips the flag locally and PATCHes', async () => {
   assert.equal(state.live.projects.find((p) => p.id === 'p-aaaaaaaa').archived, true);
   assert.ok(calls.some((c) => c.u.endsWith('/api/projects/p-aaaaaaaa') && c.method === 'PATCH'));
   assert.ok(!state.live.chat.groups.some((g) => g.kind === 'project' && g.meta.id === 'p-aaaaaaaa'), 'archived project leaves the sidebar');
+});
+
+// I3: chat_turn.py spawns project_classify.file_session off the turn's
+// critical path at the same moment the AI title lands (see the title-time
+// hook), so the classifier can still be running when `done` reaches the
+// client. A turn that lands a new title is the "title just settled" signal;
+// one extra /api/sessions pass ~5s later catches a filing that finished
+// after the turn's own refetch already ran.
+test('a turn that lands a new title schedules one delayed refetch that surfaces the classifier folder', async () => {
+  const state = freshState('a');
+  state.live.chat.title = 'A';
+  const origFetch = globalThis.fetch;
+  let sessionsGetCount = 0;
+  globalThis.fetch = (url, opts) => {
+    const u = String(url); const method = (opts && opts.method) || 'GET';
+    if (u.endsWith('/api/chat_stream') && method === 'POST') return new Promise(() => {});
+    if (u.endsWith('/api/sessions')) {
+      sessionsGetCount++;
+      const rec = sessionsGetCount === 1
+        ? { id: 'a', name: 'A (titled)', created: 1, updated: 2, folder: null }
+        : { id: 'a', name: 'A (titled)', created: 1, updated: 2, folder: 'p-aaaaaaaa' };
+      return Promise.resolve(jsonRes([rec]));
+    }
+    if (u.includes('/api/sessions/')) return Promise.resolve(jsonRes({}));
+    return Promise.resolve(jsonRes({}));
+  };
+  const timers = [];
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms, ...rest) => {
+    if (ms >= 4000) { timers.push({ fn, ms }); return { unref() {} }; }
+    return realSetTimeout(fn, ms, ...rest);
+  };
+  try {
+    state.draft = 'hello';
+    await actions.send();
+    flushPending('a');
+    await drain();
+    __testOnEvent()({ type: 'done' });
+    await drain();
+    assert.equal(state.live.chat.title, 'A (titled)', 'title landed from the post-turn refetch');
+    assert.equal(timers.length, 1, 'exactly one delayed refetch scheduled');
+    assert.equal(timers[0].ms, 5000);
+    timers[0].fn();
+    await drain();
+    assert.equal(sessionsGetCount, 2, 'the delayed refetch hit /api/sessions again');
+    assert.equal(state.live.chat.folder, 'p-aaaaaaaa', 'the mirrored folder reflects the delayed refetch');
+  } finally {
+    globalThis.fetch = origFetch;
+    globalThis.setTimeout = realSetTimeout;
+  }
+});
+
+test('runProjectBackfill refetches /api/projects into state.live.projects', async () => {
+  const state = freshState(null);
+  const longer = [...projects, { id: 'p-cccccccc', name: 'Extra', archived: false }];
+  const origFetch = globalThis.fetch;
+  let getCalls = 0;
+  globalThis.fetch = (url, opts) => {
+    const u = String(url); const method = (opts && opts.method) || 'GET';
+    if (u.endsWith('/api/projects/backfill') && method === 'POST') return Promise.resolve(jsonRes({ status: 'started' }));
+    if (u.endsWith('/api/projects')) { getCalls++; return Promise.resolve(jsonRes(longer)); }
+    return Promise.resolve(jsonRes({}));
+  };
+  try {
+    await actions.runProjectBackfill();
+    await drain();
+    assert.equal(getCalls, 1, 'runProjectBackfill refetches /api/projects exactly once');
+    assert.deepEqual(state.live.projects.map((p) => p.id), longer.map((p) => p.id));
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+});
+
+test('deleteProject removes the project, clears folder on its sessions and the active chat, and a cancelled confirm changes nothing', async () => {
+  const state = freshState('b'); // b is filed under p-aaaaaaaa in the shared fixture
+  state.live.chat.folder = 'p-aaaaaaaa';
+  calls.length = 0;
+  const origConfirm = globalThis.window.confirm;
+
+  globalThis.window.confirm = () => false;
+  await actions.deleteProject('p-aaaaaaaa');
+  await drain();
+  assert.ok(!calls.some((c) => c.method === 'DELETE'), 'a cancelled confirm sends nothing');
+  assert.ok(state.live.projects.some((p) => p.id === 'p-aaaaaaaa'), 'project still present');
+  assert.equal(state.live.chat.folder, 'p-aaaaaaaa', 'chat.folder untouched');
+
+  globalThis.window.confirm = () => true;
+  await actions.deleteProject('p-aaaaaaaa');
+  await drain();
+  const del = calls.find((c) => c.u.endsWith('/api/projects/p-aaaaaaaa') && c.method === 'DELETE');
+  assert.ok(del, 'DELETE sent');
+  assert.ok(!state.live.projects.some((p) => p.id === 'p-aaaaaaaa'), 'project removed locally');
+  assert.equal(state.live.chat.sessions.find((s) => s.id === 'b').folder, null, 'session b unfiled locally');
+  assert.equal(state.live.chat.folder, null, 'active chat folder cleared');
+
+  globalThis.window.confirm = origConfirm;
 });

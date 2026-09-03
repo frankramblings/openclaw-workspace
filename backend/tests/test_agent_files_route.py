@@ -83,6 +83,10 @@ def test_name_outside_allowlist_is_400_before_gateway(client, monkeypatch):
         r = client.get(path)
         assert r.status_code == 400 and r.json()["error"] == "bad_name", path
     assert client.put("/api/agent/files/NOPE.md", json={"content": "x"}).status_code == 400
+    r = client.put("/api/agent/files/..%2FSOUL.md", json={"content": "x"})
+    assert r.status_code == 400 and r.json()["error"] == "bad_name"
+    r = client.post("/api/agent/files/..%2FSOUL.md/restore", json={"backup_id": "20260903T000000000000-deadbeef"})
+    assert r.status_code == 400 and r.json()["error"] == "bad_name"
     assert fake.calls == []
 
 

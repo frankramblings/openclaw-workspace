@@ -144,16 +144,6 @@ async def list_file_backups(name: str, agent: str | None = None):
     return {"ok": True, "agent_id": agent_id, "backups": store.list_backups("agent-file", f"{agent_id}/{name}")}
 
 
-@router.get("/api/agent/files/{name:path}")
-async def get_file_bad_name(name: str):
-    """Catches a name that embeds a "/" (e.g. a decoded ../ traversal): the
-    plain single-segment {name} routes above never match such a path, so
-    without this it would fall through to app.py's generic 404 instead of
-    the allowlist's 400 bad_name. Registered after the specific GET routes
-    so a well-formed name is never routed here."""
-    return _bad_name(name) or gw.fail(400, "bad_name", f"file must be one of {', '.join(ALLOWED_FILES)}")
-
-
 @router.post("/api/agent/files/{name}/restore")
 async def restore_file(name: str, agent: str | None = None, body: dict = Body(default=None)):
     if (denied := _guard()) is not None:
@@ -172,3 +162,19 @@ async def restore_file(name: str, agent: str | None = None, body: dict = Body(de
     except FileNotFoundError:
         return gw.fail(404, "backup_not_found", f"no backup {backup_id!r} for {name}")
     return await _write(agent_id, name, content, None, True, "restore")
+
+
+@router.api_route("/api/agent/files/{name:path}", methods=["GET", "PUT", "POST", "DELETE"])
+async def bad_name_fallback(name: str):
+    """Catches a name that embeds a "/" (e.g. a decoded ../ traversal) on
+    every method this router cares about: the specific routes above only
+    match a single path segment (or one with a literal /backups or
+    /restore suffix), so a name with an internal "/" never matches any of
+    them regardless of method, and without this it would fall through to
+    app.py's generic 404 (GET) or Starlette's bare 405 (PUT/POST/DELETE)
+    instead of the allowlist's 400 bad_name envelope. Registered LAST so
+    every well-formed name on a supported method is routed to its specific
+    handler first; `or` covers the one path a *valid* name can still reach
+    this route, an unhandled method (e.g. DELETE) on an otherwise-good
+    name, where _bad_name returns None."""
+    return _bad_name(name) or gw.fail(400, "bad_name", f"file must be one of {', '.join(ALLOWED_FILES)}")

@@ -41,6 +41,7 @@ from .emoji_proxy import router as emoji_router
 from .export_route import router as export_router
 from .inbox import router as inbox_router
 from .jobs import router as jobs_router
+from .agent_files import router as agent_files_router
 from .mcp_servers import router as mcp_servers_router
 from .memory import router as memory_router
 from .notes import router as notes_router
@@ -280,6 +281,7 @@ app.include_router(calendar_router)
 app.include_router(settings_router)
 app.include_router(mcp_servers_router)
 app.include_router(skill_proposals_router)
+app.include_router(agent_files_router)
 app.include_router(notes_router)
 app.include_router(documents_router)
 app.include_router(followup.router)

@@ -1537,12 +1537,20 @@ document.addEventListener('keydown', (e) => {
   }
   // ⌥1..⌥9 open that OPEN-shelf slot; ⌥[ / ⌥] cycle within OPEN (spec 7.2;
   // ⌘digit is reserved by browsers for tab switching). Matched on e.code
-  // because Option changes e.key on macOS.
+  // because Option changes e.key on macOS. The modal check lives inside each
+  // matched branch (not a blanket early return for the whole e.altKey block)
+  // so an unrelated Option chord with a modal open falls through instead of
+  // bailing out of the rest of the handler.
   if (e.altKey && !e.metaKey && !e.ctrlKey && state.surface === 'chat' && !isMobile()) {
-    if (topmostModal()) return;
     const digit = /^Digit([1-9])$/.exec(e.code || '');
-    if (digit && actions.selectOpenSlot) { e.preventDefault(); actions.selectOpenSlot(Number(digit[1])); render(); return; }
-    if ((e.code === 'BracketLeft' || e.code === 'BracketRight') && actions.cycleOpen) {
+    if (digit && actions.selectOpenSlot) {
+      if (topmostModal()) return;
+      e.preventDefault(); actions.selectOpenSlot(Number(digit[1])); render(); return;
+    }
+    // !e.shiftKey: ⌥⇧[ / ⌥⇧] type the macOS curly quotes " and ' — only the
+    // unshifted chord cycles OPEN.
+    if (!e.shiftKey && (e.code === 'BracketLeft' || e.code === 'BracketRight') && actions.cycleOpen) {
+      if (topmostModal()) return;
       e.preventDefault(); actions.cycleOpen(e.code === 'BracketRight' ? 1 : -1); render(); return;
     }
   }

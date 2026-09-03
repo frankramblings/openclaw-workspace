@@ -158,16 +158,31 @@ def backfill_running() -> bool:
 _BACKFILL_TIMEOUT = 15.0
 # Consecutive local-model failures (empty raw response, never an exception)
 # after which a run gives up rather than plowing through every remaining
-# candidate one dead call at a time.
+# candidate one dead call at a time. A failure here means all
+# _BACKFILL_RETRY_DELAYS retries were exhausted for that session -- see below.
 _BACKFILL_MAX_CONSECUTIVE_FAILURES = 3
+# kamino's local model server crashes and restarts after a burst of rapid
+# sequential requests (~70 real-size prompts); a 7B model reload can take
+# 10s or more before it answers again. Retry a failed call with backoff
+# before counting it as a strike, so a reload blip doesn't abort a run that
+# would otherwise sail through. One session may wait up to ~17s (2+5+10)
+# before it counts as a strike; three strikes therefore mean the server
+# stayed down for about a minute.
+_BACKFILL_RETRY_DELAYS = (2.0, 5.0, 10.0)
+# Gentle inter-call pause so a run doesn't itself trigger the same burst
+# behavior against a healthy server.
+_BACKFILL_PACE_S = 0.2
 
 
 async def backfill(since_days: int = 90) -> dict:
     """File every unfiled, non-archived session updated in the window, by
     title only, one local call at a time. Seeds the project list first when
-    it is empty. Idempotent; a second concurrent call is refused. Aborts
-    early if the local model looks down (see _BACKFILL_MAX_CONSECUTIVE_FAILURES)
-    rather than scanning the rest of the window against a dead endpoint."""
+    it is empty. Idempotent; a second concurrent call is refused. Retries a
+    failed model call with backoff (_BACKFILL_RETRY_DELAYS) before counting
+    it as a strike, and aborts early if the local model looks truly down
+    (see _BACKFILL_MAX_CONSECUTIVE_FAILURES) rather than scanning the rest of
+    the window against a dead endpoint. A per-session error (classify or
+    store write) is logged and skipped rather than aborting the batch."""
     if _BACKFILL_LOCK.locked():
         return {"scanned": 0, "filed": 0, "skipped": "running"}
     async with _BACKFILL_LOCK:
@@ -179,25 +194,39 @@ async def backfill(since_days: int = 90) -> dict:
         filed = 0
         consecutive_failures = 0
         for i, s in enumerate(todo, 1):
-            pid, ok = await _classify_with_status(s.get("name") or "", "",
-                                                   timeout=_BACKFILL_TIMEOUT)
-            if ok:
-                consecutive_failures = 0
-                if pid:
-                    # touch=False: filing is bookkeeping, not activity (spec
-                    # 4.2 amendment) -- see file_session's identical comment.
-                    sessions_store.update(s["id"], folder=pid, touch=False)
-                    filed += 1
-            else:
-                consecutive_failures += 1
-                if consecutive_failures == 1:
-                    log.warning("project backfill: local model call failed for session %s", s["id"])
-                if consecutive_failures >= _BACKFILL_MAX_CONSECUTIVE_FAILURES:
-                    log.warning(
-                        "project backfill aborted after %d consecutive local-model "
-                        "failures; %d scanned, %d filed",
-                        _BACKFILL_MAX_CONSECUTIVE_FAILURES, i, filed)
-                    return {"scanned": i, "filed": filed, "aborted": "model_failures"}
+            try:
+                pid, ok = None, False
+                for attempt in range(4):
+                    pid, ok = await _classify_with_status(s.get("name") or "", "",
+                                                           timeout=_BACKFILL_TIMEOUT)
+                    if ok or attempt == 3:
+                        break
+                    log.info(
+                        "project backfill: retrying session %s after model failure "
+                        "(attempt %d/4)", s["id"], attempt + 2)
+                    await asyncio.sleep(_BACKFILL_RETRY_DELAYS[attempt])
+                if ok:
+                    if pid:
+                        # touch=False: filing is bookkeeping, not activity
+                        # (spec 4.2 amendment) -- see file_session's
+                        # identical comment.
+                        sessions_store.update(s["id"], folder=pid, touch=False)
+                        filed += 1
+                    consecutive_failures = 0
+                else:
+                    consecutive_failures += 1
+                    if consecutive_failures == 1:
+                        log.warning("project backfill: local model call failed for session %s", s["id"])
+                    if consecutive_failures >= _BACKFILL_MAX_CONSECUTIVE_FAILURES:
+                        log.warning(
+                            "project backfill aborted after %d consecutive local-model "
+                            "failures; %d scanned, %d filed",
+                            _BACKFILL_MAX_CONSECUTIVE_FAILURES, i, filed)
+                        return {"scanned": i, "filed": filed, "aborted": "model_failures"}
+            except Exception:  # noqa: BLE001 - isolate one bad session, keep the batch going
+                log.warning("project backfill: skipping session %s after error",
+                            s.get("id"), exc_info=True)
+            await asyncio.sleep(_BACKFILL_PACE_S)
             if i % 25 == 0:
                 log.info("project backfill: %d/%d scanned, %d filed", i, len(todo), filed)
         log.info("project backfill done: %d scanned, %d filed", len(todo), filed)

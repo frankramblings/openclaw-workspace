@@ -14,6 +14,11 @@ def anyio_backend():
 def _stores(tmp_path, monkeypatch):
     monkeypatch.setattr(projects_store, "_STORE_FILE", tmp_path / "projects.json")
     monkeypatch.setattr(config, "PROJECT_CLASSIFY_ENABLED", True)
+    # Backfill's retry backoff and inter-call pace are real-time sleeps in
+    # production; zero them by default so the suite stays fast. Tests that
+    # care about the delay values or retry log text override explicitly.
+    monkeypatch.setattr(project_classify, "_BACKFILL_RETRY_DELAYS", (0.0, 0.0, 0.0))
+    monkeypatch.setattr(project_classify, "_BACKFILL_PACE_S", 0.0)
 
 
 def _sess(name, **kw):
@@ -164,8 +169,11 @@ async def test_backfill_seeds_and_files_recent_unfiled_only(monkeypatch):
 async def test_backfill_aborts_after_three_consecutive_model_failures(monkeypatch):
     # I5: local_llm.complete returns "" on any transport/model failure and
     # never raises, so a run stuck against a dead local endpoint would
-    # otherwise silently plow through every candidate one at a time. Three
-    # consecutive empty responses must abort the run instead.
+    # otherwise silently plow through every candidate one at a time. Each
+    # session now gets up to 4 attempts (1 + 3 retries with backoff, see
+    # _BACKFILL_RETRY_DELAYS) before it counts as one strike; three
+    # consecutive strikes -- 3 sessions x 4 attempts = 12 calls -- must
+    # abort the run instead.
     ids = [_sess(f"thread {i}")["id"] for i in range(5)]
     calls = []
 
@@ -177,7 +185,7 @@ async def test_backfill_aborts_after_three_consecutive_model_failures(monkeypatc
     monkeypatch.setattr(local_llm, "complete", fake_complete)
     out = await project_classify.backfill(since_days=90)
     assert out == {"scanned": 3, "filed": 0, "aborted": "model_failures"}
-    assert len(calls) == 3
+    assert len(calls) == 12
     # backfill uses a shorter timeout than the title-time hook's default
     assert all(kw.get("timeout") == 15 for kw in calls)
     for sid in ids:
@@ -190,11 +198,18 @@ async def test_backfill_aborts_after_three_consecutive_model_failures(monkeypatc
 
 @pytest.mark.anyio
 async def test_backfill_failure_streak_resets_on_a_success(monkeypatch):
+    # Adapted for per-session retries: a "failing" session now exhausts all
+    # 4 attempts (never succeeds), a "succeeding" session answers on its
+    # first attempt. The flattened call sequence is still fail,fail,
+    # succeed,fail,fail at the SESSION level -- never 3 session-strikes in a
+    # row -- expressed as raw responses: 8 empty responses, one real answer,
+    # 8 more empty responses. That raw sequence is a palindrome, so the
+    # assertion holds regardless of which end list_sessions() (newest-first)
+    # happens to consume from.
     p = projects_store.create("Plex", hints=["plex"])
     for i in range(5):
         _sess(f"s{i}")
-    # fail, fail, succeed, fail, fail -- never 3 in a row, so it must not abort
-    pattern = ["", "", p["id"], "", ""]
+    pattern = [""] * 8 + [p["id"]] + [""] * 8
     calls = []
 
     async def fake_complete(model_ref, prompt, **kw):
@@ -206,4 +221,64 @@ async def test_backfill_failure_streak_resets_on_a_success(monkeypatch):
     out = await project_classify.backfill(since_days=90)
     assert "aborted" not in out
     assert out["scanned"] == 5 and out["filed"] == 1
-    assert len(calls) == 5
+    assert len(calls) == 17
+
+
+@pytest.mark.anyio
+async def test_backfill_retries_a_single_model_failure_then_succeeds(monkeypatch, caplog):
+    # Requirement 1: fail once, succeed on retry -- filed, no strike, one
+    # retry logged at INFO.
+    p = projects_store.create("Plex", hints=["plex"])
+    rec = _sess("Plex down again")
+    calls = []
+
+    async def fake_complete(model_ref, prompt, **kw):
+        calls.append(1)
+        return "" if len(calls) == 1 else p["id"]
+
+    monkeypatch.setattr(local_llm, "can_route", lambda ref: True)
+    monkeypatch.setattr(local_llm, "complete", fake_complete)
+    with caplog.at_level("INFO", logger="backend.project_classify"):
+        out = await project_classify.backfill(since_days=90)
+    assert "aborted" not in out
+    assert out["scanned"] == 1 and out["filed"] == 1
+    assert sessions_store.get(rec["id"])["folder"] == p["id"]
+    assert len(calls) == 2
+    retry_logs = [r for r in caplog.records if "retrying session" in r.message]
+    assert len(retry_logs) == 1
+    assert rec["id"] in retry_logs[0].message
+    assert "attempt 2/4" in retry_logs[0].message
+
+
+@pytest.mark.anyio
+async def test_backfill_isolates_a_store_write_error_to_one_session(monkeypatch, caplog):
+    # Requirement 3: sessions_store.update raising for one session must not
+    # abort the batch -- it is skipped (counts as neither success nor
+    # strike), the rest still get filed, and scanned covers every session.
+    p = projects_store.create("Plex", hints=["plex"])
+    good1 = _sess("Plex thing one")
+    bad = _sess("Plex thing two")
+    good2 = _sess("Plex thing three")
+    real_update = sessions_store.update
+
+    def flaky_update(session_id, **kw):
+        if session_id == bad["id"]:
+            raise RuntimeError("disk full")
+        return real_update(session_id, **kw)
+
+    async def fake_complete(model_ref, prompt, **kw):
+        return p["id"]
+
+    monkeypatch.setattr(local_llm, "can_route", lambda ref: True)
+    monkeypatch.setattr(local_llm, "complete", fake_complete)
+    monkeypatch.setattr(sessions_store, "update", flaky_update)
+    with caplog.at_level("WARNING", logger="backend.project_classify"):
+        out = await project_classify.backfill(since_days=90)
+    assert "aborted" not in out
+    assert out["scanned"] == 3 and out["filed"] == 2
+    assert sessions_store.get(bad["id"])["folder"] is None
+    assert sessions_store.get(good1["id"])["folder"] == p["id"]
+    assert sessions_store.get(good2["id"])["folder"] == p["id"]
+    skip_logs = [r for r in caplog.records if "skipping session" in r.message]
+    assert len(skip_logs) == 1
+    assert bad["id"] in skip_logs[0].message

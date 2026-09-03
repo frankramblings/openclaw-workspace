@@ -520,6 +520,17 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
         return StreamingResponse(chat_turn.busy_stream(),
                                  media_type="text/event-stream")
 
+    # OPEN shelf (spec 4.1/5): a user send puts the thread on the shelf. Done
+    # after the busy check so a rejected double-send does not stamp it. Never
+    # let a store write failure break the turn (same swallow convention as
+    # chat_turn.py's other sessions_store.update touches).
+    if rec and message.strip():
+        try:
+            sessions_store.mark_opened(rec["id"])
+        except Exception:  # noqa: BLE001 - never break the turn over the shelf stamp
+            _log.warning("sessions_store.update (mark_opened) failed for session %s",
+                         rec["id"], exc_info=True)
+
     run_info: dict = {}  # bridge fills sessionKey/runId once chat.send acks
     # Off the event loop: image conversion (ffmpeg, up to a 30s timeout) and
     # office/PDF text extraction (openpyxl/pypdf/python-docx/python-pptx) are
@@ -742,6 +753,11 @@ async def branch_session(payload: dict = Body(default=None)):
         endpoint_id=src.get("endpoint_id"),
         speed=payload.get("speed") or src.get("speed"),
     )
+    # Fork bookkeeping (spec 5): remember the parent, inherit its project, and
+    # put the new thread on the OPEN shelf so it is where the user lands next.
+    sessions_store.update(new_sess["id"], parent_id=source_session_id,
+                          folder=src.get("folder"),
+                          opened=sessions_store._now_ms())
     preamble = _build_preamble(prefix)
     branch_context.write(new_sess["id"], source_session_id, prefix, preamble)
     return {"session_id": new_sess["id"], "session_key": new_sess["sessionKey"], "prefix": prefix}
@@ -893,6 +909,16 @@ async def archive_session(session_id: str):
 @app.post("/api/session/{session_id}/restore")
 async def unarchive_session(session_id: str):
     sessions_store.update(session_id, archived=False)
+    return {"ok": True}
+
+
+@app.post("/api/session/{session_id}/close")
+async def close_session(session_id: str):
+    """Take a thread off the OPEN shelf (spec 7.2). The thread itself is
+    untouched; it simply stops being in the working set until the next send."""
+    rec = sessions_store.close_opened(session_id)
+    if rec is None:
+        return JSONResponse(status_code=404, content={"detail": "no such session"})
     return {"ok": True}
 
 

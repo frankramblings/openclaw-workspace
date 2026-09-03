@@ -30,11 +30,25 @@ _STORE_FILE = config.DATA_DIR / "sessions.json"
 # whose version is HIGHER than this is a downgrade (a newer app version wrote
 # it, this process is older): still loaded as best-effort, but logged so a
 # rollback that silently drops fields doesn't go unnoticed.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+# v2 (2026-09-01): every record carries opened (OPEN-shelf stamp) and parent_id (fork parent); missing keys read as None.
 
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+_V2_DEFAULTS = {"opened": None, "parent_id": None}
+
+
+def _migrate(data: dict) -> dict:
+    """Fill fields older files lack. In-memory only; the next _save writes the
+    current SCHEMA_VERSION. Idempotent."""
+    for s in data.get("sessions", []):
+        if isinstance(s, dict):
+            for k, v in _V2_DEFAULTS.items():
+                s.setdefault(k, v)
+    return data
 
 
 def _load() -> dict:
@@ -45,7 +59,7 @@ def _load() -> dict:
             "sessions.json schema_version %s is newer than this app knows how to "
             "read (%s) -- an older app version, or a downgrade; some fields may "
             "be ignored", version, SCHEMA_VERSION)
-    return data
+    return _migrate(data)
 
 
 def _save(data: dict) -> None:
@@ -107,6 +121,11 @@ def create(name: str | None = None, model: str | None = None,
         "folder": None,
         "archived": False,
         "important": False,
+        # OPEN shelf (spec 4.1): epoch ms of the last user send, cleared by
+        # POST /api/session/{id}/close. None = not on the shelf.
+        "opened": None,
+        # Fork parent (POST /api/session/branch). None = not a fork.
+        "parent_id": None,
         "created": _now_ms(),
         "updated": _now_ms(),
         # Who spawned this session: None = the user, "inbox" = a triage
@@ -131,7 +150,8 @@ def update(session_id: str, **fields) -> dict | None:
     """Patch allowed fields on a record. Unknown keys are ignored so a stray
     form field from the SPA can't inject arbitrary data."""
     allowed = {"name", "model", "folder", "archived", "important",
-               "endpoint_url", "endpoint_id", "speed", "gary_terminal"}
+               "endpoint_url", "endpoint_id", "speed", "gary_terminal",
+               "opened", "parent_id"}
     with _LOCK:
         data = _load()
         for s in data.get("sessions", []):
@@ -172,6 +192,16 @@ def id_for_session_key(session_key: str) -> str | None:
 
 def set_gary_terminal(session_id: str, enabled):  # enabled: bool | None
     return update(session_id, gary_terminal=enabled)
+
+
+def mark_opened(session_id: str):
+    """Stamp the session onto the OPEN shelf (called on every user send)."""
+    return update(session_id, opened=_now_ms())
+
+
+def close_opened(session_id: str):
+    """Take the session off the OPEN shelf (the row's close action)."""
+    return update(session_id, opened=None)
 
 
 def delete(session_id: str) -> bool:

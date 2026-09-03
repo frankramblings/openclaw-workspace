@@ -21,6 +21,7 @@ export const TAB = {
   changes: ['Changes', 'Which folders change review watches', '<path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>'],
   appearance: ['Appearance', 'Theme, sidebar, and chat visibility', '<circle cx="12" cy="12" r="10"/><path d="M12 2a7 7 0 0 0 0 20 4 4 0 0 1 0-8 4 4 0 0 0 0-8z"/>'],
   shortcuts: ['Shortcuts', 'Keyboard shortcuts', '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/>'],
+  projects: ['Projects', 'How conversations are grouped', '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>'],
   account: ['Account', 'Profile, password, and 2FA', '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'],
   tools: ['Agent Tools', 'Enable or disable agent tools', WR],
   users: ['Users', 'Accounts are managed on the host', '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'],
@@ -164,13 +165,20 @@ export const PANELS = {
   system: [
     card({ title: 'Data Backup', icon: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>', sub: 'Export your user data (sessions, notes, documents, memory) as a zip file.', rows: [btns([{ label: 'Export Data', act: 'exportData' }])] }),
   ],
+  projects: [
+    card({ title: 'Projects', icon: TAB.projects[2], sub: 'New conversations are filed automatically by the local title model. Finish a project by archiving it; its conversations stay filed but leave the sidebar.', rows: [
+      { type: 'projects' },
+      btns([{ label: 'Re-run backfill', act: 'runProjectBackfill' }]),
+      txt('Backfill files unfiled conversations from the last 90 days by title, in the background.'),
+    ] }),
+  ],
 };
 
 // grouped section nav with dividers + ADMIN label
 export const NAV_GROUPS = [
   ['services', 'ai', 'search'], 'div',
   ['integrations', 'email', 'reminders', 'notifications', 'brain', 'scheduled', 'usage', 'changes'], 'div',
-  ['appearance', 'shortcuts'], 'div',
+  ['appearance', 'shortcuts', 'projects'], 'div',
   ['account'], 'div',
   { label: 'ADMIN', ids: ['tools', 'users', 'system'] },
 ];

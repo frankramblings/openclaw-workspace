@@ -121,6 +121,15 @@ export async function load(state) {
 
   // 4) Settings → Changes: watched roots, prune list, cache size.
   loadChangesSettings(state).catch(() => {});
+
+  // 5) Settings → Projects list for the Projects card (also loaded by chat;
+  // whichever surface opens first wins, the other overwrites with the same
+  // data). Best-effort: a failed fetch keeps whatever list is already there
+  // instead of clobbering it with an empty one.
+  try {
+    const projects = await apiGet('/api/projects');
+    state.live.projects = Array.isArray(projects) ? projects : (state.live.projects || []);
+  } catch (_) { if (!Array.isArray(state.live.projects)) state.live.projects = []; }
 }
 
 // Settings → Usage: GET /api/usage/summary?days=7|30 into state.live.usage.

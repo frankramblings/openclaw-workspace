@@ -1249,3 +1249,7 @@ pre.diff .meta { color: var(--faint, #8a94a6); }
 .ttl-proj{color:var(--faint);font-weight:500}
 .sub-parent{color:var(--teal);cursor:pointer}
 .sub-parent:hover{text-decoration:underline}
+
+/* Settings → Projects card (spec 6.3) */
+.set-proj-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)}
+.set-proj-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

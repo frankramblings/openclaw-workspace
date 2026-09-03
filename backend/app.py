@@ -34,6 +34,7 @@ from .memory import maybe_auto_extract
 from .auth_password import router as auth_password_router
 from .calendar import router as calendar_router
 from .cron import router as cron_router
+from .projects import router as projects_router
 from .documents import router as documents_router
 from .email_himalaya import router as email_router
 from .emoji_proxy import router as emoji_router
@@ -271,6 +272,7 @@ app.include_router(auth_password_router)
 app.include_router(export_router)
 app.include_router(skills_router)
 app.include_router(cron_router)
+app.include_router(projects_router)
 app.include_router(email_router)
 app.include_router(calendar_router)
 app.include_router(settings_router)
@@ -855,6 +857,10 @@ async def patch_session(session_id: str, name: str = Form(default=None),
         "endpoint_url": endpoint_url, "endpoint_id": endpoint_id,
         "speed": speed,
     }.items() if v is not None}
+    # folder="" means unfile (spec 5): the comprehension keeps "" because it
+    # is not None; normalize it to None here.
+    if folder is not None:
+        fields["folder"] = folder.strip() or None
     # Guard the RESULTING (endpoint, model) pair, not just the sent fields: a
     # partial PATCH (model alone / endpoint alone) inheriting the record's
     # other half is exactly how cross-paired refs like claude-cli/gpt-5.5 got
@@ -924,6 +930,19 @@ async def close_session(session_id: str):
     if rec is None:
         return JSONResponse(status_code=404, content={"detail": "no such session"})
     return {"ok": True}
+
+
+@app.post("/api/session/{session_id}/unfile")
+async def unfile_session(session_id: str):
+    """Clear a session's project folder (spec 5). A dedicated route because
+    PATCH can't carry folder="" through as an unfile signal: FastAPI drops
+    empty-string form values before the handler runs. touch=False matches
+    unfile_project (bulk unfile on project delete) -- unfiling is
+    bookkeeping, not activity, and must not bump `updated`."""
+    rec = sessions_store.update(session_id, folder=None, touch=False)
+    if rec is None:
+        return JSONResponse(status_code=404, content={"detail": "no such session"})
+    return rec
 
 
 @app.get("/api/sessions/{session_id}/usage")

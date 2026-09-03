@@ -33,8 +33,8 @@ import re
 import time
 
 from . import (bridge, changes, config, draft_mode, event_store, local_llm,
-               promise_guard, push, sessions_store, terminals, turn_state,
-               websearch)
+               project_classify, promise_guard, push, sessions_store,
+               terminals, turn_state, websearch)
 from .attachments import _terminal_attachments
 
 # Log under "backend.app" (not __name__): these turn-engine warnings were emitted
@@ -640,6 +640,10 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                 _log.warning("AI title generation/sessions_store.update failed "
                              "for session %s", rec["id"], exc_info=True)
                 title_task.cancel()
+            # Spec 6.1: file the freshly titled thread into a project off the
+            # turn's critical path. file_session reads the current title from
+            # the record and never raises.
+            spawn(project_classify.file_session(rec["id"], message))
         # Touch the session's `updated` stamp so the semantic-search reindex
         # re-embeds this turn. It's otherwise bumped only on metadata edits
         # (title/rename/archive), so every message after a chat is first

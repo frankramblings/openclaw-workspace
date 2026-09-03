@@ -35,6 +35,7 @@ globalThis.fetch = (url, opts) => {
   if (u.includes('/api/history/')) return Promise.resolve(jsonRes({ history: [] }));
   if (u.endsWith('/api/default-chat')) return Promise.resolve(jsonRes({ model: 'm', endpoint_id: '', endpoint_url: '' }));
   if (u.endsWith('/api/session') && opts && opts.method === 'POST') return Promise.resolve(jsonRes({ id: 'f1-new' }));
+  if (u.endsWith('/api/chat_stream') && opts && opts.method === 'POST') return Promise.resolve({ ok: false, status: 500, headers: { get: () => 'application/json' }, json: async () => ({}), text: async () => '' });
   return Promise.resolve(jsonRes({}));
 };
 
@@ -131,6 +132,43 @@ test('F1: a fresh-chat send survives a stale sessions refetch (opened:null)', as
   // Force the still-buffered send out now instead of leaving its 700ms timer
   // dangling; the thread is no longer active so this just queues it.
   flushPending('f1-new');
+  sessionsOverride = null;
+});
+
+// Amendment C (Phase 2 final re-review, landed here): a failed send must not
+// leave a stale OPEN-shelf overlay stamp behind, otherwise a thread whose
+// first message never actually reached the server stays pinned to OPEN
+// forever with nothing backing it up.
+test('F1: a failed send drops the local overlay entry and leaves OPEN', async () => {
+  const state = { draft: 'hello', pendingAttach: [], surface: 'chat', live: { chat: { activeId: null, model: 'm', thread: [], sessions: sessions.map((s) => ({ ...s })) } } };
+  runtime.state = state; runtime.render = () => {};
+  calls.length = 0;
+  // The fetch stub's POST /api/session always hands back id 'f1-new' (see
+  // above), regardless of what a fresh chat's send would otherwise be
+  // creating a session for.
+  sessionsOverride = [...sessions, { id: 'f1-new', name: 'New chat', created: NOW, updated: NOW, opened: null }];
+
+  await actions.send();
+  await drain();   // let ensureSessionId's fire-and-forget refreshSidebarUsage land
+
+  assert.ok(state.live.chat.openedLocal.get('f1-new') > 0,
+    'submitFromComposer stamped the local overlay before the send resolves');
+
+  // Force the buffered send out now instead of waiting the real 700ms window.
+  flushPending('f1-new');
+  await drain();   // let the (stubbed 500) /api/chat_stream POST resolve and the error path run
+
+  assert.equal(state.live.chat.openedLocal.has('f1-new'), false,
+    'a failed send must not leave a local OPEN-shelf stamp behind');
+
+  // Not active, not running, not queued, and the server's own `opened` is
+  // null -- nothing should keep this session on the OPEN shelf.
+  state.live.chat.activeId = 'a';
+  actions.rebuildThreadGroups();
+  const openGroup = state.live.chat.groups.find((g) => g.kind === 'open');
+  assert.ok(!openGroup || !openGroup.rows.some((r) => r.id === 'f1-new'),
+    'a session whose send failed must not stay on the OPEN shelf');
+
   sessionsOverride = null;
 });
 

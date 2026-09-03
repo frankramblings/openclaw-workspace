@@ -101,7 +101,7 @@ export function renderSwitcher(s) {
   const chat = (s && s.live && s.live.chat) || {};
   const sections = buildSwitcherSections({
     query: s.switchQuery, sessions: chat.sessions, mru: chat.mru,
-    searchResults: chat.switcherResults, activeId: chat.activeId, projects: chat.projects,
+    searchResults: chat.switcherResults, activeId: chat.activeId, projects: (s.live && s.live.projects) || [],
   });
   const flat = flatRows(sections);
   const sel = clampSel(chat.switcherSel, flat.length);

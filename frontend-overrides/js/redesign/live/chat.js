@@ -37,6 +37,7 @@ import {
 import { buildSwitcherSections, flatRows, clampSel } from '../switcher.js';
 import { buildThreadGroups } from '../thread-groups.js';
 import { afterTurn as changesAfterTurn, attachHistory as changesAttachHistory } from './changes.js';
+import { parseMoveArg, MOVE_NEW, MOVE_NONE } from '../project-menu.js';
 
 // The throttled per-token render only patches the active message bubble in
 // place — it does NOT re-render `.composer-wrap`, which is where the strip
@@ -202,6 +203,33 @@ function _leaveThread(chat, state) {
 
 function _setHash(h) {
   try { if (location.hash !== h) history.replaceState(history.state, '', h); } catch (_) { /* no history API */ }
+}
+
+// Projects (spec 6.2, 7.6): mirror the active session's filing/parentage onto
+// chat so the header (project pill, "forked from" link) and the move-menu's
+// current-selection check can read it synchronously, without re-deriving it
+// from chat.sessions on every render.
+function _mirrorSessionMeta(chat, id) {
+  const rec = (chat.sessions || []).find((s) => s.id === id);
+  chat.folder = rec ? (rec.folder || null) : null;
+  chat.parentId = rec ? (rec.parent_id || null) : null;
+}
+
+// Shared by archiveProject/unarchiveProject: optimistic flip + PATCH, revert
+// + toast on failure. Archiving hides a project's threads from the sidebar
+// (thread-groups.js) without touching the threads themselves.
+async function _setProjectArchived(pid, archived) {
+  const state = runtime.state; if (!state || !pid) return;
+  const chat = ensureChat(state);
+  chat.projMenuOpen = null;
+  const p = (state.live.projects || []).find((x) => x.id === pid);
+  if (!p) return;
+  const prev = !!p.archived;
+  p.archived = archived;
+  rebuildGroups(chat);
+  runtime.render();
+  try { await apiJson(`/api/projects/${encodeURIComponent(pid)}`, { archived }, 'PATCH'); }
+  catch (_) { p.archived = prev; rebuildGroups(chat); runtime.render(); toast('Couldn’t update the project.'); }
 }
 
 function ensureChat(state) {
@@ -582,6 +610,14 @@ export async function load(state) {
   chat.sessions = list;
   _pruneOpenedLocal(chat);
 
+  // Projects (spec 4.2): best-effort; an empty list just means no project
+  // sections. Lives on state.live so Settings can render it too.
+  try {
+    const projects = await apiGet('/api/projects');
+    if (chat.activeId !== enteredActiveId) return;
+    state.live.projects = Array.isArray(projects) ? projects : [];
+  } catch (_) { if (!Array.isArray(state.live.projects)) state.live.projects = []; }
+
   // Restore the session from before the reload. storeActiveId(null) is called
   // when the user explicitly leaves a chat (New Chat, delete), so a null stored
   // value correctly keeps the welcome screen after refresh in those cases.
@@ -619,6 +655,7 @@ export async function load(state) {
   } catch (_) { /* ignore */ }
   if (chat.activeId !== activeId) return;
 
+  _mirrorSessionMeta(chat, activeId);
   rebuildGroups(chat, activeId);
   startNotifier();            // begin cross-session turn polling (singleton)
 
@@ -2107,6 +2144,11 @@ function showDroppedError(chat, errSid, m, status) {
       : 'The connection dropped before a response arrived. Your message is ready — tap Send to retry.';
   }
   chat.suggest = null;
+  // Amendment C (Phase 2 final re-review): a send that never made it must not
+  // leave a stale OPEN-shelf overlay stamp behind (chat.openedLocal), or the
+  // row would otherwise sit pinned to OPEN with no server-side `opened` backing it.
+  if (errSid && chat.openedLocal) chat.openedLocal.delete(errSid);
+  rebuildGroups(chat);
   // Keyed to the ERRORING session, not the active view: a background thread's
   // error must never clobber the draft (or steal the queued entry) of whatever
   // thread is on screen.
@@ -2746,7 +2788,7 @@ export const actions = {
     const chat = ensureChat(state);
     const n = flatRows(buildSwitcherSections({
       query: state.switchQuery, sessions: chat.sessions, mru: chat.mru,
-      searchResults: chat.switcherResults, activeId: chat.activeId, projects: chat.projects,
+      searchResults: chat.switcherResults, activeId: chat.activeId, projects: (state.live && state.live.projects) || [],
     })).length;
     chat.switcherSel = clampSel((chat.switcherSel || 0) + (Number(delta) || 0), n);
   },
@@ -2757,7 +2799,7 @@ export const actions = {
     if (!pick) {
       const rows = flatRows(buildSwitcherSections({
         query: state.switchQuery, sessions: chat.sessions, mru: chat.mru,
-        searchResults: chat.switcherResults, activeId: chat.activeId, projects: chat.projects,
+        searchResults: chat.switcherResults, activeId: chat.activeId, projects: (state.live && state.live.projects) || [],
       }));
       const r = rows[clampSel(chat.switcherSel, rows.length)];
       pick = r ? r.id : null;
@@ -2809,6 +2851,105 @@ export const actions = {
     if (chat.expandedProjects.has(pid)) chat.expandedProjects.delete(pid); else chat.expandedProjects.add(pid);
     _persistExpanded(chat.expandedProjects);
     rebuildGroups(chat);
+  },
+
+  // Projects (spec 6.2, 4.2)
+  toggleProjMenu: (pid) => {
+    const chat = ensureChat(runtime.state);
+    chat.projMenuOpen = chat.projMenuOpen === pid ? null : pid;
+    chat.rowMenuOpen = null;
+  },
+  moveToProject: async (arg) => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    chat.rowMenuOpen = null;
+    const { id, target } = parseMoveArg(arg);
+    const rec = (chat.sessions || []).find((s) => s.id === id);
+    if (!rec) return;
+    let pid = target;
+    if (target === MOVE_NEW) {
+      let name = null;
+      try { name = window.prompt('New project name'); } catch (_) { name = null; }
+      name = (name || '').trim();
+      if (!name) { runtime.render(); return; }
+      try {
+        const created = await apiJson('/api/projects', { name });
+        if (!created || !created.id) throw new Error('create failed');
+        state.live.projects = [...(state.live.projects || []), created];
+        pid = created.id;
+      } catch (e) {
+        toast(e && e.status === 409 ? 'A project with that name already exists.' : 'Couldn’t create the project.');
+        runtime.render();
+        return;
+      }
+    }
+    const prev = rec.folder || null;
+    rec.folder = pid || null;
+    if (chat.activeId === id) chat.folder = rec.folder;
+    rebuildGroups(chat);
+    runtime.render();
+    // Amendment A: unfiling (an empty target) goes through the dedicated
+    // /unfile route, not a PATCH with folder:'', since FastAPI drops
+    // empty-string form values, so that PATCH could never actually clear the folder.
+    const revert = () => {
+      rec.folder = prev;
+      if (chat.activeId === id) chat.folder = prev;
+      rebuildGroups(chat);
+      runtime.render();
+      toast('Couldn’t move that conversation. Try again.');
+    };
+    if (pid) {
+      try { await apiForm(`/api/session/${encodeURIComponent(id)}`, { folder: pid }, { method: 'PATCH' }); }
+      catch (_) { revert(); }
+    } else {
+      try { await apiJson(`/api/session/${encodeURIComponent(id)}/unfile`, {}); }
+      catch (_) { revert(); }
+    }
+  },
+  renameProject: async (pid) => {
+    const state = runtime.state; if (!state || !pid) return;
+    const chat = ensureChat(state);
+    chat.projMenuOpen = null;
+    const p = (state.live.projects || []).find((x) => x.id === pid);
+    if (!p) return;
+    let name = null;
+    try { name = window.prompt('Rename project', p.name || ''); } catch (_) { name = null; }
+    name = (name || '').trim();
+    if (!name || name === p.name) { runtime.render(); return; }
+    const prev = p.name;
+    p.name = name;
+    rebuildGroups(chat);
+    runtime.render();
+    try { await apiJson(`/api/projects/${encodeURIComponent(pid)}`, { name }, 'PATCH'); }
+    catch (e) { p.name = prev; rebuildGroups(chat); runtime.render(); toast(e && e.status === 409 ? 'A project with that name already exists.' : 'Couldn’t rename the project.'); }
+  },
+  archiveProject: async (pid) => _setProjectArchived(pid, true),
+  unarchiveProject: async (pid) => _setProjectArchived(pid, false),
+  deleteProject: async (pid) => {
+    const state = runtime.state; if (!state || !pid) return;
+    const chat = ensureChat(state);
+    chat.projMenuOpen = null;
+    const p = (state.live.projects || []).find((x) => x.id === pid);
+    if (!p) return;
+    let ok = false;
+    try { ok = window.confirm(`Delete project “${p.name}”? Its conversations stay, just unfiled.`); } catch (_) { ok = false; }
+    if (!ok) { runtime.render(); return; }
+    try {
+      // Amendment B: DELETE via apiDelete (no body) rather than apiJson's
+      // null-body DELETE.
+      await apiDelete(`/api/projects/${encodeURIComponent(pid)}`);
+      state.live.projects = (state.live.projects || []).filter((x) => x.id !== pid);
+      for (const s of (chat.sessions || [])) if (s.folder === pid) s.folder = null;
+      if (chat.folder === pid) chat.folder = null;
+      rebuildGroups(chat);
+    } catch (_) { toast('Couldn’t delete the project.'); }
+    runtime.render();
+  },
+  runProjectBackfill: async () => {
+    try {
+      const r = await apiJson('/api/projects/backfill', {});
+      toast(r && r.status === 'running' ? 'Backfill is already running.' : 'Backfill started. Conversations file in the background.');
+    } catch (_) { toast('Couldn’t start the backfill.'); }
   },
 
   selectSession: async (id) => {
@@ -2882,6 +3023,7 @@ export const actions = {
       const sessions = await apiGet('/api/sessions');
       const list = Array.isArray(sessions) ? sessions : [];
       name = list.find((s) => s.id === id)?.name;
+      if (chat.activeId === id) { chat.sessions = list; _mirrorSessionMeta(chat, id); }
     } catch (_) { /* ignore */ }
 
     try {
@@ -2956,6 +3098,8 @@ export const actions = {
       }).catch(() => {});
     }
     chat.activeId = null;
+    chat.folder = null;
+    chat.parentId = null;
     chat.chatStrip = stripOnSessionSwitch();
     chat.editingId = null;
     chat.suggest = null;

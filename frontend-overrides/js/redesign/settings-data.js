@@ -132,6 +132,7 @@ export const PANELS = {
       shortcut('New chat', ['⌘', '⇧', 'O']), shortcut('Switch conversation (chat) / search', ['⌘', 'K']), shortcut('Toggle sidebar', ['⌘', '\\']),
       shortcut('Send message', ['⌘', '↵']), shortcut('New line', ['⇧', '↵']), shortcut('Open settings', ['⌘', ',']),
       shortcut('Incognito mode', ['⌘', '⇧', 'I']), shortcut('Focus composer', ['/']),
+      shortcut('Open thread 1 to 9 (Open shelf)', ['⌥', '1-9']), shortcut('Previous / next open thread', ['⌥', '[', ']']),
     ] }),
   ],
   account: [

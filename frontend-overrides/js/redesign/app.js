@@ -1535,6 +1535,17 @@ document.addEventListener('keydown', (e) => {
       return; // a modal owns Tab while it's open — don't fall through below
     }
   }
+  // ⌥1..⌥9 open that OPEN-shelf slot; ⌥[ / ⌥] cycle within OPEN (spec 7.2;
+  // ⌘digit is reserved by browsers for tab switching). Matched on e.code
+  // because Option changes e.key on macOS.
+  if (e.altKey && !e.metaKey && !e.ctrlKey && state.surface === 'chat' && !isMobile()) {
+    if (topmostModal()) return;
+    const digit = /^Digit([1-9])$/.exec(e.code || '');
+    if (digit && actions.selectOpenSlot) { e.preventDefault(); actions.selectOpenSlot(Number(digit[1])); render(); return; }
+    if ((e.code === 'BracketLeft' || e.code === 'BracketRight') && actions.cycleOpen) {
+      e.preventDefault(); actions.cycleOpen(e.code === 'BracketRight' ? 1 : -1); render(); return;
+    }
+  }
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
     // While a modal is open it owns focus — the filter inputs this shortcut
     // targets are background elements (still in the DOM behind the compose

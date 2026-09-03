@@ -29,6 +29,60 @@ def client(mock_data_dir):
         yield c
 
 
+@pytest.fixture(autouse=True)
+def _no_local_stt(monkeypatch):
+    """Default every test to the key-only world: the module constant
+    _KAMINO_STT is read at import from GARY_STT_BASE and defaults to the real
+    kamino host, so without this the OpenAI-path tests would try the network
+    and the key-only assertions would be false. Tests that exercise the local
+    path opt in with `local_stt`."""
+    monkeypatch.setattr(transcribe, "_KAMINO_STT", "")
+
+
+LOCAL_BASE = "http://stt.test:9000"
+
+
+@pytest.fixture
+def local_stt(monkeypatch):
+    """Point the local Whisper path at a fake base (never a real host)."""
+    monkeypatch.setattr(transcribe, "_KAMINO_STT", LOCAL_BASE)
+    return LOCAL_BASE
+
+
+def _write_config(tmp_path, monkeypatch, key=None):
+    """Write an openclaw.json with (or without) the OpenAI Whisper key and
+    point config at it. Returns the path."""
+    config_file = tmp_path / "openclaw.json"
+    payload = {}
+    if key is not None:
+        payload = {"skills": {"entries": {"openai-whisper-api": {"apiKey": key}}}}
+    config_file.write_text(json.dumps(payload))
+    monkeypatch.setattr(config, "OPENCLAW_CONFIG", config_file)
+    config._openclaw_json.cache_clear()
+    return config_file
+
+
+def _mock_client(*responses):
+    """An httpx.AsyncClient stand-in whose post() returns the given responses
+    in order (a single response repeats). Each response is a MagicMock with
+    status_code and json()."""
+    mock_client = mock.AsyncMock()
+    if len(responses) == 1:
+        mock_client.post = mock.AsyncMock(return_value=responses[0])
+    else:
+        mock_client.post = mock.AsyncMock(side_effect=list(responses))
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__ = mock.AsyncMock(return_value=None)
+    return mock_client
+
+
+def _response(status_code, payload=None):
+    resp = mock.MagicMock()
+    resp.status_code = status_code
+    resp.json = mock.MagicMock(return_value=payload if payload is not None else {})
+    return resp
+
+
 class TestSupported:
     """Test the supported() check."""
 
@@ -75,6 +129,12 @@ class TestSupported:
         config._openclaw_json.cache_clear()
 
         assert transcribe.supported() is False
+
+    def test_supported_local_base_only(self, monkeypatch, tmp_path, local_stt):
+        """supported() is True with a local STT base and no OpenAI key."""
+        _write_config(tmp_path, monkeypatch, key=None)
+
+        assert transcribe.supported() is True
 
 
 class TestTranscribe:
@@ -155,7 +215,10 @@ class TestTranscribe:
         monkeypatch.setattr(config, "OPENCLAW_CONFIG", config_file)
         config._openclaw_json.cache_clear()
 
-        with pytest.raises(transcribe.TranscribeError, match="not supported"):
+        with pytest.raises(
+            transcribe.TranscribeError,
+            match=r"transcription not supported \(no local STT or OpenAI key\)",
+        ):
             await transcribe.transcribe("test.webm", "audio/webm", b"fake audio data")
 
     @pytest.mark.asyncio
@@ -210,6 +273,69 @@ class TestTranscribe:
         with mock.patch("backend.transcribe.httpx.AsyncClient", return_value=mock_client):
             with pytest.raises(transcribe.TranscribeError):
                 await transcribe.transcribe("test.webm", "audio/webm", b"fake audio data")
+
+    @pytest.mark.asyncio
+    async def test_transcribe_local_success_skips_openai(self, monkeypatch, tmp_path, local_stt):
+        """A successful local transcription returns without calling OpenAI,
+        even when a key is configured."""
+        _write_config(tmp_path, monkeypatch, key="sk-test-key")
+        mock_client = _mock_client(_response(200, {"text": " local text "}))
+
+        with mock.patch("backend.transcribe.httpx.AsyncClient", return_value=mock_client):
+            text = await transcribe.transcribe("clip.m4a", "audio/mp4", b"fake audio data")
+
+        assert text == "local text"
+        mock_client.post.assert_called_once()
+        url = mock_client.post.call_args.args[0]
+        assert url.startswith(LOCAL_BASE + "/asr")
+        assert "audio_file" in mock_client.post.call_args.kwargs["files"]
+        assert "headers" not in mock_client.post.call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_transcribe_local_failure_falls_back_to_openai(self, monkeypatch, tmp_path, local_stt):
+        """A local HTTP error falls back to OpenAI when a key exists."""
+        _write_config(tmp_path, monkeypatch, key="sk-test-key")
+        mock_client = _mock_client(_response(500), _response(200, {"text": "cloud text"}))
+
+        with mock.patch("backend.transcribe.httpx.AsyncClient", return_value=mock_client):
+            text = await transcribe.transcribe("clip.m4a", "audio/mp4", b"fake audio data")
+
+        assert text == "cloud text"
+        assert mock_client.post.call_count == 2
+        first_url = mock_client.post.call_args_list[0].args[0]
+        second_url = mock_client.post.call_args_list[1].args[0]
+        assert first_url.startswith(LOCAL_BASE + "/asr")
+        assert second_url == "https://api.openai.com/v1/audio/transcriptions"
+        assert mock_client.post.call_args_list[1].kwargs["headers"] == {"Authorization": "Bearer sk-test-key"}
+
+    @pytest.mark.asyncio
+    async def test_transcribe_local_empty_text_falls_back_to_openai(self, monkeypatch, tmp_path, local_stt):
+        """A local 200 with empty text is treated as a miss and falls back."""
+        _write_config(tmp_path, monkeypatch, key="sk-test-key")
+        mock_client = _mock_client(_response(200, {"text": ""}), _response(200, {"text": "cloud text"}))
+
+        with mock.patch("backend.transcribe.httpx.AsyncClient", return_value=mock_client):
+            text = await transcribe.transcribe("clip.m4a", "audio/mp4", b"fake audio data")
+
+        assert text == "cloud text"
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_transcribe_local_failure_without_key_raises(self, monkeypatch, tmp_path, local_stt):
+        """Local failure with no OpenAI key raises the not-supported error
+        (and never posts to OpenAI)."""
+        _write_config(tmp_path, monkeypatch, key=None)
+        mock_client = _mock_client(_response(503))
+
+        with mock.patch("backend.transcribe.httpx.AsyncClient", return_value=mock_client):
+            with pytest.raises(
+                transcribe.TranscribeError,
+                match=r"transcription not supported \(no local STT or OpenAI key\)",
+            ):
+                await transcribe.transcribe("clip.m4a", "audio/mp4", b"fake audio data")
+
+        mock_client.post.assert_called_once()
+        assert mock_client.post.call_args.args[0].startswith(LOCAL_BASE + "/asr")
 
 
 class TestTranscribeEndpoints:
@@ -406,3 +532,11 @@ class TestTranscribeEndpoints:
         response_text = response.json()
         assert "sk-test-secret-key" not in str(response_text)
         assert response.status_code == 502
+
+    def test_status_endpoint_supported_local_only(self, client, monkeypatch, tmp_path, local_stt):
+        """GET /api/transcribe/status is supported=true with only a local base."""
+        _write_config(tmp_path, monkeypatch, key=None)
+
+        response = client.get("/api/transcribe/status")
+        assert response.status_code == 200
+        assert response.json() == {"supported": True}

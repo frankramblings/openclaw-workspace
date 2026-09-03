@@ -550,7 +550,7 @@ export function chatSurface(s) {
   <div class="chat-head">
     <div style="min-width:0;flex:1">
       <div class="ttl">${projLabel ? `<span class="ttl-proj">${esc(projLabel)} ›</span> ` : ''}${esc(title)}</div>
-      <div class="sub">${esc(subtitle)}${parentLabel ? ` · <span class="sub-parent" data-act="selectSession" data-arg="${esc(chat.parentId)}" role="link" tabindex="0">↳ from ${esc(parentLabel)}</span>` : ''}</div>
+      <div class="sub">${esc(subtitle)}${parentLabel ? ` · <button type="button" class="sub-parent" data-act="selectSession" data-arg="${esc(chat.parentId)}">↳ from ${esc(parentLabel)}</button>` : ''}</div>
     </div>
     <div style="position:relative">
       <button class="icon-btn ocbtn" data-act="toggleChatMenu" title="Conversation actions" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px">⋯</button>

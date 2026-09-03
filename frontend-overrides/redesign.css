@@ -1248,7 +1248,7 @@ pre.diff .meta { color: var(--faint, #8a94a6); }
 .proj-menu{right:6px;top:28px}
 .ttl-proj{color:var(--faint);font-weight:500}
 .conv-group.project.drop-target{background:var(--tealtint);outline:1px dashed var(--teal)}
-.sub-parent{color:var(--teal);cursor:pointer}
+.sub-parent{color:var(--teal);cursor:pointer;background:none;border:none;padding:0;margin:0;font:inherit;display:inline}
 .sub-parent:hover{text-decoration:underline}
 
 /* Settings → Projects card (spec 6.3) */

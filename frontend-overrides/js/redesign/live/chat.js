@@ -133,8 +133,17 @@ function _persistExpanded(set) {
 // on every notifier tick; the renderers read chat.groups as before.
 function rebuildGroups(chat, activeId) {
   const state = runtime.state;
+  // F1: overlay the local OPEN-shelf stamp (chat.openedLocal) on top of
+  // whatever chat.sessions currently says, without mutating the records
+  // themselves. Keeps a brand-new thread on the shelf through a sessions
+  // refetch that raced the server's own mark_opened.
+  const overlay = chat.openedLocal;
+  const sessionsWithOverlay = (chat.sessions || []).map((s) => {
+    const l = overlay && overlay.get(s.id);
+    return l && l > (s.opened || 0) ? { ...s, opened: l } : s;
+  });
   chat.groups = buildThreadGroups({
-    sessions: chat.sessions || [],
+    sessions: sessionsWithOverlay,
     projects: (state && state.live && state.live.projects) || [],
     running: chat.activeTurns || new Set(),
     notified: chat.notified || new Set(),
@@ -210,7 +219,27 @@ function ensureChat(state) {
   if (!c.scroll) c.scroll = {};
   if (!Array.isArray(c.sessions)) c.sessions = [];
   if (!(c.expandedProjects instanceof Set)) c.expandedProjects = _loadExpanded();
+  // F1: optimistic OPEN-shelf overlay (session id -> epoch ms), keyed
+  // independently of chat.sessions so a brand-new chat's very first send
+  // survives a stale /api/sessions refetch landing before the server has
+  // processed the real POST's mark_opened. See submitFromComposer,
+  // rebuildGroups, _pruneOpenedLocal, and closeOpen.
+  if (!(c.openedLocal instanceof Map)) c.openedLocal = new Map();
   return state.live.chat;
+}
+
+// F1: drop a session's local overlay stamp once a fresh /api/sessions fetch
+// shows the server has caught up (a numeric `opened`) -- otherwise a later
+// close from another device would never take effect on this tab. Called
+// right after every place chat.sessions is reassigned from a fetch. Exported
+// for __tests__/open-shelf.test.js.
+export function _pruneOpenedLocal(chat) {
+  if (!chat || !(chat.openedLocal instanceof Map) || !chat.openedLocal.size) return;
+  const list = chat.sessions || [];
+  for (const id of [...chat.openedLocal.keys()]) {
+    const rec = list.find((s) => s.id === id);
+    if (rec && rec.opened != null) chat.openedLocal.delete(id);
+  }
 }
 
 // Task 0b: preserve the strip across thread switches so background TaskCreate
@@ -523,7 +552,7 @@ export async function load(state) {
   // newChat() racing any of the three awaits below already owns
   // chat.activeId/chat.groups/chat.thread by the time we'd resume, and
   // continuing past it would resurrect a stale `r.active` flag on the sidebar
-  // (buildGroups below bakes the LOCAL `activeId` into every row). Same bail
+  // (rebuildGroups below bakes the LOCAL `activeId` into every row). Same bail
   // pattern the later per-session awaits in this function already use — just
   // extended to cover these first three.
   const enteredActiveId = chat.activeId;
@@ -551,6 +580,7 @@ export async function load(state) {
   if (chat.activeId !== enteredActiveId) return;
   const list = Array.isArray(sessions) ? sessions : [];
   chat.sessions = list;
+  _pruneOpenedLocal(chat);
 
   // Restore the session from before the reload. storeActiveId(null) is called
   // when the user explicitly leaves a chat (New Chat, delete), so a null stored
@@ -1173,6 +1203,7 @@ async function refreshSidebarUsage(state) {
     const sessions = await apiGet('/api/sessions');
     const list = Array.isArray(sessions) ? sessions : [];
     chat.sessions = list;
+    _pruneOpenedLocal(chat);
     rebuildGroups(chat, id);
     const name = list.find((s) => s.id === id)?.name;
     if (name) chat.title = name;
@@ -1792,6 +1823,12 @@ async function submitFromComposer(text, attachSnap, opts = {}) {
 
   // OPEN shelf: the server stamps `opened` on this send (app.py chat_stream);
   // mirror it now so the row moves up without waiting for the next reload.
+  // F1: stamp the local overlay by id FIRST, unconditionally -- a brand-new
+  // chat's very first send has no `rec` yet (ensureSessionId's own sessions
+  // refetch is still in flight), so keying only off `rec` lost the stamp
+  // when that refetch landed with opened:null. The overlay (see
+  // rebuildGroups/_pruneOpenedLocal) survives that race regardless.
+  chat.openedLocal.set(sessionId, Date.now());
   const rec = (chat.sessions || []).find((s) => s.id === sessionId);
   if (rec) { rec.opened = Date.now(); rebuildGroups(chat); }
 
@@ -2737,6 +2774,7 @@ export const actions = {
     const rec = (chat.sessions || []).find((s) => s.id === id);
     const prev = rec ? rec.opened : null;
     if (rec) rec.opened = null;
+    chat.openedLocal.delete(id);   // F1: a close also clears any local overlay stamp
     rebuildGroups(chat);
     runtime.render();
     try { await apiJson(`/api/session/${encodeURIComponent(id)}/close`, {}); }

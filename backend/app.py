@@ -46,6 +46,7 @@ from .memory import router as memory_router
 from .notes import router as notes_router
 from .research import router as research_router
 from .settings_status import router as settings_router
+from .skill_proposals import router as skill_proposals_router
 from .skills import router as skills_router
 from .uploads import router as uploads_router
 from .perplexity_agent import router as perplexity_agent_router
@@ -278,6 +279,7 @@ app.include_router(email_router)
 app.include_router(calendar_router)
 app.include_router(settings_router)
 app.include_router(mcp_servers_router)
+app.include_router(skill_proposals_router)
 app.include_router(notes_router)
 app.include_router(documents_router)
 app.include_router(followup.router)

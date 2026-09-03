@@ -54,8 +54,11 @@ def _write_private(path: Path, text: str) -> None:
 
 def key_slug(key: str) -> str:
     """One directory name per key: '/' becomes '__', anything outside
-    [A-Za-z0-9._-] becomes '_'. Never empty."""
-    return _SLUG_RE.sub("_", key.replace("/", "__")) or "_"
+    [A-Za-z0-9._-] becomes '_'. Never empty, and never exactly '.' or '..'
+    (either would resolve to an existing ancestor directory instead of a
+    key-specific leaf)."""
+    slug = _SLUG_RE.sub("_", key.replace("/", "__")) or "_"
+    return "_" if slug in (".", "..") else slug
 
 
 def sha256_text(text: str) -> str:
@@ -63,7 +66,12 @@ def sha256_text(text: str) -> str:
 
 
 def _backup_dir(kind: str, key: str) -> Path:
-    return _ensure_dir(base_dir() / "backups" / key_slug(kind) / key_slug(key))
+    """backups/<kind>/<key>, with every level chmodded 0700: mkdir(parents=True)
+    only sets the mode of the leaf it creates, and the service umask leaves
+    the intermediate levels group/other-readable otherwise."""
+    d = _ensure_dir(base_dir() / "backups")
+    d = _ensure_dir(d / key_slug(kind))
+    return _ensure_dir(d / key_slug(key))
 
 
 def _prune(d: Path, keep: int) -> None:

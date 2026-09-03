@@ -33,6 +33,8 @@ def test_backup_writes_private_files_and_returns_entry():
     assert (d / f"{e['id']}.txt").read_text() == "hello\n"
     assert json.loads((d / f"{e['id']}.json").read_text())["id"] == e["id"]
     assert _mode(store.base_dir()) == 0o700
+    assert _mode(store.base_dir() / "backups") == 0o700
+    assert _mode(store.base_dir() / "backups" / "agent-file") == 0o700
     assert _mode(d) == 0o700
     assert _mode(d / f"{e['id']}.txt") == 0o600
     assert _mode(d / f"{e['id']}.json") == 0o600
@@ -44,6 +46,15 @@ def test_key_slug_is_filesystem_safe():
     assert store.key_slug("../../etc/passwd") == ".._.._etc_passwd" or "/" not in store.key_slug("../../etc/passwd")
     assert store.key_slug("a b:c") == "a_b_c"
     assert store.key_slug("") == "_"
+    assert store.key_slug("..") == "_"
+    assert store.key_slug(".") == "_"
+
+
+def test_key_slug_dot_slugs_stay_inside_backups():
+    e = store.backup("..", "..", "x")
+    assert e["kind"] == ".." and e["key"] == ".."
+    d = store.base_dir() / "backups" / "_" / "_"
+    assert (d / f"{e['id']}.txt").read_text() == "x"
 
 
 def test_list_backups_newest_first_and_prune_keeps_n():

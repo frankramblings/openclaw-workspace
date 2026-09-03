@@ -52,9 +52,11 @@ test('cap evicts the oldest non-running non-active rows; running/active never ev
 });
 
 test('live flags never light on the active row', () => {
-  const g = build({ sessions: [S('a', { opened: NOW }), S('b', { opened: NOW })], running: new Set(['a', 'b']), notified: new Set(['b']), activeId: 'a' });
+  const g = build({ sessions: [S('a', { opened: NOW }), S('b', { opened: NOW })], running: new Set(['a', 'b']), notified: new Set(['b']), queued: new Set(['a', 'b']), activeId: 'a' });
   const a = g[0].rows.find((r) => r.id === 'a'); const b = g[0].rows.find((r) => r.id === 'b');
   assert.equal(a.working, false); assert.equal(b.working, true); assert.equal(b.notify, true);
+  assert.equal(a.queued, false, 'active row never shows queued, even when in the queued set');
+  assert.equal(b.queued, true);
 });
 
 test('RECENT keeps the date buckets and the pinned shelf for unfiled threads', () => {

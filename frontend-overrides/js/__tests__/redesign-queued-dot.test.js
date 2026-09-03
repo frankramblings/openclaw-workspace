@@ -9,10 +9,12 @@ import { renderChatList } from '../redesign/surfaces.js';
 // here".
 //
 // Task 3/4 (thread-groups.js) moved the "is this row queued" computation
-// upstream — buildThreadGroups stamps `queued: !active && live.queued.has(s.id)`
-// on each row — so convRow (Task 5) now just trusts r.queued verbatim
+// upstream. buildThreadGroups stamps `queued: !active && live.queued.has(s.id)`
+// on each row, so convRow (Task 5) now just trusts r.queued verbatim
 // instead of re-deriving it from a separate queuedList here. These fixtures
-// set r.queued directly to match that contract.
+// set r.queued directly to match that contract. The active-row exclusion
+// itself is covered at the model layer: see thread-groups.test.js's
+// 'live flags never light on the active row'.
 const baseState = (rows) => ({
   convFilter: '', convSort: 'recent',
   live: { chat: {
@@ -31,13 +33,11 @@ test('a non-active session with a queued message gets the queued dot', () => {
   assert.match(rowS2, /class="conv-dot queued"/);
 });
 
-test('the ACTIVE session never gets the queued dot (upstream never stamps queued:true on it)', () => {
-  // queueHead already surfaces the active session's own queued message as
-  // the "Queued — sends when the reply finishes" banner in the composer —
-  // see s.live.chat.queued in chatSurface — so the row dot is reserved for
-  // OTHER sessions only, or the same information would render twice.
-  // buildThreadGroups enforces this (queued: !active && ...); this just
-  // confirms convRow doesn't render a dot when r.queued is falsy.
+test('convRow renders no dot when queued is false, whatever the active flag says', () => {
+  // Not a test of the active-row invariant itself (that's enforced upstream
+  // in buildThreadGroups and covered in thread-groups.test.js). This only
+  // proves convRow honors r.queued as given, rather than re-deriving
+  // anything from r.active on its own.
   const html = renderChatList(baseState([
     { id: 's1', title: 'Active chat', active: true, queued: false },
     { id: 's2', title: 'Other chat', active: false },

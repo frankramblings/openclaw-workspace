@@ -49,19 +49,29 @@ def test_backfill_starts_background_task(monkeypatch):
     r = client.post("/api/projects/backfill", json={"since_days": 30})
     assert r.status_code == 200 and r.json() == {"status": "started"}
     assert ran == {"since": 30}
+    # I4: the route seeds synchronously (not inside the -- here faked --
+    # background backfill), so the sidebar has the 11 seeds to show the
+    # instant "Re-run backfill" returns, without waiting on the model.
+    projects = client.get("/api/projects").json()
+    assert len(projects) == 11
+    assert next(p for p in projects if p["name"] == "Wedding")["archived"] is True
     monkeypatch.setattr(project_classify, "backfill_running", lambda: True)
     assert client.post("/api/projects/backfill", json={}).json() == {"status": "running"}
 
 
 def test_patch_session_folder_set_and_unfile(monkeypatch):
-    # Unfiling is bookkeeping, not activity (matches unfile_project): _now_ms
-    # is faked to distinct, increasing values so "updated is unchanged" can't
-    # pass by accident on two calls landing in the same millisecond.
-    times = iter([1000, 2000, 3000, 4000, 5000])
+    # Filing/unfiling is bookkeeping, not activity (spec 4.2 amendment,
+    # matches unfile_project): _now_ms is faked to distinct, increasing
+    # values so "updated is unchanged" can't pass by accident on two calls
+    # landing in the same millisecond.
+    times = iter([1000, 2000, 3000, 4000, 5000, 6000])
     monkeypatch.setattr(sessions_store, "_now_ms", lambda: next(times))
     s = sessions_store.create(name="s", model=None, endpoint_url=None, endpoint_id=None, speed=None)
-    assert client.patch(f"/api/session/{s['id']}", data={"folder": "p-12345678"}).json()["folder"] == "p-12345678"
     before = sessions_store.get(s["id"])["updated"]
+    assert client.patch(f"/api/session/{s['id']}", data={"folder": "p-12345678"}).json()["folder"] == "p-12345678"
+    assert sessions_store.get(s["id"])["updated"] == before, "a folder-only PATCH must not bump updated"
     assert client.post(f"/api/session/{s['id']}/unfile").json()["folder"] is None
-    assert sessions_store.get(s["id"])["updated"] == before
+    assert sessions_store.get(s["id"])["updated"] == before, "unfile must not bump updated either"
     assert client.post("/api/session/nope/unfile").status_code == 404
+    assert client.patch(f"/api/session/{s['id']}", data={"name": "renamed"}).json()["name"] == "renamed"
+    assert sessions_store.get(s["id"])["updated"] != before, "a PATCH touching a non-folder field still bumps updated"

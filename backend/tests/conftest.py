@@ -5,7 +5,7 @@ vault; its helpers read the module globals at call time, so monkeypatching the
 two globals redirects every read/write/snapshot into tmp_path."""
 import pytest
 
-from backend import changes, config, documents, sessions_store
+from backend import changes, config, documents, projects_store, sessions_store
 
 
 @pytest.fixture(autouse=True)
@@ -30,6 +30,7 @@ def _isolated_data_dir(tmp_path, monkeypatch):
     to do with it. Tests that want real scanning already pass their own
     roots via changes.load_config/_use_root, so they're unaffected."""
     monkeypatch.setattr(sessions_store, "_STORE_FILE", tmp_path / "sessions.json")
+    monkeypatch.setattr(projects_store, "_STORE_FILE", tmp_path / "projects.json")
     monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
     monkeypatch.setattr(changes, "DEFAULT_CONFIG", {**changes.DEFAULT_CONFIG, "roots": []})
     monkeypatch.setattr(changes, "_ACTIVE", {})

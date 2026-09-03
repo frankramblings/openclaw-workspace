@@ -857,8 +857,11 @@ async def patch_session(session_id: str, name: str = Form(default=None),
         "endpoint_url": endpoint_url, "endpoint_id": endpoint_id,
         "speed": speed,
     }.items() if v is not None}
-    # folder="" means unfile (spec 5): the comprehension keeps "" because it
-    # is not None; normalize it to None here.
+    # The comprehension above keeps "" because it is not None; normalize a
+    # whitespace-only folder to None here. Unfiling itself is a dedicated
+    # route (POST /api/session/{id}/unfile, spec 5) -- FastAPI drops
+    # empty-string form values before the handler runs, so folder="" can
+    # never actually reach here as a signal to unfile.
     if folder is not None:
         fields["folder"] = folder.strip() or None
     # Guard the RESULTING (endpoint, model) pair, not just the sent fields: a
@@ -874,7 +877,12 @@ async def patch_session(session_id: str, name: str = Form(default=None),
             fields.get("model", rec.get("model")))
         if err:
             return JSONResponse(status_code=400, content={"detail": err})
-    return sessions_store.update(session_id, **fields) or JSONResponse(
+    # spec 4.2 amendment: filing is bookkeeping, not activity -- a PATCH that
+    # ONLY moves the session between projects must not bump `updated` (same
+    # rationale as unfile_project/close_opened). A PATCH that also touches
+    # any other field keeps the normal touch=True behavior.
+    touch = set(fields.keys()) != {"folder"}
+    return sessions_store.update(session_id, touch=touch, **fields) or JSONResponse(
         status_code=404, content={"detail": "no such session"})
 
 

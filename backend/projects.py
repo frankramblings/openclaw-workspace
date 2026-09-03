@@ -68,5 +68,10 @@ async def backfill(payload: dict = Body(default=None)):
         since = int((payload or {}).get("since_days") or 90)
     except (TypeError, ValueError):
         since = 90
+    # I4: seed synchronously (it's sync and cheap) before spawning the actual
+    # classify pass -- a GET /api/projects right after this response already
+    # shows the seeds, instead of the sidebar staying empty until backfill
+    # (which can take a while) gets around to it.
+    project_classify.seed_if_empty()
     app_module._spawn(project_classify.backfill(since_days=max(1, since)))
     return {"status": "started"}

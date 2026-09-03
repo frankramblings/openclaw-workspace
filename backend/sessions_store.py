@@ -210,6 +210,24 @@ def close_opened(session_id: str):
     return update(session_id, opened=None, touch=False)
 
 
+def unfile_project(project_id: str) -> int:
+    """Clear `folder` on every session filed under `project_id` (project
+    delete, spec 4.2). Returns how many records changed."""
+    if not project_id:
+        return 0
+    n = 0
+    with _LOCK:
+        data = _load()
+        for s in data.get("sessions", []):
+            if s.get("folder") == project_id:
+                s["folder"] = None
+                s["updated"] = _now_ms()
+                n += 1
+        if n:
+            _save(data)
+    return n
+
+
 def delete(session_id: str) -> bool:
     with _LOCK:
         data = _load()

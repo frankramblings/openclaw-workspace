@@ -64,7 +64,7 @@ test('amendment F: an expanded project header carries aria-expanded="true"', () 
 });
 
 // Amendment E: mobile mirror of the desktop filter rule (amendment D,
-// sidebar-render-kinds.test.js) — filtering must force every project group
+// sidebar-render-kinds.test.js). Filtering must force every project group
 // open and its count to the number of rows actually shown, not meta.count.
 test('amendment E: filtering expands a collapsed project and shows the filtered count', () => {
   const collapsedHtml = renderConvDrawer(buildState());

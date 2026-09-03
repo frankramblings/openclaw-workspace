@@ -1349,14 +1349,23 @@ function showDrop(on) {
 }
 // Drag a conversation row onto a project header to file it (spec 6.2).
 // Uses a private MIME type so the file-drop handlers below ignore it.
+// Some browsers (Safari in particular) do not reliably expose a custom MIME
+// type in e.dataTransfer.types during dragover, which would silently no-op
+// the whole feature there. dragSessionId is an in-document fallback set at
+// dragstart, alongside the real DataTransfer payload, so drag detection and
+// the drop's session id both still work even if the types check comes back
+// empty.
 const SESSION_DND = 'text/x-oc-session';
+let dragSessionId = null;
 root.addEventListener('dragstart', (e) => {
   const row = e.target && e.target.closest && e.target.closest('[data-drag-session]');
   if (!row || !e.dataTransfer) return;
-  e.dataTransfer.setData(SESSION_DND, row.getAttribute('data-drag-session'));
+  dragSessionId = row.getAttribute('data-drag-session');
+  e.dataTransfer.setData(SESSION_DND, dragSessionId);
   e.dataTransfer.effectAllowed = 'move';
 });
-const dragHasSession = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf(SESSION_DND) !== -1);
+root.addEventListener('dragend', () => { dragSessionId = null; });
+const dragHasSession = (e) => !!dragSessionId || !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf(SESSION_DND) !== -1);
 root.addEventListener('dragover', (e) => {
   if (!dragHasSession(e)) return;
   const head = e.target.closest && e.target.closest('[data-proj-anchor]');
@@ -1372,9 +1381,10 @@ root.addEventListener('drop', (e) => {
   root.querySelectorAll('.conv-group.drop-target').forEach((el) => el.classList.remove('drop-target'));
   if (!head) return;
   e.preventDefault();
-  const sid = e.dataTransfer.getData(SESSION_DND);
+  const sid = e.dataTransfer.getData(SESSION_DND) || dragSessionId;
   const pid = head.getAttribute('data-proj-anchor');
   if (sid && pid && actions.moveToProject) { actions.moveToProject(`${sid}|${pid}`); render(); }
+  dragSessionId = null;
 });
 
 const dragHasFiles = (e) => !!(e.dataTransfer && Array.from(e.dataTransfer.types || []).indexOf('Files') !== -1);

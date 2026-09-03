@@ -49,14 +49,23 @@ def test_list_orders_by_updated_desc():
     assert [p["id"] for p in projects_store.list_projects()] == [a["id"], b["id"]]
 
 
-def test_delete_and_unfile():
+def test_delete_and_unfile(monkeypatch):
+    # Deleting a project only clears `folder`; it must not touch `updated`
+    # (spec 4.2) or every thread in that project would jump to the top of
+    # RECENT. _now_ms is faked to distinct, increasing values so this can't
+    # pass by accident on two calls landing in the same millisecond (see
+    # test_sessions_store_v2.py::test_close_opened_does_not_bump_updated).
+    times = iter(range(1000, 11000, 1000))
+    monkeypatch.setattr(sessions_store, "_now_ms", lambda: next(times))
     p = projects_store.create("Gone")
     s1 = sessions_store.create(name="s1", model=None, endpoint_url=None, endpoint_id=None, speed=None)
     s2 = sessions_store.create(name="s2", model=None, endpoint_url=None, endpoint_id=None, speed=None)
     sessions_store.update(s1["id"], folder=p["id"])
     sessions_store.update(s2["id"], folder="p-other")
+    before = sessions_store.get(s1["id"])["updated"]
     assert sessions_store.unfile_project(p["id"]) == 1
     assert sessions_store.get(s1["id"])["folder"] is None
+    assert sessions_store.get(s1["id"])["updated"] == before
     assert sessions_store.get(s2["id"])["folder"] == "p-other"
     assert projects_store.delete(p["id"]) is True
     assert projects_store.delete(p["id"]) is False

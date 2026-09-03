@@ -212,7 +212,10 @@ def close_opened(session_id: str):
 
 def unfile_project(project_id: str) -> int:
     """Clear `folder` on every session filed under `project_id` (project
-    delete, spec 4.2). Returns how many records changed."""
+    delete, spec 4.2). Does not touch `updated` -- unfiling is not activity,
+    same rationale as close_opened: bumping it would jump every thread in
+    the deleted project to the top of RECENT. Returns how many records
+    changed."""
     if not project_id:
         return 0
     n = 0
@@ -221,7 +224,6 @@ def unfile_project(project_id: str) -> int:
         for s in data.get("sessions", []):
             if s.get("folder") == project_id:
                 s["folder"] = None
-                s["updated"] = _now_ms()
                 n += 1
         if n:
             _save(data)

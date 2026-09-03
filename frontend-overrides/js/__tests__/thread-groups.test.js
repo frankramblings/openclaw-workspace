@@ -81,20 +81,27 @@ test('projects group filed threads, roll up live state, sort by latest activity,
     S('w1', { folder: 'p3', updated: NOW - 1 * H }),
     S('ghost', { folder: 'p-gone' }),
   ];
+  // l2 is running, so it now sits on the OPEN shelf; its project's roll-up
+  // still counts it, but its rows list drops it.
   const g = build({ sessions, projects, running: new Set(['l2']), notified: new Set(['l1']) });
-  assert.deepEqual(kinds(g), ['project', 'project', 'recent']);
-  assert.equal(g[0].label, 'Plex'); assert.equal(g[1].label, 'Local AI');
-  assert.deepEqual(g[1].meta, { id: 'p1', count: 2, working: 1, unseen: 1, collapsed: true, latest: NOW - 5 * H });
-  assert.deepEqual(ids(g[2]), ['ghost'], 'unknown folder id renders as unfiled; archived project threads hidden');
+  assert.deepEqual(kinds(g), ['open', 'project', 'project', 'recent']);
+  assert.deepEqual(ids(g[0]), ['l2']);
+  assert.equal(g[1].label, 'Plex'); assert.equal(g[2].label, 'Local AI');
+  assert.deepEqual(g[2].meta, { id: 'p1', count: 2, working: 1, unseen: 1, collapsed: true, latest: NOW - 5 * H });
+  assert.deepEqual(ids(g[2]), ['l1']);
+  assert.deepEqual(ids(g[3]), ['ghost'], 'unknown folder id renders as unfiled; archived project threads hidden');
 });
 
 test('the project holding the active thread is expanded; expanded set expands others', () => {
   const projects = [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }];
   const sessions = [S('a', { folder: 'p1', opened: null }), S('b', { folder: 'p2' })];
   let g = build({ sessions, projects, activeId: 'a' });
-  // active thread is in OPEN, so p1 has no rows left and is absent; b is collapsed
-  assert.deepEqual(kinds(g), ['open', 'project']);
-  assert.equal(g[1].meta.collapsed, true);
+  // active thread is in OPEN, so p1's rows are empty, but the group still
+  // reports and is expanded because the roll-up sees the active session.
+  assert.deepEqual(kinds(g), ['open', 'project', 'project']);
+  const p1 = g.find((x) => x.meta.id === 'p1'); const p2 = g.find((x) => x.meta.id === 'p2');
+  assert.equal(p1.meta.collapsed, false); assert.equal(p1.meta.count, 1); assert.equal(p1.rows.length, 0);
+  assert.equal(p2.meta.collapsed, true);
   g = build({ sessions, projects, expanded: new Set(['p2']) });
   assert.equal(g.find((x) => x.meta.id === 'p2').meta.collapsed, false);
 });
@@ -113,6 +120,41 @@ test('the same session never appears twice and inputs are not mutated', () => {
   const sessions = [S('a', { opened: NOW, folder: 'p1', important: true })];
   const before = JSON.stringify(sessions);
   const g = build({ sessions, projects: [{ id: 'p1', name: 'P' }] });
-  assert.deepEqual(kinds(g), ['open']);
+  // a is on the OPEN shelf, so its project group is empty but still reports.
+  assert.deepEqual(kinds(g), ['open', 'project']);
+  assert.equal(g[1].rows.length, 0);
+  assert.equal(g[1].meta.count, 1);
   assert.equal(JSON.stringify(sessions), before);
+});
+
+test('a running thread filed under an archived project still reaches OPEN', () => {
+  const sessions = [S('s1', { folder: 'p1', opened: null })];
+  const projects = [{ id: 'p1', name: 'Done', archived: true }];
+  const g = build({ sessions, projects, running: new Set(['s1']) });
+  assert.deepEqual(kinds(g), ['open']);
+  assert.deepEqual(ids(g[0]), ['s1']);
+});
+
+test('a project holding the active thread expands and lists its other threads', () => {
+  const projects = [{ id: 'p1', name: 'P' }];
+  const sessions = [S('a', { folder: 'p1', opened: null }), S('c', { folder: 'p1', updated: NOW - 3 * H })];
+  const g = build({ sessions, projects, activeId: 'a' });
+  assert.deepEqual(kinds(g), ['open', 'project']);
+  assert.equal(g[1].meta.collapsed, false);
+  assert.deepEqual(ids(g[1]), ['c']);
+  assert.equal(g[1].meta.count, 2);
+});
+
+test('project latest and roll-ups include threads on the shelf', () => {
+  const projects = [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }];
+  const sessions = [
+    S('x', { folder: 'p1', opened: NOW, updated: NOW - 1 * H }),
+    S('y', { folder: 'p1', updated: NOW - 9 * H }),
+    S('z', { folder: 'p2', updated: NOW - 2 * H }),
+  ];
+  const g = build({ sessions, projects });
+  const projGroups = g.filter((x) => x.kind === 'project');
+  assert.deepEqual(projGroups.map((x) => x.label), ['A', 'B']);
+  assert.equal(projGroups[0].meta.count, 2);
+  assert.deepEqual(ids(projGroups[0]), ['y']);
 });

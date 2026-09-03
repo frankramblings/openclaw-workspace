@@ -98,17 +98,12 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
     .sort((a, b) => ts(b) - ts(a));
   const projById = new Map((Array.isArray(projects) ? projects : []).filter((p) => p && p.id).map((p) => [p.id, p]));
 
-  // OPEN: activity-driven working set.
+  // OPEN: activity-driven working set. Ignores project filing entirely
+  // (spec: "OPEN ignores projects") so a running or active thread always
+  // surfaces here regardless of what project it is filed under.
   const inWindow = (s) => typeof s.opened === 'number' && s.opened > 0 && (nowMs - s.opened) <= OPEN_WINDOW_MS;
   const pinnedOpen = (s) => live.running.has(s.id) || s.id === activeId;
-  const isFiled = (s) => !!s.folder && projById.has(s.folder);
-  const candidates = list.filter((s) => {
-    // Active or recently opened always included
-    if (s.id === activeId || inWindow(s)) return true;
-    // Running/queued only if unfiled
-    if (!isFiled(s)) return live.running.has(s.id) || live.queued.has(s.id);
-    return false;
-  });
+  const candidates = list.filter((s) => inWindow(s) || live.running.has(s.id) || live.queued.has(s.id) || s.id === activeId);
   candidates.sort((a, b) => {
     const ra = live.running.has(a.id) ? 1 : 0;
     const rb = live.running.has(b.id) ? 1 : 0;
@@ -132,31 +127,35 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
     });
   }
 
-  // PROJECTS: filed threads not already on the shelf. Archived projects hide
-  // their threads; an unknown project id reads as unfiled (spec 8).
+  // PROJECTS: roll-ups and ordering consider every non-archived session filed
+  // under the project, shelf rows included, so a collapsed header still
+  // reports activity; rows list only the sessions not on the shelf. Archived
+  // projects hide their threads unless OPEN claimed them; an unknown project
+  // id reads as unfiled (spec 8).
   const byProject = new Map();
   const unfiled = [];
   for (const s of list) {
-    if (openIds.has(s.id)) continue;
     const p = s.folder ? projById.get(s.folder) : null;
-    if (!p) { unfiled.push(s); continue; }
+    if (!p) { if (!openIds.has(s.id)) unfiled.push(s); continue; }
     if (p.archived) continue;
-    if (!byProject.has(p.id)) byProject.set(p.id, []);
-    byProject.get(p.id).push(s);
+    if (!byProject.has(p.id)) byProject.set(p.id, { all: [], rows: [] });
+    const bucket = byProject.get(p.id);
+    bucket.all.push(s);
+    if (!openIds.has(s.id)) bucket.rows.push(s);
   }
   const projGroups = [];
-  for (const [pid, rows] of byProject) {
+  for (const [pid, bucket] of byProject) {
     const p = projById.get(pid);
-    const ordered = orderWithForks(rows.map((s) => rowOf(s, activeId, live)));
-    const containsActive = rows.some((s) => s.id === activeId);
+    const ordered = orderWithForks(bucket.rows.map((s) => rowOf(s, activeId, live)));
+    const containsActive = bucket.all.some((s) => s.id === activeId);
     projGroups.push({
       kind: 'project', label: p.name || 'Project', rows: ordered,
       meta: {
-        id: pid, count: rows.length,
-        working: rows.filter((s) => live.running.has(s.id)).length,
-        unseen: rows.filter((s) => live.notified.has(s.id)).length,
+        id: pid, count: bucket.all.length,
+        working: bucket.all.filter((s) => live.running.has(s.id)).length,
+        unseen: bucket.all.filter((s) => live.notified.has(s.id)).length,
         collapsed: !containsActive && !exp.has(pid),
-        latest: rows.reduce((m, s) => Math.max(m, ts(s)), 0),
+        latest: bucket.all.reduce((m, s) => Math.max(m, ts(s)), 0),
       },
     });
   }

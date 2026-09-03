@@ -20,6 +20,7 @@ import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
 import { renderSwitcher } from './switcher.js';
 import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
+import { moveMenuHtml, projectName, parentTitle } from './project-menu.js';
 import { usageLine, usageTitle, sessionTotalsLine } from './usage-view.js';
 import { usagePanelHtml } from './usage-panel.js';
 import { changesCardHtml } from './changes-view.js';
@@ -111,7 +112,7 @@ export function renderChatList(s) {
 // Per-row conversation actions menu (5 items). Rendered inline when this row's
 // menu is open. The wrapper's data-act="noop" swallows clicks on menu chrome so
 // they neither select the row nor close the menu.
-function convMenu(r) {
+function convMenu(r, s) {
   const fav = r.important ? 'Unfavorite' : 'Favorite';
   const item = (act, glyph, label, extra = '') =>
     `<button class="cm-item${extra}" data-act="${act}" data-arg="${esc(r.id)}" role="menuitem"><span class="cm-ic">${glyph}</span>${label}</button>`;
@@ -121,6 +122,7 @@ function convMenu(r) {
     + item('copyTranscript', I.copy(14), 'Copy chat')
     + item('archiveSession', I.archive(14), 'Archive')
     + item('deleteSession', I.trash(14), 'Delete', ' cm-danger')
+    + moveMenuHtml(r.id, s.live?.projects || [], r.folder, esc)
     + `</div>`;
 }
 
@@ -160,25 +162,43 @@ function convListBody(s) {
     + (r.slot ? `<span class="conv-slot" title="Option+${r.slot}">⌥${r.slot}</span>` : '')
     + (r.slot ? `<button class="conv-close" data-act="closeOpen" data-arg="${esc(r.id)}" title="Remove from Open" aria-label="Remove from Open">${I.x(12)}</button>` : '')
     + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
-    + (rowMenuOpen === r.id ? convMenu(r) : '')
+    + (rowMenuOpen === r.id ? convMenu(r, s) : '')
     + `</div>`;
   };
   const header = (g, gi) => {
     const top = gi === 0 ? ' top' : '';
-    if (g.kind === 'open') return `<div class="conv-group open${top}"><span class="sect-label">OPEN</span><span class="sect-count">${g.meta.count}</span></div>`;
+    if (g.kind === 'open') {
+      // Amendment D: while filtering, the count reflects what's actually
+      // rendered (post-filter rows), not the unfiltered meta count.
+      const count = q ? g.rows.length : g.meta.count;
+      return `<div class="conv-group open${top}"><span class="sect-label">OPEN</span><span class="sect-count">${count}</span></div>`;
+    }
     if (g.kind === 'project') {
       const m = g.meta;
-      return `<div class="conv-group project${top}${m.collapsed ? ' collapsed' : ''}" data-act="toggleProject" data-arg="${esc(m.id)}" data-proj-anchor="${esc(m.id)}" role="button" tabindex="0" aria-expanded="${!m.collapsed}">`
+      // Amendment D: a filter match inside a collapsed project must not stay
+      // hidden, so filtering forces every project group open and its count
+      // to the number of rows actually shown.
+      const collapsed = q ? false : m.collapsed;
+      const count = q ? g.rows.length : m.count;
+      const menuOpen = s.live?.chat?.projMenuOpen === m.id;
+      return `<div class="conv-group project${top}${collapsed ? ' collapsed' : ''}${menuOpen ? ' menu-open' : ''}" data-act="toggleProject" data-arg="${esc(m.id)}" data-proj-anchor="${esc(m.id)}" role="button" tabindex="0" aria-expanded="${!collapsed}">`
         + `<span class="proj-chev">▸</span>`
         + `<span class="sect-label proj-name">${esc(g.label)}</span>`
-        + `<span class="sect-count">${m.count}</span>`
+        + `<span class="sect-count">${count}</span>`
         + (m.working ? `<span class="proj-pip working" title="${m.working} working">${fortress(12)}${m.working}</span>` : '')
         + (m.unseen ? `<span class="proj-pip unseen" title="${m.unseen} finished while away"><span class="conv-dot notify"></span>${m.unseen}</span>` : '')
+        + `<button class="conv-kebab proj-kebab" data-act="toggleProjMenu" data-arg="${esc(m.id)}" title="Project actions" aria-label="Project actions">${I.dots(15)}</button>`
+        + (menuOpen
+          ? `<div class="conv-menu proj-menu" data-act="noop" role="menu">`
+            + `<button class="cm-item" data-act="renameProject" data-arg="${esc(m.id)}" role="menuitem"><span class="cm-ic">${I.pencil(14)}</span>Rename</button>`
+            + `<button class="cm-item" data-act="archiveProject" data-arg="${esc(m.id)}" role="menuitem"><span class="cm-ic">${I.archive(14)}</span>Archive project</button>`
+            + `</div>`
+          : '')
         + `</div>`;
     }
     return `<div class="conv-group${top}"><span class="sect-label">${esc(g.label)}</span></div>`;
   };
-  const titleHtml = map(sorted, (g, gi) => header(g, gi) + (g.kind === 'project' && g.meta.collapsed ? '' : map(g.rows, convRow)));
+  const titleHtml = map(sorted, (g, gi) => header(g, gi) + ((g.kind === 'project' && g.meta.collapsed && !q) ? '' : map(g.rows, convRow)));
   const msgHtml = semanticHits(s, groups2);
   if (q && !groups2.length && !msgHtml) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
   return titleHtml + msgHtml;
@@ -500,6 +520,9 @@ export function chatSurface(s) {
   // No mock fallbacks — before live data lands the header shows neutral
   // placeholders, never invented titles/models/usage numbers.
   const title = chat.title ?? 'New chat';
+  const projects = s.live?.projects || [];
+  const projLabel = projectName(projects, chat.folder);
+  const parentLabel = parentTitle(chat.sessions, chat.parentId);
   const subtitle = chat.subtitle ?? '';
   const model = chat.model ?? '';
   const modelLogo = providerLogo(chat.endpointId, model);
@@ -526,8 +549,8 @@ export function chatSurface(s) {
   ${when(chat.switcherOpen, renderSwitcher(s))}
   <div class="chat-head">
     <div style="min-width:0;flex:1">
-      <div class="ttl">${esc(title)}</div>
-      <div class="sub">${esc(subtitle)}</div>
+      <div class="ttl">${projLabel ? `<span class="ttl-proj">${esc(projLabel)} ›</span> ` : ''}${esc(title)}</div>
+      <div class="sub">${esc(subtitle)}${parentLabel ? ` · <span class="sub-parent" data-act="selectSession" data-arg="${esc(chat.parentId)}" role="link" tabindex="0">↳ from ${esc(parentLabel)}</span>` : ''}</div>
     </div>
     <div style="position:relative">
       <button class="icon-btn ocbtn" data-act="toggleChatMenu" title="Conversation actions" style="background:none;border:none;color:var(--faint);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px">⋯</button>

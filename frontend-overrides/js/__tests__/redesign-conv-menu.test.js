@@ -48,6 +48,8 @@ test('favorite label reflects the row state', () => {
 
 test('every menu item carries a leading glyph', () => {
   const html = renderChatList(baseState({ rowMenuOpen: 's1' }));
-  // one cm-ic span per menu item (5)
-  assert.equal((html.match(/class="cm-ic"/g) || []).length, 5);
+  // one cm-ic span per menu item: the original 5, plus the Move to submenu's
+  // "New project…" entry (no live.projects and no folder here, so that's
+  // the only move-menu item rendered), for 6 total (Task 6).
+  assert.equal((html.match(/class="cm-ic"/g) || []).length, 6);
 });

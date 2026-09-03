@@ -47,3 +47,42 @@ test('branchPrefix messages render above the live transcript, tagged as carried'
   const liveMsgIdx = html.indexOf('data-msg-id="u1"');
   assert.doesNotMatch(around(liveMsgIdx), /msg-carried/, 'live message must not be tagged carried');
 });
+
+test('the chat header shows the Project › Title prefix and a parent link when they resolve', () => {
+  const s = {
+    surface: 'chat',
+    live: {
+      projects: [{ id: 'projA', name: 'Local AI' }],
+      chat: {
+        title: 'Follow-up question',
+        subtitle: 'gpt-5',
+        folder: 'projA',
+        parentId: 'parent1',
+        sessions: [{ id: 'parent1', name: 'Original thread' }],
+        thread: [],
+      },
+    },
+  };
+  const html = chatSurface(s);
+  const ttl = html.slice(html.indexOf('<div class="ttl">'), html.indexOf('</div>', html.indexOf('<div class="ttl">')) + 6);
+  assert.ok(ttl.includes('<span class="ttl-proj">Local AI ›</span>'));
+  const sub = html.slice(html.indexOf('<div class="sub">'));
+  assert.match(sub, /↳ from/);
+  assert.match(sub, /data-act="selectSession" data-arg="parent1"/);
+});
+
+test('the chat header omits the project prefix and parent link when neither resolves', () => {
+  const s = {
+    surface: 'chat',
+    live: {
+      chat: {
+        title: 'New chat',
+        subtitle: '',
+        thread: [],
+      },
+    },
+  };
+  const html = chatSurface(s);
+  assert.ok(!html.includes('ttl-proj'));
+  assert.ok(!html.includes('sub-parent'));
+});

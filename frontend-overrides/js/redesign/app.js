@@ -981,11 +981,11 @@ root.addEventListener('click', (e) => {
   const t = e.target.closest('[data-act]');
   if (!t) {
     // A click outside any actionable element dismisses open menus.
-    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen || state.live?.chat?.msgMenuOpen || state.wsRootMenuOpen) {
+    if (state.chatMenuOpen || state.modelMenuOpen || state.live?.chat?.rowMenuOpen || state.live?.chat?.msgMenuOpen || state.live?.chat?.projMenuOpen || state.wsRootMenuOpen) {
       state.chatMenuOpen = false;
       state.modelMenuOpen = false;
       state.wsRootMenuOpen = false;
-      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; }
+      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; state.live.chat.projMenuOpen = null; }
       render();
     }
     // Clicking outside a card also closes an open ⋯ overflow / snooze menu.
@@ -1494,11 +1494,11 @@ document.addEventListener('keydown', (e) => {
     // listener) — msgMenuOpen/wsRootMenuOpen close the same way a stray click
     // already does; Escape just used to skip them.
     if (state.chatMenuOpen || state.modelMenuOpen || state.wsRootMenuOpen
-        || state.live?.chat?.rowMenuOpen || state.live?.chat?.msgMenuOpen) {
+        || state.live?.chat?.rowMenuOpen || state.live?.chat?.msgMenuOpen || state.live?.chat?.projMenuOpen) {
       state.chatMenuOpen = false;
       state.modelMenuOpen = false;
       state.wsRootMenuOpen = false;
-      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; }
+      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; state.live.chat.projMenuOpen = null; }
       render();
       return;
     }

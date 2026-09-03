@@ -1237,3 +1237,15 @@ pre.diff .meta { color: var(--faint, #8a94a6); }
 .conv-close{flex:none;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:none;background:none;color:var(--faint);border-radius:6px;opacity:0;cursor:pointer}
 .conv-row:hover .conv-close,.conv-row:focus-within .conv-close{opacity:1}
 .conv-close:hover{color:var(--fg);background:color-mix(in srgb,var(--fg) 10%,transparent)}
+
+/* Projects (spec 6.2, 7.6) */
+.cm-sub-head{padding:6px 10px 2px;font-size:10px;letter-spacing:.1em;color:var(--faint);border-top:1px solid var(--bd);margin-top:4px}
+.cm-item.cm-move.on{color:var(--teal)}
+.cm-item.cm-new{color:var(--mut)}
+.proj-kebab{margin-left:auto}
+.conv-group.project{position:relative}
+.conv-group.project.menu-open{z-index:var(--z-row-raised)}
+.proj-menu{right:6px;top:28px}
+.ttl-proj{color:var(--faint);font-weight:500}
+.sub-parent{color:var(--teal);cursor:pointer}
+.sub-parent:hover{text-decoration:underline}

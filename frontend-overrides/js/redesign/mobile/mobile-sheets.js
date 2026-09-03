@@ -95,6 +95,14 @@ function convListHtml(s) {
   const groups = q
     ? allGroups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
     : (recent.length ? [{ kind: 'recent', label: 'RECENT', rows: recent, meta: {} }, ...allGroups] : allGroups);
+  // The edge-swipe drawer (renderConvDrawer, below) stays in the DOM even
+  // while closed — finger-tracked off-screen rather than removed — so its
+  // rows must NOT be in the tab order while hidden, or a keyboard user could
+  // Tab into an invisible drawer. tabindex flips to -1 whenever the drawer
+  // isn't open. (The legacy conv sheet that also called convListHtml was
+  // unreachable dead code and has been removed.) Declared before `header`
+  // (M5), which closes over it, so it's never read before assignment.
+  const rowTabindex = s.mDrawerOpen ? '0' : '-1';
   const header = (g) => {
     if (g.kind === 'open') return `<div class="m-conv-grp open">OPEN <span class="m-conv-cnt">${g.meta.count}</span></div>`;
     if (g.kind === 'project') {
@@ -107,13 +115,6 @@ function convListHtml(s) {
     }
     return `<div class="m-conv-grp">${esc(g.label)}</div>`;
   };
-  // The edge-swipe drawer (renderConvDrawer, below) stays in the DOM even
-  // while closed — finger-tracked off-screen rather than removed — so its
-  // rows must NOT be in the tab order while hidden, or a keyboard user could
-  // Tab into an invisible drawer. tabindex flips to -1 whenever the drawer
-  // isn't open. (The legacy conv sheet that also called convListHtml was
-  // unreachable dead code and has been removed.)
-  const rowTabindex = s.mDrawerOpen ? '0' : '-1';
   const convRow = (r) => {
     const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
     const badgeInner = r.term ? '∿' : (rowLogo || 'G');

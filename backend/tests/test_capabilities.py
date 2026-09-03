@@ -49,3 +49,11 @@ def test_calendar_available_via_caldav(env, monkeypatch):
     monkeypatch.setattr(caps.config, "load_connection",
                         lambda: {"integrations": {"calendar": True}})
     assert caps.snapshot()["calendar"]["available"] is True
+
+
+def test_agent_config_capability_reports_writes_switch(env, monkeypatch):
+    monkeypatch.setenv("WORKSPACE_AGENT_CONFIG_WRITES", "0")
+    m = caps.snapshot()
+    assert m["agent_config"]["available"] is True and m["agent_config"]["writes"] is False
+    monkeypatch.delenv("WORKSPACE_AGENT_CONFIG_WRITES")
+    assert caps.snapshot()["agent_config"]["writes"] is True

@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 from . import calendar_config, config, steer
+from . import agent_config_store as _agent_config
 from .inbox import settings as _inbox_settings
 
 CORE_TABS = ["chat", "memory", "skills", "cron", "sessions", "notes", "documents", "models"]
@@ -77,4 +78,6 @@ def snapshot() -> dict:
     out["calendar"] = _calendar()
     out["inbox"] = _inbox()
     out["steer"] = steer.capability()
+    out["agent_config"] = {"available": True, "reason": "", "hint": "",
+                           "writes": _agent_config.writes_enabled()}
     return out

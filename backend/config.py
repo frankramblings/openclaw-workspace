@@ -235,6 +235,10 @@ TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL",
 SUGGEST_MODEL = os.environ.get("WORKSPACE_SUGGEST_MODEL",
                                "anthropic/claude-sonnet-4-6")
 
+# Auto-file new threads into projects at title time (spec 6.1). Runs only on
+# the local title model; off = threads stay unfiled until moved by hand.
+PROJECT_CLASSIFY_ENABLED = os.environ.get("WORKSPACE_PROJECT_CLASSIFY", "1").strip().lower() not in ("0", "false", "no", "off")
+
 # Titles + suggestions are stateless one-shot completions: no agent persona,
 # no sessions, no tools. Routing them through the gateway forces the FULL
 # ~27k-token Gary bootstrap into every request — wasteful on cloud, and on a

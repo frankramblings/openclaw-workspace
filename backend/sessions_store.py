@@ -146,9 +146,12 @@ def create(name: str | None = None, model: str | None = None,
     return rec
 
 
-def update(session_id: str, **fields) -> dict | None:
+def update(session_id: str, *, touch: bool = True, **fields) -> dict | None:
     """Patch allowed fields on a record. Unknown keys are ignored so a stray
-    form field from the SPA can't inject arbitrary data."""
+    form field from the SPA can't inject arbitrary data. `touch=False` skips
+    bumping `updated` -- used by close_opened so taking a thread off the OPEN
+    shelf isn't activity that moves it to the top of RECENT or bumps its
+    project's latest roll-up."""
     allowed = {"name", "model", "folder", "archived", "important",
                "endpoint_url", "endpoint_id", "speed", "gary_terminal",
                "opened", "parent_id"}
@@ -159,7 +162,8 @@ def update(session_id: str, **fields) -> dict | None:
                 for k, v in fields.items():
                     if k in allowed:
                         s[k] = v
-                s["updated"] = _now_ms()
+                if touch:
+                    s["updated"] = _now_ms()
                 _save(data)
                 return s
     return None
@@ -200,8 +204,10 @@ def mark_opened(session_id: str):
 
 
 def close_opened(session_id: str):
-    """Take the session off the OPEN shelf (the row's close action)."""
-    return update(session_id, opened=None)
+    """Take the session off the OPEN shelf (the row's close action). Does not
+    touch `updated` -- closing a shelf row is not activity (see update's
+    `touch` kwarg)."""
+    return update(session_id, opened=None, touch=False)
 
 
 def delete(session_id: str) -> bool:

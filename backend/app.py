@@ -521,10 +521,14 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                                  media_type="text/event-stream")
 
     # OPEN shelf (spec 4.1/5): a user send puts the thread on the shelf. Done
-    # after the busy check so a rejected double-send does not stamp it. Never
-    # let a store write failure break the turn (same swallow convention as
-    # chat_turn.py's other sessions_store.update touches).
-    if rec and message.strip():
+    # after the busy check so a rejected double-send does not stamp it. An
+    # attachment-only send (blank message, an image/file attached) is a real
+    # send too -- mirror the message-or-attachments check the client uses to
+    # decide there's anything to send at all, so such a thread doesn't drop
+    # off the shelf on the next refetch. Never let a store write failure
+    # break the turn (same swallow convention as chat_turn.py's other
+    # sessions_store.update touches).
+    if rec and (message.strip() or attachments):
         try:
             sessions_store.mark_opened(rec["id"])
         except Exception:  # noqa: BLE001 - never break the turn over the shelf stamp
@@ -756,8 +760,8 @@ async def branch_session(payload: dict = Body(default=None)):
     # Fork bookkeeping (spec 5): remember the parent, inherit its project, and
     # put the new thread on the OPEN shelf so it is where the user lands next.
     sessions_store.update(new_sess["id"], parent_id=source_session_id,
-                          folder=src.get("folder"),
-                          opened=sessions_store._now_ms())
+                          folder=src.get("folder"))
+    sessions_store.mark_opened(new_sess["id"])
     preamble = _build_preamble(prefix)
     branch_context.write(new_sess["id"], source_session_id, prefix, preamble)
     return {"session_id": new_sess["id"], "session_key": new_sess["sessionKey"], "prefix": prefix}
@@ -1004,6 +1008,15 @@ async def steer_chat(session_id: str, message: str = Form(...),
     except Exception as exc:  # noqa: BLE001 - surface the gateway failure honestly
         return JSONResponse(status_code=502, content={
             "ok": False, "reason": "gateway_error", "detail": f"{exc!r}"})
+    # OPEN shelf (spec 5): a steer is a user send too, same as chat_stream's
+    # own mark_opened touch. Never let a store write failure break a steer
+    # that already landed on the gateway.
+    if rec:
+        try:
+            sessions_store.mark_opened(rec["id"])
+        except Exception:  # noqa: BLE001 - never break the steer over the shelf stamp
+            _log.warning("sessions_store.update (mark_opened) failed for session %s",
+                         rec["id"], exc_info=True)
     event_store.append(session_key, bridge._sse({
         "type": "user_steer", "text": text, "client_id": client_id or "",
         "ts": int(time.time() * 1000)}))

@@ -54,3 +54,18 @@ def test_mark_and_close_opened():
     out = sessions_store.close_opened(rec["id"])
     assert out["opened"] is None
     assert sessions_store.mark_opened("nope") is None
+
+
+def test_close_opened_does_not_bump_updated(monkeypatch):
+    # M3: closing a shelf row is not activity — it must not move the thread
+    # to the top of RECENT or bump its project's latest roll-up. _now_ms is
+    # faked to distinct, increasing values so this can't pass by accident on
+    # two calls landing in the same millisecond.
+    times = iter([1000, 2000, 3000, 4000, 5000])
+    monkeypatch.setattr(sessions_store, "_now_ms", lambda: next(times))
+    rec = _mk()
+    sessions_store.mark_opened(rec["id"])
+    before = sessions_store.get(rec["id"])["updated"]
+    out = sessions_store.close_opened(rec["id"])
+    assert out["opened"] is None
+    assert out["updated"] == before

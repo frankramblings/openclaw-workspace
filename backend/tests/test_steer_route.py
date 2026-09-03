@@ -92,6 +92,53 @@ def test_success_sends_and_appends_frame(client, cli_session, steerable, monkeyp
     assert f["client_id"] == "live-u-42" and isinstance(f["ts"], int)
 
 
+def test_success_marks_opened(client, cli_session, steerable, monkeypatch):
+    # M9: a send routed through the steer endpoint is still a user send —
+    # spec 5 says every one stamps `opened`, or a thread closed from the
+    # shelf and then steered would drop off OPEN when the turn ends.
+    sk = cli_session["sessionKey"]
+    monkeypatch.setattr(app_module, "_TURN_TASKS", {sk: _Live()})
+
+    async def fake_steer(session_key, message):
+        return {"runId": "run-1"}
+
+    monkeypatch.setattr(bridge, "steer_turn", fake_steer)
+    event_store.drop_session(sk)
+    r = client.post(f"/api/chat/steer/{cli_session['id']}", data={"message": "steer this"})
+    assert r.status_code == 200
+    opened = sessions_store.get(cli_session["id"])["opened"]
+    assert isinstance(opened, int) and opened > 0
+
+
+def test_steer_store_failure_never_breaks_the_steer(client, cli_session, steerable,
+                                                     monkeypatch, caplog):
+    # The same swallow-and-warn convention chat_stream uses for mark_opened:
+    # a sessions_store failure must not turn a successful steer into an error.
+    import logging
+
+    sk = cli_session["sessionKey"]
+    monkeypatch.setattr(app_module, "_TURN_TASKS", {sk: _Live()})
+
+    async def fake_steer(session_key, message):
+        return {"runId": "run-1"}
+
+    def _boom(*a, **kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(bridge, "steer_turn", fake_steer)
+    monkeypatch.setattr(sessions_store, "mark_opened", _boom)
+    event_store.drop_session(sk)
+    with caplog.at_level(logging.WARNING, logger="backend.app"):
+        r = client.post(f"/api/chat/steer/{cli_session['id']}", data={"message": "steer this"})
+    assert r.status_code == 200
+    assert r.json()["steered"] is True
+    assert any(
+        rec.name == "backend.app" and rec.levelno == logging.WARNING
+        and rec.exc_info is not None
+        for rec in caplog.records
+    )
+
+
 def test_502_when_gateway_rejects_and_no_frame(client, cli_session, steerable, monkeypatch):
     sk = cli_session["sessionKey"]
     monkeypatch.setattr(app_module, "_TURN_TASKS", {sk: _Live()})

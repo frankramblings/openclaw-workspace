@@ -54,6 +54,35 @@ def test_chat_stream_marks_opened(monkeypatch):
     assert isinstance(opened, int) and opened > 0
 
 
+def test_chat_stream_attachment_only_marks_opened(monkeypatch):
+    # M2: a blank message with an attachment is a real send too — the client
+    # stamps `opened` optimistically for it, so the server must too or the
+    # thread drops off the shelf on the next refetch. The message is a single
+    # space rather than "": FastAPI's Form(...) treats a literal empty string
+    # as an absent field (a pre-existing, unrelated quirk — see the final fix
+    # report's Concerns), so a whitespace-only message is the honest way to
+    # exercise the `message.strip() or attachments` branch over the route.
+    # The attachment id doesn't need to resolve to a real file; the resolve/
+    # extract helpers skip missing ones.
+    rec = _mk(name="already titled")
+
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None, **kw):
+        yield bridge._sse({"delta": "ok"})
+        yield bridge._sse("[DONE]")
+
+    async def fake_extract(session_key):
+        return None
+
+    monkeypatch.setattr(bridge, "stream_turn", fake_stream_turn)
+    monkeypatch.setattr(app_module, "maybe_auto_extract", fake_extract)
+    res = client.post("/api/chat_stream", data={
+        "message": " ", "session": rec["id"], "attachments": '["nope.png"]',
+    })
+    assert res.status_code == 200
+    opened = sessions_store.get(rec["id"])["opened"]
+    assert isinstance(opened, int) and opened > 0
+
+
 def test_branch_records_parent_and_inherits_folder():
     src = _mk()
     sessions_store.update(src["id"], folder="p-1234abcd")

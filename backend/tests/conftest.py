@@ -5,7 +5,7 @@ vault; its helpers read the module globals at call time, so monkeypatching the
 two globals redirects every read/write/snapshot into tmp_path."""
 import pytest
 
-from backend import changes, config, documents, projects_store, sessions_store
+from backend import changes, config, documents, notes, projects_store, sessions_store, vault_store as vs
 
 
 @pytest.fixture(autouse=True)
@@ -53,5 +53,22 @@ def vault_docs(tmp_path, monkeypatch):
         }
         doc.update(meta)
         return documents._write(doc)
+
+    return make
+
+
+@pytest.fixture
+def vault_notes(tmp_path, monkeypatch):
+    notes_dir = tmp_path / "Notes"
+    monkeypatch.setattr(notes, "NOTES_DIR", notes_dir)
+
+    def make(note_id="note1", title="Test Note", body="Hello note body.\n", **meta):
+        entry = {"id": note_id, "title": title,
+                  "created": "2026-06-01T00:00:00+00:00",
+                  "updated": "2026-06-01T00:00:00+00:00", "archived": False}
+        entry.update(meta)
+        vs.save_entry(notes._path(note_id), entry, body)
+        entry["content"] = body
+        return entry
 
     return make

@@ -15,13 +15,21 @@ around the already-mentions-wrapped text. A shared marker string would let
 websearch.strip_context_block's partition land on the outer occurrence only
 and leave the inner mentions block (including note/document bodies) sitting
 in the "stripped" history text whenever the two strips run in the wrong
-order. strip_context_block below also searches for its own intro anywhere
-in the text (not only at position 0) and splices around it, rather than
-requiring it as a strict prefix like websearch.strip_context_block does:
-this is what actually makes calling mentions.strip_context_block and
-websearch.strip_context_block in EITHER order recover the original user
-text, since the mentions block can legitimately sit in the middle of the
-fully composed string.
+order.
+
+strip_context_block below only ever matches _BLOCK_INTRO at the two
+positions it can structurally occupy in text this module itself produced:
+the very start of the string (no websearch wrap around it), or immediately
+after websearch's own prefix + marker (websearch wrapped outside it). It
+deliberately does NOT search for _BLOCK_INTRO at an arbitrary position
+anywhere in the text: an unwrapped message that merely quotes the wrapper
+format (for example a user pasting "The user referenced the following
+notes ... User message: ...") is real user content, not our own wrap, and
+must never be silently spliced out on /api/history display. Anchoring to
+those two well-defined positions is what makes calling
+mentions.strip_context_block and websearch.strip_context_block in EITHER
+order recover the original user text when both wraps are present, while
+still passing through anything else untouched.
 
 Hooked into backend/app.py's chat_stream right after
 _prepend_text_attachments, before _scrub_secrets (see Task 2). The steer
@@ -33,7 +41,7 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
-from . import documents, notes
+from . import documents, notes, websearch
 from . import vault_store as vs
 
 MENTION_RE = re.compile(
@@ -185,31 +193,42 @@ def prepend_mentions(message: str) -> tuple[str, bool]:
 
 
 def strip_context_block(text):
-    """Display-side inverse of prepend_mentions, for /api/history: non-
-    matching input, and non-string input, passes through untouched, same as
-    websearch.strip_context_block.
+    """Display-side inverse of prepend_mentions, for /api/history.
 
-    Unlike websearch.strip_context_block (which only matches its own intro
-    as a strict prefix), this searches for _BLOCK_INTRO ANYWHERE in `text`
-    and splices out everything from there through the following own-marker
-    occurrence, keeping whatever text came before and after intact. That is
-    required, not just a nicety: chat_turn.py's websearch wrap nests AROUND
-    an already-mentions-wrapped message, so the mentions block sits in the
-    MIDDLE of the fully composed text, not at position 0, whenever both a
-    web search and a mention happened on the same turn. Because the two
-    modules now use distinct markers (see the module docstring), searching
-    for the first (leftmost) occurrence of _BLOCK_INTRO always lands on the
-    genuine wrap rather than on anything coincidentally similar inside the
-    user's own message, so this is safe to call before OR after
-    websearch.strip_context_block: whichever one runs first strips its own
-    layer and leaves the other module's wrap, if any, untouched for the
-    second call to remove."""
+    Only ever matches _BLOCK_INTRO at the two positions it can structurally
+    occupy in text this module (or this module nested inside websearch's
+    wrap) produced, never at an arbitrary position found by searching the
+    whole string: doing that would also match, and silently delete, a span
+    out of a message that merely quotes the wrapper format without ever
+    having gone through prepend_mentions.
+
+    (a) The mentions block is the very start of `text` (no websearch wrap
+        sits outside it): strip _BLOCK_INTRO through our own _CTX_MARKER.
+    (b) `text` is websearch's own wrap around an already-mentions-wrapped
+        message (chat_turn.py's real nesting order: prepend_mentions runs
+        first, at the composer/route boundary, and the websearch wrap runs
+        later, around that result). The mentions block can then only
+        legitimately start immediately after websearch's own prefix and
+        marker (backend.websearch._CTX_PREFIX / _CTX_MARKER, the same
+        constants websearch.strip_context_block itself matches on); splice
+        the mentions block out of exactly that position, leaving
+        websearch's prefix and marker in place so websearch.strip_context_block
+        still works on the result afterwards, in either call order.
+    (c) Anything else, including non-string input and a message that merely
+        contains the wrapper text somewhere in the middle, passes through
+        untouched."""
     if not isinstance(text, str):
         return text
-    idx = text.find(_BLOCK_INTRO)
-    if idx == -1:
-        return text
-    _, sep, rest = text[idx:].partition(_CTX_MARKER)
-    if not sep:
-        return text
-    return text[:idx] + rest
+
+    if text.startswith(_BLOCK_INTRO):
+        _, sep, rest = text.partition(_CTX_MARKER)
+        return rest if sep else text
+
+    if text.startswith(websearch._CTX_PREFIX):
+        before, sep, after = text.partition(websearch._CTX_MARKER)
+        if sep and after.startswith(_BLOCK_INTRO):
+            _, sep2, rest = after.partition(_CTX_MARKER)
+            if sep2:
+                return before + sep + rest
+
+    return text

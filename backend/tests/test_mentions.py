@@ -218,3 +218,47 @@ def test_strip_context_block_composes_with_websearch_in_either_order(vault_notes
 
     # Order 2: the mentions wrap peeled off first, then websearch's own wrap.
     assert websearch.strip_context_block(mentions.strip_context_block(composed)) == original
+
+
+def test_strip_context_block_leaves_unwrapped_message_with_both_literals_mid_text_alone():
+    """A message that merely quotes the wrapper format (both _BLOCK_INTRO
+    and _CTX_MARKER appear somewhere in the middle of the text) but was
+    never actually produced by prepend_mentions must not have that span
+    silently deleted. strip_context_block only matches _BLOCK_INTRO at the
+    two positions it can structurally occupy (the very start of the text,
+    or right after websearch's own prefix and marker), never at an
+    arbitrary position found by searching the whole string."""
+    text = ("hey, quick question: " + mentions._BLOCK_INTRO +
+            "some stuff" + mentions._CTX_MARKER + "and more text after that")
+    assert mentions.strip_context_block(text) == text
+
+
+def test_strip_context_block_passthrough_for_websearch_wrap_with_no_mentions_block():
+    from backend import websearch
+
+    composed = websearch.context_block(
+        "plain query with no mentions",
+        [{"title": "Result", "url": "https://example.com", "snippet": "snippet text"}],
+    )
+    assert mentions.strip_context_block(composed) == composed
+
+
+def test_strip_context_block_case_b_strips_only_mentions_block_and_round_trips(vault_notes):
+    """websearch wrapped OUTSIDE an already-mentions-wrapped message
+    (case (b), the real production nesting). A single mentions.strip call
+    must remove only the inner mentions block, leaving websearch's own
+    prefix and marker untouched: the result is byte-for-byte the same as
+    if websearch had wrapped the ORIGINAL (unmentioned) query in the first
+    place, and it still round-trips through websearch.strip_context_block."""
+    from backend import websearch
+
+    vault_notes(note_id="n1", title="Groceries", body="Milk, eggs.\n")
+    original = "what's on my list? @[Groceries](note:n1)"
+    wrapped_mentions, had = mentions.prepend_mentions(original)
+    assert had is True
+    results = [{"title": "Result", "url": "https://example.com", "snippet": "snippet text"}]
+    composed = websearch.context_block(wrapped_mentions, results)
+
+    once_stripped = mentions.strip_context_block(composed)
+    assert once_stripped == websearch.context_block(original, results)
+    assert websearch.strip_context_block(once_stripped) == original

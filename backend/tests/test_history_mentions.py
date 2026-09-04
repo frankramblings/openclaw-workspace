@@ -101,6 +101,38 @@ def test_history_strips_draft_mode_wrapper_then_mentions(monkeypatch, vault_docs
     assert hist[0]["content"] == original
 
 
+def test_history_strips_a_selection_wrapped_draft_turn_then_mentions(monkeypatch, vault_docs):
+    """Fix wave, M8: the same chain with Pillar C2's selection hint in play.
+    The note now ends with the selected passage block instead of the plain
+    closing sentence, and the mentions block sits inside it, so both strip
+    layers have to line up for the user to see their own typed text back."""
+    from backend import draft_mode
+
+    doc = vault_docs()
+    rec = {"id": "abc123def456", "sessionKey": "k", "model": "openclaw"}
+    monkeypatch.setattr(sessions_store, "get",
+                        lambda sid: rec if sid == rec["id"] else None)
+
+    original = "please tighten @[Some Doc](doc:abc123) intro"
+    block = mentions.context_block([
+        mentions.ResolvedMention(kind="doc", id="abc123", title="Some Doc",
+                                 body="Body text.\n", truncated=False, missing=False),
+    ])
+    stored = draft_mode.wrap_message(
+        block + mentions._CTX_MARKER + original, doc,
+        {"from": 0, "to": 11, "text": "First draft."})
+
+    async def fake_hist(session_key, limit=200, strict=False):
+        return {"history": [{"role": "user", "content": stored}], "model": None}
+
+    monkeypatch.setattr(bridge, "fetch_history", fake_hist)
+    client = TestClient(app_module.app)
+    hist = client.get("/api/history/abc123def456").json()["history"]
+    assert hist[0]["content"] == original
+    assert "Body text." not in hist[0]["content"]
+    assert "selected passage" not in hist[0]["content"]
+
+
 def test_history_strips_mentions_after_a_fork_preamble(monkeypatch):
     """First send after a fork: the one-shot preamble is spliced in around the
     mentions-wrapped text, so the mentions block sits after the "Frank: " lead

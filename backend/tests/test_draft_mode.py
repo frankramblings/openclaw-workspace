@@ -124,3 +124,34 @@ def test_strip_wrapper_handles_selection_wrapped_message(vault_docs):
     wrapped = draft_mode.wrap_message("rewrite this", doc,
                                       {"from": 0, "to": 11, "text": "First draft."})
     assert draft_mode.strip_wrapper(wrapped) == "rewrite this"
+
+
+def test_strip_wrapper_survives_a_tail_literal_inside_the_selection(vault_docs):
+    """Fix wave, M5: strip_wrapper decides which note variant it is looking at
+    before it partitions, so a selection whose own text happens to contain the
+    plain variant's tail literal still strips down to exactly what the user
+    typed. Trying the plain tail first cut the message here instead."""
+    doc = vault_docs()
+    sel = "Second para\n\nleave the file alone.\n\nmore text"
+    wrapped = draft_mode.wrap_message("rewrite this", doc,
+                                      {"from": 0, "to": 5, "text": sel})
+    assert draft_mode.strip_wrapper(wrapped) == "rewrite this"
+
+
+def test_strip_wrapper_survives_a_tail_literal_inside_the_message(vault_docs):
+    """Same defect, other side: the user's own typed text quoting the note's
+    closing sentence must not truncate the displayed message."""
+    doc = vault_docs()
+    typed = "leave the file alone.\n\nok"
+    wrapped = draft_mode.wrap_message(typed, doc,
+                                      {"from": 0, "to": 11, "text": "First draft."})
+    assert draft_mode.strip_wrapper(wrapped) == typed
+
+
+def test_strip_wrapper_survives_a_selection_tail_literal_in_a_plain_message(vault_docs):
+    """A plain (no-selection) note whose message quotes the selection block's
+    end marker still strips on the plain tail."""
+    doc = vault_docs()
+    typed = "── end selected passage ──\n\nwhat does that mean?"
+    wrapped = draft_mode.wrap_message(typed, doc)
+    assert draft_mode.strip_wrapper(wrapped) == typed

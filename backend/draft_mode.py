@@ -94,30 +94,44 @@ def wrap_message(message: str, doc: dict, selection: dict | None = None) -> str:
 
 
 _WRAP_PREFIX = '[draft mode] We are co-drafting the document "'
-_WRAP_TAIL = "leave the file alone.\n\n"
+_WRAP_SENTENCE = "leave the file alone."
+_WRAP_TAIL = _WRAP_SENTENCE + "\n\n"
 # When wrap_message received a selection, the note's closing sentence is no
 # longer immediately followed by the blank line (a selection block comes
-# between them, ending in this literal) -- see wrap_message. Try the plain
-# tail first (the common case, and the only one before Pillar C2's selection
-# hint existed), then this one, so a selection-wrapped message still strips
-# down to exactly what the user typed instead of passing through unstripped.
+# between them, ending in this literal) -- see wrap_message.
 _WRAP_SELECTION_TAIL = "── end selected passage ──\n\n"
+# The fixed sentence wrap_message appends immediately after the closing
+# sentence when, and only when, it received a selection. Its presence is what
+# tells the two note variants apart, so strip_wrapper can decide which tail to
+# partition on instead of trying both (see its docstring).
+_WRAP_SELECTION_MARK = "leave the file alone. The user has selected this passage"
 
 
 def strip_wrapper(text):
     """Display-side inverse of wrap_message, for /api/history.
 
     Anchored at the start of the string, the only position wrap_message can
-    put the note in, and it partitions on the note's fixed closing sentence
-    so a message that merely quotes the wrapper somewhere in its middle is
-    never touched. Non-string input and unwrapped text pass through."""
+    put the note in. wrap_message emits two note shapes and this decides which
+    one it is looking at BEFORE partitioning: the selection variant continues
+    "leave the file alone. The user has selected this passage ..." and ends at
+    `── end selected passage ──` + a blank line, the plain variant ends at the
+    closing sentence + a blank line. Deciding first matters, because either
+    tail literal can legitimately occur inside the other variant's selection
+    block or inside the user's own text: trying both in turn would cut a
+    selection-wrapped message at the wrong place. Non-string input and
+    unwrapped text pass through."""
     if not isinstance(text, str) or not text.startswith(_WRAP_PREFIX):
         return text
-    _, sep, rest = text.partition(_WRAP_TAIL)
-    if sep:
-        return rest
-    _, sep, rest = text.partition(_WRAP_SELECTION_TAIL)
-    return rest if sep else text
+    # The note's closing sentence: its first occurrence is the note's own,
+    # since everything before it in the note is fixed except the title and the
+    # vault path.
+    i = text.find(_WRAP_SENTENCE)
+    if i < 0:
+        return text
+    tail = (_WRAP_SELECTION_TAIL if text.startswith(_WRAP_SELECTION_MARK, i)
+            else _WRAP_TAIL)
+    j = text.find(tail, i)
+    return text[j + len(tail):] if j >= 0 else text
 
 
 def post_turn_payload(doc: dict) -> dict | None:

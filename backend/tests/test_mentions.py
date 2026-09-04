@@ -138,6 +138,21 @@ def test_context_block_heading_anchors_for_documents(vault_docs):
     # Notes are never heading-annotated (only documents, per spec 4.1).
 
 
+def test_heading_anchors_skip_fenced_code_blocks(vault_docs):
+    """A `#` line inside a fenced block is a shell comment or a CSS id, not a
+    section, so it must not collect a citation anchor."""
+    body = ("# Guide\n\n```sh\n# install the thing\nmake install\n```\n\n"
+            "## Setup\n\n~~~\n### not a heading\n~~~\n")
+    vault_docs(id="d1", title="Guide", current_content=body)
+    block = mentions.context_block(
+        mentions.resolve([mentions.Mention("doc", "d1", "x", (0, 0))]))
+    assert "# Guide [Guide › Guide]" in block
+    assert "## Setup [Guide › Setup]" in block
+    assert "# install the thing\n" in block
+    assert "[Guide › install the thing]" not in block
+    assert "[Guide › not a heading]" not in block
+
+
 def test_context_block_total_cap_truncates_later_items(vault_notes):
     """A 2-item version of this scenario can never exercise context_block's
     OWN total-cap logic: resolve()'s per-item 100 KB cap already clips any

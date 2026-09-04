@@ -95,3 +95,22 @@ def test_fetch_failure_does_not_wipe_index(search_env, monkeypatch):
     r = asyncio.run(chat_search.reindex())
     assert r["sessions_indexed"] == 0
     assert chat_search.stats()["chunks"] == 2   # survived — NOT wiped
+
+
+def test_extract_chunks_indexes_the_users_text_not_the_injected_block():
+    """A mention turn stores the note body plus the user's line. Indexing that
+    raw would push the real question past the 1200-char cap and surface note
+    bodies as chat snippets, so _extract_chunks runs the same display strip
+    chain /api/history renders with."""
+    from backend import mentions
+
+    question = "what did I put on the list, and why that order?"
+    block = mentions.context_block([
+        mentions.ResolvedMention(kind="note", id="n1", title="Groceries",
+                                 body="Milk, eggs, and a long private body.\n",
+                                 truncated=False, missing=False),
+    ])
+    stored = block + mentions._CTX_MARKER + question
+    chunks = chat_search._extract_chunks(
+        _session(), [{"role": "user", "content": stored}])
+    assert [c["text"] for c in chunks] == [question]

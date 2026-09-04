@@ -51,6 +51,23 @@ def wrap_message(message: str, doc: dict) -> str:
     return note + message
 
 
+_WRAP_PREFIX = '[draft mode] We are co-drafting the document "'
+_WRAP_TAIL = "leave the file alone.\n\n"
+
+
+def strip_wrapper(text):
+    """Display-side inverse of wrap_message, for /api/history.
+
+    Anchored at the start of the string, the only position wrap_message can
+    put the note in, and it partitions on the note's fixed closing sentence
+    so a message that merely quotes the wrapper somewhere in its middle is
+    never touched. Non-string input and unwrapped text pass through."""
+    if not isinstance(text, str) or not text.startswith(_WRAP_PREFIX):
+        return text
+    _, sep, rest = text.partition(_WRAP_TAIL)
+    return rest if sep else text
+
+
 def post_turn_payload(doc: dict) -> dict | None:
     """Detect agent edits after a doc-bound turn → the `doc_update` SSE payload.
 

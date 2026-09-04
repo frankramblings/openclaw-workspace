@@ -30,7 +30,7 @@ from pathlib import Path
 import httpx
 import numpy as np
 
-from . import bridge, config, sessions_store
+from . import bridge, config, history_display, sessions_store
 
 log = logging.getLogger("workspace.chat_search")
 
@@ -146,6 +146,12 @@ def _extract_chunks(session: dict, history: list[dict]) -> list[dict]:
         if role not in ("user", "assistant"):
             continue
         content = m.get("content") or ""
+        # Index what the user actually typed, not the injected context blocks
+        # a turn may have been wrapped in (mentions, websearch, draft mode,
+        # branch preamble, terminal notes): the same strip chain /api/history
+        # renders with, so a note body can never surface as a chat snippet and
+        # the real question is never pushed past the truncation cap.
+        content = history_display.history_display_text(content)
         if not isinstance(content, str) or len(content.strip()) < _MIN_CONTENT_LEN:
             continue
         ts = (m.get("metadata") or {}).get("timestamp")

@@ -60,6 +60,10 @@ _BLOCK_INTRO = ("The user referenced the following notes and documents. "
                 "Cite them as [Title] when you use them.\n\n")
 _CTX_MARKER = "\n\n---\n\nUser message (mentions resolved above): "
 _KIND_LABEL = {"note": "Note", "doc": "Document"}
+_BRANCH_PREAMBLE_PREFIX = (
+    "For context, this conversation was branched from an earlier thread.")
+_BRANCH_USER_LEAD = "\n\nFrank: "
+_FENCE_RE = re.compile(r"^\s*(```|~~~)", re.MULTILINE)
 _HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*)$", re.MULTILINE)
 
 
@@ -147,11 +151,29 @@ def _annotate_headings(body: str, title: str) -> str:
     document body, so Gary's citation instruction (context_block's intro)
     can point at a specific section: 'Cite them as [Title] ...' for a whole
     document, or '[Title › Heading]' for a section (spec 4.1). Notes are
-    never annotated (no heading concept for a note body)."""
-    def repl(mo: re.Match) -> str:
-        hashes, text = mo.group(1), mo.group(2).strip()
-        return f"{hashes} {text} [{title} › {text}]"
-    return _HEADING_RE.sub(repl, body)
+    never annotated (no heading concept for a note body).
+
+    Lines inside fenced code blocks (``` or ~~~) are left alone: a `#` there
+    is a shell comment or a CSS id, not a section the model should cite."""
+    out = []
+    fence = None
+    for line in body.split("\n"):
+        mo = _FENCE_RE.match(line)
+        if mo:
+            marker = mo.group(1)
+            if fence is None:
+                fence = marker
+            elif marker == fence:
+                fence = None
+            out.append(line)
+            continue
+        if fence is None:
+            hm = _HEADING_RE.match(line)
+            if hm:
+                hashes, text = hm.group(1), hm.group(2).strip()
+                line = f"{hashes} {text} [{title} › {text}]"
+        out.append(line)
+    return "\n".join(out)
 
 
 def context_block(resolved: list[ResolvedMention]) -> str:
@@ -214,7 +236,14 @@ def strip_context_block(text):
         the mentions block out of exactly that position, leaving
         websearch's prefix and marker in place so websearch.strip_context_block
         still works on the result afterwards, in either call order.
-    (c) Anything else, including non-string input and a message that merely
+    (c) `text` starts with the branch-context preamble
+        (app._compose_outgoing_for_session's one-shot "For context, this
+        conversation was branched..." block, which ends with "\n\nFrank: "
+        before the user's text). The mentions block can then only
+        legitimately start right after that "Frank: " lead; splice it out of
+        exactly that position, leaving the preamble and the lead in place
+        (the preamble itself is shown today by design).
+    (d) Anything else, including non-string input and a message that merely
         contains the wrapper text somewhere in the middle, passes through
         untouched."""
     if not isinstance(text, str):
@@ -223,6 +252,13 @@ def strip_context_block(text):
     if text.startswith(_BLOCK_INTRO):
         _, sep, rest = text.partition(_CTX_MARKER)
         return rest if sep else text
+
+    if text.startswith(_BRANCH_PREAMBLE_PREFIX):
+        before, sep, after = text.partition(_BRANCH_USER_LEAD + _BLOCK_INTRO)
+        if sep:
+            _, sep2, rest = after.partition(_CTX_MARKER)
+            if sep2:
+                return before + _BRANCH_USER_LEAD + rest
 
     if text.startswith(websearch._CTX_PREFIX):
         before, sep, after = text.partition(websearch._CTX_MARKER)

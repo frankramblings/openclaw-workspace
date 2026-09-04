@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, changes, chat_search, chat_turn, config,
-               config_check, doctor, draft_mode, event_store, followup, mentions,
+               config_check, doctor, draft_mode, event_store, followup, history_display, mentions,
                monitor, pending_tokens, promise_guard, push, sessions_store, steer,
                syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
@@ -569,7 +569,14 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     # matching the existing GET /api/document/{id} route's own unthreaded
     # read): never awaits, never blocks the event loop for long enough to
     # matter at this scale.
-    message, _had_mentions = mentions.prepend_mentions(message)
+    # What the user actually typed (plus any inlined text attachments, which
+    # /api/history displays unstripped): the value that must drive anything
+    # user-facing, since the injected context blocks below are stripped back
+    # out for display. Attachment rehydration matches on the stored text and
+    # titles are cut from the first line, so both use this, not the wrapped
+    # message the brain sees.
+    display_text = message
+    message, _ = mentions.prepend_mentions(message)
     # Scrub credential-shaped strings before persisting to disk. The model
     # still receives the original `message` for this turn so Gary can act on
     # a pasted credential; a system note is injected to suggest a better path.
@@ -580,7 +587,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     # Persist the image refs (keyed by the SPA session id) so they survive a
     # reload — the gateway transcript only keeps the user's text.
     if session and attachments:
-        _persist_msg_attachments(session, scrubbed_message, attachments)
+        _persist_msg_attachments(session, _scrub_secrets(display_text)[0], attachments)
 
     # Draft mode: chat.js posts active_doc_id whenever the document panel is
     # open (auto-saving the doc first). Snapshot now (the user's undo), wrap
@@ -589,10 +596,10 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
 
     title_task = None
     if rec and message.strip() and _needs_title(rec):
-        snippet = _first_chars_title(message)
+        snippet = _first_chars_title(display_text)
         if snippet:  # instant fallback so the title is never the timestamp
             sessions_store.update(rec["id"], name=snippet)
-        title_task = asyncio.create_task(_generate_ai_title(message))
+        title_task = asyncio.create_task(_generate_ai_title(display_text))
 
     # The turn's source of truth (web search → gateway relay → late reply →
     # metrics → draft doc_update → DONE) lives in chat_turn.drive_turn. Pass the
@@ -821,17 +828,11 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
     # user's text) in the transcript; show only what the user typed.
     for m in data.get("history", []):
         if m.get("role") == "user":
-            # Real nesting order (outermost to innermost), per drive_turn
-            # (chat_turn.py): the terminal-control note is prepended LAST,
-            # outside everything else, then websearch's block wraps the
-            # (possibly mentions-wrapped) message, then mentions' own block
-            # sits innermost, around the user's typed text. Every strip here
-            # is anchored at the start of what's left, so they must run in
-            # that same outer-to-inner order or an earlier layer blocks a
-            # later one from ever matching.
-            content = terminals.strip_capability_note(m.get("content"))
-            content = websearch.strip_context_block(content)
-            content = mentions.strip_context_block(content)
+            # One shared strip chain (backend/history_display.py) covering
+            # every injected wrap layer in drive_turn's real outer-to-inner
+            # order; chat_search._extract_chunks calls the same helper so the
+            # displayed text and the indexed text can never drift apart.
+            content = history_display.history_display_text(m.get("content"))
             # A followup seed or an injected continuation seed is machinery, not
             # something Frank typed — show the compact ⚙️ card line instead
             # (frontend styles any ⚙️-prefixed user message as a system pill).

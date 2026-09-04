@@ -1,8 +1,8 @@
-"""/api/history strips the mentions context block so the user sees their
-own typed text, extending the existing websearch strip chain (app.py's
-history handler chains terminals.strip_capability_note, then
-websearch.strip_context_block, then mentions.strip_context_block, outer to
-inner, matching drive_turn's real nesting order in chat_turn.py)."""
+"""/api/history strips the mentions context block so the user sees their own
+typed text. The handler delegates to history_display.history_display_text,
+which runs the whole chain in drive_turn's real outer-to-inner nesting order
+(chat_turn.py): terminal notes, the draft-mode wrapper, the websearch block,
+the fork preamble anchor, then the mentions block innermost."""
 from fastapi.testclient import TestClient
 
 from backend import app as app_module
@@ -70,3 +70,58 @@ def test_history_strips_terminal_note_then_websearch_then_mentions(monkeypatch):
     hist = client.get("/api/history/abc123def456").json()["history"]
     assert hist[0]["content"] == original
     assert hist[1]["content"] == "Milk and eggs."
+
+
+def test_history_strips_draft_mode_wrapper_then_mentions(monkeypatch, vault_docs):
+    """Draft-mode turns wrap the (already mentions-wrapped) message in the
+    co-drafting note, OUTSIDE websearch's block (chat_turn.py runs the draft
+    wrap after the websearch wrap). Its start anchor otherwise blocks both the
+    websearch and the mentions strip from ever matching, and the note bodies
+    would be displayed verbatim."""
+    from backend import draft_mode
+
+    doc = vault_docs()
+    rec = {"id": "abc123def456", "sessionKey": "k", "model": "openclaw"}
+    monkeypatch.setattr(sessions_store, "get",
+                        lambda sid: rec if sid == rec["id"] else None)
+
+    original = "tighten the intro @[Groceries](note:n1)"
+    block = mentions.context_block([
+        mentions.ResolvedMention(kind="note", id="n1", title="Groceries",
+                                 body="Milk, eggs.\n", truncated=False, missing=False),
+    ])
+    stored = draft_mode.wrap_message(block + mentions._CTX_MARKER + original, doc)
+
+    async def fake_hist(session_key, limit=200, strict=False):
+        return {"history": [{"role": "user", "content": stored}], "model": None}
+
+    monkeypatch.setattr(bridge, "fetch_history", fake_hist)
+    client = TestClient(app_module.app)
+    hist = client.get("/api/history/abc123def456").json()["history"]
+    assert hist[0]["content"] == original
+
+
+def test_history_strips_mentions_after_a_fork_preamble(monkeypatch):
+    """First send after a fork: the one-shot preamble is spliced in around the
+    mentions-wrapped text, so the mentions block sits after the "Frank: " lead
+    and never at position 0. The preamble itself stays visible by design."""
+    rec = {"id": "abc123def456", "sessionKey": "k", "model": "openclaw"}
+    monkeypatch.setattr(sessions_store, "get",
+                        lambda sid: rec if sid == rec["id"] else None)
+
+    original = "what's on my list? @[Groceries](note:n1)"
+    block = mentions.context_block([
+        mentions.ResolvedMention(kind="note", id="n1", title="Groceries",
+                                 body="Milk, eggs.\n", truncated=False, missing=False),
+    ])
+    preamble = app_module._build_preamble([{"role": "user", "text": "earlier"}])
+    stored = f"{preamble}\n\nFrank: {block}{mentions._CTX_MARKER}{original}"
+
+    async def fake_hist(session_key, limit=200, strict=False):
+        return {"history": [{"role": "user", "content": stored}], "model": None}
+
+    monkeypatch.setattr(bridge, "fetch_history", fake_hist)
+    client = TestClient(app_module.app)
+    hist = client.get("/api/history/abc123def456").json()["history"]
+    assert hist[0]["content"] == f"{preamble}\n\nFrank: {original}"
+    assert "Milk, eggs." not in hist[0]["content"]

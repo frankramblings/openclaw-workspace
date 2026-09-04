@@ -45,10 +45,34 @@ _BLOCKED_HOSTNAMES = {"localhost"}
 # real IPv4 addresses. A real DNS hostname is never purely digits and dots
 # together with no letters anywhere, so rejecting this shape outright is safe.
 _NUMERIC_HOST_RE = re.compile(r"^[0-9]+(\.[0-9]+)*$")
+# The character set a real hostname/dotted-IPv4 (letters, digits, hyphen,
+# dot) or an IPv6 literal (hex digits, colon, dot for the IPv4-mapped
+# form) can legally contain. Anything else -- a NUL byte, an embedded
+# space, control characters -- is rejected up front as bad_url instead of
+# being handed to a DNS resolver or a socket call downstream.
+_HOSTNAME_CHARS_RE = re.compile(r"^[a-z0-9.\-]+$")
+_IPV6_LITERAL_CHARS_RE = re.compile(r"^[0-9a-f:.]+$")
+# RFC 6598 shared address space (carrier-grade NAT). ipaddress reports this
+# range as neither private nor reserved, so it needs its own membership
+# check rather than falling out of the is_private/is_reserved properties
+# _is_blocked_ip otherwise relies on.
+_SHARED_ADDRESS_SPACE = ipaddress.ip_network("100.64.0.0/10")
 
 
 def _looks_like_numeric_ip_obfuscation(host: str) -> bool:
     return host.startswith("0x") or bool(_NUMERIC_HOST_RE.match(host))
+
+
+def _host_has_valid_charset(host: str) -> bool:
+    """True if `host` (already lowercased) is built only from characters a
+    real hostname or IP literal can contain. A colon only ever appears in
+    an IPv6 literal (urlsplit already rejects a syntactically-broken
+    bracket form before this runs, so a colon here means the bracket
+    contents were at least well-formed IPv6 syntax); anything else must be
+    a DNS name or dotted IPv4, which never contains a colon."""
+    if ":" in host:
+        return bool(_IPV6_LITERAL_CHARS_RE.match(host))
+    return bool(_HOSTNAME_CHARS_RE.match(host))
 
 
 class BlockedUrl(Exception):
@@ -75,11 +99,14 @@ def _literal_ip(host: str):
 
 def _is_blocked_ip(ip) -> bool:
     """True for loopback/RFC1918/link-local/multicast/reserved/unspecified,
-    their IPv6 equivalents, and an IPv4-mapped IPv6 address whose embedded
-    IPv4 is any of the above (::ffff:127.0.0.1 must not slip past the guard
-    just because the outer address is technically IPv6)."""
+    RFC 6598 shared (CGNAT) address space, their IPv6 equivalents, and an
+    IPv4-mapped IPv6 address whose embedded IPv4 is any of the above
+    (::ffff:127.0.0.1 must not slip past the guard just because the outer
+    address is technically IPv6)."""
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
+    if isinstance(ip, ipaddress.IPv4Address) and ip in _SHARED_ADDRESS_SPACE:
+        return True
     return bool(
         ip.is_loopback or ip.is_private or ip.is_link_local
         or ip.is_multicast or ip.is_reserved or ip.is_unspecified
@@ -89,13 +116,19 @@ def _is_blocked_ip(ip) -> bool:
 
 def check_url(url: str) -> str:
     """Validate `url`'s scheme, credentials, and hostname shape; return it
-    normalized (scheme + host lowercased, default port stripped, empty path
-    becomes "/", fragment dropped: fragments never reach the server and a
-    stable normalized form is what backend/clip.py keys re-clip matching
-    on). Raises BlockedUrl(reason='bad_url') for a non-http(s) scheme,
-    embedded credentials, or an unparseable/hostless URL; BlockedUrl(
-    reason='blocked_host') for localhost, a `.local`/`.internal`/`.lan`
-    suffix, or an IP-literal host in a blocked range."""
+    normalized (scheme + host lowercased, a trailing root-label dot
+    stripped, default port stripped, empty path becomes "/", fragment
+    dropped: fragments never reach the server and a stable normalized form
+    is what backend/clip.py keys re-clip matching on). Raises BlockedUrl(
+    reason='bad_url') for a non-http(s) scheme, embedded credentials, an
+    unparseable/hostless URL, or a host containing a character outside the
+    hostname alphabet; BlockedUrl(reason='blocked_host') for localhost, a
+    `.local`/`.internal`/`.lan` suffix, or an IP-literal host in a blocked
+    range. The root-label dot ("example.com." is the same host as
+    "example.com") is stripped before every one of those checks runs, not
+    just before the range check, since it defeats an exact-match hostname
+    comparison ("localhost." != "localhost") just as easily as it defeats
+    the numeric-obfuscation and IP-literal checks."""
     if not isinstance(url, str) or not url.strip():
         raise BlockedUrl("bad_url", "empty URL")
     raw = url.strip()
@@ -112,6 +145,12 @@ def check_url(url: str) -> str:
     if not host:
         raise BlockedUrl("bad_url", "URL has no host")
     host = host.lower()
+    if host.endswith("."):
+        host = host[:-1]
+    if not host:
+        raise BlockedUrl("bad_url", "URL has no host")
+    if not _host_has_valid_charset(host):
+        raise BlockedUrl("bad_url", f"host {host!r} contains characters outside the hostname alphabet")
     if host in _BLOCKED_HOSTNAMES or host.endswith(_BLOCKED_SUFFIXES):
         raise BlockedUrl("blocked_host", f"{host} is not a fetchable host")
     literal = _literal_ip(host)
@@ -140,14 +179,16 @@ def resolve_and_check(host: str, *, resolver=None) -> list[str]:
     resolver(host, port) -> list of getaddrinfo-shaped tuples, so no real
     DNS lookup happens under test. Raises BlockedUrl(reason='blocked_host')
     if any address is blocked, or (reason='dns_failed') if resolution
-    itself raises OSError."""
+    itself raises -- any Exception, not just the OSError a real
+    socket.getaddrinfo raises, since an injected/custom resolver can fail
+    in other ways and this must fail closed regardless."""
     getaddrinfo = resolver or socket.getaddrinfo
     literal = _literal_ip(host)
     if literal is not None:
         return [str(literal)]
     try:
         infos = getaddrinfo(host, None)
-    except OSError as exc:
+    except Exception as exc:
         raise BlockedUrl("dns_failed", f"could not resolve {host}: {exc}") from exc
     addrs = sorted({info[4][0] for info in infos})
     if not addrs:

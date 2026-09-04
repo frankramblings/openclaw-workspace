@@ -16,6 +16,7 @@ from backend import clip_guard as cg
     ("http://example.com:80/x", "http://example.com/x"),
     ("https://example.com", "https://example.com/"),
     ("https://93.184.216.34/x", "https://93.184.216.34/x"),
+    ("http://example.com./x", "http://example.com/x"),  # trailing root-label dot stripped
 ])
 def test_check_url_accepts_and_normalizes(url, normalized):
     assert cg.check_url(url) == normalized
@@ -34,12 +35,22 @@ def test_check_url_accepts_and_normalizes(url, normalized):
     ("http://127.1", "numeric"),          # short dotted form == 127.0.0.1
     ("http://0x7f000001/", "numeric"),    # hex form == 127.0.0.1
     ("http://0177.0.0.1/", "numeric"),    # octal-looking dotted form == 127.0.0.1
+    ("http://exa mple.com/", "hostname alphabet"),   # embedded space
+    ("http://exa\x00mple.com/", "hostname alphabet"),  # NUL byte
+    ("http:// /", "hostname alphabet"),               # whitespace-only host
 ])
 def test_check_url_rejects_bad_url(url, fragment):
     with pytest.raises(cg.BlockedUrl) as ei:
         cg.check_url(url)
     assert ei.value.reason == "bad_url"
     assert fragment in ei.value.detail.lower()
+
+
+def test_check_url_rejects_root_dot_only_host():
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url("http://./x")
+    assert ei.value.reason == "bad_url"
+    assert "host" in ei.value.detail.lower()
 
 
 @pytest.mark.parametrize("url", [
@@ -63,11 +74,76 @@ def test_check_url_rejects_bad_url(url, fragment):
     "http://box.internal/",
     "http://home.lan/",
     "http://INTRANET.LOCAL/",
+    "http://100.64.0.1/",          # RFC 6598 shared address space (CGNAT)
+    "http://[::ffff:10.1.2.3]/",   # IPv4-mapped IPv6, non-loopback private
+    "http://240.0.0.1/",           # reserved (class E)
+    "http://[::]/",                # unspecified IPv6 address
 ])
 def test_check_url_rejects_blocked_hosts(url):
     with pytest.raises(cg.BlockedUrl) as ei:
         cg.check_url(url)
     assert ei.value.reason == "blocked_host"
+
+
+@pytest.mark.parametrize("url", [
+    "http://LOCALHOST./",
+    "http://localhost./",
+    "http://127.0.0.1./",
+    "http://10.0.0.5./",
+    "http://foo.local./",
+])
+def test_check_url_rejects_blocked_hosts_with_trailing_root_dot(url):
+    # The dotless equivalent of each of these is already in
+    # test_check_url_rejects_blocked_hosts; a trailing root-label dot must
+    # not defeat the same blocked_host checks.
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url(url)
+    assert ei.value.reason == "blocked_host"
+
+
+def test_check_url_rejects_numeric_obfuscated_host_with_trailing_root_dot():
+    # Dotless "http://0x7f000001/" is bad_url/numeric (test above); the
+    # trailing dot must not let it fall through as a plain DNS name.
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url("http://0x7f000001./")
+    assert ei.value.reason == "bad_url"
+    assert "numeric" in ei.value.detail.lower()
+
+
+@pytest.mark.parametrize("url", [
+    "http://100.63.255.255/",
+    "http://100.128.0.0/",
+])
+def test_check_url_allows_addresses_outside_shared_address_space(url):
+    assert cg.check_url(url) == url
+
+
+@pytest.mark.parametrize("url,fragment", [
+    ("http://intranet.local/", "local"),
+    ("http://box.internal/", "internal"),
+    ("http://home.lan/", "lan"),
+    ("http://localhost/", "localhost"),
+])
+def test_check_url_blocked_hostname_detail_is_case_specific(url, fragment):
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url(url)
+    assert ei.value.reason == "blocked_host"
+    assert ei.value.detail
+    assert fragment in ei.value.detail.lower()
+
+
+@pytest.mark.parametrize("url", [
+    "http://127.0.0.1/",
+    "http://10.0.0.5/",
+    "http://169.254.169.254/",
+    "http://100.64.0.1/",
+])
+def test_check_url_blocked_ip_range_detail_is_case_specific(url):
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url(url)
+    assert ei.value.reason == "blocked_host"
+    assert ei.value.detail
+    assert "range" in ei.value.detail.lower()
 
 
 def test_resolve_and_check_skips_dns_for_ip_literal_host():
@@ -111,3 +187,22 @@ def test_resolve_and_check_dns_failure_is_dns_failed():
     with pytest.raises(cg.BlockedUrl) as ei:
         cg.resolve_and_check("nonexistent.invalid", resolver=resolver)
     assert ei.value.reason == "dns_failed"
+
+
+def test_resolve_and_check_fails_closed_on_any_resolver_exception():
+    # Not every custom/injected resolver fails with OSError; whatever it
+    # raises must still fail closed as dns_failed rather than propagate
+    # and skip the range check entirely.
+    def resolver(host, port):
+        raise ValueError("resolver blew up")
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.resolve_and_check("nonexistent.invalid", resolver=resolver)
+    assert ei.value.reason == "dns_failed"
+
+
+def test_resolve_and_check_blocks_shared_address_space():
+    def resolver(host, port):
+        return [(2, 1, 6, "", ("100.64.0.1", 0))]
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.resolve_and_check("cgnat.example", resolver=resolver)
+    assert ei.value.reason == "blocked_host"

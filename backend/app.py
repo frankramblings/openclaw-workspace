@@ -25,7 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, changes, chat_search, chat_turn, config,
-               config_check, doctor, draft_mode, event_store, followup,
+               config_check, doctor, draft_mode, event_store, followup, mentions,
                monitor, pending_tokens, promise_guard, push, sessions_store, steer,
                syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
@@ -562,6 +562,14 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     text_files, skipped_files = await asyncio.to_thread(_extract_text_attachments, attachments)
     if text_files or skipped_files:
         message = _prepend_text_attachments(message, text_files, skipped_files)
+    # @mention expansion (Pillar C1): any @[Title](note|doc:id) token the
+    # composer's mention picker inserted gets its note/document body prepended
+    # as a citation-friendly context block. A no-op when there are no tokens.
+    # Runs synchronously (single small vault-file reads, at most 8 of them,
+    # matching the existing GET /api/document/{id} route's own unthreaded
+    # read): never awaits, never blocks the event loop for long enough to
+    # matter at this scale.
+    message, _had_mentions = mentions.prepend_mentions(message)
     # Scrub credential-shaped strings before persisting to disk. The model
     # still receives the original `message` for this turn so Gary can act on
     # a pasted credential; a system note is injected to suggest a better path.
@@ -814,6 +822,11 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
     for m in data.get("history", []):
         if m.get("role") == "user":
             content = websearch.strip_context_block(m.get("content"))
+            # @mention turns nest INSIDE a web-search block when both are
+            # present (mentions expand in chat_stream, before drive_turn's
+            # web-search wrap): strip websearch's outer layer first, then
+            # mentions' layer, same two-step un-nesting as any wrapped pair.
+            content = mentions.strip_context_block(content)
             content = terminals.strip_capability_note(content)
             # A followup seed or an injected continuation seed is machinery, not
             # something Frank typed — show the compact ⚙️ card line instead

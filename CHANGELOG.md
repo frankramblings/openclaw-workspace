@@ -23,6 +23,14 @@ not just the original maintainer's setup.
 - Projects: threads file themselves into projects at title time via the local title model (precision over recall); a one-time backfill seeds the starter list and files the last 90 days by title. Corrections: row kebab → Move to, drag a row onto a project header, `New project…` inline. Header reads `Project › Thread`, forks show `↳ from <parent>`. Settings → Projects lists, renames, archives, deletes, and re-runs the backfill. Mobile drawer mirrors the sections and lands on the active project.
 - Routes: `POST /api/session/{id}/close`, `POST /api/session/{id}/unfile`, `/api/projects` CRUD, `POST /api/projects/backfill`. Filing never counts as activity (`updated` untouched).
 
+### Pillar D: Agent config backend (2026-09)
+
+- MCP servers: `GET/POST /api/mcp/servers`, `DELETE /api/mcp/servers/{name}`, `POST /api/mcp/servers/{name}/enabled` now manage the gateway's own `mcp.servers` (openclaw.json) through `config.get` / `config.patch` with a base hash, an on-disk backup before every write, and a hot reload (no gateway restart). The mcporter-based routes, which read a different registry, are gone.
+- Skill proposals: `GET /api/skill-proposals` (counts, pending first), `GET /api/skill-proposals/{id}`, `POST .../apply`, `POST .../reject`; apply backs up the current SKILL.md first, only pending proposals can be applied or rejected.
+- Agent files: `GET/PUT /api/agent/files/{name}` for AGENTS.md, SOUL.md, TOOLS.md, IDENTITY.md, USER.md, HEARTBEAT.md, BOOTSTRAP.md, MEMORY.md with sha256 optimistic concurrency, a 512 KiB cap, a backup before every write, `GET .../backups` and `POST .../restore`.
+- Gateway log tail: `GET /api/logs/tail?cursor&limit&max_bytes` (secret-scrubbed twice).
+- Cross-cutting: backups and an audit log under `.data/agent-config` (0700/0600), `GET /api/agent-config/status` and `/audit`, the `agent_config` capability, and the `WORKSPACE_AGENT_CONFIG_WRITES=0` kill switch. No Settings UI yet; `scripts/livefire-agent-config.sh` exercises the routes.
+
 ### Phase 1 — Genericization (already merged to main)
 
 - All maintainer-specific identifiers removed from source and committed assets.

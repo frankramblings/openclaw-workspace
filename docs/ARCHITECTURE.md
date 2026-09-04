@@ -81,6 +81,62 @@ request from the cached blobs; revert restores the turn's before-state only if
 the file has not moved on. Roots and prune list live in `.data/changes.json`
 (Settings → Changes). It never uses git.
 
+### Agent config (2026-09)
+
+`backend/gateway_admin.py` wraps four gateway surfaces behind typed helpers,
+all built on one new bridge seam, `bridge.gateway_call_result`, which returns
+the whole `{ok, payload, error}` frame instead of raising on `ok: false` (the
+seam every agent-config test fakes with `backend/tests/fake_gateway.py`
+instead of opening a socket). `GatewayError.http_error()` maps the gateway's
+message text to one HTTP envelope, `{"ok": false, "error": <code>, "detail":
+<text>}`: unknown method to 501 `gateway_unsupported`, not found to 404
+`not_found`, a non-pending proposal to 409 `not_pending`, a quarantined
+proposal to 409 `quarantined`, a stale config hash to 409 `stale_config`, an
+unsupported or unsafe file name to 400 `bad_name`, anything else the gateway
+raised to 502 `gateway_error`, and a connection or timeout failure to 502
+`gateway_unreachable`.
+
+MCP servers are not a gateway method. `mcp.servers` is a path inside
+`openclaw.json`, read with `config.get` and written with `config.patch`
+(`backend/mcp_servers.py`), scoped to `{"mcp": {"servers": {<name>: ...}}}`
+and carrying the `baseHash` from the preceding `config.get`; a stale hash on
+either the 409/404 audit path or a live retry gets one re-read and one retry,
+each taking its own pre-write backup. A patch under `mcp.*` hot-reloads the
+gateway's MCP runtimes; it does not restart it. The old `/api/mcp/servers`
+routes in `backend/settings_status.py` shelled out to `mcporter` against
+`~/.openclaw/workspace/config/mcporter.json`, a registry the gateway never
+reads; they are gone.
+
+Every write route follows the same pipeline: kill switch
+(`agent_config_store.writes_enabled()`, env `WORKSPACE_AGENT_CONFIG_WRITES`,
+default on) then validate the request shape before any gateway call, then
+read current state from the gateway, then back up that state to disk, then
+make the gateway write, then append one audit line. `backend/agent_config_store.py`
+keeps both under `.data/agent-config`: `backups/<kind>/<key-slug>/<id>.txt`
++`.json` (content plus `{id, ts, size, sha256, kind, key, meta}`, pruned to
+the newest 20 per key) and one `audit.jsonl` (`{ts, action, target, ok,
+...fields}`, appended even on failure once state has been read). Every
+directory level under `.data/agent-config` is created 0700 and every file
+0600; `key_slug()` folds `/` to `__` and anything outside
+`[A-Za-z0-9._-]` to `_`, and maps a slug of `.` or `..` to `_` so a key never
+resolves to an existing ancestor directory. `GET /api/agent-config/status`
+and `/audit` expose the switch, the default agent id, and the recent log; the
+`agent_config` capability (`backend/capabilities.py`) reports `writes`.
+
+Agent files (`backend/agent_files.py`) route every name through the
+allowlist (`AGENTS.md, SOUL.md, TOOLS.md, IDENTITY.md, USER.md,
+HEARTBEAT.md, BOOTSTRAP.md, MEMORY.md`) before any gateway call; a catch-all
+`/api/agent/files/{name:path}` route, registered last, answers 400 `bad_name`
+for any name containing a slash on GET/PUT/POST/DELETE so a traversal-shaped
+name never reaches `agents.files.*`. `agents.files.set` is a full replace
+with no previous version kept gateway-side, so this backend snapshots the
+current content first and offers it back through `.../backups` and
+`.../restore`; a `base_sha256` mismatch on `PUT` answers 409 `stale` unless
+`force` is set.
+
+UI: none yet (planned). `scripts/livefire-agent-config.sh` exercises every
+route against a running instance.
+
 ## The frontend: vendor + overrides + bake
 
 The UI is a vanilla-JS SPA. It is assembled, not hand-edited in place:

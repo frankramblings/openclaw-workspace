@@ -821,13 +821,17 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
     # user's text) in the transcript; show only what the user typed.
     for m in data.get("history", []):
         if m.get("role") == "user":
-            content = websearch.strip_context_block(m.get("content"))
-            # @mention turns nest INSIDE a web-search block when both are
-            # present (mentions expand in chat_stream, before drive_turn's
-            # web-search wrap): strip websearch's outer layer first, then
-            # mentions' layer, same two-step un-nesting as any wrapped pair.
+            # Real nesting order (outermost to innermost), per drive_turn
+            # (chat_turn.py): the terminal-control note is prepended LAST,
+            # outside everything else, then websearch's block wraps the
+            # (possibly mentions-wrapped) message, then mentions' own block
+            # sits innermost, around the user's typed text. Every strip here
+            # is anchored at the start of what's left, so they must run in
+            # that same outer-to-inner order or an earlier layer blocks a
+            # later one from ever matching.
+            content = terminals.strip_capability_note(m.get("content"))
+            content = websearch.strip_context_block(content)
             content = mentions.strip_context_block(content)
-            content = terminals.strip_capability_note(content)
             # A followup seed or an injected continuation seed is machinery, not
             # something Frank typed — show the compact ⚙️ card line instead
             # (frontend styles any ⚙️-prefixed user message as a system pill).

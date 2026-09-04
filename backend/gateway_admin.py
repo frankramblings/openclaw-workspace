@@ -39,11 +39,19 @@ async def _call(method: str, params: dict | None = None,
     return {} if payload is None else payload
 
 
+def _as_dict(payload) -> dict:
+    """A malformed gateway payload (e.g. a stray list instead of an object)
+    becomes an empty dict, so a route calling .get() on the result never hits
+    an unhandled 500. Only used by helpers whose documented contract is a
+    dict; proposals_list's bare-list contract is handled on its own."""
+    return payload if isinstance(payload, dict) else {}
+
+
 # --- config (MCP servers) ----------------------------------------------------
 
 async def config_get() -> dict:
     """Redacted snapshot: keys include path, exists, hash, parsed, config, valid."""
-    return await _call("config.get", {})
+    return _as_dict(await _call("config.get", {}))
 
 
 async def config_patch(fragment: dict, base_hash: str, note: str = "") -> dict:
@@ -82,7 +90,7 @@ async def default_agent_id() -> str:
 
 
 async def agent_files_list(agent_id: str) -> dict:
-    return await _call("agents.files.list", {"agentId": agent_id})
+    return _as_dict(await _call("agents.files.list", {"agentId": agent_id}))
 
 
 async def agent_files_get(agent_id: str, name: str) -> dict:
@@ -105,8 +113,8 @@ async def proposals_list(agent_id: str) -> list[dict]:
 
 
 async def proposals_inspect(agent_id: str, proposal_id: str) -> dict:
-    return await _call("skills.proposals.inspect",
-                       {"agentId": agent_id, "proposalId": proposal_id})
+    return _as_dict(await _call("skills.proposals.inspect",
+                                {"agentId": agent_id, "proposalId": proposal_id}))
 
 
 def _with_reason(params: dict, reason: str | None) -> dict:
@@ -132,7 +140,7 @@ async def logs_tail(cursor: int | None, limit: int, max_bytes: int) -> dict:
     params: dict = {"limit": int(limit), "maxBytes": int(max_bytes)}
     if cursor is not None:
         params = {"cursor": int(cursor), **params}
-    return await _call("logs.tail", params, timeout=15.0)
+    return _as_dict(await _call("logs.tail", params, timeout=15.0))
 
 
 # --- HTTP mapping ------------------------------------------------------------
@@ -143,6 +151,8 @@ def http_error(exc: Exception) -> tuple[int, str, str]:
         m = exc.message.lower()
         if "unknown method" in m:
             return 501, "gateway_unsupported", exc.message
+        if "unknown agent" in m:
+            return 404, "not_found", exc.message
         if "not found" in m:
             return 404, "not_found", exc.message
         if "only pending proposals" in m:

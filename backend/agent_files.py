@@ -8,7 +8,7 @@ base_sha256 and gets 409 stale if the file moved underneath it (Gary writes
 MEMORY.md during turns)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
 
 from . import agent_config_store as store
@@ -96,7 +96,11 @@ async def _write(agent_id: str, name: str, content: str, base_sha: str | None, f
     key = f"{agent_id}/{name}"
     backup_id = None
     if not current["missing"]:
-        backup_id = store.backup("agent-file", key, current["content"], {"action": action})["id"]
+        try:
+            backup_id = store.backup("agent-file", key, current["content"], {"action": action})["id"]
+        except OSError as exc:
+            store.audit(f"agent_file.{action}", key, False, detail=f"backup failed: {exc}")
+            return gw.fail(500, "backup_failed", f"cannot back up {key}: {exc}")
     try:
         payload = await gw.agent_files_set(agent_id, name, content)
     except Exception as exc:  # noqa: BLE001
@@ -165,16 +169,20 @@ async def restore_file(name: str, agent: str | None = None, body: dict = Body(de
 
 
 @router.api_route("/api/agent/files/{name:path}", methods=["GET", "PUT", "POST", "DELETE"])
-async def bad_name_fallback(name: str):
-    """Catches a name that embeds a "/" (e.g. a decoded ../ traversal) on
-    every method this router cares about: the specific routes above only
-    match a single path segment (or one with a literal /backups or
-    /restore suffix), so a name with an internal "/" never matches any of
-    them regardless of method, and without this it would fall through to
-    app.py's generic 404 (GET) or Starlette's bare 405 (PUT/POST/DELETE)
-    instead of the allowlist's 400 bad_name envelope. Registered LAST so
-    every well-formed name on a supported method is routed to its specific
-    handler first; `or` covers the one path a *valid* name can still reach
-    this route, an unhandled method (e.g. DELETE) on an otherwise-good
-    name, where _bad_name returns None."""
-    return _bad_name(name) or gw.fail(400, "bad_name", f"file must be one of {', '.join(ALLOWED_FILES)}")
+async def bad_name_fallback(name: str, request: Request):
+    """Catches every name/method combination none of the specific routes
+    above handle. Two distinct cases reach here: (1) a name that embeds a "/"
+    (e.g. a decoded ../ traversal) or is otherwise outside the allowlist, on
+    any method -- the specific routes only match a single path segment (or
+    one with a literal /backups or /restore suffix), so such a name never
+    matches any of them regardless of method, and without this it would fall
+    through to app.py's generic 404 (GET) or Starlette's bare 405
+    (PUT/POST/DELETE) instead of the allowlist's 400 bad_name envelope; (2) a
+    valid, unslashed, allowlisted name on a method none of the specific
+    routes support (e.g. DELETE SOUL.md) -- that is a real 405, not a bad
+    name, so it gets the envelope's 405 method_not_allowed instead. Registered
+    LAST so every well-formed name on a supported method is routed to its
+    specific handler first."""
+    if (bad := _bad_name(name)) is not None:
+        return bad
+    return gw.fail(405, "method_not_allowed", f"{request.method} not supported for {name!r}")

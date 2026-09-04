@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -21,6 +22,8 @@ from pathlib import Path
 
 from . import config
 from .fsutil import atomic_write_text
+
+logger = logging.getLogger(__name__)
 
 BACKUP_KEEP_DEFAULT = 20
 AUDIT_TAIL_BYTES = 64 * 1024
@@ -38,8 +41,8 @@ def _ensure_dir(d: Path) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     try:
         os.chmod(d, 0o700)
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.warning("agent_config_store: could not chmod %s to 0700: %s", d, exc)
     return d
 
 
@@ -80,6 +83,17 @@ def _prune(d: Path, keep: int) -> None:
         for victim in (meta, meta.with_suffix(".txt")):
             try:
                 victim.unlink()
+            except OSError:
+                pass
+    # backup() writes <id>.txt then <id>.json; a crash between the two writes
+    # leaves an orphan .txt with no sibling .json, which the .json-driven
+    # pruning above never sees (list_backups/read_backup are also keyed off
+    # the .json). Sweep those orphans here too.
+    json_stems = {p.stem for p in d.glob("*.json")}
+    for txt in d.glob("*.txt"):
+        if txt.stem not in json_stems:
+            try:
+                txt.unlink()
             except OSError:
                 pass
 
@@ -133,13 +147,18 @@ def _audit_path() -> Path:
 
 def audit(action: str, target: str, ok: bool, **fields) -> dict:
     """Append one JSON line {ts, action, target, ok, ...fields}. Never raises
-    into a route: a failed audit write is logged by the caller's exception
-    handler if it happens (disk full), the gateway write already went through."""
+    into a route: a failed audit write (disk full, read-only filesystem) is
+    caught here and logged at warning; the gateway write, if any, already
+    went through, so the route must not see an exception from this call."""
     entry = {"ts": datetime.now(timezone.utc).isoformat(), "action": action,
              "target": target, "ok": bool(ok), **fields}
-    fd = os.open(_audit_path(), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    with os.fdopen(fd, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    try:
+        fd = os.open(_audit_path(), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        logger.warning("agent_config_store.audit: could not append audit line for %s %s: %s",
+                       action, target, exc)
     return entry
 
 

@@ -77,6 +77,22 @@ def test_get_missing_file_has_empty_content_sha(client, monkeypatch):
     assert f["missing"] is True and f["content"] == "" and f["sha256"] == store.sha256_text("")
 
 
+def test_list_handles_non_dict_files_payload(client, monkeypatch):
+    resp = responses()
+    resp["agents.files.list"] = ["not", "a", "dict"]
+    FakeGateway(resp).install(monkeypatch)
+    r = client.get("/api/agent/files")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["files"] == [] and body["workspace"] is None
+
+
+def test_unknown_agent_is_404(client, monkeypatch):
+    FakeGateway(responses()).error("agents.files.list", "INVALID_REQUEST", 'unknown agent id "nope"').install(monkeypatch)
+    r = client.get("/api/agent/files?agent=nope")
+    assert r.status_code == 404 and r.json()["error"] == "not_found"
+
+
 def test_name_outside_allowlist_is_400_before_gateway(client, monkeypatch):
     fake = FakeGateway(responses()).install(monkeypatch)
     for path in ("/api/agent/files/NOPE.md", "/api/agent/files/soul.md", "/api/agent/files/..%2FSOUL.md"):
@@ -143,6 +159,14 @@ def test_put_rejects_bad_content(client, monkeypatch):
     assert fake.calls == []
 
 
+def test_put_refuses_when_backup_write_fails(client, monkeypatch):
+    fake = FakeGateway(responses()).install(monkeypatch)
+    monkeypatch.setattr(store, "backup", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    r = client.put("/api/agent/files/SOUL.md", json={"content": "new content"})
+    assert r.status_code == 500 and r.json()["error"] == "backup_failed"
+    assert fake.calls_for("agents.files.set") == []
+
+
 def test_put_gateway_failure_is_audited(client, monkeypatch):
     FakeGateway(responses()).error("agents.files.set", "INVALID_REQUEST", 'unsafe workspace file "SOUL.md"').install(monkeypatch)
     r = client.put("/api/agent/files/SOUL.md", json={"content": "new"})
@@ -168,6 +192,23 @@ def test_restore_unknown_backup_is_404(client, monkeypatch):
     assert r.status_code == 404 and r.json()["error"] == "backup_not_found"
     assert client.post("/api/agent/files/SOUL.md/restore", json={}).status_code == 400
     assert fake.calls_for("agents.files.set") == []
+
+
+def test_delete_valid_name_unsupported_verb_is_405(client, monkeypatch):
+    fake = FakeGateway(responses()).install(monkeypatch)
+    r = client.delete("/api/agent/files/SOUL.md")
+    assert r.status_code == 405
+    assert r.json()["ok"] is False and r.json()["error"] == "method_not_allowed"
+    assert fake.calls == []
+
+
+def test_delete_bad_name_shaped_path_is_400(client, monkeypatch):
+    fake = FakeGateway(responses()).install(monkeypatch)
+    r = client.delete("/api/agent/files/..%2FSOUL.md")
+    assert r.status_code == 400 and r.json()["error"] == "bad_name"
+    r = client.delete("/api/agent/files/NOPE.md")
+    assert r.status_code == 400 and r.json()["error"] == "bad_name"
+    assert fake.calls == []
 
 
 def test_writes_disabled_blocks_put_and_restore(client, monkeypatch):

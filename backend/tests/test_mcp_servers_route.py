@@ -75,6 +75,14 @@ def test_list_gateway_failure_is_an_error_envelope(client, monkeypatch):
     assert r.json()["ok"] is False and r.json()["error"] == "gateway_unreachable"
 
 
+def test_list_handles_non_dict_config_get_payload(client, monkeypatch):
+    FakeGateway({"config.get": ["not", "a", "dict"]}).install(monkeypatch)
+    r = client.get("/api/mcp/servers")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["servers"] == [] and body["path"] is None and body["hash"] is None
+
+
 # --- validation (pure) ---------------------------------------------------------
 
 def test_validate_http_server_minimal_defaults_transport():
@@ -201,6 +209,14 @@ def test_add_refuses_when_backup_impossible(client, monkeypatch, tmp_path):
     install(monkeypatch, tmp_path / "missing.json")
     r = client.post("/api/mcp/servers", json={"name": "docs", "url": "https://x/"})
     assert r.status_code == 500 and r.json()["error"] == "backup_failed"
+
+
+def test_add_refuses_when_backup_write_fails(client, monkeypatch, cfg):
+    fake = install(monkeypatch, cfg)
+    monkeypatch.setattr(store, "backup", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    r = client.post("/api/mcp/servers", json={"name": "docs", "url": "https://x/"})
+    assert r.status_code == 500 and r.json()["error"] == "backup_failed"
+    assert fake.calls_for("config.patch") == []
 
 
 def test_writes_disabled_short_circuits_every_write(client, monkeypatch, cfg):

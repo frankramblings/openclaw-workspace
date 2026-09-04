@@ -86,6 +86,16 @@ def test_inspect_relays_record_content_and_support_files(client, monkeypatch, tm
     assert body["proposal"]["id"] == "p-older" and body["content"].startswith("---") and body["support_files"] == []
 
 
+def test_inspect_handles_non_dict_payload(client, monkeypatch, tmp_path):
+    _, resp = base(tmp_path)
+    resp["skills.proposals.inspect"] = ["not", "a", "dict"]
+    FakeGateway(resp).install(monkeypatch)
+    r = client.get("/api/skill-proposals/p-older")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["proposal"] == {} and body["content"] == "" and body["support_files"] == []
+
+
 def test_inspect_missing_is_404(client, monkeypatch, tmp_path):
     _, resp = base(tmp_path)
     FakeGateway(resp).error("skills.proposals.inspect", "INVALID_REQUEST", "Skill proposal not found: zz").install(monkeypatch)
@@ -108,6 +118,17 @@ def test_apply_backs_up_target_then_applies_and_audits(client, monkeypatch, tmp_
     entry = store.recent_audit()[0]
     assert entry["action"] == "proposal.apply" and entry["ok"] is True and entry["skill"] == "existing"
     assert [m for m, _ in fake.calls].count("skills.proposals.inspect") == 2
+
+
+def test_apply_backup_failure_is_500_and_audited_with_skill(client, monkeypatch, tmp_path):
+    skill_file, resp = base(tmp_path)
+    fake = FakeGateway(resp).install(monkeypatch)
+    monkeypatch.setattr(store, "backup", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    r = client.post("/api/skill-proposals/p-older/apply", json={})
+    assert r.status_code == 500 and r.json()["error"] == "backup_failed"
+    assert fake.calls_for("skills.proposals.apply") == []
+    entry = store.recent_audit()[0]
+    assert entry["action"] == "proposal.apply" and entry["ok"] is False and entry["skill"] == "existing"
 
 
 def test_apply_without_existing_target_has_no_backup(client, monkeypatch, tmp_path):
@@ -153,6 +174,15 @@ def test_reject_backs_up_record_then_rejects(client, monkeypatch, tmp_path):
     assert len(backups) == 1
     assert json.loads(store.read_backup("proposal-record", "p-older", backups[0]["id"]))["id"] == "p-older"
     assert store.recent_audit()[0]["action"] == "proposal.reject"
+
+
+def test_reject_refuses_when_backup_write_fails(client, monkeypatch, tmp_path):
+    _, resp = base(tmp_path)
+    fake = FakeGateway(resp).install(monkeypatch)
+    monkeypatch.setattr(store, "backup", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    r = client.post("/api/skill-proposals/p-older/reject", json={})
+    assert r.status_code == 500 and r.json()["error"] == "backup_failed"
+    assert fake.calls_for("skills.proposals.reject") == []
 
 
 def test_reject_non_pending_is_409(client, monkeypatch, tmp_path):

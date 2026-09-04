@@ -46,3 +46,12 @@ def test_tail_gateway_failure(client, monkeypatch):
     FakeGateway({"logs.tail": TimeoutError()}).install(monkeypatch)
     r = client.get("/api/logs/tail")
     assert r.status_code == 502 and r.json()["error"] == "gateway_unreachable"
+
+
+def test_tail_handles_non_dict_payload(client, monkeypatch):
+    FakeGateway({"logs.tail": ["not", "a", "dict"]}).install(monkeypatch)
+    r = client.get("/api/logs/tail")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["lines"] == [] and body["file"] is None
+    assert body["truncated"] is False and body["reset"] is False

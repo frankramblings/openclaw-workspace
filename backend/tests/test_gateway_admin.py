@@ -111,6 +111,7 @@ def test_default_agent_id_raises_without_agents(monkeypatch):
 
 @pytest.mark.parametrize("message,status,code", [
     ("unknown method: mcp.servers", 501, "gateway_unsupported"),
+    ('unknown agent id "nope"', 404, "not_found"),
     ("Skill proposal not found: p9", 404, "not_found"),
     ("Only pending proposals can be applied. Current status: applied.", 409, "not_pending"),
     ("Proposal scan failed; proposal was quarantined.", 409, "quarantined"),

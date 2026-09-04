@@ -208,8 +208,11 @@ async def _write(name: str, server: dict | None, action: str, must_exist: bool):
         # backup is still a truthful pre-write copy of what was on disk at that
         # moment, and the second is the truthful pre-write copy for the retried
         # attempt. Both are kept (pruned to the newest 20, same as any backup).
-        entry = store.backup("openclaw-json", "config", text,
-                             {"action": action, "name": name, "hash": snap.get("hash")})
+        try:
+            entry = store.backup("openclaw-json", "config", text,
+                                 {"action": action, "name": name, "hash": snap.get("hash")})
+        except OSError as exc:
+            raise BackupFailed(f"cannot write the pre-write backup: {exc}") from exc
         try:
             result = await gw.config_patch(mcp_patch_fragment(name, server),
                                            str(snap.get("hash") or ""),

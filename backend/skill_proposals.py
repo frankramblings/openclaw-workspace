@@ -127,7 +127,7 @@ async def apply_proposal(proposal_id: str, agent: str | None = None, body: dict 
             backup_id = store.backup("skill-target", skill_name, Path(skill_file).read_text(encoding="utf-8"),
                                      {"proposal_id": proposal_id, "path": skill_file})["id"]
         except OSError as exc:
-            store.audit("proposal.apply", proposal_id, False, detail=f"backup failed: {exc}")
+            store.audit("proposal.apply", proposal_id, False, detail=f"backup failed: {exc}", skill=skill_name)
             return gw.fail(500, "backup_failed", f"cannot back up {skill_file}: {exc}")
     try:
         await gw.proposals_apply(agent_id, proposal_id, reason)
@@ -157,8 +157,12 @@ async def reject_proposal(proposal_id: str, agent: str | None = None, body: dict
         return gw.error_response(exc)
     if err is not None:
         return err
-    backup_id = store.backup("proposal-record", proposal_id, json.dumps(record, indent=2, sort_keys=True),
-                             {"action": "reject", "reason": reason or ""})["id"]
+    try:
+        backup_id = store.backup("proposal-record", proposal_id, json.dumps(record, indent=2, sort_keys=True),
+                                 {"action": "reject", "reason": reason or ""})["id"]
+    except OSError as exc:
+        store.audit("proposal.reject", proposal_id, False, detail=f"backup failed: {exc}")
+        return gw.fail(500, "backup_failed", f"cannot back up proposal {proposal_id!r}: {exc}")
     try:
         await gw.proposals_reject(agent_id, proposal_id, reason)
     except Exception as exc:  # noqa: BLE001

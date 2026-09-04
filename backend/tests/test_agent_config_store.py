@@ -1,6 +1,7 @@
 """agent_config_store: private backups (0700/0600), pruning, the audit log and
 the writes kill switch. config.DATA_DIR is tmp_path/data via conftest."""
 import json
+import logging
 import os
 import stat
 
@@ -41,9 +42,22 @@ def test_backup_writes_private_files_and_returns_entry():
     assert config.DATA_DIR in store.base_dir().parents or store.base_dir().parent == config.DATA_DIR
 
 
+def test_ensure_dir_logs_warning_on_chmod_failure(monkeypatch, caplog, tmp_path):
+    def raise_once(path, mode):
+        raise OSError("denied")
+    monkeypatch.setattr(store.os, "chmod", raise_once)
+    with caplog.at_level(logging.WARNING):
+        d = store._ensure_dir(tmp_path / "new_dir")
+    assert d.is_dir()
+    assert any("chmod" in rec.message.lower() for rec in caplog.records)
+
+
 def test_key_slug_is_filesystem_safe():
     assert store.key_slug("main/SOUL.md") == "main__SOUL.md"
-    assert store.key_slug("../../etc/passwd") == ".._.._etc_passwd" or "/" not in store.key_slug("../../etc/passwd")
+    slug = store.key_slug("../../etc/passwd")
+    assert slug == "..__..__etc__passwd"
+    assert "/" not in slug
+    assert slug not in (".", "..")
     assert store.key_slug("a b:c") == "a_b_c"
     assert store.key_slug("") == "_"
     assert store.key_slug("..") == "_"
@@ -64,6 +78,19 @@ def test_list_backups_newest_first_and_prune_keeps_n():
     assert store.read_backup("skill-target", "x", ids[-1]) == "v4"
     with pytest.raises(FileNotFoundError):
         store.read_backup("skill-target", "x", ids[0])
+
+
+def test_backup_prunes_orphan_txt_without_sibling_json():
+    """A crash between backup()'s two writes (<id>.txt then <id>.json) can
+    leave an orphan .txt with no sibling .json; list_backups/prune are
+    .json-driven and would otherwise never remove it."""
+    store.backup("agent-file", "main/SOUL.md", "v1")
+    d = store.base_dir() / "backups" / "agent-file" / "main__SOUL.md"
+    orphan = d / "20260101T000000000000-deadbeef.txt"
+    orphan.write_text("orphan content")
+    assert orphan.exists()
+    store.backup("agent-file", "main/SOUL.md", "v2")
+    assert not orphan.exists()
 
 
 def test_read_backup_rejects_bad_ids():
@@ -103,6 +130,19 @@ def test_recent_audit_tolerates_torn_last_line_and_large_files():
     assert len(recent) == 5
     assert recent[0]["target"] == "main/F2999.md"
     assert path.stat().st_size > store.AUDIT_TAIL_BYTES
+
+
+def test_audit_never_raises_on_oserror(caplog):
+    """audit()'s target path is a directory, so os.open for append raises
+    IsADirectoryError (an OSError). audit() must swallow it, log a warning,
+    and still return the entry rather than raising into the caller."""
+    path = store._audit_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.mkdir()
+    with caplog.at_level(logging.WARNING):
+        entry = store.audit("mcp.add", "x", True, backup_id="b1")
+    assert entry["action"] == "mcp.add" and entry["target"] == "x" and entry["ok"] is True
+    assert any("audit" in rec.message.lower() for rec in caplog.records)
 
 
 def test_recent_audit_empty_without_file():

@@ -589,7 +589,7 @@ export function chatSurface(s) {
     <div class="composer${slashOpen ? ' slash' : ''}">
       ${when(s.live?.chat?.queued, `<div class="queued-msg" data-act="queueRecall" title="Click to edit"><span class="q-ico">⏳</span><span class="q-txt">Queued — sends when the reply finishes${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 90))}` : ' · (image)'}</span><button class="q-x ocbtn" data-act="queueCancel" title="Cancel">✕</button></div>`)}
       ${ghost}
-      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="Message __AGENT_NAME__…   ( type / for commands )">
+      <textarea data-model="draft" data-focus="draft" rows="1" placeholder="${s.docAiAskPlaceholder ? esc(s.docAiAskPlaceholder) : 'Message __AGENT_NAME__…   ( type / for commands )'}">
 ${esc(d)}</textarea>
       ${when(s.pendingAttach && s.pendingAttach.length, `
       <div class="attach-pending">

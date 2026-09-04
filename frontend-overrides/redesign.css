@@ -69,6 +69,21 @@ body.oc-doc-docked{padding-right:var(--doc-dock-w,0px);transition:padding-right 
 html.shell-mobile body.oc-doc-docked{padding-right:0}
 .oc-doc-grabber:hover{background:var(--teal,#4fe3d1);opacity:.35}
 
+/* Composer "Editing: <title>" pill (Pillar C2): a Library doc is attached to
+   the next send. Shape/weight mirrors .atch-chip so it reads as one system
+   with the other composer chips. */
+.oc-doc-pill{display:inline-flex;align-items:center;gap:8px;margin:8px 10px 0;padding:6px 10px;border-radius:10px;background:var(--panel2,#23262b);border:1px solid var(--bd);font-size:13px;color:var(--mut)}
+.oc-doc-pill b{color:var(--fg);font-weight:600}
+.oc-doc-pill-x{border:none;background:rgba(0,0,0,.6);color:#fff;border-radius:50%;width:17px;height:17px;font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex:none}
+.oc-doc-pill-x:hover{background:rgba(0,0,0,.8)}
+
+/* Dock AI toolbar (Summarize/Rewrite/Continue/Ask) + its mobile kebab menu.
+   Buttons carry their base look inline (document-editor.js); these add the
+   hover feedback the rest of the composer's icon buttons get from CSS. */
+.oc-ai-bar [data-act]:hover{border-color:var(--teal2);color:var(--fg)}
+.oc-ai-kebab:hover{border-color:var(--teal2);color:var(--fg)}
+.oc-ai-menu [data-act]:hover{background:var(--tealtint);color:var(--fg)}
+
 /* Files pane root picker — small popover of allowlisted roots the tree can walk.
    Anchored to the .ws-root-btn in the companion Files header. */
 .ws-root-btn{padding:0 6px;border-radius:6px}

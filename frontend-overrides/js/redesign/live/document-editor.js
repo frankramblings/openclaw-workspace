@@ -15,6 +15,7 @@ import { runtime } from './runtime.js';
 import { apiGet, apiJson } from './api.js';
 import { reload } from './index.js';
 import { openImageOverlay } from './image-viewer.js';
+import { buildSummarizePrompt, buildContinuePrompt, buildRewritePrompt, ASK_PLACEHOLDER } from '../doc-ai-prompts.js';
 
 const CSS = '/static/js/vendor/toastui/toastui-editor.min.css';
 const CSS_DARK = '/static/js/vendor/toastui/toastui-editor-dark.min.css';
@@ -47,6 +48,9 @@ let conflictBanner = null; // "This file changed on disk" banner
 let errorBanner = null;    // "Couldn't load" / "Couldn't save on close" banner
 let errorMsgEl = null;     // its message text
 let errorActionsEl = null; // its action-buttons container
+let aiBar = null;      // desktop: Summarize/Rewrite/Continue/Ask button row
+let aiKebabBtn = null; // mobile: single "✦" button that opens aiMenu
+let aiMenu = null;     // mobile: the dropdown aiKebabBtn opens
 let watchWs = null;    // shared workspace-watch WebSocket
 let watchWsReady = null; // Promise for the current connect attempt
 let watchedPath = null;  // abs path currently subscribed for the open doc
@@ -58,6 +62,41 @@ let generation = 0;    // bumped by resetBufferIdentity — invalidates in-fligh
 // 'md' | 'wysiwyg' | 'preview' — tracked separately from Toast UI internals
 let editorMode = 'md';
 const MODE_BTNS = {}; // populated in ensureEditor
+
+// data-act names double as the single source of truth for both the desktop
+// row and the mobile dropdown's markup below, and as what the toolbar's own
+// local click listeners (not app.js's data-act dispatcher, see this task's
+// header note) read to route a click.
+const AI_ACTIONS = [
+  ['docAiSummarize', 'Summarize'],
+  ['docAiRewrite', 'Rewrite'],
+  ['docAiContinue', 'Continue'],
+  ['docAiAsk', 'Ask'],
+];
+const AI_BTN_STYLE = 'height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--border,#2a2d33);background:transparent;color:var(--faint,#8a8f98);font-size:12px;font-weight:600;cursor:pointer;flex:none';
+const AI_ITEM_STYLE = 'padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--fg,#e8eaed)';
+
+// Pure, DOM-free: the desktop button row's HTML.
+export function aiToolbarHtml() {
+  return AI_ACTIONS.map(([act, label]) =>
+    `<button type="button" data-act="${act}" style="${AI_BTN_STYLE}">${label}</button>`).join('');
+}
+
+// Pure, DOM-free: the mobile kebab dropdown's HTML (same four actions).
+export function aiKebabMenuHtml() {
+  return AI_ACTIONS.map(([act, label]) =>
+    `<div data-act="${act}" style="${AI_ITEM_STYLE}">${label}</div>`).join('');
+}
+
+// Pure: what an AI action sends, given the current selection/markdown.
+// null means "nothing to send" (docAiAsk: composer-focus only; docAiRewrite
+// with nothing selected: the caller shows an alert instead).
+export function resolveAiAction(actName, selection, markdown) {
+  if (actName === 'docAiSummarize') return buildSummarizePrompt();
+  if (actName === 'docAiContinue') return buildContinuePrompt();
+  if (actName === 'docAiRewrite') return buildRewritePrompt(selection, markdown);
+  return null; // docAiAsk, or an unrecognized name
+}
 
 function injectCss(href) {
   if (document.querySelector(`link[data-tui="${href}"]`)) return;
@@ -551,6 +590,69 @@ async function ensureEditor() {
     modeSeg.appendChild(btn);
   }
 
+  // AI actions: Summarize / Rewrite / Continue / Ask (spec §2.2). Desktop
+  // shows all four next to the mode toggle; mobile collapses them into one
+  // kebab + dropdown. consumeAttachDetach() forces the send to target the
+  // open document even if the composer pill was detached (see this task's
+  // "Force-attach fix" note).
+  function runAiAction(text) {
+    if (!text || !runtime.state) return;
+    consumeAttachDetach();
+    runtime.state.draft = text;
+    runtime.state.docAiAskPlaceholder = null;
+    runtime.render();
+    if (runtime.actions && runtime.actions.send) runtime.actions.send();
+  }
+  function askAction() {
+    if (!runtime.state) return;
+    consumeAttachDetach();
+    runtime.state.draft = '';
+    runtime.state.docAiAskPlaceholder = ASK_PLACEHOLDER;
+    runtime.render();
+    setTimeout(() => {
+      const ta = document.querySelector('[data-focus="draft"], [data-focus="mdraft"]');
+      if (ta) ta.focus();
+    }, 0);
+  }
+  function dispatchAiAction(actName) {
+    if (actName === 'docAiAsk') { askAction(); return; }
+    const sel = getSelection();
+    const md = (() => { try { return editor.getMarkdown(); } catch (_) { return ''; } })();
+    const text = resolveAiAction(actName, sel, md);
+    if (actName === 'docAiRewrite' && !text) {
+      try { window.alert('Select some text in the document first.'); } catch (_) {}
+      return;
+    }
+    runAiAction(text);
+  }
+
+  aiBar = document.createElement('div');
+  aiBar.className = 'oc-ai-bar';
+  aiBar.style.cssText = 'display:flex;gap:4px;flex:none';
+  aiBar.innerHTML = aiToolbarHtml();
+  aiBar.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-act]');
+    if (t) dispatchAiAction(t.getAttribute('data-act'));
+  });
+
+  aiKebabBtn = document.createElement('button');
+  aiKebabBtn.className = 'oc-ai-kebab';
+  aiKebabBtn.textContent = '✦';
+  aiKebabBtn.title = 'AI actions';
+  aiKebabBtn.style.cssText = 'height:30px;width:30px;border-radius:8px;border:1px solid var(--border,#2a2d33);background:transparent;color:var(--faint,#8a8f98);cursor:pointer;flex:none;display:none';
+
+  aiMenu = document.createElement('div');
+  aiMenu.className = 'oc-ai-menu';
+  aiMenu.style.cssText = 'display:none;position:absolute;right:16px;top:48px;z-index:80;background:var(--panel,#1e2025);border:1px solid var(--border,#2a2d33);border-radius:10px;padding:5px;min-width:150px;box-shadow:0 10px 34px rgba(0,0,0,.45)';
+  aiMenu.innerHTML = aiKebabMenuHtml();
+  aiMenu.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-act]');
+    if (!t) return;
+    aiMenu.style.display = 'none';
+    dispatchAiAction(t.getAttribute('data-act'));
+  });
+  aiKebabBtn.onclick = () => { aiMenu.style.display = aiMenu.style.display === 'none' ? 'block' : 'none'; };
+
   saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
   saveBtn.style.cssText = 'height:30px;padding:0 14px;border-radius:8px;border:1px solid var(--border,#2a2d33);background:var(--teal,#4fe3d1);color:#06231f;font-weight:600;cursor:pointer;flex:none';
@@ -562,7 +664,7 @@ async function ensureEditor() {
   closeBtn.style.cssText = 'height:30px;width:32px;border-radius:8px;border:1px solid var(--border,#2a2d33);background:transparent;color:var(--faint,#8a8f98);cursor:pointer;flex:none';
   closeBtn.onclick = () => { if (runtime.actions && runtime.actions.closeDoc) runtime.actions.closeDoc(); };
 
-  head.append(titleEl, statusEl, flashEl, modeSeg, saveBtn, closeBtn);
+  head.append(titleEl, statusEl, flashEl, modeSeg, aiBar, aiKebabBtn, saveBtn, closeBtn);
 
   // Conflict banner: shows when the file changed on disk while we have
   // unsaved local edits. User picks: reload disk, or keep mine (force-save).
@@ -596,7 +698,7 @@ async function ensureEditor() {
   host = document.createElement('div');
   host.style.cssText = 'flex:1;min-height:0;overflow:hidden';
 
-  overlay.append(head, conflictBanner, errorBanner, host);
+  overlay.append(head, aiMenu, conflictBanner, errorBanner, host);
   document.body.appendChild(overlay);
 
   editor = new window.toastui.Editor({
@@ -721,11 +823,19 @@ function onRender() {
   overlay.style.display = isOpen ? 'flex' : 'none';
   if (isOpen) {
     applyDockWidth(readSavedWidth());
+    applyAiToolbarLayout();
     document.body.classList.add('oc-doc-docked');
   } else {
     document.body.classList.remove('oc-doc-docked');
     document.documentElement.style.setProperty('--doc-dock-w', '0px');
   }
+}
+
+function applyAiToolbarLayout() {
+  const mobile = isMobileShell();
+  if (aiBar) aiBar.style.display = mobile ? 'none' : 'flex';
+  if (aiKebabBtn) aiKebabBtn.style.display = mobile ? 'flex' : 'none';
+  if (!mobile && aiMenu) aiMenu.style.display = 'none';
 }
 
 export function initDocEditor() {

@@ -274,7 +274,7 @@ export function mChat(s) {
     ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], mAttachChip)}</div>`)}
     <div class="bar">
       <label class="m-round-btn bordered" title="Attach photo or file"><input type="file" data-upload multiple style="display:none">${I.plus(16)}</label>
-      <div class="ta-wrap">${mGhostComposer}<textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="Message __AGENT_NAME__…">
+      <div class="ta-wrap">${mGhostComposer}<textarea data-model="draft" data-focus="mdraft" rows="1" placeholder="${s.docAiAskPlaceholder ? esc(s.docAiAskPlaceholder) : 'Message __AGENT_NAME__…'}">
 ${esc(s.draft || '')}</textarea></div>
       ${(() => { const h = steerComposerHints(s); return `
       ${h.showQueueChip ? `<button class="m-queue-chip" data-act="sendQueued">Queue instead</button>` : ''}

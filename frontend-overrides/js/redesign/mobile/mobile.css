@@ -303,6 +303,14 @@ html.native .m-tabbar {
 .m-queued .m-q-x { position: relative; flex: none; width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--mut); font-size: 14px; cursor: pointer; }
 .m-queued .m-q-x::after { content: ''; position: absolute; inset: -9px; }
 
+/* Composer "Editing: <title>" pill (Pillar C2): a Library doc is attached to
+   the next send. Same shape/weight as .m-attach-row's chips so it reads as
+   part of the same composer chip system. */
+.m-doc-pill { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 6px 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--bd); font-size: 12.5px; color: var(--mut); }
+.m-doc-pill b { color: var(--fg); font-weight: 600; }
+.m-doc-pill-x { position: relative; flex: none; border: none; background: rgba(0,0,0,.6); color: #fff; border-radius: 50%; width: 17px; height: 17px; font-size: 11px; line-height: 1; cursor: pointer; }
+.m-doc-pill-x::after { content: ''; position: absolute; inset: -9px; }
+
 /* ---- chat composer -------------------------------------------------------- */
 /* position:relative so .mention-menu's `bottom:100%` (redesign.css) resolves
    against THIS box, not the ancestor `.m-app` (position:relative;

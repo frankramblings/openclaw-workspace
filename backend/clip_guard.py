@@ -57,6 +57,15 @@ _IPV6_LITERAL_CHARS_RE = re.compile(r"^[0-9a-f:.]+$")
 # check rather than falling out of the is_private/is_reserved properties
 # _is_blocked_ip otherwise relies on.
 _SHARED_ADDRESS_SPACE = ipaddress.ip_network("100.64.0.0/10")
+# Fix round 1, Critical 2: a control character (NUL, ESC, ...) or embedded
+# whitespace ANYWHERE in the URL -- not just the host, which is all
+# _HOSTNAME_CHARS_RE below covers -- used to sail straight through
+# check_url's static gate and only blow up later, inside clip_fetch.fetch's
+# httpx.URL(current) call (httpx.InvalidURL, uncaught by any handler there:
+# a bare 500). Checked up front, before urlsplit ever runs, so a URL shaped
+# like "http://example.com/a\x00b" is refused as bad_url at the cheapest
+# possible point instead of reaching a redirect hop or a real socket.
+_UNSAFE_URL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f\s]")
 
 
 def _looks_like_numeric_ip_obfuscation(host: str) -> bool:
@@ -166,11 +175,14 @@ def check_url(url: str) -> str:
     stripped, default port stripped, empty path becomes "/", fragment
     dropped: fragments never reach the server and a stable normalized form
     is what backend/clip.py keys re-clip matching on). Raises BlockedUrl(
-    reason='bad_url') for a non-http(s) scheme, embedded credentials, an
-    unparseable/hostless URL, or a host containing a character outside the
-    hostname alphabet; BlockedUrl(reason='blocked_host') for localhost, a
-    `.local`/`.internal`/`.lan` suffix, or an IP-literal host in a blocked
-    range. The root-label dot ("example.com." is the same host as
+    reason='bad_url') for a control character or embedded whitespace
+    ANYWHERE in the URL (not just the host -- httpx.URL raises its own
+    uncaught InvalidURL on a NUL/control byte in the path, so this is
+    checked before urlsplit ever runs), a non-http(s) scheme, embedded
+    credentials, an unparseable/hostless URL, or a host containing a
+    character outside the hostname alphabet; BlockedUrl(reason='blocked_host')
+    for localhost, a `.local`/`.internal`/`.lan` suffix, or an IP-literal
+    host in a blocked range. The root-label dot ("example.com." is the same host as
     "example.com") is stripped before every one of those checks runs, not
     just before the range check, since it defeats an exact-match hostname
     comparison ("localhost." != "localhost") just as easily as it defeats
@@ -181,6 +193,8 @@ def check_url(url: str) -> str:
     if not isinstance(url, str) or not url.strip():
         raise BlockedUrl("bad_url", "empty URL")
     raw = url.strip()
+    if _UNSAFE_URL_CHARS_RE.search(raw):
+        raise BlockedUrl("bad_url", "URL contains a control character or embedded whitespace")
     try:
         parts = urlsplit(raw)
     except ValueError as exc:

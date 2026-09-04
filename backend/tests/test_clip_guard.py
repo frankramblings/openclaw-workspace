@@ -35,15 +35,40 @@ def test_check_url_accepts_and_normalizes(url, normalized):
     ("http://127.1", "numeric"),          # short dotted form == 127.0.0.1
     ("http://0x7f000001/", "numeric"),    # hex form == 127.0.0.1
     ("http://0177.0.0.1/", "numeric"),    # octal-looking dotted form == 127.0.0.1
-    ("http://exa mple.com/", "hostname alphabet"),   # embedded space
-    ("http://exa\x00mple.com/", "hostname alphabet"),  # NUL byte
-    ("http:// /", "hostname alphabet"),               # whitespace-only host
+    # These three used to reach the host-charset check ("hostname alphabet")
+    # -- Fix round 1, Critical 2 now catches embedded whitespace/control
+    # chars ANYWHERE in the URL up front, before urlsplit, so they're
+    # rejected earlier with a different (but still bad_url) message.
+    ("http://exa mple.com/", "control character"),   # embedded space
+    ("http://exa\x00mple.com/", "control character"),  # NUL byte
+    ("http:// /", "control character"),               # whitespace-only host
 ])
 def test_check_url_rejects_bad_url(url, fragment):
     with pytest.raises(cg.BlockedUrl) as ei:
         cg.check_url(url)
     assert ei.value.reason == "bad_url"
     assert fragment in ei.value.detail.lower()
+
+
+@pytest.mark.parametrize("url", [
+    "http://example.com/a\x00b",       # NUL in the path
+    "http://example.com/\x01",          # a control char in the path
+    "http://example.com/a\tb",          # embedded tab in the path
+    "http://example.com/a\nb",          # embedded newline in the path
+    "http://example.com/a b",           # embedded space in the path
+    "http://example.com/x?\x1f=1",      # control char in the query
+])
+def test_check_url_rejects_control_chars_and_whitespace_anywhere_in_the_url(url):
+    """Fix round 1, Critical 2 (durable fix): a control character or
+    embedded whitespace in the URL PATH (not just the host) used to sail
+    past check_url's static gate -- only the host-charset check covered
+    that alphabet -- and then blow up uncaught inside clip_fetch.fetch's
+    httpx.URL(current) call (httpx.InvalidURL, a bare 500). Rejected here,
+    before urlsplit ever runs, regardless of where in the URL it appears."""
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url(url)
+    assert ei.value.reason == "bad_url"
+    assert "control character" in ei.value.detail.lower()
 
 
 def test_check_url_rejects_root_dot_only_host():

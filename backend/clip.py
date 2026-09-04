@@ -25,10 +25,26 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 # Open decision 12 (confirm or change these two caps).
-MAX_BYTES = config._env_int("WORKSPACE_CLIP_MAX_BYTES", 5 * 1024 * 1024)
-TIMEOUT_S = config._env_float("WORKSPACE_CLIP_TIMEOUT_S", 15.0)
+_DEFAULT_MAX_BYTES = 5 * 1024 * 1024
+_DEFAULT_TIMEOUT_S = 15.0
 
 _WS_RE = re.compile(r"\s+")
+
+
+def _caps() -> tuple[int, float]:
+    """(max_bytes, timeout_s), read fresh from the environment on every
+    call rather than cached as import-time module constants. Fix round 1:
+    the caps used to be plain module globals (MAX_BYTES/TIMEOUT_S) set once
+    at import; a test that wanted to exercise the env override had to
+    importlib.reload(clip) to re-run that assignment, which mutated this
+    module's globals for the REST of the pytest session (every later test
+    silently inherited whatever env vars the reload test happened to set).
+    Reading through config._env_int/_env_float on every call instead means
+    a test can monkeypatch os.environ per-test with zero cross-test state
+    -- monkeypatch's own teardown handles the reset, nothing here needs to
+    remember or restore anything."""
+    return (config._env_int("WORKSPACE_CLIP_MAX_BYTES", _DEFAULT_MAX_BYTES),
+            config._env_float("WORKSPACE_CLIP_TIMEOUT_S", _DEFAULT_TIMEOUT_S))
 
 
 def _err(status: int, error: str, detail: str) -> JSONResponse:
@@ -56,7 +72,18 @@ def _find_existing(source_url: str) -> dict | None:
     (clip_guard-normalized) source_url. Archived docs are excluded -- an
     archived clip of the same URL is left alone and a fresh one is
     created, matching how every other list route in documents.py treats
-    archived docs as out of the active set."""
+    archived docs as out of the active set.
+
+    Match is EXACT string equality on the normalized URL, by design: a
+    trailing-slash variant ("https://x.com/a" vs "https://x.com/a/") or a
+    "www." vs bare-host variant of the same page is a different
+    source_url and therefore creates a SECOND document rather than
+    updating the first. clip_guard.check_url normalizes scheme/host case,
+    a trailing root-label dot, and the default port, but does not
+    canonicalize path trailing slashes or strip "www." -- neither is safe
+    to assume equivalent in general (a site can serve different content at
+    the trailing-slash / www variant), so this is a conservative default,
+    not an oversight."""
     for d in documents._scan_docs():
         if d.get("source_url") == source_url and not d.get("archived"):
             return d
@@ -91,8 +118,25 @@ def _mention_safe_title(title: str) -> str:
     return t or "Untitled"
 
 
+def _h1_safe_title(title: str) -> str:
+    """`title` as it appears on the '# {title}' H1 line specifically (NOT
+    doc['title'], which is left as _clean_title produced it -- that field
+    is displayed as plain text, never rendered as markdown, so it needs no
+    escaping). Two markdown-syntax hazards a raw page title can carry that
+    the H1 LINE must neutralize: a leading '#' would compound with the
+    literal '# ' prefix into an unintended deeper heading (e.g. a title of
+    "# Breaking" would render as "## Breaking"), and an unescaped
+    '[text](...)'-shaped pair reads as a markdown link -- backslash-
+    escaping '[' and ']' (rather than replacing them, which would lose
+    the original characters) prevents that regardless of what follows."""
+    t = title
+    if t.startswith("#"):
+        t = "\\" + t
+    return t.replace("[", "\\[").replace("]", "\\]")
+
+
 def _build_body(title: str, final_url: str, clipped_date: str, markdown: str) -> str:
-    return f"# {title}\n\nSource: {final_url}\nClipped: {clipped_date}\n\n{markdown}"
+    return f"# {_h1_safe_title(title)}\n\nSource: {final_url}\nClipped: {clipped_date}\n\n{markdown}"
 
 
 @router.post("/api/clip")
@@ -101,17 +145,32 @@ async def clip_url(request: Request):
         body = await request.json()
     except Exception:  # noqa: BLE001 - malformed JSON body
         return _err(400, "bad_url", "request body must be JSON")
-    raw_url = (body or {}).get("url")
-    title_override = ((body or {}).get("title") or "").strip()
-    session_id = (body or {}).get("session_id") or ""
+    # Fix round 1, Critical 1: a JSON body that parses but isn't an object
+    # (a bare list/string/number/null) has no .get, so every read below
+    # used to raise AttributeError -- an unhandled 500. A non-string
+    # title/session_id (e.g. {"title": 123}) used to raise the same way at
+    # .strip(). All three are now explicit 400s naming the problem field,
+    # never a bare crash.
+    if not isinstance(body, dict):
+        return _err(400, "bad_request", "request body must be a JSON object")
+    raw_url = body.get("url")
+    title_raw = body.get("title")
+    if title_raw is not None and not isinstance(title_raw, str):
+        return _err(400, "bad_request", "title must be a string")
+    title_override = (title_raw or "").strip()
+    session_id_raw = body.get("session_id")
+    if session_id_raw is not None and not isinstance(session_id_raw, str):
+        return _err(400, "bad_request", "session_id must be a string")
+    session_id = session_id_raw or ""
 
     try:
         normalized = clip_guard.check_url(raw_url)
     except clip_guard.BlockedUrl as exc:
         return _blocked_url_response(exc)
 
+    max_bytes, timeout_s = _caps()
     try:
-        fetched = await clip_fetch.fetch(normalized, max_bytes=MAX_BYTES, timeout_s=TIMEOUT_S)
+        fetched = await clip_fetch.fetch(normalized, max_bytes=max_bytes, timeout_s=timeout_s)
     except clip_guard.BlockedUrl as exc:
         return _blocked_url_response(exc)
     except clip_fetch.TooLarge as exc:
@@ -120,6 +179,17 @@ async def clip_url(request: Request):
         return _err(415, "unsupported_type", str(exc))
     except clip_fetch.FetchFailed as exc:
         return _err(502, "fetch_failed", str(exc))
+    except Exception as exc:  # noqa: BLE001 - Fix round 1, Critical 2 belt-and-braces:
+        # clip_guard.check_url now rejects control chars/embedded whitespace
+        # up front (the durable fix), so httpx should never again be handed
+        # a URL shape it can't parse -- but the fetch layer talks to a real
+        # HTTP client and an unanticipated failure there must still never
+        # surface as a bare, unmapped 500. Exception TEXT is never put in
+        # the envelope (it can carry arbitrary internal detail); only the
+        # exception's type name is logged.
+        log.error("clip fetch raised an unexpected %s for %s",
+                  type(exc).__name__, normalized, exc_info=True)
+        return _err(502, "fetch_failed", "fetch failed")
 
     try:
         extracted = await asyncio.to_thread(clip_extract.extract, fetched, normalized)

@@ -3,8 +3,6 @@ create/update by source_url). clip_fetch.fetch is monkeypatched so no
 network or trafilatura dependency is exercised here -- clip_guard,
 clip_fetch, and clip_extract each have their own unit tests
 (test_clip_guard.py, test_clip_fetch.py, test_clip_extract.py)."""
-import importlib
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -201,8 +199,89 @@ def test_clip_title_whitespace_is_collapsed_and_capped(client, vault_docs, monke
 
 
 def test_env_caps_are_registered_and_configurable(monkeypatch):
+    """Fix round 1, Important 3: the caps are read fresh per call via
+    clip._caps() (config._env_int/_env_float on every invocation), not
+    cached as import-time module constants -- so this test monkeypatches
+    the env and calls _caps() directly, with no importlib.reload(clip)
+    needed and therefore no reload-mutated module state leaking into any
+    later test in the session."""
     monkeypatch.setenv("WORKSPACE_CLIP_MAX_BYTES", "1000")
     monkeypatch.setenv("WORKSPACE_CLIP_TIMEOUT_S", "3")
-    importlib.reload(clip)
-    assert clip.MAX_BYTES == 1000
-    assert clip.TIMEOUT_S == 3.0
+    max_bytes, timeout_s = clip._caps()
+    assert max_bytes == 1000
+    assert timeout_s == 3.0
+
+
+def test_caps_default_when_env_unset(monkeypatch):
+    monkeypatch.delenv("WORKSPACE_CLIP_MAX_BYTES", raising=False)
+    monkeypatch.delenv("WORKSPACE_CLIP_TIMEOUT_S", raising=False)
+    max_bytes, timeout_s = clip._caps()
+    assert max_bytes == clip._DEFAULT_MAX_BYTES
+    assert timeout_s == clip._DEFAULT_TIMEOUT_S
+
+
+def test_clip_body_must_be_a_json_object(client, vault_docs):
+    r = client.post("/api/clip", content=b"[1, 2, 3]",
+                    headers={"content-type": "application/json"})
+    assert r.status_code == 400
+    assert r.json()["error"] == "bad_request"
+
+
+def test_clip_body_string_literal_is_bad_request(client, vault_docs):
+    r = client.post("/api/clip", content=b'"just a string"',
+                    headers={"content-type": "application/json"})
+    assert r.status_code == 400
+    assert r.json()["error"] == "bad_request"
+
+
+def test_clip_non_string_title_is_bad_request(client, vault_docs, monkeypatch):
+    async def fake_fetch(*a, **kw):
+        raise AssertionError("must not fetch when the body fails validation")
+    monkeypatch.setattr(clip_fetch, "fetch", fake_fetch)
+    r = client.post("/api/clip", json={"url": "https://example.com/a", "title": 123})
+    assert r.status_code == 400
+    assert r.json()["error"] == "bad_request"
+
+
+def test_clip_non_string_session_id_is_bad_request(client, vault_docs, monkeypatch):
+    async def fake_fetch(*a, **kw):
+        raise AssertionError("must not fetch when the body fails validation")
+    monkeypatch.setattr(clip_fetch, "fetch", fake_fetch)
+    r = client.post("/api/clip", json={"url": "https://example.com/a", "session_id": ["nope"]})
+    assert r.status_code == 400
+    assert r.json()["error"] == "bad_request"
+
+
+def test_clip_unexpected_fetch_exception_maps_to_fetch_failed_not_a_bare_500(client, vault_docs, monkeypatch):
+    """Fix round 1, Critical 2 belt-and-braces: an exception type
+    clip_fetch never declares (RuntimeError here, standing in for anything
+    unanticipated) must still map to 502/fetch_failed with the fixed safe
+    message, never an unmapped 500 and never the raw exception text."""
+    async def fake_fetch(*a, **kw):
+        raise RuntimeError("boom: internal detail that must not leak")
+    monkeypatch.setattr(clip_fetch, "fetch", fake_fetch)
+    r = client.post("/api/clip", json={"url": "https://example.com/a"})
+    assert r.status_code == 502
+    assert r.json()["error"] == "fetch_failed"
+    assert r.json()["detail"] == "fetch failed"
+    assert "boom" not in r.json()["detail"]
+
+
+def test_clip_h1_neutralizes_leading_hash_and_brackets(client, vault_docs, monkeypatch):
+    """Minor fold-in: a page title shaped like markdown syntax (leading
+    '#', a '[...]' pair) must not corrupt the '# {title}' H1 line when the
+    body is rendered as markdown. doc['title'] itself is a plain-text
+    field (never rendered as markdown) and is left unescaped."""
+    messy_title = "#1 [Best] Deals"
+    body_html = (f"<html><head><title>{messy_title}</title></head>"
+                "<body><p>Hello world, this is the article body text.</p></body></html>").encode()
+
+    async def fake_fetch(url, *, max_bytes, timeout_s, resolver=None):
+        return Fetched(final_url=url, content_type="text/html", body=body_html, redirects=[])
+    monkeypatch.setattr(clip_fetch, "fetch", fake_fetch)
+    r = client.post("/api/clip", json={"url": "https://example.com/hashtitle"})
+    assert r.status_code == 200, r.text
+    doc = r.json()["document"]
+    assert doc["title"] == "#1 [Best] Deals"
+    h1_line = doc["current_content"].splitlines()[0]
+    assert h1_line == "# \\#1 \\[Best\\] Deals"

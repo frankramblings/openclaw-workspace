@@ -178,9 +178,15 @@ own intro text at the two positions it can structurally occupy (the very
 start of the string, or immediately after websearch's own prefix and
 marker), never at an arbitrary position, so a message that merely quotes
 the wrapper text is never mistaken for a real wrap. `GET
-/api/history/{id}` runs the display-side strip chain outer-to-inner,
-matching `chat_turn.py`'s real nesting order: the terminal-control note
-first (`terminals.strip_capability_note`), then websearch, then mentions.
+/api/history/{id}` and the chat search indexer
+(`chat_search._extract_chunks`) both call one helper,
+`history_display.history_display_text`, which runs the display-side strip
+chain outer-to-inner in `chat_turn.py`'s real nesting order: the terminal
+notes first (`terminals.strip_capability_note`), then the draft-mode
+wrapper (`draft_mode.strip_wrapper`), then websearch, then mentions, whose
+third anchor case handles a block sitting after a fork-context preamble's
+`Frank: ` lead. Sharing the helper is what keeps the displayed text and the
+indexed text from drifting apart.
 
 Wired into `chat_stream` right after `_prepend_text_attachments` and before
 `_scrub_secrets`; the steer route (`POST /api/chat/steer/{id}`) does not
@@ -190,9 +196,9 @@ expand mentions. The picker's data comes from `GET
 and no caching layer). Document Q&A v1 is not a separate mechanism: it is
 a mention plus a question, grounded on the whole body of each mentioned
 note or document (capped, like every text injection here, at 100 KB per
-item and 200 KB per turn) with `[Title › Heading]` anchors prefixed onto
-every heading line of a mentioned document's body so Gary can cite a
-specific section. A resolve failure (missing id, unreadable vault file)
+item and 200 KB per turn) with a `[Title › Heading]` anchor appended to
+every heading line of a mentioned document's body (lines inside fenced code
+blocks are skipped) so Gary can cite a specific section. A resolve failure (missing id, unreadable vault file)
 never breaks the turn: the item renders as `── Note: Title (not found)
 ──` in the context block instead.
 
@@ -214,7 +220,14 @@ click closes the picker unless it lands inside `.mention-menu` itself or on
 the exact textarea the token opened on, so a click anywhere else, including
 another control inside the same composer, closes it. A failed
 `/api/palette` fetch renders "Could not search notes" rather than the
-empty-results copy.
+empty-results copy. A commit writes the composer state field the textarea
+binds through `data-model` (the mobile textarea is focus-keyed `mdraft` but
+model-bound to `draft`, which is what send reads), and a picker whose menu
+was detached by a background render either adopts the live token again or
+swallows one Enter, so a stale picker never becomes a send. In a sent
+message the token renders as a `.mention-chip` on both surfaces
+(`mention-core.renderWithMentionChips`), and one CSS rule serves
+`.slash-menu` and `.mention-menu` so the two composer menus line up.
 
 Riding along: mobile quick-capture posted `body` on `POST /api/notes` while
 the route only ever read `content`, so a capture always saved with an
@@ -222,10 +235,11 @@ empty body. `mobile-app.js`'s `sendCapture` now posts `content`, and
 `create_note` accepts `body` as a compatibility alias when `content` is
 absent or empty (content always wins when both are present).
 
-Deploying either the backend or frontend half of this feature to the
-served app still requires `scripts/sync-frontend.sh`: `frontend-overrides/`
-edits have no effect until the build step bakes them into the gitignored
-`frontend/`.
+Deploying the frontend half of this feature to the served app requires
+`scripts/sync-frontend.sh`: `frontend-overrides/` edits have no effect
+until the build step bakes them into the gitignored `frontend/`. The
+backend half needs a service restart instead; sync-frontend only bakes the
+overlay.
 
 ## The frontend: vendor + overrides + bake
 

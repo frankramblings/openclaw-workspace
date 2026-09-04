@@ -33,10 +33,11 @@ not just the original maintainer's setup.
 
 ### Pillar C1: @mention notes/documents, doc Q&A v1 (2026-09)
 
-- Chat: type `@` at the start of the draft or right after a space to open a picker over your notes and documents (desktop and mobile composer); Enter, Tab, or a tap inserts `@[Title](note:id)` or `@[Title](doc:id)`. The mentioned note's or document's full text travels with the turn as a citation-tagged context block ("Cite them as [Title] when you use them"); documents get `[Title › Heading]` anchors on every heading line. History shows your own typed text, not the injected block.
+- Chat: type `@` at the start of the draft or right after a space to open a picker over your notes and documents (desktop and mobile composer); Enter, Tab, or a tap inserts `@[Title](note:id)` or `@[Title](doc:id)`. The mentioned note's or document's full text travels with the turn as a citation-tagged context block ("Cite them as [Title] when you use them"); documents get a `[Title › Heading]` anchor appended to every heading line (lines inside fenced code blocks are skipped). A sent mention shows as a chip in the bubble, and history shows your own typed text, not the injected block: the display strip now covers every wrap layer (terminal notes, draft mode, web search, the fork-context preamble), and chat search indexes and snippets the same stripped text, so a mentioned note body never surfaces as a chat result.
 - Document Q&A v1: mentioning one or more notes/documents plus a question is the whole mechanism, no new endpoint and no vector index. A semantic v2 (chunked retrieval over notes and documents) is described in the design spec but not planned.
 - `GET /api/palette` gained an optional `kinds=` filter (comma-separated subset of `session,note,document,email`; existing behavior unchanged when absent), the mention picker's only new backend surface (it always passes `kinds=note,document`).
 - Fixed: mobile quick-capture notes saved with an empty body, the composer posted `body` while the backend only ever read `content`. The client now posts `content` and `backend/notes.py` also accepts `body` as a compatibility alias on `POST /api/notes` for any older caller.
+- Fixed: an image sent together with a mention no longer disappears on reload, and a new thread opened with a mention is titled from your question instead of the injected block.
 - Caps: 100 KB per mentioned item, 200 KB total per turn (the existing text-attachment caps, reused), 8 distinct mentions per turn.
 
 ### Phase 1 — Genericization (already merged to main)

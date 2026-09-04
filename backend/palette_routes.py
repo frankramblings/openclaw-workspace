@@ -12,13 +12,31 @@ _log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+_VALID_KINDS = {"session", "note", "document", "email"}
+
+
+def _parse_kinds(raw: str) -> set[str] | None:
+    """Comma-separated kinds -> a validated set, or None for 'no filter'
+    (absent param, or every token unrecognized -- fail open rather than
+    return an empty result set for a typo'd kinds value)."""
+    if not raw:
+        return None
+    tokens = {t.strip() for t in raw.split(",") if t.strip()}
+    valid = tokens & _VALID_KINDS
+    return valid or None
+
+
 @router.get("/api/palette")
-async def palette_search(q: str = Query(""), limit: int = Query(20)):
+async def palette_search(q: str = Query(""), limit: int = Query(20),
+                          kinds: str = Query("")):
     """Search across sessions, notes, documents, and email.
 
     Args:
-        q: Search query (empty → recent sessions only)
+        q: Search query (empty → recent sessions only, or recent items of
+           `kinds` when given)
         limit: Max results to return (default 20)
+        kinds: optional comma-separated subset of session,note,document,email.
+            Absent or all-unrecognized -> unchanged (every kind).
 
     Returns:
         {"results": [{"kind": str, "id": str, "title": str, "snippet": str, "ts": int|null}]}
@@ -33,7 +51,7 @@ async def palette_search(q: str = Query(""), limit: int = Query(20)):
                 status_code=400
             )
 
-        results = await palette.search(q, limit=min(limit, 100))
+        results = await palette.search(q, limit=min(limit, 100), kinds=_parse_kinds(kinds))
         return {"results": results}
 
     except ValueError as e:

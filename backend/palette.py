@@ -101,12 +101,15 @@ def _rank_and_snippet(q: str, kind: str, item: dict) -> tuple[int, str] | None:
     return None
 
 
-async def search(q: str, limit: int = 20) -> list[dict]:
+async def search(q: str, limit: int = 20, kinds: set[str] | None = None) -> list[dict]:
     """Search across all sources for items matching q.
 
     Args:
-        q: Search query (whitespace/empty → recent sessions only)
+        q: Search query (whitespace/empty → recent items only)
         limit: Max results to return (default 20)
+        kinds: optional filter to a subset of {"session","note","document","email"}.
+            None (the default) means every kind -- existing behavior,
+            unchanged, including the empty-query "recent sessions" shortcut.
 
     Returns:
         List of result dicts: {kind, id, title, snippet, ts}
@@ -124,24 +127,51 @@ async def search(q: str, limit: int = 20) -> list[dict]:
     doc_items = await asyncio.to_thread(_load_docs)
     email_items = await _load_email_async()
 
-    # Empty query → recent sessions only
+    # Empty query: recent items, restricted to `kinds` when given. kinds=None
+    # keeps the original "recent sessions only" behavior exactly (the mention
+    # picker's caller always passes kinds=note,document, which never hits
+    # this branch's old session-only path).
     if not q_stripped:
-        # Sort sessions by creation time, newest first
-        session_items_sorted = sorted(
-            session_items,
-            key=lambda s: _num_ts(s.get("created", 0)),
-            reverse=True
-        )[:limit]
-        return [
-            {
-                "kind": "session",
-                "id": s["id"],
-                "title": s.get("name", ""),
-                "snippet": "",
-                "ts": _num_ts(s.get("created", 0)),
-            }
-            for s in session_items_sorted
-        ]
+        if kinds is None:
+            # Sort sessions by creation time, newest first
+            session_items_sorted = sorted(
+                session_items,
+                key=lambda s: _num_ts(s.get("created", 0)),
+                reverse=True
+            )[:limit]
+            return [
+                {
+                    "kind": "session",
+                    "id": s["id"],
+                    "title": s.get("name", ""),
+                    "snippet": "",
+                    "ts": _num_ts(s.get("created", 0)),
+                }
+                for s in session_items_sorted
+            ]
+        recent: list[dict] = []
+        if "session" in kinds:
+            recent += [
+                {"kind": "session", "id": s["id"], "title": s.get("name", ""),
+                 "snippet": "", "ts": _num_ts(s.get("created", 0))}
+                for s in session_items if s.get("id")
+            ]
+        if "note" in kinds:
+            recent += [
+                {"kind": "note", "id": n["id"], "title": n.get("title", ""),
+                 "snippet": "", "ts": _num_ts(n.get("updated", 0))}
+                for n in note_items if n.get("id") and not n.get("archived")
+            ]
+        if "document" in kinds:
+            recent += [
+                {"kind": "document", "id": d["id"], "title": d.get("title", ""),
+                 "snippet": "", "ts": _num_ts(d.get("updated_at", 0))}
+                for d in doc_items if d.get("id") and not d.get("archived")
+            ]
+        if "email" in kinds:
+            pass  # email source is always empty today (see _load_email_async)
+        recent.sort(key=lambda r: r["ts"], reverse=True)
+        return recent[:limit]
 
     # Search all sources. Each item is matched/built inside its own
     # try/except: a single malformed record (unexpected None field, missing
@@ -225,6 +255,9 @@ async def search(q: str, limit: int = 20) -> list[dict]:
 
     # Sort by rank tier, then by recency descending
     results.sort(key=lambda r: (r["_rank"], -r["_ts"]))
+
+    if kinds is not None:
+        results = [r for r in results if r["kind"] in kinds]
 
     # Remove internal sort keys and cap at limit
     for r in results:

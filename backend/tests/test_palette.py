@@ -354,6 +354,73 @@ class TestLoadSources:
             assert result == []
 
 
+class TestPaletteKindsFilter:
+    """kinds= is optional; absent -> existing behavior (all kinds,
+    including the empty-query 'recent sessions' shortcut) is UNCHANGED."""
+
+    def test_kinds_absent_is_unchanged_recent_sessions(self, client):
+        mock_sessions = [{"id": "s1", "name": "Recent", "created": 1000}]
+        with mock.patch("backend.palette._load_sessions", return_value=mock_sessions):
+            with mock.patch("backend.palette._load_notes", return_value=[]):
+                with mock.patch("backend.palette._load_docs", return_value=[]):
+                    with mock.patch("backend.palette._load_email_async", return_value=[]):
+                        response = client.get("/api/palette")
+        assert response.status_code == 200
+        results = response.json()["results"]
+        assert results and results[0]["kind"] == "session"
+
+    def test_kinds_note_document_on_empty_query_returns_recent_notes_and_docs(self, client):
+        mock_notes = [{"id": "n1", "title": "Old Note", "content": "",
+                       "updated": "2026-01-01T00:00:00+00:00", "archived": False}]
+        mock_docs = [{"id": "d1", "title": "New Doc", "current_content": "",
+                      "updated_at": "2026-06-01T00:00:00+00:00", "archived": False}]
+        with mock.patch("backend.palette._load_sessions", return_value=[]):
+            with mock.patch("backend.palette._load_notes", return_value=mock_notes):
+                with mock.patch("backend.palette._load_docs", return_value=mock_docs):
+                    with mock.patch("backend.palette._load_email_async", return_value=[]):
+                        response = client.get("/api/palette?kinds=note,document")
+        assert response.status_code == 200
+        results = response.json()["results"]
+        kinds = {r["kind"] for r in results}
+        assert kinds == {"note", "document"}
+        # most-recently-updated first
+        assert [r["id"] for r in results] == ["d1", "n1"]
+
+    def test_kinds_filters_a_non_empty_query_too(self, client):
+        mock_notes = [{"id": "n1", "title": "Python notes", "content": "",
+                       "updated": 0, "archived": False}]
+        mock_sessions = [{"id": "s1", "name": "python session", "created": 0}]
+        with mock.patch("backend.palette._load_sessions", return_value=mock_sessions):
+            with mock.patch("backend.palette._load_notes", return_value=mock_notes):
+                with mock.patch("backend.palette._load_docs", return_value=[]):
+                    with mock.patch("backend.palette._load_email_async", return_value=[]):
+                        response = client.get("/api/palette?q=python&kinds=note")
+        assert response.status_code == 200
+        results = response.json()["results"]
+        assert {r["kind"] for r in results} == {"note"}
+
+    def test_kinds_garbage_falls_back_to_no_filter(self, client):
+        mock_sessions = [{"id": "s1", "name": "Recent", "created": 1000}]
+        with mock.patch("backend.palette._load_sessions", return_value=mock_sessions):
+            with mock.patch("backend.palette._load_notes", return_value=[]):
+                with mock.patch("backend.palette._load_docs", return_value=[]):
+                    with mock.patch("backend.palette._load_email_async", return_value=[]):
+                        response = client.get("/api/palette?kinds=bogus,also-bogus")
+        assert response.status_code == 200
+        results = response.json()["results"]
+        assert results and results[0]["kind"] == "session"
+
+    def test_kinds_respects_limit(self, client):
+        mock_notes = [{"id": f"n{i}", "title": f"Note {i}", "content": "",
+                       "updated": i, "archived": False} for i in range(5)]
+        with mock.patch("backend.palette._load_sessions", return_value=[]):
+            with mock.patch("backend.palette._load_notes", return_value=mock_notes):
+                with mock.patch("backend.palette._load_docs", return_value=[]):
+                    with mock.patch("backend.palette._load_email_async", return_value=[]):
+                        response = client.get("/api/palette?kinds=note&limit=2")
+        assert len(response.json()["results"]) == 2
+
+
 def test_search_iso_string_timestamps_do_not_crash(monkeypatch):
     """Live stores mix int epochs and ISO-8601 strings; the deploy smoke
     caught a string `updated` crashing the unary-minus recency sort. Ranking

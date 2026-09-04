@@ -19,6 +19,11 @@ class CalendarError(ValueError):
     """The message is not an actionable calendar invitation."""
 
 
+class NotAnInviteError(CalendarError):
+    """No REQUEST invite in this message at all, so there is nothing to answer.
+    The route maps this to 404 while other CalendarErrors stay 400."""
+
+
 def _unfold(text: str) -> list[str]:
     """RFC 5545 line unfolding: a line beginning with space/TAB continues the
     previous one."""

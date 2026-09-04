@@ -87,7 +87,7 @@ the file has not moved on. Roots and prune list live in `.data/changes.json`
 all built on one new bridge seam, `bridge.gateway_call_result`, which returns
 the whole `{ok, payload, error}` frame instead of raising on `ok: false` (the
 seam every agent-config test fakes with `backend/tests/fake_gateway.py`
-instead of opening a socket). `GatewayError.http_error()` maps the gateway's
+instead of opening a socket). `gateway_admin.http_error(exc)` maps the gateway's
 message text to one HTTP envelope, `{"ok": false, "error": <code>, "detail":
 <text>}`: unknown method to 501 `gateway_unsupported`, not found to 404
 `not_found`, a non-pending proposal to 409 `not_pending`, a quarantined

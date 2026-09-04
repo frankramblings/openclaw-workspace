@@ -467,12 +467,17 @@ def seed_text(label: str, *, exit_code=None, duration_s=None, tail: str = "",
         "",
         "You promised to follow up on this background task in this chat when "
         "it finished. Inspect the actual result now (files, logs, artifacts — "
-        "don't trust the exit code alone), then report back to Frank: lead "
-        "with the outcome, include the link and the real numbers if it "
+        f"don't trust the exit code alone), then report back to {config.user_name()}: "
+        "lead with the outcome, include the link and the real numbers if it "
         "succeeded, and be honest about what went wrong if it failed or went "
         "silent.",
     ]
     return "\n".join(lines)
+
+
+def _followup_prompt_probe() -> str:
+    """Test seam: the prompt text for a finished task with neutral fields."""
+    return seed_text("t", exit_code=0, duration_s=1, tail="")
 
 
 def history_card(content) -> str | None:

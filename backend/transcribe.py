@@ -11,9 +11,10 @@ from . import config
 
 _log = logging.getLogger(__name__)
 
-# Local Whisper (MLX on kamino, Metal). Set GARY_STT_BASE="" to disable and force
-# the OpenAI path. Contract: POST /asr multipart audio_file -> {"text": ...}.
-_KAMINO_STT = os.environ.get("GARY_STT_BASE", "http://100.97.60.15:9000")
+# Local Whisper (MLX on the local Whisper box, Metal). Set GARY_STT_BASE="" to
+# disable and force the OpenAI path. Contract: POST /asr multipart audio_file
+# -> {"text": ...}.
+_KAMINO_STT = os.environ.get("GARY_STT_BASE", f"http://{config.local_host()}:9000")
 
 
 def _local_base() -> str:

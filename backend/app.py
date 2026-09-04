@@ -708,7 +708,7 @@ async def _compose_outgoing_for_session(session_id: str, user_text: str) -> str:
     if not ctx:
         return user_text
     preamble = ctx.get("preamble") or ""
-    return f"{preamble}\n\nFrank: {user_text}" if preamble else user_text
+    return f"{preamble}\n\n{config.user_name()}: {user_text}" if preamble else user_text
 
 
 def _build_preamble(prefix: list[dict]) -> str:
@@ -720,7 +720,7 @@ def _build_preamble(prefix: list[dict]) -> str:
         text = (m.get("text") or m.get("content") or "").strip()
         if not text:
             continue
-        who = "Frank" if role == "user" else "Gary"
+        who = config.user_name() if role == "user" else config.agent_name()
         lines.append(f"{who}: {text}")
     body = "\n".join(lines)
     return (

@@ -7,7 +7,7 @@ by Gary (via Edit/Write) or by any other process touching the file.
 
 Events on the wire (JSON):
     { "type": "file_changed",
-      "abs_path": "/home/frank/.openclaw/workspace/notes/foo.md",
+      "abs_path": "~/.openclaw/workspace/notes/foo.md",
       "path": "notes/foo.md",         # relative to workspace root, when applicable
       "mtime_ns": 1720368000123456789 }
 

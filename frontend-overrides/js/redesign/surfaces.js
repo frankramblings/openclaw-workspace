@@ -105,7 +105,7 @@ export function renderChatList(s) {
       <div style="display:flex;justify-content:flex-end;margin-top:6px"><button data-act="cycleSessionSort" title="Sort order" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer">${s.convSort === 'alpha' ? 'A–Z' : 'Recent'} ⇅</button></div>
     </div>
     <div class="conv-scroll">${convListBody(s)}</div>
-    <div class="conv-foot">${esc(s.live?.chat?.cwd ?? '/home/frank/.openclaw/workspace')}</div>
+    ${s.live?.chat?.cwd ? `<div class="conv-foot">${esc(s.live.chat.cwd)}</div>` : ''}
   </div>`;
 }
 

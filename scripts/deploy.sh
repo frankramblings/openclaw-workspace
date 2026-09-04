@@ -395,7 +395,8 @@ parity_report() {
   [[ "$f_pkgs"  == "$m_pkgs"  ]] || say parity "DIFF: missing_pkgs frank=$f_pkgs marissa=$m_pkgs"
 
   pub_sha="$($GIT rev-parse --short public 2>/dev/null || echo '-')"
-  if [[ "$m_sha" == "$pub_sha" ]]; then
+  # Short-sha length differs per repo (core.abbrev), so compare 7 chars.
+  if [[ "${m_sha:0:7}" == "${pub_sha:0:7}" ]]; then
     say parity "OK: marissa on public $pub_sha"
   else
     say parity "DIFF: marissa sha=$m_sha public=$pub_sha"

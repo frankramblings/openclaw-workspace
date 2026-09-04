@@ -498,7 +498,14 @@ html.shell-mobile .oc-toast{max-width:none}
 .slash-cmd .name{font-family:var(--mono);font-size:14px;color:var(--fg)}
 .slash-cmd .desc{font-size:13px;color:var(--faint)}
 
-.mention-menu{position:absolute;left:22px;right:22px;bottom:100%;margin-bottom:8px;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:7px;animation:cm-pop var(--dur-micro) var(--ease-decel)}
+/* z-index (Fix round 1, Critical 1 hardening): unlike desktop's .slash-menu
+   (whose only positioned neighbor is composer-wrap's own DOM-order stacking,
+   which already paints it on top), the mobile composer has several other
+   z-indexed siblings (.ghost-suggest at --z-ghost, .m-scroll-btm at
+   --z-row-raised) sharing .m-composer's new positioned box (see mobile.css)
+   -- an explicit --z-dropdown (40, same tier .m-scrim/.m-sheet use for
+   dropdown-ish overlays) keeps the picker on top regardless of DOM order. */
+.mention-menu{position:absolute;left:22px;right:22px;bottom:100%;margin-bottom:8px;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:7px;z-index:var(--z-dropdown);animation:cm-pop var(--dur-micro) var(--ease-decel)}
 .mention-empty{padding:9px 10px;font-size:13px;color:var(--faint)}
 .mention-row{display:flex;align-items:center;justify-content:space-between;gap:11px;padding:9px 10px;border-radius:9px;cursor:pointer}
 .mention-row:hover,.mention-row.sel{background:var(--row-hover)}

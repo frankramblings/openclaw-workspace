@@ -304,7 +304,14 @@ html.native .m-tabbar {
 .m-queued .m-q-x::after { content: ''; position: absolute; inset: -9px; }
 
 /* ---- chat composer -------------------------------------------------------- */
-.m-composer { flex: none; padding: 8px 12px; background: var(--bg); }
+/* position:relative so .mention-menu's `bottom:100%` (redesign.css) resolves
+   against THIS box, not the ancestor `.m-app` (position:relative;
+   overflow:hidden) -- without it the menu's positioned ancestor was .m-app,
+   so `bottom:100%` landed the menu above the entire app shell, clipped by
+   .m-app's overflow:hidden (Fix round 1, Critical 1: the picker was
+   invisible on mobile). .ta-wrap and .ghost-suggest already carry their own
+   position:relative/absolute pair, so this doesn't change their anchor. */
+.m-composer { flex: none; padding: 8px 12px; background: var(--bg); position: relative; }
 .m-composer .bar { border: 1px solid var(--bd); background: var(--panel); border-radius: 22px; display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 14px; transition: border-color var(--dur-panel) var(--ease-standard), border-radius var(--dur-panel) var(--ease-standard), padding var(--dur-panel) var(--ease-standard); }
 .m-composer.focused .bar { border-color: color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
 /* font-size must be >= 16px: iOS Safari zooms the page when focusing an input

@@ -4,11 +4,24 @@ message text.
 
 Follows the SAME message-text-prefix injection convention every other
 context source in this codebase uses (backend/websearch.py's
-context_block/strip_context_block is the closest sibling: identical
-"\n\n---\n\nUser message: " marker so /api/history can show the user's own
-text), and reuses the text-attachment size caps
-(backend/attachments.py: 100 KB per file, 200 KB per turn) rather than
-inventing new ones.
+context_block/strip_context_block is the closest sibling), and reuses the
+text-attachment size caps (backend/attachments.py: 100 KB per file, 200 KB
+per turn) rather than inventing new ones.
+
+Uses its own marker, distinct from websearch's "\n\n---\n\nUser message: ",
+because in production the two wraps NEST: prepend_mentions runs first, at
+the composer/route boundary, and chat_turn.py's websearch wrap runs later,
+around the already-mentions-wrapped text. A shared marker string would let
+websearch.strip_context_block's partition land on the outer occurrence only
+and leave the inner mentions block (including note/document bodies) sitting
+in the "stripped" history text whenever the two strips run in the wrong
+order. strip_context_block below also searches for its own intro anywhere
+in the text (not only at position 0) and splices around it, rather than
+requiring it as a strict prefix like websearch.strip_context_block does:
+this is what actually makes calling mentions.strip_context_block and
+websearch.strip_context_block in EITHER order recover the original user
+text, since the mentions block can legitimately sit in the middle of the
+fully composed string.
 
 Hooked into backend/app.py's chat_stream right after
 _prepend_text_attachments, before _scrub_secrets (see Task 2). The steer
@@ -37,7 +50,7 @@ _TOTAL_MAX_BYTES = 200 * 1024
 
 _BLOCK_INTRO = ("The user referenced the following notes and documents. "
                 "Cite them as [Title] when you use them.\n\n")
-_CTX_MARKER = "\n\n---\n\nUser message: "
+_CTX_MARKER = "\n\n---\n\nUser message (mentions resolved above): "
 _KIND_LABEL = {"note": "Note", "doc": "Document"}
 _HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*)$", re.MULTILINE)
 
@@ -91,7 +104,10 @@ def _resolve_one(m: Mention) -> tuple[str | None, str]:
         except Exception:  # noqa: BLE001 - unreadable vault file, treat as missing
             return None, m.title
         return entry.get("content") or "", entry.get("title") or m.title
-    doc = documents._load(m.id)
+    try:
+        doc = documents._load(m.id)
+    except Exception:  # noqa: BLE001 - unreadable/corrupt vault file, treat as missing
+        return None, m.title
     if doc is None:
         return None, m.title
     return doc.get("current_content") or "", doc.get("title") or m.title
@@ -169,11 +185,31 @@ def prepend_mentions(message: str) -> tuple[str, bool]:
 
 
 def strip_context_block(text):
-    """Display-side inverse of prepend_mentions, for /api/history: same
-    contract as websearch.strip_context_block (non-matching / non-string
-    input passes through untouched)."""
-    if isinstance(text, str) and text.startswith(_BLOCK_INTRO):
-        _, sep, rest = text.partition(_CTX_MARKER)
-        if sep:
-            return rest
-    return text
+    """Display-side inverse of prepend_mentions, for /api/history: non-
+    matching input, and non-string input, passes through untouched, same as
+    websearch.strip_context_block.
+
+    Unlike websearch.strip_context_block (which only matches its own intro
+    as a strict prefix), this searches for _BLOCK_INTRO ANYWHERE in `text`
+    and splices out everything from there through the following own-marker
+    occurrence, keeping whatever text came before and after intact. That is
+    required, not just a nicety: chat_turn.py's websearch wrap nests AROUND
+    an already-mentions-wrapped message, so the mentions block sits in the
+    MIDDLE of the fully composed text, not at position 0, whenever both a
+    web search and a mention happened on the same turn. Because the two
+    modules now use distinct markers (see the module docstring), searching
+    for the first (leftmost) occurrence of _BLOCK_INTRO always lands on the
+    genuine wrap rather than on anything coincidentally similar inside the
+    user's own message, so this is safe to call before OR after
+    websearch.strip_context_block: whichever one runs first strips its own
+    layer and leaves the other module's wrap, if any, untouched for the
+    second call to remove."""
+    if not isinstance(text, str):
+        return text
+    idx = text.find(_BLOCK_INTRO)
+    if idx == -1:
+        return text
+    _, sep, rest = text[idx:].partition(_CTX_MARKER)
+    if not sep:
+        return text
+    return text[:idx] + rest

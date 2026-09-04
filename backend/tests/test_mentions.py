@@ -84,6 +84,23 @@ def test_resolve_missing_note_and_doc():
     assert [r.body for r in out] == ["", ""]
 
 
+def test_resolve_doc_load_raising_is_treated_as_missing(monkeypatch):
+    """documents._load only checks p.exists() before reading; a TOCTOU
+    delete, a permission error, or a decode error on the vault file can
+    still raise. resolve() must treat that the same as "not found" (a
+    not-found line, no exception), exactly as it already does for a note
+    whose vault file fails to load."""
+    def boom(_doc_id):
+        raise OSError("disk exploded")
+    monkeypatch.setattr(mentions.documents, "_load", boom)
+    out = mentions.resolve([mentions.Mention("doc", "d1", "Ghost Doc", (0, 0))])
+    assert out[0].missing is True
+    assert out[0].title == "Ghost Doc"  # falls back to the token title
+    assert out[0].body == ""
+    block = mentions.context_block(out)
+    assert "── Document: Ghost Doc (not found) ──" in block
+
+
 def test_resolve_per_item_truncation(vault_notes):
     big = ("x" * (mentions._ITEM_MAX_BYTES + 500))
     vault_notes(note_id="n1", title="Big", body=big)
@@ -122,16 +139,32 @@ def test_context_block_heading_anchors_for_documents(vault_docs):
 
 
 def test_context_block_total_cap_truncates_later_items(vault_notes):
-    a = "a" * (mentions._TOTAL_MAX_BYTES - 100)
-    b = "b" * 5000
+    """A 2-item version of this scenario can never exercise context_block's
+    OWN total-cap logic: resolve()'s per-item 100 KB cap already clips any
+    single item over _ITEM_MAX_BYTES before context_block ever sees it, and
+    two items that both stay under that per-item cap can sum to at most
+    2 * _ITEM_MAX_BYTES == _TOTAL_MAX_BYTES exactly, never over it. So this
+    uses three items, each individually under the per-item cap (none of
+    them truncated by resolve()), where only the cumulative total at the
+    third item crosses the 200 KB total cap."""
+    a = "a" * 80000
+    b = "b" * 80000
+    c = "c" * 50000
     vault_notes(note_id="n1", title="A", body=a)
     vault_notes(note_id="n2", title="B", body=b)
+    vault_notes(note_id="n3", title="C", body=c)
     resolved = mentions.resolve([
         mentions.Mention("note", "n1", "x", (0, 0)),
         mentions.Mention("note", "n2", "x", (0, 0)),
+        mentions.Mention("note", "n3", "x", (0, 0)),
     ])
+    assert [r.truncated for r in resolved] == [False, False, False]
     block = mentions.context_block(resolved)
-    assert "── Note: B ──\n[truncated]" in block or block.count("[truncated]") >= 1
+    remaining_for_c = mentions._TOTAL_MAX_BYTES - len(a) - len(b)
+    expected_c = "── Note: C ──\n" + ("c" * remaining_for_c) + "\n[truncated]"
+    assert expected_c in block
+    assert "── Note: A ──\n" + a in block
+    assert "── Note: B ──\n" + b in block
     # total body content stays within a small constant overhead of the cap
     body_bytes = len(block.encode("utf-8"))
     assert body_bytes < mentions._TOTAL_MAX_BYTES + 2000
@@ -150,7 +183,8 @@ def test_prepend_mentions_wraps_with_marker_and_strip_round_trips(vault_notes):
     original = "what's on my list? @[Groceries](note:n1)"
     wrapped, had = mentions.prepend_mentions(original)
     assert had is True
-    assert wrapped.endswith("\n\n---\n\nUser message: " + original)
+    assert wrapped.endswith(
+        "\n\n---\n\nUser message (mentions resolved above): " + original)
     assert mentions.strip_context_block(wrapped) == original
 
 
@@ -158,3 +192,29 @@ def test_strip_context_block_passthrough_for_non_matching_and_non_string():
     assert mentions.strip_context_block("just a normal message") == "just a normal message"
     assert mentions.strip_context_block(None) is None
     assert mentions.strip_context_block([{"type": "text"}]) == [{"type": "text"}]
+
+
+def test_strip_context_block_composes_with_websearch_in_either_order(vault_notes):
+    """Production nesting: prepend_mentions wraps the raw message first, at
+    the composer/route boundary; chat_turn.py's websearch.context_block
+    wraps around that already-mentions-wrapped text later. Display code
+    (e.g. /api/history) must be able to call the two strip functions in
+    either order and still recover the exact original user text, since the
+    mentions block ends up sitting in the middle of the fully composed
+    string, not at its start."""
+    from backend import websearch
+
+    vault_notes(note_id="n1", title="Groceries", body="Milk, eggs.\n")
+    original = "what's on my list? @[Groceries](note:n1)"
+    wrapped_mentions, had = mentions.prepend_mentions(original)
+    assert had is True
+    composed = websearch.context_block(
+        wrapped_mentions,
+        [{"title": "Result", "url": "https://example.com", "snippet": "snippet text"}],
+    )
+
+    # Order 1: websearch's own wrap peeled off first, then the mentions wrap.
+    assert mentions.strip_context_block(websearch.strip_context_block(composed)) == original
+
+    # Order 2: the mentions wrap peeled off first, then websearch's own wrap.
+    assert websearch.strip_context_block(mentions.strip_context_block(composed)) == original

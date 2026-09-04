@@ -209,10 +209,12 @@ the slash menu and before the ghost-suggestion/plain-Enter fallthrough, so
 Enter/Tab/Arrow keys pick a mention instead of sending or completing a
 slash command while a mention token is open. `.m-composer` carries
 `position: relative` and `.mention-menu` a `z-index: var(--z-dropdown)` so
-the menu paints above the mobile composer's own layout; a click outside
-the menu (and outside the composer it opened on) closes it on both
-surfaces, and a failed `/api/palette` fetch renders "Could not search
-notes" rather than the empty-results copy.
+the menu paints above the mobile composer's own layout; on both surfaces a
+click closes the picker unless it lands inside `.mention-menu` itself or on
+the exact textarea the token opened on, so a click anywhere else, including
+another control inside the same composer, closes it. A failed
+`/api/palette` fetch renders "Could not search notes" rather than the
+empty-results copy.
 
 Riding along: mobile quick-capture posted `body` on `POST /api/notes` while
 the route only ever read `content`, so a capture always saved with an

@@ -118,11 +118,13 @@ export function renderChatList(s) {
 // they neither select the row nor close the menu.
 function convMenu(r, s) {
   const fav = r.important ? 'Unfavorite' : 'Favorite';
+  const unread = !!r.unread;
   const item = (act, glyph, label, extra = '') =>
     `<button class="cm-item${extra}" data-act="${act}" data-arg="${esc(r.id)}" role="menuitem"><span class="cm-ic">${glyph}</span>${label}</button>`;
   return `<div class="conv-menu" data-act="noop" role="menu">`
     + item('renameSession', I.pencil(14), 'Rename')
     + item('toggleFavorite', I.star(14, !!r.important), fav)
+    + item('toggleUnread', unread ? I.check(14) : I.dot(14), unread ? 'Mark read' : 'Mark unread')
     + item('copyTranscript', I.copy(14), 'Copy chat')
     + item('archiveSession', I.archive(14), 'Archive')
     + item('deleteSession', I.trash(14), 'Delete', ' cm-danger')

@@ -48,8 +48,16 @@ test('favorite label reflects the row state', () => {
 
 test('every menu item carries a leading glyph', () => {
   const html = renderChatList(baseState({ rowMenuOpen: 's1' }));
-  // one cm-ic span per menu item: the original 5, plus the Move to submenu's
-  // "New project…" entry (no live.projects and no folder here, so that's
-  // the only move-menu item rendered), for 6 total (Task 6).
-  assert.equal((html.match(/class="cm-ic"/g) || []).length, 6);
+  // one cm-ic span per menu item: the original 5 plus Mark unread, plus the
+  // Move to submenu's "New project…" entry (no live.projects and no folder
+  // here, so that's the only move-menu item rendered), for 7 total.
+  assert.equal((html.match(/class="cm-ic"/g) || []).length, 7);
+});
+
+test('the menu carries a Mark unread item that flips label when the row is unread', () => {
+  const read = renderChatList(baseState({ rowMenuOpen: 's1' }));
+  assert.match(read, /data-act="toggleUnread" data-arg="s1"[\s\S]*?Mark unread<\/button>/);
+  const state = baseState({ rowMenuOpen: 's1' });
+  state.live.chat.groups[0].rows[0].unread = true;
+  assert.match(renderChatList(state), /data-act="toggleUnread" data-arg="s1"[\s\S]*?Mark read<\/button>/);
 });

@@ -408,9 +408,11 @@ export function triageSummaryText(counts) {
 // Email reader RSVP row. The email read view (GET /api/email/read) carries an
 // `invite` block whenever the message holds a METHOD:REQUEST .ics; that is the
 // only case POST /api/email/rsvp/{uid} can answer, so the row renders only
-// then. data-arg is "uid|folder|response": folder names like
-// "[Gmail]/All Mail" contain "/" and ":" but never "|". Same button classes as
-// the inbox invite card so the two RSVP affordances read alike.
+// then. data-arg is "uid|folder|response" with each field
+// encodeURIComponent-encoded, because an IMAP folder name may legally contain
+// "|" (today it is always the INBOX constant, but the encoding costs nothing
+// and the action decodes each field back). Same button classes as the inbox
+// invite card so the two RSVP affordances read alike.
 export const EMAIL_RSVP_BUTTONS = [
   { response: 'accepted', label: 'Accept', role: 'primary' },
   { response: 'tentative', label: 'Maybe', role: 'ghost' },
@@ -424,7 +426,7 @@ export function emailInviteRowHtml(current, esc) {
   const folder = String((current && current.folder) || 'INBOX');
   const btns = EMAIL_RSVP_BUTTONS.map((b) => {
     const cls = b.role === 'primary' ? 'btn-sm' : 'btn-sm ghost';
-    const arg = esc(`${uid}|${folder}|${b.response}`);
+    const arg = esc([uid, folder, b.response].map(encodeURIComponent).join('|'));
     return `<button class="${cls}" data-act="emailRsvp" data-arg="${arg}">${b.label}</button>`;
   }).join('');
   return `<div class="email-invite-row" style="display:flex;gap:8px;align-items:center;margin:0 0 12px">

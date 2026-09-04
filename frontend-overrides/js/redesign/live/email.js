@@ -356,13 +356,19 @@ export const actions = {
     s.emailBusy = false; runtime.render();
   },
   // Answer a calendar invite that arrived as an email .ics. arg is
-  // "uid|folder|response" (see inbox-logic.emailInviteRowHtml). The backend
-  // sends the REPLY, marks the message Seen and files it, so the open message
-  // is re-read afterwards to show its new state.
+  // "uid|folder|response" with each field encodeURIComponent-encoded (see
+  // inbox-logic.emailInviteRowHtml), so a folder name containing "|" survives.
+  // The backend sends the REPLY, marks the message Seen and FILES it (Archive,
+  // or Trash when declined), so the answered message is gone from this folder:
+  // re-reading its uid would 404 and leave the reader showing a live invite.
+  // Drop the open message and reload the list instead.
   emailRsvp: async (arg) => {
     const s = runtime.state;
     if (!s) return;
-    const [uid, folder, response] = String(arg || '').split('|');
+    const parts = String(arg || '').split('|').map((v) => {
+      try { return decodeURIComponent(v); } catch (_) { return v; }
+    });
+    const [uid, folder, response] = parts;
     const LABEL = { accepted: 'Accepted', tentative: 'Maybe', declined: 'Declined' };
     if (!uid || !LABEL[response]) return;
     s.emailBusy = true; runtime.render();
@@ -375,7 +381,11 @@ export const actions = {
       return;
     }
     s.emailBusy = false;
-    await openAt(s.selEmail);
+    s.mReader = false;                       // mobile: back to the list
+    s.selEmail = 0;
+    if (s.live && s.live.email) s.live.email.current = undefined;
+    try { await load(s); } catch (_) { /* keep the emptied reader; toast stands */ }
+    runtime.render();
   },
   clearEmailSummary: () => { const s = runtime.state; if (s) { s.emailSummary = ''; runtime.render(); } },
 };

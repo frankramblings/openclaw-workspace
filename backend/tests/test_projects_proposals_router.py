@@ -65,6 +65,12 @@ def test_discover_starts_and_refuses_while_running(monkeypatch):
         started.append(1)
         return pd.load_proposals()
     monkeypatch.setattr(pd, "discover", fake_discover)
+    # A stale proposal set must be cleared by a fresh discover, and the
+    # background pass must actually be started.
+    _seed_props()
+    assert [p["id"] for p in pd.load_proposals()["proposals"]] == ["d-00000001", "d-00000002"]
     assert client.post("/api/projects/discover").json() == {"status": "started"}
+    assert pd.load_proposals()["proposals"] == []
+    assert started == [1]
     monkeypatch.setattr(pd, "running", lambda: True)
     assert client.post("/api/projects/discover").status_code == 409

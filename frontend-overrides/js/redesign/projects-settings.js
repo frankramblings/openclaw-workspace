@@ -37,6 +37,11 @@ function proposalsBlock(pp, hasProjects) {
   if (pp?.error === 'model_failed') {
     return `<div class="set-text">The local model did not answer, so no suggestions yet. <button class="set-btn" data-act="projectsDiscover">Try again</button></div>`;
   }
+  // backend/project_discovery.py refuses to guess from a thin history. Without
+  // this branch the person just sees "Find projects" again and clicks forever.
+  if (pp?.error === 'too_few_threads') {
+    return '<div class="set-text set-muted">Not enough recent conversations to suggest projects yet (12 or more in the last 90 days). Create one from a conversation’s menu.</div>';
+  }
   if (pp?.error === 'no_local_model') {
     return '<div class="set-text set-muted">Suggestions need a local title model. Create projects by hand below.</div>';
   }

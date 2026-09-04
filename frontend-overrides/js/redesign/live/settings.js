@@ -471,7 +471,9 @@ export const actions = {
     pp.running = true; pp.error = null; runtime.render();
     try { await apiJson('/api/projects/discover', {}, 'POST'); } catch (_) {}
     // Poll until the proposal file lands (discover is a background task).
-    for (let i = 0; i < 20; i++) {
+    // 90 s, not 60: discovery calls the local title model once per batch, so
+    // it routinely outlives a single model timeout.
+    for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 3000));
       try {
         const res = await apiGet('/api/projects/proposals');

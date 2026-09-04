@@ -35,6 +35,14 @@ test('running and error states', () => {
   assert.match(h, /data-act="projectsDiscover"/);
 });
 
+test('too_few_threads explains itself and offers no retry button', () => {
+  const h = projectsSettingsHtml(base({ projectProposals: { proposals: [], error: 'too_few_threads', running: false, busy: false } }));
+  assert.match(h, /Not enough recent conversations/);
+  assert.match(h, /12 or more in the last 90 days/);
+  assert.doesNotMatch(h, /data-act="projectsDiscover"/);
+  assert.doesNotMatch(h, /\u2014/);
+});
+
 test('existing project rows keep their actions', () => {
   const h = projectsSettingsHtml(base({ projects: [{ id: 'p-1', name: 'A', archived: false }, { id: 'p-2', name: 'B', archived: true }] }));
   assert.match(h, /data-act="renameProject" data-arg="p-1"/);

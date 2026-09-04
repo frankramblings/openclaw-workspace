@@ -5,7 +5,7 @@ credential is regex-indistinguishable from an ordinary 16-letter word, so it
 false-positived on everyday prose. These tests lock in that ordinary text (short
 words in a row, long lowercase words, contiguous 16-letter runs) is NEVER flagged,
 while structurally-distinct tokens still are."""
-from secret_scrub import scrub
+from backend.secret_scrub import scrub
 
 
 def test_prose_four_short_words_not_flagged():

@@ -2,7 +2,7 @@
 synthesis server (bin/xtts-server.py; same locked Gary voice config on both hosts).
 
 Two backends, tried in order:
-  1. kamino (100.97.60.15:8123) — launchd ai.kamino.xtts-gary, ~1.5x faster synth.
+  1. kamino (the configured local host, port 8123) — launchd ai.kamino.xtts-gary, ~1.5x faster synth.
   2. naboo  (127.0.0.1:8123)    — systemd xtts-tts.service, the reliable fallback.
 
 Each synth server holds the XTTS model + Gary voice latents resident and owns the
@@ -24,13 +24,23 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
+from . import config
+
 _log = logging.getLogger(__name__)
 router = APIRouter()
 
-# Order: Chatterbox-MLX on kamino (fastest, Metal) -> kamino XTTS -> naboo XTTS
+# Order: Chatterbox-MLX on the local host (fastest, Metal) -> kamino XTTS -> naboo XTTS
 # (always-on). Env override wins (GARY_TTS_BASES, comma-separated base URLs).
-_DEFAULT_BASES = "http://100.97.60.15:8124,http://100.97.60.15:8123,http://127.0.0.1:8123"
-XTTS_BASES = [b.strip() for b in os.environ.get("GARY_TTS_BASES", _DEFAULT_BASES).split(",") if b.strip()]
+def _default_tts_bases() -> str:
+    host = config.local_host()
+    return f"http://{host}:8124,http://{host}:8123,http://127.0.0.1:8123"
+
+
+XTTS_BASES = [
+    b.strip()
+    for b in os.environ.get("GARY_TTS_BASES", _default_tts_bases()).split(",")
+    if b.strip()
+]
 MAX_CHARS = 4000
 
 

@@ -93,6 +93,10 @@ def test_local_host_drives_embed_and_stt_defaults(monkeypatch):
     monkeypatch.setenv("WORKSPACE_LOCAL_HOST", "10.9.8.7")
     assert cs._default_embed_url() == "http://10.9.8.7:11434/api/embed"
     assert tr._default_stt_base() == "http://10.9.8.7:9000"
+    import backend.voice as vc
+    assert vc._default_tts_bases() == (
+        "http://10.9.8.7:8124,http://10.9.8.7:8123,http://127.0.0.1:8123"
+    )
     # The module constants were bound at import time from whatever host was
     # configured then; just confirm they still honor their own env names.
     assert cs._EMBED_URL.startswith("http")

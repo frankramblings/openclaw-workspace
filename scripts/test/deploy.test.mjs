@@ -16,7 +16,9 @@ function stubDir(overrides = {}) {
   // The preflight probe `sudo -n -u marissa true` is not logged as an action.
   mk('sudo', 'if [ "$1" = "-n" ] && [ "$2" = "true" ]; then exit 0; fi; if [ "$1" = "-n" ] && [ "$2" = "-u" ]; then shift 3; if [ "$1" != "true" ]; then echo "as-marissa $*" >> "' + log + '"; fi; if [ "$1" = "cat" ]; then echo "${STUB_INFLIGHT:-{\\"inflight\\":{}}}"; fi; if [ "$1" = "bash" ]; then echo "${STUB_M_SHA:-0123456789abcdef0123456789abcdef01234567}"; fi; exit 0; fi; exit 0');
   mk('systemctl', 'exit 0');
-  mk('curl', 'echo "{\\"ok\\":true}"; exit 0');
+  // `-w` means the caller wants a status code (the static-index smoke);
+  // everything else is a readiness probe that only needs a 2xx body.
+  mk('curl', 'for a in "$@"; do if [ "$a" = "-w" ]; then printf 200; exit 0; fi; done; echo "{\\"ok\\":true}"; exit 0');
   mk('git', 'case "$1" in rev-parse) echo "abc1234";; diff) echo "${STUB_GW_DIFF:-}";; status) echo "";; branch) echo "main";; *) ;; esac; exit 0');
   mkdirSync(join(dir, 'dist'));
   writeFileSync(join(dir, 'dist', 'claude-live-session-x.js'), overrides.marker === false ? 'nope' : '/*CLI_STEER*/');
@@ -77,6 +79,30 @@ test('gateway restarts only for a gateway-side change, after idle', () => {
 test('missing patch marker also triggers the gateway restart', () => {
   const r = run([], stubDir({ marker: false }));
   assert.equal(r.lines.filter((l) => /systemctl restart openclaw-gateway-marissa/.test(l)).length, 1);
+});
+
+test('both tenants are probed on the paths the auth gate allowlists', () => {
+  const r = run([], stubDir());
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const curls = r.lines.filter((l) => /^curl /.test(l));
+  assert.ok(curls.some((l) => /127\.0\.0\.1:8801\/api\/health/.test(l)), 'her readiness probe must hit /api/health on 8801');
+  assert.ok(curls.some((l) => /127\.0\.0\.1:8800\/api\/health/.test(l)), 'his readiness probe must hit /api/health on 8800');
+  // The /marissa prefix is stripped by the proxy, so it 404s on 8801;
+  // /api/capabilities is not allowlisted, so it 401s once a secret is set.
+  assert.ok(!curls.some((l) => /\/marissa\/api\//.test(l)), 'no /marissa/api/ probe');
+  assert.ok(!curls.some((l) => /\/api\/capabilities/.test(l)), 'no /api/capabilities probe');
+  assert.ok(!curls.some((l) => /\/api\/changes\//.test(l)), 'no changes-tracker call (it needs auth)');
+  assert.ok(curls.some((l) => /127\.0\.0\.1:8801\/static\/index\.html/.test(l)), 'her static index smoke');
+  assert.ok(curls.some((l) => /127\.0\.0\.1:8800\/static\/index\.html/.test(l)), 'his static index smoke');
+  assert.ok(r.stdout.includes('[summary] smoke:'), 'the summary reports both smoke results');
+});
+
+test('an unreadable sha for her checkout refuses before anything is touched', () => {
+  const r = run([], stubDir(), { STUB_M_SHA: 'garbage' });
+  assert.notEqual(r.status, 0);
+  const acts = r.lines.filter((l) => /as-marissa/.test(l));
+  assert.ok(!acts.some((l) => /git reset|cp -a \.data/.test(l)), 'no reset or backup ran');
+  assert.ok(r.stderr.includes('refusing to reset'), r.stderr);
 });
 
 test('--skip-tests needs --i-know', () => {

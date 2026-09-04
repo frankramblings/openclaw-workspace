@@ -51,3 +51,52 @@ export function clipChipHtml(url) {
     + `data-arg="${esc(url)}" title="Clip this page as a document" `
     + `style="position:absolute;right:56px;bottom:10px;padding:4px 10px;border-radius:999px;font-size:12px">Clip</button>`;
 }
+
+// Fix round 1 (review): the "Updated"/"Clipped" toast verb was duplicated as
+// an identical ternary in both live/library.js's clipUrl and app.js's
+// clipDraftUrl. One shared home for it instead. `doc` is the clip
+// response's `document` field. backend/clip.py sets version_count:1 for a
+// brand-new document and existing.version_count+1 for a re-clip of the same
+// source_url (open decision 7), so >1 reliably means this clip updated a
+// document that already existed. There is no dedicated update/re-clip flag
+// in `meta` itself (Task 4's response envelope); document.version_count is
+// the field that actually carries the signal.
+export function clipResultVerb(doc) {
+  return (doc && doc.version_count > 1) ? 'Updated' : 'Clipped';
+}
+
+// Composer "Clip" chip DOM sync: shown only while the trimmed draft is
+// exactly one http(s) URL (isUrlOnlyDraft, above). Direct-DOM patch called
+// on every keystroke from app.js's input handler, like the ghost-suggestion
+// span's CSS hide-on-type trick but this can't be pure CSS -- "exactly one
+// http(s) URL" is not a CSS-expressible predicate. Known limitation,
+// matching the ghost suggestion's own: an UNRELATED full render() (e.g. an
+// incoming message) wipes this chip along with the rest of root.innerHTML,
+// and it does not reappear until the next keystroke -- same tradeoff the
+// ghost suggestion already accepts.
+//
+// Fix round 1 (review): moved here from app.js so it's unit-testable
+// without booting the whole app.js module (that module has zero import-time
+// test coverage anywhere in this codebase -- see document-editor.test.js's
+// banner comment on why DOM-heavy action entry points are tested via their
+// pure decision helpers instead of a real import, and changes-settings.test.js's
+// PLAIN_SHEET_FIELDS test reading app.js's source with fs.readFileSync
+// rather than importing it). This function never reads the global
+// `document`/`window` -- it only calls standard node methods (`closest`,
+// `querySelector`, `insertAdjacentHTML`, `remove`, `getAttribute`) on the
+// `ta` node it's handed, so it needed no such DOM shim to begin with; only
+// the OLD location (app.js) made it hard to reach in a test.
+export function syncClipChip(ta, draftText) {
+  const wrap = ta.closest('.composer, .m-composer');
+  if (!wrap) return;
+  const existing = wrap.querySelector('.clip-chip');
+  const urlOnly = isUrlOnlyDraft(draftText);
+  const url = urlOnly ? draftText.trim() : '';
+  if (urlOnly) {
+    if (existing && existing.getAttribute('data-arg') === url) return; // already correct
+    if (existing) existing.remove();
+    ta.insertAdjacentHTML('afterend', clipChipHtml(url));
+  } else if (existing) {
+    existing.remove();
+  }
+}

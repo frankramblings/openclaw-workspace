@@ -8,7 +8,15 @@ test('library surface: Clip URL button renders with the clipUrl action', () => {
   assert.match(html, />Clip URL</);
 });
 
-test('library surface: Clip URL button has no em dash in its copy', () => {
+test('library surface: Clip URL button has no em dash in its own copy', () => {
+  // Fix round 1 (review): scoped to the button element itself, not the whole
+  // library surface -- other copy in this surface (e.g. the cap-notice
+  // "Showing first N — refine to see more" line) legitimately uses an em
+  // dash, and asserting over the whole HTML blob coupled this test to that
+  // unrelated copy.
   const html = renderCenter({ surface: 'library', live: { library: { items: [] } } });
-  assert.ok(!html.includes('—'));
+  const m = html.match(/<button class="btn" data-act="clipUrl"[^>]*>([^<]*)<\/button>/);
+  assert.ok(m, 'Clip URL button not found');
+  assert.equal(m[1], 'Clip URL');
+  assert.ok(!m[0].includes('—'));
 });

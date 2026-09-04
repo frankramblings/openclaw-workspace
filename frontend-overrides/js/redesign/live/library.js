@@ -13,7 +13,14 @@ import { apiGet, apiJson } from './api.js';
 import { actions as docActions, initDocEditor } from './document-editor.js';
 import { humanizeTitle, contentSnippet } from './library-logic.js';
 import { toast } from './chat.js';
-import { clipErrorMessage } from '../clip-core.js';
+import { clipErrorMessage, clipResultVerb } from '../clip-core.js';
+
+// Fix round 1 (review, Important 1): in-flight guard for the Library "Clip
+// URL" button -- same reasoning as app.js's _clipDraftInFlight (see its
+// comment): without this, a second click while a POST /api/clip is still
+// pending fires its own concurrent request for the same URL. Checked and
+// set synchronously before the POST, cleared in `finally`.
+let _clipUrlInFlight = false;
 
 // Library exposes the document-editor actions (newDoc / openDoc / saveDoc / closeDoc)
 // plus clipUrl (Task C3).
@@ -21,25 +28,23 @@ export const actions = {
   ...docActions,
   // Library "Clip URL": a one-field prompt, then open the new document --
   // same shape as newDoc's "create, then open" flow just above it. Success
-  // toasts "Updated: <title>" instead of "Clipped: <title>" when the
-  // response's document.version_count is >1 -- backend/clip.py sets
-  // version_count:1 for a brand-new document and increments the EXISTING
-  // document's own count on a re-clip (open decision 7), so >1 reliably
-  // means this clip updated a document that already existed. There is no
-  // dedicated flag for this in `meta` itself (Task 4's response envelope);
-  // document.version_count is the field that actually carries the signal.
+  // toasts "Updated: <title>" instead of "Clipped: <title>" (clipResultVerb,
+  // clip-core.js) when the response's document.version_count is >1.
   clipUrl: async () => {
+    if (_clipUrlInFlight) return;
     let url = '';
     try { url = (window.prompt('Paste a URL to clip') || '').trim(); } catch (_) { return; }
     if (!url) return;
+    _clipUrlInFlight = true;
     try {
       const res = await apiJson('/api/clip', { url });
       if (res && res.document && res.document.id) await docActions.openDoc(res.document.id);
       const title = (res && res.document && res.document.title) || 'document';
-      const verb = (res && res.document && res.document.version_count > 1) ? 'Updated' : 'Clipped';
-      toast(`${verb}: ${title}`);
+      toast(`${clipResultVerb(res && res.document)}: ${title}`);
     } catch (e) {
       try { window.alert(clipErrorMessage(e)); } catch (_) {}
+    } finally {
+      _clipUrlInFlight = false;
     }
   },
 };

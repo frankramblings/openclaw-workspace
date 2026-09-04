@@ -99,11 +99,14 @@ raised to 502 `gateway_error`, and a connection or timeout failure to 502
 MCP servers are not a gateway method. `mcp.servers` is a path inside
 `openclaw.json`, read with `config.get` and written with `config.patch`
 (`backend/mcp_servers.py`), scoped to `{"mcp": {"servers": {<name>: ...}}}`
-and carrying the `baseHash` from the preceding `config.get`; a stale hash on
-either the 409/404 audit path or a live retry gets one re-read and one retry,
-each taking its own pre-write backup. A patch under `mcp.*` hot-reloads the
-gateway's MCP runtimes; it does not restart it. The old `/api/mcp/servers`
-routes in `backend/settings_status.py` shelled out to `mcporter` against
+and carrying the `baseHash` from the preceding `config.get`. A stale hash
+cannot occur on the 409 `exists` / 404 `not_found` path, since that path
+returns before ever calling `config.patch`; it can only occur on a live
+write, which re-reads once and retries once, each retry taking its own
+pre-write backup (both entries survive, pruned to the newest 20 like any
+backup). A patch under `mcp.*` hot-reloads the gateway's MCP runtimes; it
+does not restart it. The old `/api/mcp/servers` routes in
+`backend/settings_status.py` shelled out to `mcporter` against
 `~/.openclaw/workspace/config/mcporter.json`, a registry the gateway never
 reads; they are gone.
 
@@ -115,9 +118,16 @@ make the gateway write, then append one audit line. `backend/agent_config_store.
 keeps both under `.data/agent-config`: `backups/<kind>/<key-slug>/<id>.txt`
 +`.json` (content plus `{id, ts, size, sha256, kind, key, meta}`, pruned to
 the newest 20 per key) and one `audit.jsonl` (`{ts, action, target, ok,
-...fields}`, appended even on failure once state has been read). Every
-directory level under `.data/agent-config` is created 0700 and every file
-0600; `key_slug()` folds `/` to `__` and anything outside
+...fields}`). The audit rule is narrower than "any state read": a route
+audits once it has committed to a write, meaning a backup was taken or a
+gateway write was attempted, plus the MCP `config.patch` routes' 409
+`exists` / 404 `not_found` paths, which audit on the strength of the
+`config.get` that already ran even though they take no backup and never
+call `config.patch`. A route that reads state and then declines to write
+(skill_proposals.py's 409 `not_pending`, agent_files.py's 409 `stale` and
+its `unchanged: true` no-op) writes no audit line, since it never committed
+to a write. Every directory level under `.data/agent-config` is created
+0700 and every file 0600; `key_slug()` folds `/` to `__` and anything outside
 `[A-Za-z0-9._-]` to `_`, and maps a slug of `.` or `..` to `_` so a key never
 resolves to an existing ancestor directory. `GET /api/agent-config/status`
 and `/audit` expose the switch, the default agent id, and the recent log; the
@@ -136,6 +146,19 @@ current content first and offers it back through `.../backups` and
 
 UI: none yet (planned). `scripts/livefire-agent-config.sh` exercises every
 route against a running instance.
+
+Two consequences worth stating plainly, not defects: (a) `POST /api/mcp/servers`
+with a `command` field makes the gateway spawn that process on the agent's
+next MCP load; an authenticated backend session could already run an
+arbitrary process via the existing terminal route, so this does not raise
+the privilege ceiling, but a future Settings UI should confirm stdio adds
+explicitly rather than let one slip through unnoticed. (b) The pre-write
+backup for an MCP write reads the config file straight off local disk at the
+path `config.get`'s snapshot reports (`backend/mcp_servers.py`), which means
+the backend process must share a filesystem with the gateway. On a split
+deployment (backend and gateway on different hosts) every MCP write answers
+500 `backup_failed`; MCP reads are unaffected, since they go through
+`config.get` over the gateway connection and never touch the local disk.
 
 ## The frontend: vendor + overrides + bake
 

@@ -20,5 +20,6 @@ openpyxl>=3.1     # xlsx attachment text
 pypdf>=5.0        # pdf attachment text
 python-docx>=1.0  # docx attachment text
 python-pptx>=1.0  # pptx attachment text
+trafilatura>=1.12 # tested 1.12 -- HTML text+metadata extraction for URL clip (open decision 8)
 watchfiles>=0.21  # live workspace file-watch (workspace_watch)
 pywebpush>=2      # web push notifications; absent = push degrades

@@ -5,7 +5,12 @@
 # command that would run is appended to $DEPLOY_LOG (the test reads that log).
 #
 # Usage: scripts/deploy.sh [--dry-run] [--skip-marissa] [--skip-tests --i-know]
-#                          [--force-gateway] [--gateway-wait SECONDS]
+#                          [--force-gateway] [--force-deps]
+#                          [--gateway-wait SECONDS]
+#
+# --force-deps reinstalls backend/requirements.txt into her venv even when the
+# deployed diff did not touch it. Use it when the parity report says she is
+# missing packages.
 #
 # Rollback (also printed at the end): see docs/SHIPPING.md "Two tenants".
 #
@@ -16,7 +21,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DRY=0; SKIP_M=0; SKIP_TESTS=0; I_KNOW=0; FORCE_GW=0; GW_WAIT=600
+DRY=0; SKIP_M=0; SKIP_TESTS=0; I_KNOW=0; FORCE_GW=0; FORCE_DEPS=0; GW_WAIT=600
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
@@ -24,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --skip-tests) SKIP_TESTS=1; shift ;;
     --i-know) I_KNOW=1; shift ;;
     --force-gateway) FORCE_GW=1; shift ;;
+    --force-deps) FORCE_DEPS=1; shift ;;
     --gateway-wait) GW_WAIT="${2:?}"; shift 2 ;;
     -h|--help) awk 'NR==1{next} /^#/{sub(/^# ?/,"");print;next} {exit}' "$0"; exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
@@ -165,11 +171,30 @@ GW_RESTARTED=0
 M_SMOKE="(skipped)"
 if [[ "$SKIP_M" != 1 ]]; then
   M_SMOKE="(dry)"
+  # Her current sha is both the rollback target and the honest baseline for
+  # "what is this deploy actually changing on her box", so read and validate it
+  # before anything else in her section, including the gateway decision.
+  M_OLD="$(as_m_ro bash -c "cd '$M_REPO' && git rev-parse HEAD" 2>/dev/null || echo '')"
+  if [[ "$DRY" == 1 ]]; then
+    M_OLD="${M_OLD:-(dry)}"
+  elif [[ ! "$M_OLD" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "could not read her current sha; refusing to reset $M_REPO" >&2; exit 1
+  fi
+  # OLD_PUBLIC..NEW_PUBLIC goes empty whenever prepare-public.sh ran an extra
+  # time between deploys, which would silently skip a needed action. Her real
+  # HEAD is the truthful baseline when we have it.
+  if [[ "$M_OLD" =~ ^[0-9a-f]{40}$ ]]; then
+    BASE_SHA="$M_OLD"; BASE_KIND="her HEAD"
+  else
+    BASE_SHA="$OLD_PUBLIC"; BASE_KIND="previous public"
+  fi
+  say marissa:baseline "diffing $BASE_KIND ${BASE_SHA:-<none>} -> ${NEW_PUBLIC:-<none>}"
+
   # Whether her gateway needs a restart is decided BEFORE anything touches her
   # tenant, because the idle check below has to happen first.
   NEED_GW=0
   if [[ "$FORCE_GW" == 1 ]]; then NEED_GW=1; fi
-  if [[ -n "$OLD_PUBLIC" && -n "$NEW_PUBLIC" ]] && [[ -n "$($GIT diff --name-only "$OLD_PUBLIC" "$NEW_PUBLIC" -- deploy/gateway-patches 2>/dev/null)" ]]; then NEED_GW=1; fi
+  if [[ -n "$BASE_SHA" && -n "$NEW_PUBLIC" ]] && [[ -n "$($GIT diff --name-only "$BASE_SHA" "$NEW_PUBLIC" -- deploy/gateway-patches 2>/dev/null)" ]]; then NEED_GW=1; fi
   if ! grep -qs 'CLI_STEER' $DIST_GLOB; then NEED_GW=1; fi
 
   # Idle gate FIRST: restarting her workspace calls turn_state.sweep_boot(),
@@ -211,20 +236,20 @@ except Exception:
 
   T0=$SECONDS
   TS="$(date +%Y%m%d-%H%M%S)"
-  # Her current sha is the rollback target, so read and validate it before we
-  # touch anything.
-  M_OLD="$(as_m_ro bash -c "cd '$M_REPO' && git rev-parse HEAD" 2>/dev/null || echo '')"
-  if [[ "$DRY" == 1 ]]; then
-    M_OLD="${M_OLD:-(dry)}"
-  elif [[ ! "$M_OLD" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "could not read her current sha; refusing to reset $M_REPO" >&2; exit 1
-  fi
   say marissa:backup ".data -> .data.bak-$TS"
   as_m bash -c "cd '$M_REPO' && cp -a .data '.data.bak-$TS' && ls -dt .data.bak-* | tail -n +4 | xargs -r rm -rf"
   say marissa:reset "fetch + reset to origin/public (was $M_OLD)"
   as_m bash -c "cd '$M_REPO' && git fetch -q origin public && git reset -q --hard origin/public"
-  if [[ -n "$OLD_PUBLIC" && -n "$NEW_PUBLIC" ]] && [[ -n "$($GIT diff --name-only "$OLD_PUBLIC" "$NEW_PUBLIC" -- pyproject.toml 2>/dev/null)" ]]; then
-    say marissa:deps "pyproject changed: pip install -e ."; as_m bash -c "cd '$M_REPO' && .venv/bin/pip install -q -e ."
+  # pyproject.toml declares no dependencies here; backend/requirements.txt is
+  # the real list, so that is what her venv gets.
+  DEPS_CHANGED=""
+  if [[ -n "$BASE_SHA" && -n "$NEW_PUBLIC" ]]; then
+    DEPS_CHANGED="$($GIT diff --name-only "$BASE_SHA" "$NEW_PUBLIC" -- backend/requirements.txt pyproject.toml 2>/dev/null || true)"
+  fi
+  if [[ "$FORCE_DEPS" == 1 || -n "$DEPS_CHANGED" ]]; then
+    if [[ "$FORCE_DEPS" == 1 ]]; then say marissa:deps "--force-deps: pip install -r backend/requirements.txt"
+    else say marissa:deps "requirements changed: pip install -r backend/requirements.txt"; fi
+    as_m bash -c "cd '$M_REPO' && .venv/bin/pip install -q -r backend/requirements.txt"
   else
     say marissa:deps "unchanged"
   fi
@@ -274,6 +299,107 @@ fi
 # ---- summary ------------------------------------------------------------------
 say summary "main $($GIT rev-parse --short HEAD 2>/dev/null || echo '?'); public $OLD_PUBLIC -> $NEW_PUBLIC; marissa skipped=$SKIP_M gateway_restarted=$GW_RESTARTED dry_run=$DRY"
 say summary "smoke: frank static index $FRANK_SMOKE; marissa static index $M_SMOKE"
+
+# ---- parity -------------------------------------------------------------------
+# Read-only, never fails the run: what actually differs between the two tenants
+# right now. Per-tenant settings live outside the repo (unit Environment,
+# .data/branding.json, the venv), so drift is invisible in git.
+PARITY_PY='import re
+try:
+    from importlib.metadata import version
+except Exception:
+    raise SystemExit(0)
+miss = []
+try:
+    fh = open("backend/requirements.txt")
+except Exception:
+    raise SystemExit(0)
+for line in fh:
+    line = line.split("#")[0].strip()
+    if not line or line.startswith("-"):
+        continue
+    name = re.split(r"[<>=!~\[;\s]", line)[0].strip()
+    if not name:
+        continue
+    n = re.sub(r"[-_.]+", "-", name).lower()
+    try:
+        version(n)
+    except Exception:
+        miss.append(n)
+print("PKGS:" + (",".join(miss) if miss else "none"))'
+PARITY_B64="$(printf '%s' "$PARITY_PY" | base64 -w0 2>/dev/null || printf '%s' "$PARITY_PY" | base64 | tr -d '\n')"
+PARITY_RUNNER="import base64;exec(base64.b64decode('$PARITY_B64'))"
+
+# Environment=VAR=value VAR2=value2 -> the one value we asked for, else "-"
+env_val() { # <var> <systemctl-show-output>
+  local v
+  v="$(printf '%s' "${2:-}" | tr ' ' '\n' | sed -n "s/^\(Environment=\)\?${1}=//p" | tail -n1)"
+  printf '%s' "${v:--}"
+}
+# Anything that is not a PKGS: line is stub noise or a broken venv, not data.
+pkgs_of() { # <raw output> -> comma list, "none", or "-"
+  local line
+  line="$(printf '%s' "${1:-}" | tr -d '\r' | sed -n 's/^PKGS://p' | tail -n1)"
+  printf '%s' "${line:--}"
+}
+
+parity_report() {
+  local f_sha f_env f_user f_title f_sugg f_pkgs_raw f_pkgs
+  f_sha="$($GIT rev-parse --short HEAD 2>/dev/null || echo '-')"
+  f_env="$("$SYSTEMCTL" --user show openclaw-workspace.service -p Environment 2>/dev/null || true)"
+  f_user="$(env_val WORKSPACE_USER_NAME "$f_env")"
+  if [[ "$f_user" == "-" && -f "$ROOT/.data/branding.json" ]]; then
+    f_user="$(sed -n 's/.*"user_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.data/branding.json" 2>/dev/null | head -n1 || true)"
+    f_user="${f_user:--}"
+  fi
+  f_title="$(env_val WORKSPACE_TITLE_MODEL "$f_env")"
+  f_sugg="$(env_val WORKSPACE_SUGGEST_MODEL "$f_env")"
+  f_pkgs_raw="$("$PY" -c "$PARITY_RUNNER" 2>/dev/null || true)"
+  f_pkgs="$(pkgs_of "$f_pkgs_raw")"
+  say parity "frank: sha=$f_sha user_name=$f_user title_model=$f_title suggest_model=$f_sugg missing_pkgs=$f_pkgs"
+  if [[ "$f_pkgs" != "none" && "$f_pkgs" != "-" ]]; then
+    say parity "WARN: frank missing packages: $f_pkgs"
+  fi
+
+  if [[ "$SKIP_M" == 1 ]]; then
+    say parity "marissa: skipped (--skip-marissa)"
+    return 0
+  fi
+
+  local m_sha m_env m_user m_title m_sugg m_pkgs_raw m_pkgs m_brand pub_sha
+  m_sha="$(as_m_ro bash -c "cd '$M_REPO' && git rev-parse --short HEAD" 2>/dev/null || true)"
+  m_sha="${m_sha:-(dry)}"
+  m_env="$("$SYSTEMCTL" show openclaw-workspace-marissa.service -p Environment 2>/dev/null || true)"
+  m_user="$(env_val WORKSPACE_USER_NAME "$m_env")"
+  if [[ "$m_user" == "-" ]]; then
+    m_brand="$(as_m_ro cat "$M_REPO/.data/branding.json" 2>/dev/null || true)"
+    m_user="$(printf '%s' "$m_brand" | sed -n 's/.*"user_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1 || true)"
+    m_user="${m_user:--}"
+  fi
+  m_title="$(env_val WORKSPACE_TITLE_MODEL "$m_env")"
+  m_sugg="$(env_val WORKSPACE_SUGGEST_MODEL "$m_env")"
+  m_pkgs_raw="$(as_m_ro bash -c "cd '$M_REPO' && .venv/bin/python -c \"$PARITY_RUNNER\"" 2>/dev/null || true)"
+  m_pkgs="$(pkgs_of "$m_pkgs_raw")"
+  if [[ "$DRY" == 1 ]]; then m_pkgs="(dry)"; fi
+  say parity "marissa: sha=$m_sha user_name=$m_user title_model=$m_title suggest_model=$m_sugg missing_pkgs=$m_pkgs"
+  if [[ "$m_pkgs" != "none" && "$m_pkgs" != "-" && "$m_pkgs" != "(dry)" ]]; then
+    say parity "WARN: marissa missing packages: $m_pkgs (rerun with --force-deps)"
+  fi
+
+  # user_name differs by design, so it is never a DIFF line.
+  [[ "$f_title" == "$m_title" ]] || say parity "DIFF: title_model frank=$f_title marissa=$m_title"
+  [[ "$f_sugg"  == "$m_sugg"  ]] || say parity "DIFF: suggest_model frank=$f_sugg marissa=$m_sugg"
+  [[ "$f_pkgs"  == "$m_pkgs"  ]] || say parity "DIFF: missing_pkgs frank=$f_pkgs marissa=$m_pkgs"
+
+  pub_sha="$($GIT rev-parse --short public 2>/dev/null || echo '-')"
+  if [[ "$m_sha" == "$pub_sha" ]]; then
+    say parity "OK: marissa on public $pub_sha"
+  else
+    say parity "DIFF: marissa sha=$m_sha public=$pub_sha"
+  fi
+}
+parity_report || say parity "report failed (non-fatal)"
+
 if [[ "$SKIP_M" != 1 ]]; then
     R_SHA="${M_OLD:-}"
   if [[ ! "$R_SHA" =~ ^[0-9a-f]{40}$ ]]; then R_SHA="<previous sha>"; fi

@@ -62,7 +62,25 @@ Both tenants on this box run the same code line. `scripts/deploy.sh` is the
 only supported way to ship: gate (both suites + `scripts/prepare-public.sh
 --check`), Frank's tenant (sync, restart, smoke), `prepare-public.sh --yes`,
 then Marissa's tenant as her user (backup `.data`, reset to `public`, deps if
-`pyproject.toml` changed, sync, restart, smoke).
+`backend/requirements.txt` or `pyproject.toml` changed, sync, restart, smoke).
+
+`pyproject.toml` declares no dependencies here, so the deps step installs
+`backend/requirements.txt` into her venv; `--force-deps` runs that install
+unconditionally when her venv has drifted. Both the deps trigger and the
+gateway-restart trigger diff against her checkout's real HEAD when it can be
+read (falling back to the previous `public` sha), because an extra
+`prepare-public.sh` run between deploys empties the old-public to new-public
+diff and would silently skip a needed action. The baseline in use is printed as
+`[marissa:baseline]`.
+
+After the summary the script prints a read-only `[parity]` report: one line per
+tenant with the checked-out sha, `user_name`, the title and suggest models, and
+any packages from `backend/requirements.txt` missing from that tenant's venv.
+`user_name` is expected to differ; anything else shows up as a `[parity] DIFF:`
+line. Missing packages mean a rerun with `--force-deps`; a gateway-patch drift
+means `--force-gateway`. Unit `Environment=` values and `.data/branding.json`
+are set by hand per tenant, so the script only reports those differences, it
+never edits them. The parity report never fails a run.
 
 Readiness and smoke for BOTH tenants are `GET /api/health` (the one path the
 auth gate allowlists) and `GET /static/index.html` (200, or 302 behind a login
@@ -88,7 +106,8 @@ choice, not a habit.
 the same identifiers are already public inside `prepare-public.sh`.
 
 Flags: `--dry-run` (plan only, read-only gate still runs), `--skip-marissa`,
-`--skip-tests --i-know`, `--force-gateway`, `--gateway-wait N`.
+`--skip-tests --i-know`, `--force-gateway`, `--force-deps`,
+`--gateway-wait N`.
 
 Her steps need sudo, and the preflight probe uses `sudo -n`: run `sudo -v`
 once before the deploy (or use `--skip-marissa`, which needs no sudo at all).

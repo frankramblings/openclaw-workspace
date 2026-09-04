@@ -14,7 +14,7 @@ function stubDir(overrides = {}) {
   mk('python', 'exit ${STUB_PYTEST_EXIT:-0}');
   mk('node', 'exit ${STUB_NODE_EXIT:-0}');
   // The preflight probe `sudo -n -u marissa true` is not logged as an action.
-  mk('sudo', 'if [ "$1" = "-n" ] && [ "$2" = "true" ]; then exit 0; fi; if [ "$1" = "-n" ] && [ "$2" = "-u" ]; then shift 3; if [ "$1" != "true" ]; then echo "as-marissa $*" >> "' + log + '"; fi; if [ "$1" = "cat" ]; then echo "${STUB_INFLIGHT:-{\\"inflight\\":{}}}"; fi; if [ "$1" = "bash" ]; then echo "${STUB_M_SHA:-0123456789abcdef0123456789abcdef01234567}"; fi; exit 0; fi; exit 0');
+  mk('sudo', 'if [ "$1" = "-n" ] && [ "$2" = "true" ]; then exit 0; fi; if [ "$1" = "-n" ] && [ "$2" = "-u" ]; then shift 3; if [ "$1" != "true" ]; then echo "as-marissa $*" >> "' + log + '"; fi; if [ "$1" = "cat" ]; then case "$2" in *branding.json) echo "{\\"user_name\\":\\"stub\\"}";; *) echo "${STUB_INFLIGHT:-{\\"inflight\\":{}}}";; esac; fi; if [ "$1" = "bash" ]; then echo "${STUB_M_SHA:-0123456789abcdef0123456789abcdef01234567}"; fi; exit 0; fi; exit 0');
   mk('systemctl', 'exit 0');
   // `-w` means the caller wants a status code (the static-index smoke);
   // everything else is a readiness probe that only needs a 2xx body.
@@ -47,7 +47,36 @@ test('dry run plans every step in order and restarts nothing', () => {
   const order = ['gate:backend', 'gate:frontend', 'gate:scan', 'frank:sync', 'frank:restart', 'frank:smoke', 'publish', 'marissa:backup', 'marissa:reset', 'marissa:sync', 'marissa:restart', 'marissa:smoke', 'summary'];
   let last = -1;
   for (const step of order) { const i = out.indexOf(`[${step}]`); assert.ok(i > last, `step ${step} out of order or missing`); last = i; }
-  assert.equal(r.lines.filter((l) => /^systemctl/.test(l)).length, 0, 'no systemctl in dry run');
+  // `systemctl show` is a read-only parity read; only restarts must be absent.
+  assert.equal(r.lines.filter((l) => /^systemctl/.test(l) && !/ show /.test(l)).length, 0, 'no systemctl restart in dry run');
+  const sumIdx = out.indexOf('[summary]');
+  const parIdx = out.indexOf('[parity]');
+  assert.ok(parIdx > sumIdx && sumIdx >= 0, 'the parity report comes after the summary');
+  assert.equal(idx(r.lines, /pip install/), -1, 'no pip install in a no-op dry run');
+});
+
+test('a requirements.txt change installs requirements into her venv', () => {
+  const r = run([], stubDir(), { STUB_GW_DIFF: 'backend/requirements.txt' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const acts = r.lines.filter((l) => /^as-marissa/.test(l));
+  assert.ok(acts.some((l) => /pip install -q -r backend\/requirements\.txt/.test(l)), acts.join('\n'));
+  assert.ok(!acts.some((l) => /pip install -q -e \./.test(l)), 'pip install -e . is gone');
+  // the same stub diff also looks like a gateway-patches change
+  assert.equal(r.lines.filter((l) => /systemctl restart openclaw-gateway-marissa/.test(l)).length, 1);
+});
+
+test('--force-deps installs even with an empty diff', () => {
+  const r = run(['--force-deps'], stubDir());
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.lines.some((l) => /^as-marissa .*pip install -q -r backend\/requirements\.txt/.test(l)));
+  assert.ok(r.stdout.includes('[marissa:deps] --force-deps'));
+});
+
+test('--skip-marissa prints only the frank parity line', () => {
+  const r = run(['--skip-marissa'], stubDir());
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(/\[parity\] frank: sha=/.test(r.stdout));
+  assert.ok(!/\[parity\] marissa: sha=/.test(r.stdout));
 });
 
 test('a failing gate stops before any restart', () => {

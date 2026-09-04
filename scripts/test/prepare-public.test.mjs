@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -46,7 +46,9 @@ test('a real build never touches the working tree or HEAD', () => {
   assert.equal(git(dir, 'branch', '--show-current').stdout.trim(), 'main');
   const files = git(dir, 'ls-tree', '-r', '--name-only', 'public').stdout.split('\n').filter(Boolean);
   assert.ok(files.includes('README.md'));
-  assert.ok(files.some((f) => f.startsWith('scripts/')));
+  assert.ok(files.includes('scripts/publish-scan.sh'), 'the scan script still ships');
+  assert.ok(!files.includes('scripts/publish-scan-patterns.txt'),
+    'the pattern file must not be published');
   assert.ok(!files.some((f) => f.startsWith('ralph/')), 'ralph/ must not be published');
   assert.ok(!files.some((f) => f.startsWith('docs/superpowers/')), 'internal docs must not be published');
   assert.equal(git(dir, 'rev-list', '--count', 'public').stdout.trim(), '1');
@@ -58,4 +60,24 @@ test('--check passes and builds nothing', () => {
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.notEqual(git(dir, 'rev-parse', '--verify', 'public').status, 0, 'no public branch from --check');
   assert.equal(git(dir, 'branch', '--show-current').stdout.trim(), 'main');
+});
+
+test('publish-scan.sh exits 0 as a no-op when the pattern file is absent', () => {
+  const dir = fixture();
+  rmSync(join(dir, 'scripts', 'publish-scan-patterns.txt'));
+  const r = spawnSync('bash', ['scripts/publish-scan.sh'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stderr, /nothing to scan/);
+});
+
+test('publish-scan.sh still exits 1 and names the file on a real hit', () => {
+  const dir = fixture();
+  // Built at runtime: a literal here would be a hit in THIS repo's own scan.
+  const leak = ['', 'home', 'someone', 'notes'].join('/');
+  writeFileSync(join(dir, 'leak.md'), `see ${leak} for details\n`);
+  git(dir, 'add', 'leak.md');
+  git(dir, 'commit', '-q', '-m', 'leak');
+  const r = spawnSync('bash', ['scripts/publish-scan.sh'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /leak\.md/);
 });

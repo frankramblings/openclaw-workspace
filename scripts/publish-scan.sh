@@ -6,6 +6,12 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# The pattern file is dropped from the public snapshot, so in a public tree
+# there is nothing to scan: say so and succeed.
+if [[ ! -f scripts/publish-scan-patterns.txt ]]; then
+  echo "publish-scan: no pattern file, nothing to scan" >&2
+  exit 0
+fi
 PATTERN="$(grep -v '^\s*$' scripts/publish-scan-patterns.txt | paste -sd'|' -)"
 # Trees that are never published (dropped by prepare-public.sh) or third-party:
 PUBLISH_EXCLUDES=(

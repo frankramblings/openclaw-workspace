@@ -56,6 +56,9 @@ export function convActionSheet(s) {
       + act('toggleFavorite', I.star(19, !!row.important), fav)
       + act('toggleUnread', unread ? I.check(19) : I.dot(19), unread ? 'Mark read' : 'Mark unread')
       + act('copyTranscript', I.copy(19), 'Copy chat')
+      // Touch equivalent of the desktop row's hover "x" (surfaces.js convRow):
+      // only offered while the thread actually holds an OPEN-shelf slot.
+      + (row.slot ? act('closeOpen', I.x(19), 'Remove from Open') : '')
       + moveHtml
       + act('archiveSession', I.archive(19), 'Archive')
       + act('deleteSession', I.trash(19), 'Delete', ' m-conv-sheet-danger')

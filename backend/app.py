@@ -517,7 +517,7 @@ async def client_log(request: Request):
 
 
 @app.post("/api/chat_stream")
-async def chat_stream(message: str = Form(...), session: str = Form(default=""),
+async def chat_stream(message: str = Form(default=""), session: str = Form(default=""),
                       use_web: str = Form(default=""),
                       allow_web_search: str = Form(default=""),
                       attachments: str = Form(default=""),
@@ -533,6 +533,14 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
 
     On a fresh thread's first message we also auto-title it (see above).
     """
+    # `message` carries a default because FastAPI treats an empty form value as
+    # missing: with Form(...) an attachment-only send (blank composer, a file
+    # attached) answered 422 and the client retried twice before erroring.
+    # A send with nothing in it at all is still a client bug, so say so plainly
+    # rather than driving an empty turn.
+    if not message.strip() and not attachments and not active_doc_id:
+        return JSONResponse({"detail": "message or attachment required"}, status_code=400)
+
     rec = sessions_store.get(session) if session else None
     session_key = rec["sessionKey"] if rec else config.web_session_key()
 

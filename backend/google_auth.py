@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -21,6 +22,10 @@ _TOKENS = Path(os.environ.get("GOOGLE_CAL_TOKENS",
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 _CACHE: dict = {"token": None, "exp": 0.0}
+# ~18 concurrent misses on a cold process each ran their own blocking OAuth
+# refresh (the stall the headless calendar checks hit). One refresh at a time,
+# with a second cache read after acquiring so the waiters take the fresh token.
+_REFRESH_LOCK = threading.Lock()
 
 
 def _creds() -> tuple[str, str, str]:
@@ -45,6 +50,9 @@ def _fetch_token() -> tuple[str, float]:
 def access_token() -> str:
     if _CACHE["token"] and time.time() < _CACHE["exp"] - 60:
         return _CACHE["token"]
-    tok, exp = _fetch_token()
-    _CACHE["token"], _CACHE["exp"] = tok, exp
-    return tok
+    with _REFRESH_LOCK:
+        if _CACHE["token"] and time.time() < _CACHE["exp"] - 60:
+            return _CACHE["token"]
+        tok, exp = _fetch_token()
+        _CACHE["token"], _CACHE["exp"] = tok, exp
+        return tok

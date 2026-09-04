@@ -12,7 +12,9 @@ canonical dicts. The router lives in calendar.py which imports these.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json as _json
+import logging
 import re
 import urllib.parse
 
@@ -20,7 +22,14 @@ import httpx
 
 from . import bridge, config, google_auth
 
+_log = logging.getLogger(__name__)
 _API = "https://www.googleapis.com/calendar/v3"
+# A view fans out to every visible calendar, so one slow calendar must not hold
+# the whole request open: 8s is well past a healthy Google round trip and well
+# short of the frontend's own guard.
+_REQ_TIMEOUT = 8
+# How far ahead a request that names no range looks.
+_DEFAULT_RANGE_DAYS = 60
 _DEFAULT_COLOR = "#4285f4"
 
 
@@ -45,7 +54,7 @@ def _http() -> httpx.AsyncClient:
         # Bound the keep-alive pool and expire idle connections quickly so
         # Google-closed keep-alives don't pile up in CLOSE_WAIT and leak fds.
         _client = httpx.AsyncClient(
-            timeout=30,
+            timeout=_REQ_TIMEOUT,
             limits=httpx.Limits(max_keepalive_connections=5, keepalive_expiry=30),
         )
     return _client
@@ -121,25 +130,69 @@ async def list_calendars() -> list[dict]:
     return [map_calendar(c) for c in data.get("items", [])]
 
 
-async def _events_for(cal_id: str, color: str, time_min: str, time_max: str) -> list[dict]:
+_RFC3339 = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def _parse_rfc3339(value: str) -> datetime.datetime | None:
+    try:
+        return datetime.datetime.fromisoformat((value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _fill_range(tmin: str, tmax: str) -> tuple[str, str]:
+    """Complete a missing bound. Forwarding empty timeMin/timeMax made Google
+    answer 400 for every calendar, and the swallowed failure read to the client
+    as an empty calendar. A half-open range anchors on the bound it was given,
+    so timeMax can never precede timeMin."""
+    span = datetime.timedelta(days=_DEFAULT_RANGE_DAYS)
+    now = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
+    if tmin and not tmax:
+        anchor = _parse_rfc3339(tmin) or now
+        return tmin, (anchor + span).strftime(_RFC3339)
+    if tmax and not tmin:
+        anchor = _parse_rfc3339(tmax) or (now + span)
+        return (anchor - span).strftime(_RFC3339), tmax
+    if not tmin and not tmax:
+        return now.strftime(_RFC3339), (now + span).strftime(_RFC3339)
+    return tmin, tmax
+
+
+def _short_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
+
+
+async def _events_for(cal_id: str, color: str, time_min: str, time_max: str) -> dict:
+    """Never raises: returns {"events": [...]} plus an "error" key for this one
+    calendar, so one broken calendar cannot empty the whole view."""
     try:
         data = await _get(f"/calendars/{_cal_path(cal_id)}/events",
                           {"timeMin": time_min, "timeMax": time_max,
                            "singleEvents": "true", "orderBy": "startTime",
                            "maxResults": 2500})
-    except Exception:  # noqa: BLE001
-        return []
-    return [map_event(e, cal_id, color) for e in data.get("items", [])]
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        _log.warning("calendar %s failed: %r", cal_id, exc)
+        return {"events": [], "error": _short_error(exc)}
+    return {"events": [map_event(e, cal_id, color) for e in data.get("items", [])]}
 
 
-async def list_events(time_min: str, time_max: str) -> list[dict]:
+async def list_events(time_min: str, time_max: str) -> dict:
+    """{"events": [...], "errors": [{"calendar", "error"}]}. Callers that only
+    read "events" are unaffected; "errors" lets the UI say what went wrong
+    instead of showing a silently empty calendar."""
     tmin, tmax = _to_rfc3339(time_min, False), _to_rfc3339(time_max, True)
+    tmin, tmax = _fill_range(tmin, tmax)
     cal_data = await _get("/users/me/calendarList")
     cals = [(c["id"], c.get("backgroundColor") or _DEFAULT_COLOR)
             for c in cal_data.get("items", []) if not c.get("hidden")]
     results = await asyncio.gather(*[_events_for(cid, color, tmin, tmax)
                                      for cid, color in cals])
-    return [e for sub in results for e in sub]
+    events = [e for r in results for e in r["events"]]
+    errors = [{"calendar": cid, "error": r["error"]}
+              for (cid, _c), r in zip(cals, results) if r.get("error")]
+    return {"events": events, "errors": errors}
 
 
 async def create_event(payload: dict) -> dict:

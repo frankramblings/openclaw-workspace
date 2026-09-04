@@ -27,8 +27,11 @@ export class ApiError extends Error {
 }
 
 /** GET → parsed JSON (throws on non-2xx). */
-export async function apiGet(path, { signal } = {}) {
-  const res = await fetch(BASE + path, { credentials: 'same-origin', signal });
+export async function apiGet(path, { signal, timeoutMs } = {}) {
+  // timeoutMs is opt-in: without it no signal is invented, so every existing
+  // caller behaves exactly as before. An explicit signal always wins.
+  const sig = signal || (timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined);
+  const res = await fetch(BASE + path, { credentials: 'same-origin', signal: sig });
   if (!res.ok) {
     // Keep the historic message format (callers match /→ (\d+)/ on it) but
     // carry the parsed body and status so a caller can read a structured

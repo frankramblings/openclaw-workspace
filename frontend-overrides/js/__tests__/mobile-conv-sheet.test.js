@@ -86,3 +86,12 @@ test('Remove from project shows only when the thread is filed, and marks the cur
 test('the sheet copy carries no em dashes', () => {
   assert.doesNotMatch(convActionSheet(state({}, { folder: 'p1' })), /—/);
 });
+
+test('Remove from Open appears only for a thread on the OPEN shelf', () => {
+  const on = convActionSheet(state({}, { slot: 2 }));
+  assert.match(on, /data-act="closeOpen" data-arg="s1"/);
+  assert.match(on, /Remove from Open/);
+  assert.match(on, /data-act="closeOpen" data-arg="s1" data-close-sheet="conv"/);
+  const off = convActionSheet(state());
+  assert.doesNotMatch(off, /closeOpen/);
+});

@@ -159,3 +159,29 @@ def test_malformed_selection_is_silently_ignored(vault_docs, monkeypatch):
     assert res.status_code == 200
     assert "selected passage" not in sent["message"]
     assert "[draft mode]" in sent["message"]
+
+
+def test_attachment_only_send_is_accepted(monkeypatch):
+    """Blank composer + one attachment is a real send: it must not 422.
+    FastAPI treats an empty form value as missing, so `message` has to carry
+    a default and the blank case gets an explicit guard instead."""
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None, **kwargs):
+        yield bridge._sse("[DONE]")
+
+    async def fake_extract(session_key):
+        return None
+
+    monkeypatch.setattr(bridge, "stream_turn", fake_stream_turn)
+    monkeypatch.setattr(app_module, "maybe_auto_extract", fake_extract)
+    client = TestClient(app)
+    res = client.post("/api/chat_stream",
+                      data={"message": "", "session": "",
+                            "attachments": '["shot.png"]'})
+    assert res.status_code == 200, res.text
+
+
+def test_empty_send_with_nothing_attached_is_a_clean_400():
+    client = TestClient(app)
+    res = client.post("/api/chat_stream", data={"message": "", "session": ""})
+    assert res.status_code == 400, res.text
+    assert res.json()["detail"] == "message or attachment required"

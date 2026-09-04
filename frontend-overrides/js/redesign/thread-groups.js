@@ -109,12 +109,10 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
   const inWindow = (s) => typeof s.opened === 'number' && s.opened > 0 && (nowMs - s.opened) <= OPEN_WINDOW_MS;
   const pinnedOpen = (s) => live.running.has(s.id) || s.id === activeId;
   const candidates = list.filter((s) => inWindow(s) || live.running.has(s.id) || live.queued.has(s.id) || s.id === activeId);
-  candidates.sort((a, b) => {
-    const ra = live.running.has(a.id) ? 1 : 0;
-    const rb = live.running.has(b.id) ? 1 : 0;
-    if (ra !== rb) return rb - ra;
-    return (b.opened || 0) - (a.opened || 0);
-  });
+  // Deviation from the spec's running-first order: candidates keep `list`'s
+  // recency (ts) order, so a thread that starts or stops running does not
+  // reshuffle every Option+N slot. Running and active rows are still
+  // guaranteed a place by the cap-yield loop below, just not the first one.
   const keep = candidates.slice();
   while (keep.length > OPEN_CAP) {
     let idx = -1;

@@ -15,7 +15,7 @@ pass() { echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 get() { curl -sS "$BASE$1"; }
 post() { curl -sS -X POST "$BASE$1" -H 'content-type: application/json' -d "${2:-{\}}"; }
-put() { curl -sS -X PUT "$BASE$1" -H 'content-type: application/json' -d "$2"; }
+put() { curl -sS -X PUT "$BASE$1" -H 'content-type: application/json' -d @"$2"; }
 del() { curl -sS -X DELETE "$BASE$1"; }
 
 PROBE_ADDED=0
@@ -75,10 +75,10 @@ CUR=$(get /api/agent/files/SOUL.md)
 SHA=$(echo "$CUR" | $J 'import json,sys; print(json.load(sys.stdin)["file"]["sha256"])')
 SOUL_TMP=$(mktemp)
 echo "$CUR" | $J 'import json,sys; d=json.load(sys.stdin); json.dump({"content": d["file"]["content"], "base_sha256": d["file"]["sha256"]}, open(sys.argv[1], "w"))' "$SOUL_TMP"
-put /api/agent/files/SOUL.md "$(cat "$SOUL_TMP")" | $J 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d.get("unchanged") is True, d' || fail soul-unchanged
+put /api/agent/files/SOUL.md "$SOUL_TMP" | $J 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d.get("unchanged") is True, d' || fail soul-unchanged
 SOUL_TMP2=$(mktemp)
 echo "$CUR" | $J 'import json,sys; d=json.load(sys.stdin); json.dump({"content": d["file"]["content"] + "\n", "base_sha256": d["file"]["sha256"]}, open(sys.argv[1], "w"))' "$SOUL_TMP2"
-BID=$(put /api/agent/files/SOUL.md "$(cat "$SOUL_TMP2")" | $J 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d["backup_id"], d; print(d["backup_id"])') || fail soul-write
+BID=$(put /api/agent/files/SOUL.md "$SOUL_TMP2" | $J 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d["backup_id"], d; print(d["backup_id"])') || fail soul-write
 SOUL_MODIFIED=1
 echo "soul backup id: $BID (restore with: curl -sS -X POST \"$BASE/api/agent/files/SOUL.md/restore\" -H content-type:application/json -d '{\"backup_id\":\"$BID\"}')"
 post /api/agent/files/SOUL.md/restore "{\"backup_id\":\"$BID\"}" | $J 'import json,sys; d=json.load(sys.stdin); assert d["ok"], d' || fail soul-restore

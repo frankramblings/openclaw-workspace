@@ -138,6 +138,7 @@ function convListHtml(s) {
       : r.working ? `<span class="m-conv-spin working" title="Working…">${fortress(14)}</span>`
       : r.queued ? `<span class="m-conv-dot queued" title="Message queued"></span>`
       : r.active ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+    <button class="m-conv-more" data-act="openConvActions" data-arg="${esc(r.id)}" tabindex="${rowTabindex}" title="Conversation actions" aria-label="Conversation actions">${I.dots(17)}</button>
   </div>`;
   };
   const titleHtml = map(groups, (g) => header(g) + ((g.kind === 'project' && g.meta.collapsed && !q) ? '' : map(g.rows || [], convRow)));

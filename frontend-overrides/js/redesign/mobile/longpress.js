@@ -4,11 +4,20 @@
 const THRESHOLD_MS = 500;
 const MOVE_CANCEL_PX = 8;
 
+// `evt.action`/`evt.arg` let a second surface (the conversation drawer's rows)
+// reuse this machine; both default to the original message-sheet behavior so
+// existing callers pass `{ msgId }` unchanged.
 export function startLongPress(state, evt, io) {
   resetLongPress(state, io);
-  const active = { msgId: evt.msgId, x: evt.x, y: evt.y };
+  const active = {
+    action: evt.action || 'openMobileMsgSheet',
+    arg: evt.arg === undefined ? evt.msgId : evt.arg,
+    msgId: evt.msgId,
+    x: evt.x,
+    y: evt.y,
+  };
   active.timer = io.setTimer(() => {
-    io.dispatch('openMobileMsgSheet', active.msgId);
+    io.dispatch(active.action, active.arg);
     state.active = null;
   }, THRESHOLD_MS);
   state.active = active;

@@ -12,6 +12,7 @@ export function applyCloseSheet(state, flag) {
   if (!flag) return;
   if (!state.live || !state.live.chat) return;
   state.live.chat.mobileSheetMsgId = null;
+  state.live.chat.mobileConvSheetId = null;
 }
 
 // Pure first half of the animated-close sequence: marks a sheet as "closing"

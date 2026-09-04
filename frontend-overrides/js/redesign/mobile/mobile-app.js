@@ -7,6 +7,7 @@ import { icon } from '../icons.js';
 import { renderCenter } from '../surfaces.js';
 import { renderTabBar, mChat, mInbox, mEmailList, mEmailReader, mCalendar, mMore, mToastHtml, mPtr } from './mobile-surfaces.js';
 import { renderCompanionSheet, renderCaptureSheet, renderComposeSheet, renderConvDrawer, renderModelSheet, renderSnoozeSheet } from './mobile-sheets.js';
+import { convActionSheet } from './mobile-conv-sheet.js';
 import { runtime } from '../live/runtime.js';
 import { apiJson } from '../live/api.js';
 import { recordCapture, readRecentCaptures } from './mobile-data.js';
@@ -102,7 +103,12 @@ export function renderMobile(s) {
     (s.composeOpen ? renderComposeSheet(s) : '') +
     (s.mModelSheetOpen ? renderModelSheet(s) : '') +
     // Self-guarded (renders '' with no s.inboxSnoozeFor) — see mobile-sheets.js.
-    renderSnoozeSheet(s);
+    renderSnoozeSheet(s) +
+    // Self-guarded too: '' unless a drawer row's "⋯" / long-press set an id.
+    // It renders before the drawer markup in source order, but its z-index
+    // (mobile.css .m-conv-sheet, the message-sheet layer) puts it on top of
+    // the drawer it was opened from, which stays visible underneath.
+    convActionSheet(s);
 
   // The conversation drawer is ALWAYS in the DOM (off-screen when closed) so the
   // edge-swipe gesture can finger-track it without rebuilding innerHTML mid-touch.
@@ -208,6 +214,17 @@ export function mobileActions(state) {
       if (runtime.actions && runtime.actions.reloadSessions) runtime.actions.reloadSessions();
     },
     closeDrawer: () => { state.mDrawerOpen = false; },
+    // Thread-actions sheet (drawer row "⋯" / long-press). The drawer stays
+    // open underneath: dismissing the sheet returns you to the list you were
+    // looking at, and Back peels them off one at a time (mobile-history.js).
+    openConvActions: (id) => {
+      if (!id || !state.live || !state.live.chat) return;
+      state.live.chat.mobileConvSheetId = id;
+    },
+    closeConvActions: () => {
+      if (!state.live || !state.live.chat) return;
+      state.live.chat.mobileConvSheetId = null;
+    },
     mSelectSession: (id) => { state.mDrawerOpen = false; if (runtime.actions && runtime.actions.selectSession) runtime.actions.selectSession(id); },
     openModelSheet: async () => {
       closeSheets();

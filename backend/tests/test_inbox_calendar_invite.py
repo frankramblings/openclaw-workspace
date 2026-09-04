@@ -144,3 +144,72 @@ async def test_email_rsvp_rejects_bad_status(monkeypatch):
                            base_url="http://t") as c:
         r = await c.post("/api/email/rsvp/42", json={"rsvp": "nope"})
     assert r.status_code == 400
+
+
+def test_read_view_exposes_display_calendar_and_invite():
+    """The read view keeps main's display block and adds the RSVP-ready invite."""
+    from backend import email_himalaya as eh
+    read = eh.message_to_read(GOOGLE_INVITE, uid="9")
+    assert read["calendar"] and read["calendar"]["summary"] == "Sync"
+    inv = read["invite"]
+    assert inv["method"] == "REQUEST"
+    assert inv["uid"] == "abc-123@google.com"
+    assert inv["organizer_email"] == "boss@example.com"
+    assert inv["dtstart_line"].startswith("DTSTART;TZID=America/New_York:")
+
+
+def test_read_view_invite_is_none_for_plain_email():
+    from backend import email_himalaya as eh
+    read = eh.message_to_read(PLAIN_EMAIL, uid="9")
+    assert read["invite"] is None
+
+
+@pytest.mark.anyio
+async def test_perform_rsvp_sends_reply_and_files_the_message(monkeypatch):
+    """Happy path with every himalaya call faked: no real mail leaves here."""
+    from backend import email_himalaya as eh
+    sent, flags, moved = {}, [], []
+
+    async def fake_run_raw(args, stdin=None, timeout=None):
+        if args[:2] == ["message", "export"]:
+            return GOOGLE_INVITE
+        if args[:2] == ["message", "send"]:
+            sent["mime"] = stdin
+            return b""
+        if args[:2] == ["flag", "add"]:
+            flags.append(args)
+            return b""
+        if args[0] == "message" and args[1] == "move":
+            moved.append(args)
+            return b""
+        return b""
+
+    monkeypatch.setattr(eh.himalaya_cli, "run_raw", fake_run_raw)
+    monkeypatch.setattr(eh, "ACCOUNT_ADDRESS", "me@example.com")
+    out = await eh.perform_rsvp("42", "INBOX", "accepted")
+
+    mime = sent["mime"].decode("utf-8", "replace")
+    assert "METHOD:REPLY" in mime
+    assert "PARTSTAT=ACCEPTED" in mime
+    assert "UID:abc-123@google.com" in mime
+    assert "Subject: Accepted: Sync" in mime
+    assert "To: boss@example.com" in mime
+    assert flags and flags[0][:4] == ["flag", "add", "42", "Seen"]
+    assert moved
+    assert out == {"status": "accepted", "moved_to": eh.ARCHIVE_FOLDER}
+
+
+@pytest.mark.anyio
+async def test_email_rsvp_returns_404_when_the_email_has_no_invite(monkeypatch):
+    from backend import email_himalaya as eh
+
+    async def fake_run_raw(args, stdin=None, timeout=None):
+        return PLAIN_EMAIL
+
+    monkeypatch.setattr(eh.himalaya_cli, "run_raw", fake_run_raw)
+    from backend.app import app
+    async with AsyncClient(transport=ASGITransport(app=app),
+                           base_url="http://t") as c:
+        r = await c.post("/api/email/rsvp/42", json={"rsvp": "accepted"})
+    assert r.status_code == 404
+    assert r.json()["ok"] is False

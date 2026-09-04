@@ -170,6 +170,9 @@ function toCurrent(d) {
     unread: false,
     body: paragraphsFrom(bodyText),
     attach: (d.attachments || []).map((a) => ({ name: a.filename, size: fmtBytes(a.size) })),
+    // The REQUEST invite block (backend message_to_read) the reader turns into
+    // an Accept/Maybe/Decline row. Null for ordinary mail.
+    invite: d.invite || null,
   };
 }
 
@@ -351,6 +354,38 @@ export const actions = {
       s.emailSummary = (res && res.summary) || 'No summary available.';
     } catch (_) { s.emailSummary = 'Summary unavailable.'; }
     s.emailBusy = false; runtime.render();
+  },
+  // Answer a calendar invite that arrived as an email .ics. arg is
+  // "uid|folder|response" with each field encodeURIComponent-encoded (see
+  // inbox-logic.emailInviteRowHtml), so a folder name containing "|" survives.
+  // The backend sends the REPLY, marks the message Seen and FILES it (Archive,
+  // or Trash when declined), so the answered message is gone from this folder:
+  // re-reading its uid would 404 and leave the reader showing a live invite.
+  // Drop the open message and reload the list instead.
+  emailRsvp: async (arg) => {
+    const s = runtime.state;
+    if (!s) return;
+    const parts = String(arg || '').split('|').map((v) => {
+      try { return decodeURIComponent(v); } catch (_) { return v; }
+    });
+    const [uid, folder, response] = parts;
+    const LABEL = { accepted: 'Accepted', tentative: 'Maybe', declined: 'Declined' };
+    if (!uid || !LABEL[response]) return;
+    s.emailBusy = true; runtime.render();
+    try {
+      await apiJson(`/api/email/rsvp/${encodeURIComponent(uid)}`, { rsvp: response, folder: folder || FOLDER });
+      s.inboxToast = { msg: `${LABEL[response]} the invitation`, undoTs: null };
+    } catch (_) {
+      s.inboxToast = { msg: 'Could not send the RSVP.', undoTs: null };
+      s.emailBusy = false; runtime.render();
+      return;
+    }
+    s.emailBusy = false;
+    s.mReader = false;                       // mobile: back to the list
+    s.selEmail = 0;
+    if (s.live && s.live.email) s.live.email.current = undefined;
+    try { await load(s); } catch (_) { /* keep the emptied reader; toast stands */ }
+    runtime.render();
   },
   clearEmailSummary: () => { const s = runtime.state; if (s) { s.emailSummary = ''; runtime.render(); } },
 };

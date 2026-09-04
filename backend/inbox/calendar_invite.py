@@ -19,6 +19,11 @@ class CalendarError(ValueError):
     """The message is not an actionable calendar invitation."""
 
 
+class NotAnInviteError(CalendarError):
+    """No REQUEST invite in this message at all, so there is nothing to answer.
+    The route maps this to 404 while other CalendarErrors stay 400."""
+
+
 def _unfold(text: str) -> list[str]:
     """RFC 5545 line unfolding: a line beginning with space/TAB continues the
     previous one."""
@@ -44,7 +49,8 @@ def _prop_value(line: str) -> str:
 def extract_invite(raw: bytes) -> dict | None:
     """Return the VEVENT of a METHOD:REQUEST text/calendar part, or None.
 
-    Keys: uid, sequence(int), summary, location, organizer_email,
+    Keys: method (always "REQUEST"), uid, sequence(int), summary, location,
+    organizer_email,
     organizer_line, dtstart_line, dtend_line, recurrence_id_line, start_iso,
     end_iso. The *_line values are the full original (unfolded) iCal lines so
     build_reply can copy DTSTART/DTEND/RECURRENCE-ID verbatim (TZID intact)."""
@@ -66,7 +72,7 @@ def extract_invite(raw: bytes) -> dict | None:
 
     lines = _unfold(cal_text)
     in_event = False
-    inv: dict = {"uid": "", "sequence": 0, "summary": "", "location": "",
+    inv: dict = {"method": "REQUEST", "uid": "", "sequence": 0, "summary": "", "location": "",
                  "organizer_email": "", "organizer_line": "",
                  "dtstart_line": "", "dtend_line": "",
                  "recurrence_id_line": "", "start_iso": "", "end_iso": ""}

@@ -15,7 +15,7 @@ import { renderWithMentionChips } from '../mention-core.js';
 import { providerLogo } from '../provider-logo.js';
 import { projectName } from '../project-menu.js';
 import { suggestGhost } from '../suggest-ghost.js';
-import { cardActions, cardButtonsHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from '../live/inbox-logic.js';
+import { cardActions, cardButtonsHtml, emailInviteRowHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 import { questionCardHtml } from '../live/question-card.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
@@ -460,6 +460,7 @@ export function mEmailReader(s) {
     <div class="m-reader-from"><div class="m-reader-av" style="background:${m.avBg};color:${m.avFg}">${esc(m.initials)}</div><div style="min-width:0"><div class="nm">${esc(m.from)}</div><div class="to">to me · ${esc(m.time)}</div></div></div>
     <div class="m-ai-row"><button class="m-ai-btn teal" data-act="composeAiDraft">✦ AI reply</button><button class="m-ai-btn violet" data-act="summarizeEmail">✦ Summarize</button></div>
     ${when(s.emailSummary, `<div class="m-email-summary"><div class="hd"><span class="t">✦ Summary</span><button class="x" data-act="clearEmailSummary" aria-label="Dismiss summary">✕</button></div><div class="bd">${esc(s.emailSummary)}</div></div>`)}
+    ${emailInviteRowHtml(m, esc)}
     ${map(m.body || [], (p) => `<p>${esc(p)}</p>`)}
     ${map(attach, (a) => `<div class="m-attach" title="attachment download not yet available" style="cursor:default"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(a.name)}</div><div class="sz">${esc(a.size)}</div></div></div>`)}
   </div>

@@ -228,7 +228,11 @@ def message_to_read(raw: bytes, uid: str = "") -> dict:
         "message_id": msg.get("Message-ID") or "",
         "references": msg.get("References") or "",
         "attachments": attachments,
+        # Two parsers on purpose: parse_ics_calendar normalizes the block the
+        # reader DISPLAYS, extract_invite keeps the raw iCal lines the RSVP
+        # action needs to build an RFC-correct REPLY. See the module docstrings.
         "calendar": parse_ics_calendar(calendar_raw) if calendar_raw else None,
+        "invite": calendar_invite.extract_invite(raw),
     }
 
 
@@ -501,7 +505,7 @@ async def perform_rsvp(uid: str, folder: str, status: str) -> dict:
         ["message", "export", uid, "-F", "-f", folder])
     invite = calendar_invite.extract_invite(raw)
     if invite is None:
-        raise calendar_invite.CalendarError("not a calendar invitation")
+        raise calendar_invite.NotAnInviteError("not a calendar invitation")
     if not invite.get("organizer_email"):
         raise calendar_invite.CalendarError("invite has no organizer to reply to")
     dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -532,6 +536,9 @@ async def email_rsvp(uid: str, payload: dict = Body(default=None),
                                      "accepted|tentative|declined"})
     try:
         result = await perform_rsvp(uid, fld, status)
+    except calendar_invite.NotAnInviteError as exc:
+        return JSONResponse(status_code=404,
+                            content={"ok": False, "error": str(exc)})
     except calendar_invite.CalendarError as exc:
         return JSONResponse(status_code=400,
                             content={"ok": False, "error": str(exc)})

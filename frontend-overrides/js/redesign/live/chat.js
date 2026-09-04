@@ -38,6 +38,7 @@ import { buildSwitcherSections, flatRows, clampSel } from '../switcher.js';
 import { buildThreadGroups } from '../thread-groups.js';
 import { afterTurn as changesAfterTurn, attachHistory as changesAttachHistory } from './changes.js';
 import { parseMoveArg, MOVE_NEW, MOVE_NONE } from '../project-menu.js';
+import { activeLibraryDocId, consumeAttachDetach, getSelection, applyExternalUpdate } from './document-editor.js';
 
 // The throttled per-token render only patches the active message bubble in
 // place — it does NOT re-render `.composer-wrap`, which is where the strip
@@ -1439,6 +1440,13 @@ function beginTurn(chat, modelLabel, sessionId) {
       _handlePendingFrame(ev, chat, isCurrentTurn(turn, epoch));
       return;
     }
+    // doc_update: Gary edited the open document during this turn (draft
+    // mode). Routed unconditionally, like token.added/resolved above: the
+    // file really did change regardless of turn ownership.
+    if (ev.type === 'doc_update') {
+      try { applyExternalUpdate(ev); } catch (_) { /* never break the turn over a doc sync hiccup */ }
+      return;
+    }
     // Per-turn identity guard. Covers BOTH stray frames after teardown
     // (turn = null on 'done'/'error'/404 → the old null-deref crash) AND
     // frames from a superseded source landing after a NEW turn already exists
@@ -1743,6 +1751,46 @@ function beginTurn(chat, modelLabel, sessionId) {
 // SSE/postStream reader. Not used by production code.
 export function __testOnEvent() { return _lastOnEvent; }
 
+// active_doc_selection is capped server-side at 8 KB of UTF-8-encoded JSON
+// (backend/draft_mode.py's SELECTION_MAX_BYTES) — parse_selection there
+// silently treats anything over that cap as "no selection", so an oversized
+// selection would otherwise vanish from the turn entirely instead of still
+// giving it a shorter hint. Trim rule: keep the whole {from,to,text} JSON
+// payload under 7 KB (7168 UTF-8 bytes — one KB of margin under the server's
+// hard cap, covering the small amount of JSON structure/escaping overhead
+// around `text`), cutting `text` itself (never `from`/`to`) at the longest
+// prefix that still fits once a trailing ellipsis is appended, and never
+// splitting a UTF-16 surrogate pair when choosing that cut point.
+const SELECTION_TARGET_BYTES = 7 * 1024;
+function trimSelectionText(from, to, text) {
+  const bytesOf = (t) => new TextEncoder().encode(JSON.stringify({ from, to, text: t })).length;
+  if (bytesOf(text) <= SELECTION_TARGET_BYTES) return { from, to, text };
+  const ELLIPSIS = '…';
+  const safeCut = (n) => {
+    if (n > 0 && n < text.length) {
+      const code = text.charCodeAt(n - 1);
+      if (code >= 0xd800 && code <= 0xdbff) return n - 1; // don't split a surrogate pair
+    }
+    return n;
+  };
+  const fits = (n) => bytesOf(text.slice(0, safeCut(n)) + ELLIPSIS) <= SELECTION_TARGET_BYTES;
+  let lo = 0, hi = text.length; // fits(0) always true — the empty string plus overhead fits comfortably
+  while (lo < hi) {
+    const mid = lo + Math.ceil((hi - lo) / 2);
+    if (fits(mid)) lo = mid; else hi = mid - 1;
+  }
+  return { from, to, text: text.slice(0, safeCut(lo)) + ELLIPSIS };
+}
+
+// The active_doc_selection FormData field, or {} when there's nothing to
+// attach (no doc, no editor selection, or an empty/whitespace selection) —
+// spread directly into fireSend/keepaliveSend's fields object. Shared so the
+// trim rule above lives in exactly one place.
+function selectionField(docId, sel) {
+  if (!docId || !sel || !sel.text) return {};
+  return { active_doc_selection: JSON.stringify(trimSelectionText(sel.from, sel.to, sel.text)) };
+}
+
 // The network half of a send: detach any prior live reader, open a turn, and
 // POST /api/chat_stream. Shared by the immediate path (dispatchSend) and the
 // buffered composer flow (flushPending) — in both cases the optimistic bubble
@@ -1768,6 +1816,9 @@ function fireSend(sessionId, text, attachSnap) {
   ensureActivity();
   flushRender();
 
+  const docId = activeLibraryDocId();
+  const sel = docId ? getSelection() : null;
+  consumeAttachDetach();
   streamCtrl = postStream(
     '/api/chat_stream',
     {
@@ -1776,6 +1827,8 @@ function fireSend(sessionId, text, attachSnap) {
       mode: state.chatMode || 'agent',
       ...(attachIds.length ? { attachments: JSON.stringify(attachIds) } : {}),
       ...(state.incognito ? { incognito: 'true' } : {}),
+      ...(docId ? { active_doc_id: docId } : {}),
+      ...selectionField(docId, sel),
     },
     onEvent,
   );
@@ -1951,12 +2004,17 @@ async function submitFromComposer(text, attachSnap, opts = {}) {
 // local state left here to revert into by the time this settles.
 function keepaliveSend(sessionId, text, attachSnap, state) {
   const attachIds = (attachSnap || []).map((a) => a.id);
+  const docId = activeLibraryDocId();
+  const sel = docId ? getSelection() : null;
+  consumeAttachDetach();
   const fields = {
     message: text,
     session: sessionId,
     mode: (state && state.chatMode) || 'agent',
     ...(attachIds.length ? { attachments: JSON.stringify(attachIds) } : {}),
     ...(state && state.incognito ? { incognito: 'true' } : {}),
+    ...(docId ? { active_doc_id: docId } : {}),
+    ...selectionField(docId, sel),
   };
   const fd = new FormData();
   for (const [k, v] of Object.entries(fields)) if (v != null) fd.append(k, v);
@@ -3220,6 +3278,7 @@ export const actions = {
     const forceQueue = !!state._forceQueue;
     state._forceQueue = false;
     const text = (state.draft || '').trim();
+    state.docAiAskPlaceholder = null; // Task 5's Ask action set this; any send (incl. queue/steer) consumes it
     // Uploads still in flight (or dead) gate the send — the old snapshot took
     // whatever had RESOLVED, silently sending without the file that was still
     // uploading. Block with a notice instead of guessing; the draft and chips

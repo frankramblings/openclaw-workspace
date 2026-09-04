@@ -581,6 +581,11 @@ export function chatSurface(s) {
       ${map(filtered, (c) => `<div class="slash-cmd${slashSel && c.name === slashSel.name ? ' sel' : ''}" role="option" aria-selected="${slashSel && c.name === slashSel.name}" data-act="pickSlash" data-arg="${esc(c.name)}"><span class="glyph" style="color:${c.color}">${c.glyph}</span><span class="name">${esc(c.name)}</span><span class="desc">${esc(c.desc)}</span></div>`)}
     </div>`)}
     ${when(s.modelMenuOpen, modelPopover(s))}
+    ${(() => {
+      const de = s.docEditor;
+      if (!de || !de.open || !de.id || de.wsPath || de.attachDetached) return '';
+      return `<div class="oc-doc-pill" role="status">Editing: <b>${esc(de.title || 'Untitled document')}</b><button type="button" class="oc-doc-pill-x" data-act="detachDocPill" title="Stop attaching this document to your next message" aria-label="Stop attaching this document">×</button></div>`;
+    })()}
     <div class="composer${slashOpen ? ' slash' : ''}">
       ${when(s.live?.chat?.queued, `<div class="queued-msg" data-act="queueRecall" title="Click to edit"><span class="q-ico">⏳</span><span class="q-txt">Queued — sends when the reply finishes${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 90))}` : ' · (image)'}</span><button class="q-x ocbtn" data-act="queueCancel" title="Cancel">✕</button></div>`)}
       ${ghost}

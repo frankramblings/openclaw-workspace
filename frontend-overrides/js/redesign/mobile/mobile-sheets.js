@@ -3,6 +3,7 @@
 
 import { I, icon, fortress } from '../icons.js';
 import { esc, map, stripMd } from '../dom.js';
+import { searchClearBtn } from '../search-clear.js';
 import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, captureAgeLabel } from './mobile-data.js';
 import { providerLogo } from '../provider-logo.js';
@@ -185,7 +186,7 @@ export function renderConvDrawer(s) {
   <div class="m-drawer-scrim${open ? ' open' : ''}" data-act="closeDrawer" aria-hidden="true"></div>
   <div class="m-drawer ${side}${open ? ' open' : ''}" data-conv-drawer role="dialog" aria-modal="${open}" aria-hidden="${!open}"${open ? '' : ' inert'} aria-label="Conversations">
     <div class="m-drawer-head"><span class="t">Conversations</span><div class="m-spacer"></div><button class="m-round-btn" data-act="mNewChat" title="New chat">${I.plus(16)}</button><button class="cancel" data-act="closeDrawer">Close</button></div>
-    <div class="m-drawer-search">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"></div>
+    <div class="m-drawer-search">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">${searchClearBtn('convFilter')}</div>
     <div class="m-conv-list" data-ptr-skip>${convListHtml(s)}</div>
   </div>`;
 }

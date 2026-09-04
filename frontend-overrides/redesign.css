@@ -275,6 +275,11 @@ html.shell-mobile .oc-toast{max-width:none}
 .oc-search{height:34px;border-radius:9px;border:1px solid var(--bd);background:var(--bg);display:flex;align-items:center;padding:0 10px;gap:8px}
 .oc-search .ph{font-size:14px;color:var(--faint)}
 .oc-search .kbd{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid var(--bd);border-radius:5px;padding:2px 5px}
+/* clear × (search-clear.js): in the markup always, shown only while the input
+   has text — :placeholder-shown flips on the first keystroke, no render needed */
+.oc-search-clear{display:none;flex:none;align-items:center;justify-content:center;width:22px;height:22px;margin:0 -4px 0 0;padding:0;border:none;border-radius:6px;background:transparent;color:var(--faint);cursor:pointer;line-height:0}
+.oc-search-clear:hover,.oc-search-clear:focus-visible{color:var(--fg);background:color-mix(in srgb,var(--fg) 10%,transparent)}
+.oc-search:has(input:not(:placeholder-shown)) .oc-search-clear{display:inline-flex}
 
 /* =============================================================================
    CHAT

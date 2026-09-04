@@ -2,6 +2,7 @@
 // typing, and semantic message hits from /api/search. Section building and
 // selection math are pure; renderSwitcher only turns state into HTML.
 import { esc, map } from './dom.js';
+import { searchClearBtn } from './search-clear.js';
 import { I } from './icons.js';
 
 export const RECENT_LIMIT = 8;
@@ -123,7 +124,7 @@ export function renderSwitcher(s) {
   return `
   <div class="oc-switcher-scrim" data-act="closeSwitcher" aria-hidden="true"></div>
   <div class="oc-switcher" role="dialog" aria-modal="true" aria-label="Switch conversation">
-    <div class="oc-search sw-search">${I.search()}<input data-model="switchQuery" data-focus="switchQuery" placeholder="Jump to a conversation…" value="${esc(s.switchQuery || '')}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" role="combobox" aria-expanded="true"></div>
+    <div class="oc-search sw-search">${I.search()}<input data-model="switchQuery" data-focus="switchQuery" placeholder="Jump to a conversation…" value="${esc(s.switchQuery || '')}" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" role="combobox" aria-expanded="true">${searchClearBtn('switchQuery')}</div>
     <div class="sw-list" role="listbox">${body}</div>
     <div class="sw-foot"><span>↑↓ move</span><span>↵ open</span><span>esc close</span></div>
   </div>`;

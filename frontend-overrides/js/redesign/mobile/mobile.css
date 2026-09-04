@@ -702,6 +702,11 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 /* Search box in the conversation drawer — semantic search over all chats. */
 .m-drawer-search { display: flex; align-items: center; gap: 8px; margin: 10px 16px 2px; padding: 0 11px; height: 38px; border-radius: 10px; border: 1px solid var(--bd); background: var(--bg); flex: none; }
 .m-drawer-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--fg); font-family: inherit; font-size: 16px; /* ≥16px: iOS zooms on focus below that */ }
+/* clear × (search-clear.js) — base style lives in redesign.css (.oc-search-clear);
+   bigger touch target here, revealed while the input has text */
+.m-search .oc-search-clear, .m-drawer-search .oc-search-clear { width: 28px; height: 28px; margin-right: -6px; }
+.m-search:has(input:not(:placeholder-shown)) .oc-search-clear,
+.m-drawer-search:has(input:not(:placeholder-shown)) .oc-search-clear { display: inline-flex; }
 /* Two-line semantic hit rows (conversation name + matched snippet). */
 .m-conv-msghit { align-items: flex-start; }
 .m-conv-hit { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }

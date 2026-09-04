@@ -5,6 +5,7 @@
 import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
 import { docPillHtml } from './doc-pill.js';
+import { searchClearBtn } from './search-clear.js';
 import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import { questionCardHtml } from './live/question-card.js';
@@ -103,7 +104,7 @@ export function renderChatList(s) {
   <div class="oc-secondary chat-list">
     <div class="chat-list-top">
       <button class="new-conv" data-act="newChat" title="New conversation (⌘⇧O / Ctrl+Shift+O)"><span class="plus">+</span> New conversation</button>
-      <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
+      <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit">${searchClearBtn('convFilter')}</div>
       <div style="display:flex;justify-content:flex-end;margin-top:6px"><button data-act="cycleSessionSort" title="Sort order" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer">${s.convSort === 'alpha' ? 'A–Z' : 'Recent'} ⇅</button></div>
     </div>
     <div class="conv-scroll">${convListBody(s)}</div>
@@ -626,7 +627,7 @@ function emailSurface(s) {
     <div class="oc-secondary email-list">
       <div class="list-top">
         <div class="list-top-head"><span class="ttl">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="oc-spacer"></div>${refreshBtn('email', s)}<button class="btn btn-teal" data-act="composeNew">+ New</button></div>
-        <div class="oc-search">${I.search()}<input data-model="emailQuery" data-focus="emailQuery" placeholder="Search · INBOX" value="${esc(s.emailQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
+        <div class="oc-search">${I.search()}<input data-model="emailQuery" data-focus="emailQuery" placeholder="Search · INBOX" value="${esc(s.emailQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit">${searchClearBtn('emailQuery')}</div>
       </div>
       <div class="list-scroll">
         ${emails.map((e, i) => ({ e, i })).filter(({ e }) => { const q = (s.emailQuery || '').trim().toLowerCase(); return !q || `${e.subj || ''} ${e.from || ''} ${e.src || ''}`.toLowerCase().includes(q); }).map(({ e, i }) => {
@@ -1101,7 +1102,7 @@ function librarySurface(s) {
   const lq = (s.libQuery || '').trim().toLowerCase();
   const items = all.filter((a) => (lf === 'all' || a.cat === lf) && (!lq || String(a.title || '').toLowerCase().includes(lq)));
   return `
-  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts __AGENT_NAME__ has produced</span><div class="oc-spacer"></div>${refreshBtn('library', s)}<button class="btn" data-act="clipUrl" style="margin-right:8px">Clip URL</button><button class="btn btn-teal" data-act="newDoc" style="margin-right:8px">+ New doc</button><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div></div>
+  <div class="oc-head">${I.library(17, 'var(--teal)')}<span class="title">Library</span><span class="desc">artifacts __AGENT_NAME__ has produced</span><div class="oc-spacer"></div>${refreshBtn('library', s)}<button class="btn" data-act="clipUrl" style="margin-right:8px">Clip URL</button><button class="btn btn-teal" data-act="newDoc" style="margin-right:8px">+ New doc</button><div class="oc-search" style="height:32px;border-radius:8px">${I.search(13, 'currentColor')}<input data-model="libQuery" data-focus="libQuery" placeholder="Filter library…" value="${esc(s.libQuery || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit">${searchClearBtn('libQuery')}</div></div>
   <div class="lib-wrap">
     <div class="lib-filters">
       ${map(LIB_FILTERS, ([id, label]) => `<span class="lib-filter${lf === id ? ' active' : ''}" data-act="libFilter" data-arg="${id}">${esc(label)}</span>`)}
@@ -1153,7 +1154,7 @@ function notesSurface(s) {
     <div class="oc-secondary notes-list">
       <div class="list-top">
         <div class="list-top-head"><span class="ttl">Notes</span><span style="font-size:11px;color:var(--faint)">${s.live?.notes?.docs ? `vault · ${s.live.notes.docs.length}` : ''}</span><div class="oc-spacer"></div>${refreshBtn('notes', s)}<button class="btn btn-teal" data-act="newNote">+ New</button></div>
-        <div class="oc-search">${I.search()}<input data-model="notesFilter" data-focus="notesFilter" placeholder="Search notes…" value="${esc(s.notesFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit"></div>
+        <div class="oc-search">${I.search()}<input data-model="notesFilter" data-focus="notesFilter" placeholder="Search notes…" value="${esc(s.notesFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit">${searchClearBtn('notesFilter')}</div>
       </div>
       <div class="list-scroll">
         ${docs0.map((n, i) => ({ n, i })).filter(({ n }) => { const q = (s.notesFilter || '').trim().toLowerCase(); return !q || String(n.title || '').toLowerCase().includes(q); }).map(({ n, i }) => {

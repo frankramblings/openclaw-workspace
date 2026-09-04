@@ -6,6 +6,7 @@
 
 import { I } from './icons.js';
 import { esc, when } from './dom.js';
+import { clearSearchField } from './search-clear.js';
 import { parseHash, chatHash, SURFACES, reassertedThreadHash } from './routes.js';
 import { AVATAR, filterSlashCommands } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
@@ -734,6 +735,24 @@ const actions = {
   // window. No-op instead: worst case the tap does nothing until the real
   // action lands a beat later — the typed text is never thrown away.
   clearQuick: () => {},
+
+  // Search-box × (search-clear.js). Blanks the model field, resets the paired
+  // semantic search (convFilter / switchQuery), and drops any pending debounced
+  // re-render for that field so a stale timer can't repaint the old results
+  // after this click's own render(). Then puts the caret back in the rebuilt
+  // input: the button carries no data-focus (see search-clear.js for why), so
+  // render()'s focus restore doesn't apply; rAF lands after that render.
+  clearField: (field) => {
+    if (!clearSearchField(state, field, actions)) return;
+    if (_searchDebounceTimers[field]) { clearTimeout(_searchDebounceTimers[field]); _searchDebounceTimers[field] = null; }
+    if (field === 'convFilter' && _convFilterRenderTimer) { clearTimeout(_convFilterRenderTimer); _convFilterRenderTimer = null; }
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => {
+        const el = root.querySelector(`[data-model="${field}"]`);
+        if (el) el.focus({ preventScroll: true });
+      });
+    }
+  },
 
   // settings
   setSection: (id) => { state.setSection = id; },

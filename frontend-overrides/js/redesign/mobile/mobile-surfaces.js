@@ -4,6 +4,7 @@
 import { I, icon, fortress } from '../icons.js';
 import { esc, map, when, stripMd } from '../dom.js';
 import { docPillHtml } from '../doc-pill.js';
+import { searchClearBtn } from '../search-clear.js';
 import { AVATAR } from '../data.js';
 import { QUICK_CHIPS, capNotice, INBOX_CAP, EMAIL_CAP } from '../surfaces.js';
 import { MORE_CARDS } from './mobile-data.js';
@@ -426,7 +427,7 @@ export function mEmailList(s) {
   return `
   <div class="m-head">
     <div class="m-head-row"><span class="m-title">Email</span>${emailUnread > 0 ? `<span class="pill-teal">${emailUnread} unread</span>` : ''}<div class="m-spacer"></div><button class="m-icon-btn" data-act="composeNew" aria-label="New message">${I.plus(16)}</button></div>
-    <div class="m-search">${I.search()}<input data-model="emailQuery" data-focus="emailQuery" placeholder="Search · INBOX" value="${esc(s.emailQuery || '')}" autocomplete="off"></div>
+    <div class="m-search">${I.search()}<input data-model="emailQuery" data-focus="emailQuery" placeholder="Search · INBOX" value="${esc(s.emailQuery || '')}" autocomplete="off">${searchClearBtn('emailQuery')}</div>
   </div>
   <div class="m-scroll m-mail-list" data-ptr="1">
     ${mPtr(s, 'Checking mail…')}

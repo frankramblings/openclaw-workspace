@@ -21,12 +21,19 @@ function proposalsBlock(pp, hasProjects) {
   const acceptFailedLine = pp?.error === 'accept_failed'
     ? `<div class="set-text">Could not create that project. Try again.${props.length ? '' : ' <button class="set-btn" data-act="projectsDiscover">Try again</button>'}</div>`
     : '';
+  // A failed dismiss puts the proposal back into the list (see
+  // live/settings.js projectsDismiss), so this always appears with the
+  // suggested list still showing that proposal; no button, it just explains.
+  const dismissFailedLine = pp?.error === 'dismiss_failed'
+    ? '<div class="set-text set-muted">Could not dismiss that suggestion. It is still here.</div>'
+    : '';
   if (props.length) {
-    return acceptFailedLine + `<div class="set-row-head">Suggested projects</div>
+    return acceptFailedLine + dismissFailedLine + `<div class="set-row-head">Suggested projects</div>
       <div class="set-text set-muted">Found by the local title model from your recent conversations. Nothing is filed until you accept.</div>
       ${map(props, proposalRowHtml)}`;
   }
   if (acceptFailedLine) return acceptFailedLine;
+  if (dismissFailedLine) return dismissFailedLine;
   if (pp?.error === 'model_failed') {
     return `<div class="set-text">The local model did not answer, so no suggestions yet. <button class="set-btn" data-act="projectsDiscover">Try again</button></div>`;
   }

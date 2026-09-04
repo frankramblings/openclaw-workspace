@@ -432,8 +432,10 @@ export const actions = {
 
   // Settings → Projects: accept/dismiss a suggested project, or kick off a
   // fresh discovery pass. `pp.busy` blocks a double-click while accept is
-  // in flight; a failed accept sets `pp.error` (the renderer shows a line
-  // for it) rather than a toast, matching the Changes actions' pattern.
+  // in flight; a failed accept or dismiss sets `pp.error` (the renderer
+  // shows a line for it) rather than a toast, matching the Changes actions'
+  // pattern. Both clear any stale `pp.error` at the start of their own
+  // attempt so a fixed error state does not linger after the next action.
   projectsAccept: async (pid) => {
     const state = runtime.state; const pp = state.live.projectProposals; if (!pp || pp.busy) return;
     pp.busy = true; pp.error = null; runtime.render();
@@ -446,10 +448,21 @@ export const actions = {
       else pp.error = 'accept_failed';
     } finally { pp.busy = false; runtime.render(); }
   },
+  // Optimistic removal, same as accept's optimistic list update: the row
+  // disappears immediately. If the request fails, the removal never
+  // happened server-side, so the proposal goes back into the list (append,
+  // exact position does not matter) and pp.error reports it instead of
+  // silently leaving the UI showing a dismiss the server never recorded.
   projectsDismiss: async (pid) => {
     const state = runtime.state; const pp = state.live.projectProposals; if (!pp || pp.busy) return;
-    pp.proposals = pp.proposals.filter((p) => p.id !== pid); runtime.render();
-    try { await apiJson(`/api/projects/proposals/${encodeURIComponent(pid)}/dismiss`, {}, 'POST'); } catch (_) {}
+    const removed = pp.proposals.find((p) => p.id === pid);
+    pp.proposals = pp.proposals.filter((p) => p.id !== pid); pp.error = null; runtime.render();
+    try { await apiJson(`/api/projects/proposals/${encodeURIComponent(pid)}/dismiss`, {}, 'POST'); }
+    catch (_) {
+      if (removed) pp.proposals = [...pp.proposals, removed];
+      pp.error = 'dismiss_failed';
+      runtime.render();
+    }
   },
   projectsDiscover: async () => {
     const state = runtime.state;

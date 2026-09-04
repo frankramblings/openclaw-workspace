@@ -47,3 +47,26 @@ test('copy has no em dashes', () => {
   const h = projectsSettingsHtml(base({ projectProposals: { proposals: [{ id: 'd-1', name: 'X', hints: [], sample_titles: [], count: 3 }], error: 'model_failed', running: false, busy: false } }));
   assert.doesNotMatch(h + proposalRowHtml({ id: 'd', name: 'n', hints: [], sample_titles: [], count: 4 }), /\u2014/);
 });
+
+test('accept_failed with a proposal still in the list shows the sentence and no Try again button', () => {
+  const h = projectsSettingsHtml(base({ projectProposals: { proposals: [
+    { id: 'd-1', name: 'Plex', hints: [], sample_titles: [], count: 3 },
+  ], error: 'accept_failed', running: false, busy: false } }));
+  assert.match(h, /Could not create that project/);
+  assert.doesNotMatch(h, /data-act="projectsDiscover"/);
+});
+
+test('accept_failed with an empty proposals list shows the sentence and the Try again button', () => {
+  const h = projectsSettingsHtml(base({ projectProposals: { proposals: [], error: 'accept_failed', running: false, busy: false } }));
+  assert.match(h, /Could not create that project/);
+  assert.match(h, /data-act="projectsDiscover"/);
+});
+
+test('dismiss_failed shows the sentence and still renders the restored proposal with its actions', () => {
+  const h = projectsSettingsHtml(base({ projectProposals: { proposals: [
+    { id: 'd-1', name: 'Plex', hints: [], sample_titles: [], count: 3 },
+  ], error: 'dismiss_failed', running: false, busy: false } }));
+  assert.match(h, /Could not dismiss/);
+  assert.match(h, /data-act="projectsAccept" data-arg="d-1"/);
+  assert.match(h, /data-act="projectsDismiss" data-arg="d-1"/);
+});

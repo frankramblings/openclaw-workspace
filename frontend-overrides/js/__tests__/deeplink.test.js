@@ -109,39 +109,68 @@ function _jsonRes(obj, ok = true, status = 200) {
   };
 }
 
+// Task 6: a failed non-mention clip now toasts clipErrorMessage(e) (live/chat.js's
+// exported toast()) instead of the placeholder console.warn. toast() reaches for
+// document.getElementById/createElement/body — this document stub adds those,
+// on top of the existing `querySelector: () => input` composer lookup, and
+// captures what toast() writes into `.oc-toast-msg` the same way
+// redesign-edit-message.test.js's fake DOM does (toast() isn't itself exported;
+// its writes are the only observable signal). requestAnimationFrame is stubbed
+// too, matching that same file's shim set — without it toast()'s catch-all
+// would still swallow the ReferenceError, but real code exercises the real
+// branch this way.
+function _fakeToastDocument(composerInput) {
+  const toastMessages = [];
+  let toastHost = null;
+  function makeFakeEl() {
+    return {
+      className: '', id: '', style: {},
+      classList: { add() {}, remove() {} },
+      appendChild() {},
+      querySelector(sel) {
+        if (sel === '.oc-toast-msg') return { set textContent(v) { toastMessages.push(v); } };
+        return null;
+      },
+      addEventListener() {},
+      remove() {},
+    };
+  }
+  const doc = {
+    querySelector: () => composerInput,
+    getElementById: (id) => (id === 'oc-toast-host' ? toastHost : null),
+    createElement: () => makeFakeEl(),
+    body: { appendChild: (child) => { toastHost = child; } },
+  };
+  return { doc, toastMessages };
+}
+
 test('applyPlan: failed clip (no mention) leaves an existing draft untouched', async () => {
   const input = _fakeInput('a message I was already typing');
-  globalThis.document = { querySelector: () => input };
+  const { doc, toastMessages } = _fakeToastDocument(input);
+  globalThis.document = doc;
+  globalThis.requestAnimationFrame = () => 1;
   globalThis.fetch = async () => _jsonRes({ ok: false, error: 'fetch_failed', detail: 'could not reach that host' }, false, 502);
-  const warnCalls = [];
-  const origWarn = console.warn;
-  console.warn = (...args) => warnCalls.push(args);
-  try {
-    const plan = { doClip: true, clipUrl: 'https://example.com/a', mentionAfterClip: false, newChat: false, focus: 'none', openAttach: false, openInbox: false };
-    await applyPlan(plan);
-    assert.equal(input.value, 'a message I was already typing');
-    assert.equal(input.focused, false);
-    assert.equal(plan.focus, 'none'); // untouched -- shared focus block never ran
-    assert.equal(warnCalls.length, 1);
-  } finally {
-    console.warn = origWarn;
-  }
+  const plan = { doClip: true, clipUrl: 'https://example.com/a', mentionAfterClip: false, newChat: false, focus: 'none', openAttach: false, openInbox: false };
+  await applyPlan(plan);
+  assert.equal(input.value, 'a message I was already typing');
+  assert.equal(input.focused, false);
+  assert.equal(plan.focus, 'none'); // untouched -- shared focus block never ran
+  assert.deepEqual(toastMessages, ['Could not reach that page. Try again in a moment.']);
 });
 
 test('applyPlan: failed clip (no mention) prefills an empty composer with the URL', async () => {
   const input = _fakeInput('');
-  globalThis.document = { querySelector: () => input };
+  const { doc, toastMessages } = _fakeToastDocument(input);
+  globalThis.document = doc;
+  globalThis.requestAnimationFrame = () => 1;
   globalThis.fetch = async () => { throw new Error('network down'); };
-  const origWarn = console.warn;
-  console.warn = () => {};
-  try {
-    const plan = { doClip: true, clipUrl: 'https://example.com/b', mentionAfterClip: false, newChat: false, focus: 'none', openAttach: false, openInbox: false };
-    await applyPlan(plan);
-    assert.equal(input.value, 'https://example.com/b');
-    assert.equal(input.focused, true);
-  } finally {
-    console.warn = origWarn;
-  }
+  const plan = { doClip: true, clipUrl: 'https://example.com/b', mentionAfterClip: false, newChat: false, focus: 'none', openAttach: false, openInbox: false };
+  await applyPlan(plan);
+  assert.equal(input.value, 'https://example.com/b');
+  assert.equal(input.focused, true);
+  // A raw thrown Error (never reached apiJson's !res.ok branch) carries no
+  // .body, so clipErrorMessage falls back to its generic copy.
+  assert.deepEqual(toastMessages, ['Could not clip that page. Try again.']);
 });
 
 test('applyPlan: failed clip WITH mention=1 still forces the fresh-chat fallback (unchanged)', async () => {

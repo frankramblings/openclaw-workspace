@@ -2702,10 +2702,13 @@ function showChatToast(text, id) {
   } catch (_) { /* DOM unavailable */ }
 }
 
-// Lightweight, non-clickable info/error toast (branch/edit failures). Reuses
-// the same #oc-toast-host as showChatToast but drops the "Open" affordance —
-// there's no session to jump to for "couldn't branch" / "too late to edit".
-function toast(text) {
+// Lightweight, non-clickable info/error toast (branch/edit failures, and now
+// clip success/failure -- Task C3). Reuses the same #oc-toast-host as
+// showChatToast but drops the "Open" affordance — there's no session to jump
+// to for "couldn't branch" / "too late to edit" / a clip result. Exported so
+// app.js and live/library.js can raise the same toast for clip outcomes
+// instead of growing a second copy of this DOM dance.
+export function toast(text) {
   try {
     let host = document.getElementById('oc-toast-host');
     if (!host) { host = document.createElement('div'); host.id = 'oc-toast-host'; document.body.appendChild(host); }

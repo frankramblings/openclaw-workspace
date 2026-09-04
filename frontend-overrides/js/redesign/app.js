@@ -20,7 +20,7 @@ import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { maybeShowThreadsHint } from './mobile/threads-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
 import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
-import { flushPending, queueForSession, answerQuestionCard } from './live/chat.js';
+import { flushPending, queueForSession, answerQuestionCard, toast } from './live/chat.js';
 import { composeAnswer } from './live/question-card.js';
 import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
 import '../deeplink.js';  // ?action=new|search|inbox|photo|voice (self-inits on load)
@@ -33,6 +33,8 @@ import { trapOrder, nextFocus, pickModal } from './focus-trap.js';
 import './live/jobs.js'; // Live Jobs overlay — self-boots on import
 import { chevPatchPlan } from './chat-activity.js';
 import { enhanceChatEl } from './enhance.js';
+import { apiJson } from './live/api.js';
+import { isUrlOnlyDraft, clipChipHtml, clipErrorMessage } from './clip-core.js';
 
 // ---- state ---------------------------------------------------------------
 const state = {
@@ -614,6 +616,31 @@ const actions = {
     chat.suggest = null;
   },
   dismissSuggest: () => { if (state.live?.chat) state.live.chat.suggest = null; },
+  // Composer "Clip" chip (Task C3, open decision 10): clips whatever URL the
+  // chip carries (falls back to the current draft, matching the chip only
+  // ever appearing when the draft IS that one URL) and replaces the draft
+  // with the returned @mention token so it's ready to send in this chat --
+  // distinct from the Library "Clip URL" button (live/library.js's clipUrl),
+  // which opens the clipped document instead. "Updated" vs "Clipped" mirrors
+  // clipUrl's own version_count>1 check (see its comment) for the same
+  // reason: a re-clip of the same source_url updates the document in place
+  // (open decision 7) rather than filing a duplicate.
+  clipDraftUrl: async (url) => {
+    const target = (url || state.draft || '').trim();
+    if (!target) return;
+    let res;
+    try {
+      res = await apiJson('/api/clip', { url: target });
+    } catch (e) {
+      toast(clipErrorMessage(e));
+      return;
+    }
+    state.draft = (res && res.mention) || state.draft;
+    render();
+    const title = (res && res.document && res.document.title) || 'document';
+    const verb = (res && res.document && res.document.version_count > 1) ? 'Updated' : 'Clipped';
+    toast(`${verb}: ${title}`);
+  },
   setMode: (mode) => { state.chatMode = mode; },
   // Incognito / "Nobody" mode (ported from Odysseus): when on, send() appends
   // incognito=true so the backend doesn't persist the turn.
@@ -1113,6 +1140,30 @@ function autoGrowComposer(t) {
 // Ghost-suggestion hide-on-type is pure CSS (`:has(textarea:not(
 // :placeholder-shown))` in redesign.css/mobile.css) — no per-keystroke JS.
 
+// Composer "Clip" chip: shown only while the trimmed draft is exactly one
+// http(s) URL (isUrlOnlyDraft, clip-core.js). Direct-DOM patch on every
+// keystroke, like the ghost-suggestion span's CSS hide-on-type trick above
+// (":has(textarea:not(:placeholder-shown))") but this can't be pure CSS --
+// "exactly one http(s) URL" is not a CSS-expressible predicate. Known
+// limitation, matching the ghost suggestion's own: an UNRELATED full
+// render() (e.g. an incoming message) wipes this chip along with the rest
+// of root.innerHTML, and it does not reappear until the next keystroke --
+// same tradeoff the ghost suggestion already accepts.
+function syncClipChip(ta, draftText) {
+  const wrap = ta.closest('.composer, .m-composer');
+  if (!wrap) return;
+  const existing = wrap.querySelector('.clip-chip');
+  const urlOnly = isUrlOnlyDraft(draftText);
+  const url = urlOnly ? draftText.trim() : '';
+  if (urlOnly) {
+    if (existing && existing.getAttribute('data-arg') === url) return; // already correct
+    if (existing) existing.remove();
+    ta.insertAdjacentHTML('afterend', clipChipHtml(url));
+  } else if (existing) {
+    existing.remove();
+  }
+}
+
 root.addEventListener('input', (e) => {
   // Color picker input: data-act-color fires setAccent on every change
   const cp = e.target.closest('[data-act-color]');
@@ -1133,6 +1184,7 @@ root.addEventListener('input', (e) => {
     // and the old highlighted command may no longer be in the filtered list.
     state.slashDismissed = false;
     state.slashSel = null;
+    syncClipChip(t, state.draft);
   }
   // The conversation filter also fires a debounced semantic search over ALL
   // chats' message content (title filtering stays instant + local below).

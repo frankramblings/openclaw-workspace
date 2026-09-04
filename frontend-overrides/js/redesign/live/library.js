@@ -1,19 +1,48 @@
 // LIBRARY surface — compose real artifacts from research + documents + notes.
 // Renders via `state.live.library.items` (mock fallback in surfaces.js:
 // `s.live?.library?.items ?? LIBRARY`). Filter chips are wired client-side by
-// `cat`, so this module emits no actions.
+// `cat`. This module's only action of its own is clipUrl (Task C3) --
+// everything else it exposes is document-editor's.
 //
 // Mock item shape (data.js LIBRARY):
 //   { title, kind:'REPORT'|'DOC'|'NOTE'|'CODE',
 //     kindLabel:'VISUAL REPORT'|'DOCUMENT'|'NOTE'|'SNIPPET',
 //     when, cat:'report'|'doc'|'note'|'code' }
 
-import { apiGet } from './api.js';
+import { apiGet, apiJson } from './api.js';
 import { actions as docActions, initDocEditor } from './document-editor.js';
 import { humanizeTitle, contentSnippet } from './library-logic.js';
+import { toast } from './chat.js';
+import { clipErrorMessage } from '../clip-core.js';
 
-// Library exposes the document-editor actions (newDoc / openDoc / saveDoc / closeDoc).
-export const actions = { ...docActions };
+// Library exposes the document-editor actions (newDoc / openDoc / saveDoc / closeDoc)
+// plus clipUrl (Task C3).
+export const actions = {
+  ...docActions,
+  // Library "Clip URL": a one-field prompt, then open the new document --
+  // same shape as newDoc's "create, then open" flow just above it. Success
+  // toasts "Updated: <title>" instead of "Clipped: <title>" when the
+  // response's document.version_count is >1 -- backend/clip.py sets
+  // version_count:1 for a brand-new document and increments the EXISTING
+  // document's own count on a re-clip (open decision 7), so >1 reliably
+  // means this clip updated a document that already existed. There is no
+  // dedicated flag for this in `meta` itself (Task 4's response envelope);
+  // document.version_count is the field that actually carries the signal.
+  clipUrl: async () => {
+    let url = '';
+    try { url = (window.prompt('Paste a URL to clip') || '').trim(); } catch (_) { return; }
+    if (!url) return;
+    try {
+      const res = await apiJson('/api/clip', { url });
+      if (res && res.document && res.document.id) await docActions.openDoc(res.document.id);
+      const title = (res && res.document && res.document.title) || 'document';
+      const verb = (res && res.document && res.document.version_count > 1) ? 'Updated' : 'Clipped';
+      toast(`${verb}: ${title}`);
+    } catch (e) {
+      try { window.alert(clipErrorMessage(e)); } catch (_) {}
+    }
+  },
+};
 let editorInited = false;
 
 // Fetch/render cap — exported so surfaces.js can render an honest "showing

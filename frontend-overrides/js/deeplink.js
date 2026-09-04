@@ -1,5 +1,7 @@
 import { runtime } from './redesign/live/runtime.js';
 import { apiJson } from './redesign/live/api.js';
+import { toast } from './redesign/live/chat.js';
+import { clipErrorMessage } from './redesign/clip-core.js';
 
 // Widget/Shortcut deep links: ?action=new|photo|voice|inbox|search is
 // dispatched once at boot to the existing composer/inbox controls, then
@@ -197,7 +199,7 @@ export async function applyPlan(plan) {
           }
           return;
         }
-      } catch (_) {
+      } catch (e) {
         if (plan.mentionAfterClip) {
           // Fresh chat is already forced (newChat=true, set at parse time by
           // clipPlanFields), so the composer that's about to render is
@@ -212,10 +214,7 @@ export async function applyPlan(plan) {
           // failed URL back when the composer is empty, and leave
           // focus/surface alone otherwise (skip the shared
           // plan.focus === 'input' block entirely below by not setting it).
-          // Toast copy is Task 6's job (clipErrorMessage in
-          // redesign/clip-core.js); warn for now so a failed clip is at
-          // least visible somewhere.
-          console.warn('[clip] deep-link clip failed', plan.clipUrl);
+          toast(clipErrorMessage(e));
           const input = await _waitFor('[data-model="draft"], #message');
           if (input && input.value.trim() === '') {
             input.value = plan.clipUrl;

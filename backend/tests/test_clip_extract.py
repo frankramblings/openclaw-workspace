@@ -88,8 +88,9 @@ def test_extract_passthrough_for_text_markdown():
 
 
 def test_extract_raises_on_empty_text_plain():
-    with pytest.raises(ce.ExtractFailed):
+    with pytest.raises(ce.ExtractFailed) as exc_info:
         ce.extract(_fetched("text/plain", b"   \n"), "https://example.com/a")
+    assert exc_info.value.reason == "empty_body"
 
 
 def test_extract_pdf_reuses_the_attachments_pypdf_helper(monkeypatch):
@@ -107,5 +108,75 @@ def test_extract_pdf_reuses_the_attachments_pypdf_helper(monkeypatch):
 
 def test_extract_raises_when_pdf_has_no_text(monkeypatch):
     monkeypatch.setattr(ce.attachments, "_extract_file_text", lambda path, mime: "")
-    with pytest.raises(ce.ExtractFailed):
+    with pytest.raises(ce.ExtractFailed) as exc_info:
         ce.extract(_fetched("application/pdf", b"%PDF-1.4"), "https://example.com/a.pdf")
+    assert exc_info.value.reason == "pdf_no_text"
+
+
+def test_extract_raises_with_no_text_reason_when_html_has_no_readable_content(monkeypatch):
+    monkeypatch.setattr(ce, "trafilatura", None)
+    html = b"<html><head><title>Foo</title></head><body></body></html>"
+    with pytest.raises(ce.ExtractFailed) as exc_info:
+        ce.extract(_fetched("text/html", html), "https://example.com/a")
+    assert exc_info.value.reason == "no_text"
+
+
+class _RaisingTrafilatura:
+    """Simulates a trafilatura-internal failure (a signature mismatch, an
+    unexpected page shape, an internal bug) -- must degrade to the
+    fallback extractor, not escape as an exception."""
+
+    def extract(self, html, **kwargs):
+        raise TypeError("signature mismatch")
+
+
+def test_extract_falls_back_when_trafilatura_raises(monkeypatch):
+    monkeypatch.setattr(ce, "trafilatura", _RaisingTrafilatura())
+    html = b"<html><head><title>T</title></head><body><p>Real text.</p></body></html>"
+    out = ce.extract(_fetched("text/html", html), "https://example.com/a")
+    assert out.extractor == "fallback"
+    assert "Real text." in out.markdown
+
+
+def test_extract_fallback_unescapes_html_entities_in_body(monkeypatch):
+    monkeypatch.setattr(ce, "trafilatura", None)
+    html = b"<html><body><p>Fish &amp; chips&nbsp;&#8217;tis tasty.</p></body></html>"
+    out = ce.extract(_fetched("text/html", html), "https://example.com/a")
+    assert "&amp;" not in out.markdown
+    assert "&nbsp;" not in out.markdown
+    assert "&#8217;" not in out.markdown
+    assert "Fish & chips" in out.markdown
+    assert "’tis tasty." in out.markdown
+
+
+def test_extract_fallback_unescapes_html_entities_in_title(monkeypatch):
+    monkeypatch.setattr(ce, "trafilatura", None)
+    html = b"<html><head><title>Fish &amp; Chips</title></head><body><p>Body text.</p></body></html>"
+    out = ce.extract(_fetched("text/html", html), "https://example.com/a")
+    assert out.title == "Fish & Chips"
+
+
+def test_extract_fallback_keeps_sentence_with_inline_tag_on_one_line(monkeypatch):
+    monkeypatch.setattr(ce, "trafilatura", None)
+    html = b"<html><body><p>First with <b>bold</b> and more.</p></body></html>"
+    out = ce.extract(_fetched("text/html", html), "https://example.com/a")
+    assert out.markdown == "First with bold and more."
+
+
+def test_decode_body_uses_meta_charset_for_iso_8859_1():
+    html = ('<html><head><meta charset="iso-8859-1"></head>'
+            '<body><p>Café résumé.</p></body></html>')
+    body = html.encode("iso-8859-1")
+    assert "Café résumé." in ce._decode_body(body)
+
+
+def test_decode_body_never_raises_on_invalid_bytes_with_no_meta():
+    body = b"Broken \xff\xfe bytes with no charset hint."
+    text = ce._decode_body(body)
+    assert isinstance(text, str)
+    assert "Broken" in text
+
+
+def test_decode_body_passes_utf8_through_unchanged():
+    original = "Café straße 中文."
+    assert ce._decode_body(original.encode("utf-8")) == original

@@ -59,13 +59,33 @@ picks the top unchecked item, ships it, checks it off, commits.
 ## Two tenants: one deploy
 
 Both tenants on this box run the same code line. `scripts/deploy.sh` is the
-only supported way to ship: gate (both suites + `scripts/publish-scan.sh`),
-Frank's tenant (sync, restart, smoke), `prepare-public.sh --yes`, then
-Marissa's tenant as her user (backup `.data`, reset to `public`, deps if
-`pyproject.toml` changed, sync, restart, smoke). Her gateway restarts only
-when the run changed `deploy/gateway-patches/` or the dist lacks the patch
-marker, and only after her `turns_inflight.json` has been empty; otherwise
-the script says `SKIPPED gateway restart` and you rerun with `--force-gateway`.
+only supported way to ship: gate (both suites + `scripts/prepare-public.sh
+--check`), Frank's tenant (sync, restart, smoke), `prepare-public.sh --yes`,
+then Marissa's tenant as her user (backup `.data`, reset to `public`, deps if
+`pyproject.toml` changed, sync, restart, smoke).
+
+Readiness and smoke for BOTH tenants are `GET /api/health` (the one path the
+auth gate allowlists) and `GET /static/index.html` (200, or 302 behind a login
+wall). Her `/marissa` prefix is stripped by the proxy, so on 127.0.0.1:8801
+the app answers `/api/...` at the root and `/marissa/api/...` is a 404. The
+script makes no `/api/changes/...` call: the changes tracker seeds when the
+operator clicks Rebuild in Settings then Changes, or on the first turn.
+
+Her gateway restarts only when the run changed `deploy/gateway-patches/` or
+the dist lacks the patch marker. The idle check on her `turns_inflight.json`
+runs BEFORE anything touches her tenant, because restarting her workspace
+empties that file. On timeout her workspace still deploys, the script says
+`SKIPPED gateway restart`, and you rerun with `--force-gateway` when she is
+idle. After a gateway restart the script waits up to 60 s for 127.0.0.1:18889
+and reports the outcome without failing the run.
+
+The gate is RED on main today (test_transcribe failures, a test_secret_scrub
+collection error, one frontend ghost-test failure), so until those are fixed
+the first deploy needs `--skip-tests --i-know`, which must be a conscious
+choice, not a habit.
+
+`scripts/publish-scan-patterns.txt` ships in the public snapshot on purpose:
+the same identifiers are already public inside `prepare-public.sh`.
 
 Flags: `--dry-run` (plan only, read-only gate still runs), `--skip-marissa`,
 `--skip-tests --i-know`, `--force-gateway`, `--gateway-wait N`.
@@ -92,7 +112,9 @@ git push <remote> public:main      # publish that, not main
 
 `prepare-public.sh` (user chose squash-to-one-commit) is **non-destructive**: it
 leaves `main` alone and builds an orphan `public` branch = one commit of the
-current tree. It refuses to run if a private-identifier scan finds anything or if
+current tree. The snapshot is assembled in a temporary git index, so the
+working tree and HEAD are never touched (gitignored files such as
+`docs/superpowers/` survive a real run). It refuses to run if a private-identifier scan finds anything or if
 `.data/`/`frontend/`/`.env` are tracked. Verified 2026-06-08: produces a 1-commit,
 274-file branch, 0 private files, main untouched.
 

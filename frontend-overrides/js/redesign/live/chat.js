@@ -1752,17 +1752,19 @@ function beginTurn(chat, modelLabel, sessionId) {
 export function __testOnEvent() { return _lastOnEvent; }
 
 // active_doc_selection is capped server-side at 8 KB of UTF-8-encoded JSON
-// (backend/draft_mode.py's SELECTION_MAX_BYTES) — parse_selection there
+// (backend/draft_mode.py's SELECTION_MAX_BYTES). parse_selection there
 // silently treats anything over that cap as "no selection", so an oversized
 // selection would otherwise vanish from the turn entirely instead of still
 // giving it a shorter hint. Trim rule: keep the whole {from,to,text} JSON
-// payload under 7 KB (7168 UTF-8 bytes — one KB of margin under the server's
+// payload under 7 KB (7168 UTF-8 bytes, one KB of margin under the server's
 // hard cap, covering the small amount of JSON structure/escaping overhead
-// around `text`), cutting `text` itself (never `from`/`to`) at the longest
-// prefix that still fits once a trailing ellipsis is appended, and never
-// splitting a UTF-16 surrogate pair when choosing that cut point.
-const SELECTION_TARGET_BYTES = 7 * 1024;
-function trimSelectionText(from, to, text) {
+// around `text`), cutting `text` at the longest prefix that still fits once
+// a trailing ellipsis is appended, never splitting a UTF-16 surrogate pair
+// when choosing that cut point. `from` is kept as given; `to` is clamped to
+// `from + text.length` after trimming so the shipped offsets describe the
+// shipped text, not the original (pre-trim) selection.
+export const SELECTION_TARGET_BYTES = 7 * 1024;
+export function trimSelectionText(from, to, text) {
   const bytesOf = (t) => new TextEncoder().encode(JSON.stringify({ from, to, text: t })).length;
   if (bytesOf(text) <= SELECTION_TARGET_BYTES) return { from, to, text };
   const ELLIPSIS = '…';
@@ -1774,19 +1776,21 @@ function trimSelectionText(from, to, text) {
     return n;
   };
   const fits = (n) => bytesOf(text.slice(0, safeCut(n)) + ELLIPSIS) <= SELECTION_TARGET_BYTES;
-  let lo = 0, hi = text.length; // fits(0) always true — the empty string plus overhead fits comfortably
+  let lo = 0, hi = text.length; // fits(0) always true: the empty string plus overhead fits comfortably
   while (lo < hi) {
     const mid = lo + Math.ceil((hi - lo) / 2);
     if (fits(mid)) lo = mid; else hi = mid - 1;
   }
-  return { from, to, text: text.slice(0, safeCut(lo)) + ELLIPSIS };
+  const trimmedText = text.slice(0, safeCut(lo)) + ELLIPSIS;
+  const trimmedTo = typeof from === 'number' ? from + trimmedText.length : to;
+  return { from, to: trimmedTo, text: trimmedText };
 }
 
 // The active_doc_selection FormData field, or {} when there's nothing to
-// attach (no doc, no editor selection, or an empty/whitespace selection) —
+// attach (no doc, no editor selection, or an empty/whitespace selection),
 // spread directly into fireSend/keepaliveSend's fields object. Shared so the
 // trim rule above lives in exactly one place.
-function selectionField(docId, sel) {
+export function selectionField(docId, sel) {
   if (!docId || !sel || !sel.text) return {};
   return { active_doc_selection: JSON.stringify(trimSelectionText(sel.from, sel.to, sel.text)) };
 }

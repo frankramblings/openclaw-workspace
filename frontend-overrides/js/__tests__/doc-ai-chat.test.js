@@ -13,7 +13,7 @@ globalThis.cancelAnimationFrame = () => {};
 
 const { runtime } = await import('../redesign/live/runtime.js');
 const chatMod = await import('../redesign/live/chat.js');
-const { actions } = chatMod;
+const { actions, trimSelectionText, selectionField } = chatMod;
 
 function freshState(activeId, docEditor) {
   const state = {
@@ -96,4 +96,67 @@ test('doc_update frame for a different doc id is ignored', async () => {
   chatMod.__testOnEvent()({ type: 'doc_update', doc_id: 'doc-999', content: 'x', version: 2, title: 'Nope' });
   assert.equal(state.docEditor.title, 'Old');
   actions.stopRun && await actions.stopRun();
+});
+
+// ---- selection trimming (Fix round 1) --------------------------------------
+
+const byteLen = (s) => new TextEncoder().encode(s).length;
+
+// True if `s` contains any UTF-16 code unit that is a surrogate half with no
+// matching partner (a high surrogate not followed by a low one, or a low
+// surrogate not preceded by a high one): the signature of a naive substring
+// cut landing inside what was originally one surrogate pair.
+function hasLoneSurrogate(s) {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 0xd800 && c <= 0xdbff) {
+      const next = s.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i++; // matched pair, skip the low half
+    } else if (c >= 0xdc00 && c <= 0xdfff) {
+      return true; // low surrogate with no preceding high surrogate
+    }
+  }
+  return false;
+}
+
+test('trimSelectionText passes an under-cap selection through unchanged', () => {
+  const out = trimSelectionText(3, 9, 'hello!');
+  assert.deepEqual(out, { from: 3, to: 9, text: 'hello!' });
+});
+
+test('trimSelectionText trims a 20 KB ASCII selection under the 8 KB wire cap and clamps `to`', () => {
+  const text = 'a'.repeat(20 * 1024);
+  const out = trimSelectionText(100, 100 + text.length, text);
+  const wireBytes = byteLen(JSON.stringify(out));
+  assert.ok(wireBytes < 8192, `field is ${wireBytes} bytes`);
+  assert.equal(out.from, 100, '`from` kept as given');
+  assert.equal(out.to, out.from + out.text.length, '`to` clamped to from + the shipped text length');
+  assert.ok(!hasLoneSurrogate(out.text), 'no lone surrogate in the shipped text');
+});
+
+test('trimSelectionText trims a 9000-emoji selection under the 8 KB wire cap and clamps `to`', () => {
+  const text = '😀'.repeat(9000); // each emoji is a surrogate pair: 2 UTF-16 units, 4 UTF-8 bytes
+  const out = trimSelectionText(0, text.length, text);
+  const wireBytes = byteLen(JSON.stringify(out));
+  assert.ok(wireBytes < 8192, `field is ${wireBytes} bytes`);
+  assert.equal(out.from, 0);
+  assert.equal(out.to, out.from + out.text.length, '`to` clamped to from + the shipped text length');
+  assert.ok(!hasLoneSurrogate(out.text), 'no lone surrogate in the shipped text');
+});
+
+test('trimSelectionText trims a 9000-CJK selection under the 8 KB wire cap and clamps `to`', () => {
+  const text = '中'.repeat(9000); // each CJK char: 1 UTF-16 unit, 3 UTF-8 bytes
+  const out = trimSelectionText(50, 50 + text.length, text);
+  const wireBytes = byteLen(JSON.stringify(out));
+  assert.ok(wireBytes < 8192, `field is ${wireBytes} bytes`);
+  assert.equal(out.from, 50);
+  assert.equal(out.to, out.from + out.text.length, '`to` clamped to from + the shipped text length');
+  assert.ok(!hasLoneSurrogate(out.text), 'no lone surrogate in the shipped text');
+});
+
+test('selectionField yields no field for a null or empty-text selection', () => {
+  assert.deepEqual(selectionField('doc-1', null), {});
+  assert.deepEqual(selectionField('doc-1', { from: 0, to: 0, text: '' }), {});
+  assert.deepEqual(selectionField(null, { from: 0, to: 5, text: 'hi' }), {});
 });

@@ -76,6 +76,12 @@ async def list_notes(archived: str | None = None):
 @router.post("/api/notes")
 async def create_note(request: Request):
     note = await request.json()
+    # Mobile quick-capture (and any other older client) posts `body`, not
+    # `content` -- accept it as an alias when content is missing/empty so a
+    # capture is never silently saved blank. content wins when both are
+    # present (never overwrite a real body with a legacy field's leftovers).
+    if not note.get("content") and note.get("body"):
+        note["content"] = note.pop("body")
     note["id"] = note.get("id") or vs.new_id()
     note.setdefault("created", vs.now_iso())
     note["updated"] = vs.now_iso()

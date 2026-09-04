@@ -230,7 +230,7 @@ export function mobileActions(state) {
       state.captureDraft = '';
       try { runtime.render(); } catch (_) {}
       try {
-        await apiJson('/api/notes', { title, body: text, kind });
+        await apiJson('/api/notes', { title, content: text, kind });
         // Task 3.6: record the REAL capture (not a mock row) for the "recent
         // captures" list, only on confirmed success.
         try { state.captureRecents = recordCapture(localStorage, { text, type: kind, ts: Date.now() }); } catch (_) {}

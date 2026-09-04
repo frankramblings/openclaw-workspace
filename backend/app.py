@@ -26,8 +26,8 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, changes, chat_search, chat_turn, config,
                config_check, doctor, draft_mode, event_store, followup,
-               monitor, pending_tokens, promise_guard, push, sessions_store, steer,
-               syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
+               monitor, pending_tokens, project_discovery, promise_guard, push, sessions_store,
+               steer, syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
 from .security_headers import SecurityHeadersMiddleware
 from .memory import maybe_auto_extract
@@ -197,6 +197,17 @@ async def _lifespan(_app: FastAPI):
     # Changes review: daily sweep of the turn-diff index/blob store (expiry +
     # orphan cleanup). See backend/changes.py.
     changes_sweep_task = asyncio.create_task(changes.sweep_loop())
+    # Projects: a tenant with no projects, no seed file, and enough threads
+    # gets ONE discovery pass that writes proposals (never projects). See
+    # backend/project_discovery.py.
+    async def _discover_once():
+        await asyncio.sleep(20)  # let boot and the first requests settle
+        try:
+            if project_discovery.should_discover():
+                await project_discovery.discover()
+        except Exception:  # noqa: BLE001 - best-effort, never affects boot
+            _log.warning("project discovery failed", exc_info=True)
+    discovery_task = asyncio.create_task(_discover_once())
     # Filesystem watcher for the doc editor's live-refresh (broadcasts to
     # /api/workspace/watch subscribers). Cheap Rust-backed inotify; one task.
     workspace_watch.start_watcher()
@@ -220,7 +231,8 @@ async def _lifespan(_app: FastAPI):
         followup_task.cancel()
         ingest_task.cancel()
         changes_sweep_task.cancel()
-        for t in (task, search_task, followup_task, ingest_task, changes_sweep_task):
+        discovery_task.cancel()
+        for t in (task, search_task, followup_task, ingest_task, changes_sweep_task, discovery_task):
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         # Own every other task we've spun up over the app's life so nothing is

@@ -21,6 +21,12 @@ const CLIP_ERROR_MESSAGES = {
   bad_request: 'That request was not formed correctly.',
   bad_url: 'That does not look like a web address.',
   blocked_host: 'That address cannot be clipped, it looks like a private or local host.',
+  // Forward compatibility only: backend/clip.py currently folds a DNS
+  // resolution failure into fetch_failed (a lookup that did not resolve
+  // carries no signal that the URL was reaching for a private address), so
+  // this code never arrives today. Kept because the reason string already
+  // exists in clip_guard, and a future decision to surface it separately
+  // should not need a matching frontend change to read well.
   dns_failed: 'Could not find that host. Check the address and try again.',
   fetch_failed: 'Could not reach that page. Try again in a moment.',
   too_large: 'That page is too large to clip.',

@@ -85,3 +85,33 @@ test('clipUrl: a rejected fetch still clears the in-flight guard (finally)', asy
 
   assert.equal(fetchCalls, 2);
 });
+
+test('clipUrl: a failure toasts the mapped message instead of a window.alert', async () => {
+  // Final review, Minor 11: the Library button was the only clip entry point
+  // that reported failures through a modal alert.
+  const alerts = [];
+  const toasted = [];
+  globalThis.window.alert = (m) => { alerts.push(m); };
+  const realCreate = globalThis.document.createElement;
+  globalThis.document.createElement = () => ({
+    style: {}, addEventListener() {}, setAttribute() {}, append() {}, appendChild() {},
+    classList: { add() {}, remove() {} },
+    remove() {},
+    querySelector(sel) {
+      if (sel === '.oc-toast-msg') return { set textContent(v) { toasted.push(v); } };
+      return null;
+    },
+  });
+  globalThis.fetch = async () => jsonRes(400, { ok: false, error: 'bad_url', detail: 'nope' });
+  globalThis.window.prompt = () => 'https://example.com/d';
+
+  try {
+    await actions.clipUrl();
+  } finally {
+    globalThis.document.createElement = realCreate;
+  }
+
+  assert.deepEqual(alerts, [], 'no modal alert');
+  assert.equal(toasted.length, 1);
+  assert.match(toasted[0], /web address/);
+});

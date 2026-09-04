@@ -2704,7 +2704,7 @@ function showChatToast(text, id) {
 
 // Lightweight, non-clickable info/error toast (branch/edit failures, and now
 // clip success/failure -- Task C3). Reuses the same #oc-toast-host as
-// showChatToast but drops the "Open" affordance — there's no session to jump
+// showChatToast but drops the "Open" affordance: there is no session to jump
 // to for "couldn't branch" / "too late to edit" / a clip result. Exported so
 // app.js and live/library.js can raise the same toast for clip outcomes
 // instead of growing a second copy of this DOM dance.

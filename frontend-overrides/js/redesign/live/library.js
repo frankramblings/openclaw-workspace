@@ -42,7 +42,11 @@ export const actions = {
       const title = (res && res.document && res.document.title) || 'document';
       toast(`${clipResultVerb(res && res.document)}: ${title}`);
     } catch (e) {
-      try { window.alert(clipErrorMessage(e)); } catch (_) {}
+      // Final review, Minor 11: this used to be a window.alert, while the
+      // composer chip and the deep link both raise a toast for exactly the
+      // same failures. One modal in three otherwise identical paths is just
+      // an inconsistency, so all three toast now.
+      toast(clipErrorMessage(e));
     } finally {
       _clipUrlInFlight = false;
     }

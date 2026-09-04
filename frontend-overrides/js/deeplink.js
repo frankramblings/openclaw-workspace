@@ -127,7 +127,7 @@ export function searchDispatchPlan(actionsObj, attempt, maxAttempts) {
 // optional — URLSearchParams tolerates either). Returns it with the
 // deep-link params (action/q/autosend/mention) removed and every other param
 // preserved, in the same '?k=v&...'-or-'' shape location.search itself uses
-// — so callers can splice it straight back into pathname+hash. `mention` is
+// so callers can splice it straight back into pathname+hash. `mention` is
 // clip-only (see ACTION_PLANS.clip / clipPlanFields) but stripped
 // unconditionally like the others, same as autosend is stripped even for
 // actions that never read it -- a leftover deep-link param in the address

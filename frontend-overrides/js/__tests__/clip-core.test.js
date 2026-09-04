@@ -68,7 +68,7 @@ test('clipErrorMessage: maps every backend/clip.py error code to a sentence', ()
   }
 });
 
-test('clipErrorMessage: also covers bad_request and dns_failed (task-4 codes the brief sample omitted)', () => {
+test('clipErrorMessage: also covers bad_request and the forward-compatible dns_failed', () => {
   for (const code of ['bad_request', 'dns_failed']) {
     const msg = clipErrorMessage({ body: { ok: false, error: code, detail: 'x' } });
     assert.ok(msg && msg.length > 0);

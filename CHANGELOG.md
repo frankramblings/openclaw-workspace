@@ -42,9 +42,11 @@ not just the original maintainer's setup.
 
 ### Pillar C2: In-document AI actions (2026-09)
 
-- Document dock: Summarize / Rewrite / Continue / Ask buttons (a "✦" kebab on mobile) run Gary against the open document over the existing draft-mode co-drafting loop: edits land in the vault file with the usual version snapshot, and the reply is a normal, steerable chat turn. Summarize and Ask are read-only prompts; Rewrite and Continue edit the file. A toolbar action while the current thread is busy, or while the composer holds an unsent draft, toasts instead of running; Rewrite with nothing selected toasts "Select some text in the document first."
+- Document dock: Summarize / Rewrite / Continue / Ask buttons (a "✦" kebab on mobile, offering the three edit actions; Ask needs the desktop layout, where the composer and the dock are visible at once) run Gary against the open document over the existing draft-mode co-drafting loop: edits land in the vault file with the usual version snapshot, and the reply is a normal, steerable chat turn. Summarize and Ask are read-only prompts; Rewrite and Continue edit the file. A toolbar action while the current thread is busy, or while the composer holds an unsent draft, toasts instead of running; Rewrite with nothing selected toasts "Select some text in the document first."
 - Composer: an "Editing: <title>" pill appears above the send row whenever a Library document is open in the dock, with an × to detach the next send only (it reattaches on the send after that). `active_doc_id`, and a selection hint for Rewrite, travel with any turn sent while attached, not just the toolbar buttons.
 - Backend: a new optional `active_doc_selection` FormData field on `/api/chat_stream` (JSON `{from,to,text}`, 8 KB cap) lets `draft_mode.wrap_message` name the exact passage instead of the whole document; oversized or malformed input is silently ignored. No new routes.
+- Unsaved edits are saved before any turn that carries the document, so Gary never reads a stale file and your pending autosave can no longer land on top of his edit mid-turn. If that save fails, the message is not sent: you get a toast and your text back.
+- Conflict banner: the pending autosave is cancelled while the banner is up, and "Reload disk" writes the reloaded content back, so a document labelled "Saved" always matches what is on disk.
 - Deploying this needs `scripts/sync-frontend.sh` for the frontend half and a service restart for the backend half.
 
 ### Phase 1 — Genericization (already merged to main)

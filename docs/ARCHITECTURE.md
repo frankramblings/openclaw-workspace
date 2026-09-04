@@ -256,8 +256,12 @@ passage instead of the whole document for Rewrite. A selection-wrapped
 message ends in a second literal tail (`_WRAP_SELECTION_TAIL`, not the plain
 `_WRAP_TAIL`), so `draft_mode.strip_wrapper`, and therefore
 `history_display.history_display_text`, used by both `/api/history` and chat
-search, still strips it back to exactly what the user typed. No new routes
-and no new turn mechanism.
+search, still strips it back to exactly what the user typed.
+`strip_wrapper` decides which of the two note shapes it is looking at before
+it partitions (the selection variant continues "leave the file alone. The
+user has selected this passage"), because either tail literal can also occur
+inside the selection or inside the user's own text, and trying both in turn
+cut the message at the wrong place. No new routes and no new turn mechanism.
 
 On the frontend, `document-editor.js` gained pure/impure helpers:
 `activeLibraryDocId()` (the open doc's id, only for a Library document, never
@@ -269,7 +273,8 @@ in markdown mode, the nested `[[line,ch],[line,ch]]` pair from
 preserved and an "Updated" chip, a dirty buffer stashes the incoming content
 and shows the existing conflict banner; a frame whose `content` isn't a
 string is rejected outright rather than blanking the document), and
-`consumeAttachDetach()` for the per-turn detach flag. `live/chat.js`'s
+`consumeAttachDetach()` for the per-turn detach flag, and
+`flushBeforeSend()`/`flushOk()` (below). `live/chat.js`'s
 `fireSend`/`keepaliveSend` attach `active_doc_id` and, when there is a live
 selection, `active_doc_selection` to every turn sent while a Library document
 is open and not detached (`trimSelectionText`/`selectionField` trim an
@@ -277,7 +282,35 @@ oversized selection to stay under the server's 8 KB cap rather than let it be
 dropped outright), and handle an incoming `type: "doc_update"` SSE frame by
 calling `applyExternalUpdate`. `surfaces.js` and `mobile-surfaces.js` render
 an "Editing: <title>" pill above the composer with an × that detaches only
-the next send.
+the next send; both call the one shared `docPillHtml`/`libraryDocIdFor` in
+`redesign/doc-pill.js`, so what the pill shows and what a send attaches can
+never drift apart.
+
+**The pre-send flush.** A doc-bound turn makes the backend read the vault
+file from disk, and `pre_turn`'s snapshot is the user's only undo, so the
+buffer has to be on disk before the turn opens. `flushBeforeSend()` cancels
+the armed 2.5s autosave and awaits the pending save through the same
+`actions.saveDoc()` path autosave and the Save button use; `chat.js` awaits
+it in `submitFromComposer` and `dispatchSend` (and `runAiAction` awaits it
+before it triggers a send) whenever a Library doc will be attached. A clean
+buffer resolves immediately and costs nothing. A failed or conflicted save
+aborts the send outright, toasts, and hands the text back to the composer:
+attaching anyway would point the turn at a file that does not hold what the
+user is looking at. `keepaliveSend` is the one exception, deliberately: it
+runs from a pagehide teardown where nothing can be awaited, so it stays a
+single synchronous fire-and-forget POST.
+
+**Conflict rules.** While the conflict banner is up, the armed autosave is
+cancelled (both in `applyExternalUpdate`'s dirty branch and in
+`handleExternalChange`'s), so it can no longer fire underneath the banner and
+PUT the user's buffer over the edit the banner is asking about. "Reload disk"
+(`acceptIncoming`) re-saves the accepted content for a Library doc, because
+`PUT /api/document/{id}` has no version precondition and an earlier autosave
+may already have overwritten it, so a buffer labelled "Saved" is only honest
+once it has been written back. Workspace files skip that re-save: their
+incoming content came off disk with a matching mtime. An `if_version`
+precondition on the document PUT, mirroring the workspace file's
+`if_mtime_ns`, is the proper fix and is still a follow-up.
 
 `redesign/doc-ai-prompts.js` is a DOM-free module of pure prompt builders
 (`buildSummarizePrompt`, `buildContinuePrompt`, `buildRewritePrompt`,
@@ -289,6 +322,15 @@ the current thread is busy (`turnBusyHere`), and running one with an unsent
 draft in the composer all refuse with a toast instead of sending; Ask only
 sets the composer placeholder and force-attaches the pill, it never sends by
 itself.
+
+**Mobile.** On the mobile shell the dock is `100vw` and sits over the
+composer, so the kebab offers the three one-shot edit actions only
+(`MOBILE_AI_ACTIONS`): Ask would focus a textarea the user cannot see, and
+its placeholder is cleared the moment the dock closes. Ask stays on the
+desktop toolbar, and a typed message can only carry `active_doc_id` on the
+desktop layout, where the composer and the dock are visible at once. A
+minimized-dock state that would make Ask and typed doc-bound messages work on
+mobile is a follow-up, not built here.
 
 Deploying this feature needs the same two steps as the mentions feature
 above: `scripts/sync-frontend.sh` for the frontend half, a service restart

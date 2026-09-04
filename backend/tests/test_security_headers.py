@@ -12,11 +12,15 @@ covering both the direct-scheme case (base_url="https://...") and the
 X-Forwarded-Proto case (Tailscale Serve terminates TLS in front of the app,
 which itself is served plain-HTTP on loopback), plus the plain-http negative.
 """
+import re
+
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from backend import config
 from backend.app import app
+from backend.security_headers import build_policy, request_nonce
 
 
 # ---------------------------------------------------------------------------
@@ -80,18 +84,93 @@ class TestCSPReportOnlyDefault:
 
     def test_csp_policy_value_complete(self, client, monkeypatch):
         """Verify the full CSP policy string value (not just header presence).
-        A typo in _CSP would pass the 'header in response' test but fail here.
-        The expected policy is copied verbatim so edits to security_headers._CSP
-        must also update this literal."""
+        A typo in the policy would pass the 'header in response' test but fail
+        here. The expected policy is copied verbatim so edits to
+        security_headers.build_policy must also update this literal. The only
+        per-request part is the script-src nonce, which is spliced in from the
+        response's own header rather than hardcoded."""
         monkeypatch.delenv("WORKSPACE_CSP_ENFORCE", raising=False)
         r = client.get("/")
+        policy = r.headers.get("content-security-policy-report-only")
+        m = re.search(r"'nonce-([A-Za-z0-9_-]+)'", policy)
+        assert m, f"no nonce in script-src: {policy}"
         expected_policy = (
             "default-src 'self'; img-src 'self' data: blob:; "
-            "style-src 'self' 'unsafe-inline'; script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self' "
+            f"'nonce-{m.group(1)}'; "
             "connect-src 'self' ws: wss:; worker-src 'self'; "
             "frame-ancestors 'none'"
         )
-        assert r.headers.get("content-security-policy-report-only") == expected_policy
+        assert policy == expected_policy
+
+    def test_script_src_never_gets_unsafe_inline(self, client, monkeypatch):
+        """A nonce plus 'unsafe-inline' is a silent downgrade: nonce-aware
+        browsers drop 'unsafe-inline', older ones honour it. Neither header
+        variant may carry it."""
+        for enforce in ("1", None):
+            if enforce:
+                monkeypatch.setenv("WORKSPACE_CSP_ENFORCE", enforce)
+            else:
+                monkeypatch.delenv("WORKSPACE_CSP_ENFORCE", raising=False)
+            r = client.get("/")
+            policy = (r.headers.get("content-security-policy")
+                      or r.headers.get("content-security-policy-report-only"))
+            script_src = [d for d in policy.split(";") if "script-src" in d][0]
+            assert "'unsafe-inline'" not in script_src
+
+
+# ---------------------------------------------------------------------------
+# Per-request CSP nonce
+# ---------------------------------------------------------------------------
+
+class TestCSPNonce:
+    def test_nonce_differs_between_requests(self, client, monkeypatch):
+        """One fresh nonce per request. A reused nonce is worth little more
+        than 'unsafe-inline' once any page echoes user content."""
+        monkeypatch.delenv("WORKSPACE_CSP_ENFORCE", raising=False)
+        seen = set()
+        for _ in range(5):
+            policy = client.get("/").headers["content-security-policy-report-only"]
+            m = re.search(r"'nonce-([A-Za-z0-9_-]+)'", policy)
+            assert m
+            seen.add(m.group(1))
+        assert len(seen) == 5, f"nonces repeated across requests: {seen}"
+
+    def test_header_nonce_matches_scope_state(self, monkeypatch):
+        """The value in script-src must be the same one route handlers read off
+        request.state.csp_nonce, or an injected script would be blocked."""
+        monkeypatch.delenv("WORKSPACE_CSP_ENFORCE", raising=False)
+        captured = {}
+
+        @app.get("/__test_nonce_echo")
+        async def _echo(request: Request):
+            captured["state"] = request.state.csp_nonce
+            captured["helper"] = request_nonce(request.scope)
+            return {"ok": True}
+
+        try:
+            with TestClient(app, raise_server_exceptions=True) as c:
+                r = c.get("/__test_nonce_echo")
+            assert r.status_code == 200
+            m = re.search(r"'nonce-([A-Za-z0-9_-]+)'",
+                          r.headers["content-security-policy-report-only"])
+            assert m
+            assert captured["state"] == m.group(1)
+            assert captured["helper"] == m.group(1)
+        finally:
+            app.router.routes = [rt for rt in app.router.routes
+                                 if getattr(rt, "path", None) != "/__test_nonce_echo"]
+
+    def test_nonce_present_in_enforcing_header_too(self, client, monkeypatch):
+        monkeypatch.setenv("WORKSPACE_CSP_ENFORCE", "1")
+        policy = client.get("/").headers["content-security-policy"]
+        assert re.search(r"script-src 'self' 'nonce-[A-Za-z0-9_-]+'", policy)
+
+    def test_build_policy_without_nonce_is_the_plain_policy(self):
+        """Defensive: build_policy("") must not emit a malformed 'nonce-'
+        token. Reached only if a response somehow bypasses the middleware."""
+        assert b"nonce" not in build_policy("")
+        assert b"script-src 'self';" in build_policy("")
 
 
 class TestCSPEnforceFlip:

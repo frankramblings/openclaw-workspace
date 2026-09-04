@@ -228,7 +228,11 @@ def message_to_read(raw: bytes, uid: str = "") -> dict:
         "message_id": msg.get("Message-ID") or "",
         "references": msg.get("References") or "",
         "attachments": attachments,
+        # Two parsers on purpose: parse_ics_calendar normalizes the block the
+        # reader DISPLAYS, extract_invite keeps the raw iCal lines the RSVP
+        # action needs to build an RFC-correct REPLY. See the module docstrings.
         "calendar": parse_ics_calendar(calendar_raw) if calendar_raw else None,
+        "invite": calendar_invite.extract_invite(raw),
     }
 
 

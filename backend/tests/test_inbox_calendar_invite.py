@@ -144,3 +144,21 @@ async def test_email_rsvp_rejects_bad_status(monkeypatch):
                            base_url="http://t") as c:
         r = await c.post("/api/email/rsvp/42", json={"rsvp": "nope"})
     assert r.status_code == 400
+
+
+def test_read_view_exposes_display_calendar_and_invite():
+    """The read view keeps main's display block and adds the RSVP-ready invite."""
+    from backend import email_himalaya as eh
+    read = eh.message_to_read(GOOGLE_INVITE, uid="9")
+    assert read["calendar"] and read["calendar"]["summary"] == "Sync"
+    inv = read["invite"]
+    assert inv["method"] == "REQUEST"
+    assert inv["uid"] == "abc-123@google.com"
+    assert inv["organizer_email"] == "boss@example.com"
+    assert inv["dtstart_line"].startswith("DTSTART;TZID=America/New_York:")
+
+
+def test_read_view_invite_is_none_for_plain_email():
+    from backend import email_himalaya as eh
+    read = eh.message_to_read(PLAIN_EMAIL, uid="9")
+    assert read["invite"] is None

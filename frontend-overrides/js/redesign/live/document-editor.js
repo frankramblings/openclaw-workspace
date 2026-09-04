@@ -211,10 +211,14 @@ export function selectionFromWysiwygText(text) {
 
 // A doc_update SSE frame (backend/draft_mode.py's post_turn_payload shape:
 // {type:'doc_update', doc_id, content, version, title, language}) applies
-// only when it matches the Library doc currently open in the dock.
+// only when it matches the Library doc currently open in the dock, AND
+// carries a real string `content`. A malformed frame (missing/null/non-string
+// content) must never reach applyExternalUpdate's editor.setMarkdown call,
+// which would otherwise blank the open document.
 export function shouldAcceptDocUpdate(d, frame) {
   return !!(d && d.open && d.id && !d.wsPath && frame
-    && frame.type === 'doc_update' && frame.doc_id === d.id);
+    && frame.type === 'doc_update' && frame.doc_id === d.id
+    && typeof frame.content === 'string');
 }
 
 // ---- shared workspace-watch WebSocket (silent reload on disk changes) -------
@@ -358,8 +362,11 @@ export function getSelection() {
 // editor instance yet (e.g. in tests).
 export function applyExternalUpdate(frame) {
   const d = docState();
+  // shouldAcceptDocUpdate already requires frame.content to be a string, so a
+  // malformed frame (missing/null/non-string content) never reaches the
+  // editor at all: this is a plain no-op with no state change.
   if (!shouldAcceptDocUpdate(d, frame)) return;
-  const content = typeof frame.content === 'string' ? frame.content : '';
+  const content = frame.content;
   if (!dirty) {
     const snap = snapshotEditorCaret();
     suppressChange = true;
@@ -377,6 +384,18 @@ export function applyExternalUpdate(frame) {
   d._incomingMtimeNs = null; // Library docs use version_count, not mtime: the id match above is the guard
   showConflict();
   runtime.render();
+}
+
+// Test-only seam (matches the __set* pattern used elsewhere, e.g. chat.js's
+// __setUsageRetryMs): the module-private `dirty` flag is deliberately not
+// part of docState() (see markDirty and the generation-guard comments on
+// makeSaveGuard above), and is normally only set true by a real editor
+// 'change' event, which document-editor.test.js's DOM-less harness never
+// fires. Lets __tests__/document-editor.test.js exercise
+// applyExternalUpdate's dirty-buffer branch without a live Toast UI instance
+// or markDirty()'s status-text/autosave-timer side effects.
+export function __setDirtyForTest(value) {
+  dirty = !!value;
 }
 
 // ---- transient "Updated" chip -----------------------------------------------

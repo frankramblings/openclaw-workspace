@@ -34,7 +34,7 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 
 const { saveTarget, resetBufferIdentity, shouldWarnBeforeUnload, makeSaveGuard,
         libraryDocIdFor, consumeAttachDetach, selectionFromMarkdownEditor, selectionFromWysiwygText,
-        shouldAcceptDocUpdate } = await import('../redesign/live/document-editor.js');
+        shouldAcceptDocUpdate, applyExternalUpdate, __setDirtyForTest } = await import('../redesign/live/document-editor.js');
 const { runtime } = await import('../redesign/live/runtime.js');
 
 function baseDoc(overrides) {
@@ -187,6 +187,15 @@ test('selectionFromMarkdownEditor: converts a nested [[line,ch],[line,ch]] pair 
     { text: 'line two', from: 9, to: 17, mode: 'md', lines: [2, 2] });
 });
 
+test('selectionFromMarkdownEditor: a multi-line selection crossing a line boundary converts both endpoints correctly', () => {
+  // md offsets: "alpha\nbeta\ngamma\n" -> a(0)l(1)p(2)h(3)a(4)\n(5)b(6)e(7)t(8)a(9)\n(10)g(11)...
+  // start = line 1, ch 3 (1-based) -> offset 0 + (3-1) = 2
+  // end   = line 2, ch 3 (1-based) -> offset 6 + (3-1) = 8 (line 2 starts at offset 6, after "alpha\n")
+  const md = 'alpha\nbeta\ngamma\n';
+  assert.deepStrictEqual(selectionFromMarkdownEditor(md, [[1, 3], [2, 3]]),
+    { text: 'pha\nbe', from: 2, to: 8, mode: 'md', lines: [1, 2] });
+});
+
 test('selectionFromMarkdownEditor: a collapsed selection, or a malformed/missing pair, is none', () => {
   const md = 'line one\nline two\n';
   assert.equal(selectionFromMarkdownEditor(md, [[2, 1], [2, 1]]), null); // collapsed
@@ -219,6 +228,15 @@ test('shouldAcceptDocUpdate: accepts an id-matching frame, rejects everything el
   assert.equal(shouldAcceptDocUpdate(baseDoc({ id: 'doc-1' }), { type: 'other', doc_id: 'doc-1' }), false);
 });
 
+// Fix round 1, Important 1: a doc_id-matching frame with missing/null/non-string
+// content must be rejected here too, before applyExternalUpdate ever touches the
+// editor: this is the actual guard against a malformed frame blanking the doc.
+test('shouldAcceptDocUpdate: rejects a matching frame whose content is missing, null, or not a string', () => {
+  assert.equal(shouldAcceptDocUpdate(baseDoc({ id: 'doc-1' }), { type: 'doc_update', doc_id: 'doc-1' }), false);
+  assert.equal(shouldAcceptDocUpdate(baseDoc({ id: 'doc-1' }), { type: 'doc_update', doc_id: 'doc-1', content: null }), false);
+  assert.equal(shouldAcceptDocUpdate(baseDoc({ id: 'doc-1' }), { type: 'doc_update', doc_id: 'doc-1', content: 42 }), false);
+});
+
 test('resetBufferIdentity: clears a detached-pill flag left by the previous buffer', () => {
   const d = baseDoc({ attachDetached: true });
   resetBufferIdentity(d);
@@ -244,5 +262,56 @@ test('consumeAttachDetach: clears attachDetached on the live docState so the nex
 test('consumeAttachDetach: a no-op with no runtime.state (never throws)', () => {
   runtime.state = null;
   assert.doesNotThrow(() => consumeAttachDetach());
+});
+
+// ---- applyExternalUpdate ----------------------------------------------------
+//
+// Fix round 1, Important 2: applyExternalUpdate had no direct test coverage.
+// Drives docState() via runtime.state directly, the same way the
+// consumeAttachDetach tests above do. editor/titleEl/statusEl/flashEl stay
+// null throughout this file (ensureEditor() is never called), so the clean
+// path's setMarkdown/restoreEditorCaret/flashChip calls are all no-ops and
+// every mutation lands only on the plain `d` object, which is what these
+// tests assert against. The module-private `dirty` flag (not part of
+// docState()) is set via the __setDirtyForTest test seam.
+
+test('applyExternalUpdate: a clean buffer applies the frame and marks it saved', () => {
+  const d = baseDoc({ id: 'doc-1', status: 'Unsaved', title: 'Old title', _incoming: null });
+  runtime.state = { docEditor: d };
+  __setDirtyForTest(false);
+  applyExternalUpdate({ type: 'doc_update', doc_id: 'doc-1', content: 'new content', title: 'New title' });
+  assert.strictEqual(d.status, 'Saved');
+  assert.strictEqual(d.title, 'New title');
+  assert.strictEqual(d._incoming, null, 'the clean path never stashes into _incoming');
+});
+
+test('applyExternalUpdate: a dirty buffer stashes the frame into _incoming instead of overwriting the buffer', () => {
+  const d = baseDoc({ id: 'doc-1', status: 'Unsaved', title: 'Mine, unsaved', _incoming: null });
+  runtime.state = { docEditor: d };
+  __setDirtyForTest(true);
+  try {
+    applyExternalUpdate({ type: 'doc_update', doc_id: 'doc-1', content: 'incoming content', title: 'Incoming title' });
+    assert.strictEqual(d._incoming, 'incoming content');
+    assert.strictEqual(d.title, 'Mine, unsaved', 'the local unsaved buffer must not be overwritten while dirty');
+    assert.strictEqual(d.status, 'Unsaved', 'status is untouched on the conflict path');
+  } finally {
+    __setDirtyForTest(false); // leave the module-global flag clean for any test that runs after this one
+  }
+});
+
+test('applyExternalUpdate: a malformed frame (missing/null/number content) is a no-op', () => {
+  __setDirtyForTest(false);
+  for (const frame of [
+    { type: 'doc_update', doc_id: 'doc-1' },
+    { type: 'doc_update', doc_id: 'doc-1', content: null },
+    { type: 'doc_update', doc_id: 'doc-1', content: 42 },
+  ]) {
+    const d = baseDoc({ id: 'doc-1', status: 'Saved', title: 'Mine', _incoming: null });
+    runtime.state = { docEditor: d };
+    applyExternalUpdate(frame);
+    assert.strictEqual(d.status, 'Saved', `status must not change for ${JSON.stringify(frame)}`);
+    assert.strictEqual(d.title, 'Mine', `title must not change for ${JSON.stringify(frame)}`);
+    assert.strictEqual(d._incoming, null, `_incoming must not change for ${JSON.stringify(frame)}`);
+  }
 });
 

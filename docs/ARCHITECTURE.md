@@ -241,6 +241,59 @@ until the build step bakes them into the gitignored `frontend/`. The
 backend half needs a service restart instead; sync-frontend only bakes the
 overlay.
 
+### In-document AI (2026-09)
+
+`backend/draft_mode.py` was already a complete co-drafting loop
+(`pre_turn` snapshots the doc and returns it, `wrap_message` prefixes the
+turn with a note naming the vault file, `post_turn_payload` re-reads the
+file after the turn and returns a `doc_update` payload when it changed) wired
+into `/api/chat_stream` via `active_doc_id`, but only the legacy classic UI
+ever sent that field or handled the frame. Pillar C2 adds the frontend wiring
+and one backend field: an optional `active_doc_selection` FormData field
+(JSON `{from,to,text}`, `draft_mode.SELECTION_MAX_BYTES` = 8 KB, parsed by
+`draft_mode.parse_selection`) so `wrap_message` can name the exact selected
+passage instead of the whole document for Rewrite. A selection-wrapped
+message ends in a second literal tail (`_WRAP_SELECTION_TAIL`, not the plain
+`_WRAP_TAIL`), so `draft_mode.strip_wrapper`, and therefore
+`history_display.history_display_text`, used by both `/api/history` and chat
+search, still strips it back to exactly what the user typed. No new routes
+and no new turn mechanism.
+
+On the frontend, `document-editor.js` gained pure/impure helpers:
+`activeLibraryDocId()` (the open doc's id, only for a Library document, never
+a workspace file), `getSelection()` (Toast UI's `getSelectedText()` plus,
+in markdown mode, the nested `[[line,ch],[line,ch]]` pair from
+`mdEditor.editor.getSelection()`, converted to flat character offsets by
+`selectionFromMarkdownEditor`), `shouldAcceptDocUpdate()`/
+`applyExternalUpdate()` (a clean buffer reloads silently with the caret
+preserved and an "Updated" chip, a dirty buffer stashes the incoming content
+and shows the existing conflict banner; a frame whose `content` isn't a
+string is rejected outright rather than blanking the document), and
+`consumeAttachDetach()` for the per-turn detach flag. `live/chat.js`'s
+`fireSend`/`keepaliveSend` attach `active_doc_id` and, when there is a live
+selection, `active_doc_selection` to every turn sent while a Library document
+is open and not detached (`trimSelectionText`/`selectionField` trim an
+oversized selection to stay under the server's 8 KB cap rather than let it be
+dropped outright), and handle an incoming `type: "doc_update"` SSE frame by
+calling `applyExternalUpdate`. `surfaces.js` and `mobile-surfaces.js` render
+an "Editing: <title>" pill above the composer with an × that detaches only
+the next send.
+
+`redesign/doc-ai-prompts.js` is a DOM-free module of pure prompt builders
+(`buildSummarizePrompt`, `buildContinuePrompt`, `buildRewritePrompt`,
+`ASK_PLACEHOLDER`) used by a dock-header toolbar in `document-editor.js`:
+four buttons on desktop (`aiBar`), a "✦" kebab menu on mobile (`aiKebabBtn`/
+`aiMenu`), routed through `resolveAiAction`/`dispatchAiAction`/`runAiAction`/
+`askAction`. Rewrite with nothing selected, running a document action while
+the current thread is busy (`turnBusyHere`), and running one with an unsent
+draft in the composer all refuse with a toast instead of sending; Ask only
+sets the composer placeholder and force-attaches the pill, it never sends by
+itself.
+
+Deploying this feature needs the same two steps as the mentions feature
+above: `scripts/sync-frontend.sh` for the frontend half, a service restart
+for the backend half.
+
 ## The frontend: vendor + overrides + bake
 
 The UI is a vanilla-JS SPA. It is assembled, not hand-edited in place:

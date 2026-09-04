@@ -40,6 +40,13 @@ not just the original maintainer's setup.
 - Fixed: an image sent together with a mention no longer disappears on reload, and a new thread opened with a mention is titled from your question instead of the injected block.
 - Caps: 100 KB per mentioned item, 200 KB total per turn (the existing text-attachment caps, reused), 8 distinct mentions per turn.
 
+### Pillar C2: In-document AI actions (2026-09)
+
+- Document dock: Summarize / Rewrite / Continue / Ask buttons (a "✦" kebab on mobile) run Gary against the open document over the existing draft-mode co-drafting loop: edits land in the vault file with the usual version snapshot, and the reply is a normal, steerable chat turn. Summarize and Ask are read-only prompts; Rewrite and Continue edit the file. A toolbar action while the current thread is busy, or while the composer holds an unsent draft, toasts instead of running; Rewrite with nothing selected toasts "Select some text in the document first."
+- Composer: an "Editing: <title>" pill appears above the send row whenever a Library document is open in the dock, with an × to detach the next send only (it reattaches on the send after that). `active_doc_id`, and a selection hint for Rewrite, travel with any turn sent while attached, not just the toolbar buttons.
+- Backend: a new optional `active_doc_selection` FormData field on `/api/chat_stream` (JSON `{from,to,text}`, 8 KB cap) lets `draft_mode.wrap_message` name the exact passage instead of the whole document; oversized or malformed input is silently ignored. No new routes.
+- Deploying this needs `scripts/sync-frontend.sh` for the frontend half and a service restart for the backend half.
+
 ### Phase 1 — Genericization (already merged to main)
 
 - All maintainer-specific identifiers removed from source and committed assets.

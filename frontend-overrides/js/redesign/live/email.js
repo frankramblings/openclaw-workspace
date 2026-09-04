@@ -170,6 +170,9 @@ function toCurrent(d) {
     unread: false,
     body: paragraphsFrom(bodyText),
     attach: (d.attachments || []).map((a) => ({ name: a.filename, size: fmtBytes(a.size) })),
+    // The REQUEST invite block (backend message_to_read) the reader turns into
+    // an Accept/Maybe/Decline row. Null for ordinary mail.
+    invite: d.invite || null,
   };
 }
 
@@ -351,6 +354,28 @@ export const actions = {
       s.emailSummary = (res && res.summary) || 'No summary available.';
     } catch (_) { s.emailSummary = 'Summary unavailable.'; }
     s.emailBusy = false; runtime.render();
+  },
+  // Answer a calendar invite that arrived as an email .ics. arg is
+  // "uid|folder|response" (see inbox-logic.emailInviteRowHtml). The backend
+  // sends the REPLY, marks the message Seen and files it, so the open message
+  // is re-read afterwards to show its new state.
+  emailRsvp: async (arg) => {
+    const s = runtime.state;
+    if (!s) return;
+    const [uid, folder, response] = String(arg || '').split('|');
+    const LABEL = { accepted: 'Accepted', tentative: 'Maybe', declined: 'Declined' };
+    if (!uid || !LABEL[response]) return;
+    s.emailBusy = true; runtime.render();
+    try {
+      await apiJson(`/api/email/rsvp/${encodeURIComponent(uid)}`, { rsvp: response, folder: folder || FOLDER });
+      s.inboxToast = { msg: `${LABEL[response]} the invitation`, undoTs: null };
+    } catch (_) {
+      s.inboxToast = { msg: 'Could not send the RSVP.', undoTs: null };
+      s.emailBusy = false; runtime.render();
+      return;
+    }
+    s.emailBusy = false;
+    await openAt(s.selEmail);
   },
   clearEmailSummary: () => { const s = runtime.state; if (s) { s.emailSummary = ''; runtime.render(); } },
 };

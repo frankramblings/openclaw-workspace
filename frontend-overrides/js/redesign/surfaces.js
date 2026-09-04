@@ -6,7 +6,7 @@ import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
 import { docPillHtml } from './doc-pill.js';
 import { searchClearBtn } from './search-clear.js';
-import { cardActions, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from './live/inbox-logic.js';
+import { cardActions, emailInviteRowHtml, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import { questionCardHtml } from './live/question-card.js';
 import {
@@ -676,6 +676,7 @@ function emailSurface(s) {
       </div>
       <div class="reader-body">
         <div class="col">
+          ${emailInviteRowHtml(m, esc)}
           ${map(m.body || [], (p) => `<p>${esc(p)}</p>`)}
           ${when(attach.length > 0, `<div class="attach-row">${map(attach, (att) => `<div class="attach" title="attachment download not yet available" style="cursor:default"><span class="ico">${I.file(15, 'currentColor')}</span><div><div class="nm">${esc(att.name)}</div><div class="sz">${esc(att.size)}</div></div></div>`)}</div>`)}
         </div>

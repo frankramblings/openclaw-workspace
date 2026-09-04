@@ -160,12 +160,12 @@ def test_clip_write_failure_returns_write_failed_without_raw_detail(client, vaul
     monkeypatch.setattr(clip_fetch, "fetch", fake_fetch)
 
     def boom(doc):
-        raise OSError("disk quota exceeded on /home/frank/.openclaw/workspace")
+        raise OSError("disk quota exceeded on /srv/agent/.openclaw/workspace")
     monkeypatch.setattr(documents, "_write", boom)
     r = client.post("/api/clip", json={"url": "https://example.com/article"})
     assert r.status_code == 500
     assert r.json()["error"] == "write_failed"
-    assert "/home/frank/.openclaw" not in r.json()["detail"]
+    assert "/srv/agent/.openclaw" not in r.json()["detail"]
 
 
 def test_clip_mention_title_never_breaks_the_token_grammar(client, vault_docs, monkeypatch):

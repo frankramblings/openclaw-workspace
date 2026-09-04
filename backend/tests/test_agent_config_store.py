@@ -105,8 +105,8 @@ def test_list_backups_empty_when_none():
 
 
 def test_audit_appends_and_recent_reads_newest_first():
-    store.audit("mcp.add", "wistia", True, backup_id="b1")
-    store.audit("mcp.remove", "wistia", False, detail="boom")
+    store.audit("mcp.add", "vidhost", True, backup_id="b1")
+    store.audit("mcp.remove", "vidhost", False, detail="boom")
     path = store.base_dir() / "audit.jsonl"
     assert _mode(path) == 0o600
     lines = path.read_text().splitlines()

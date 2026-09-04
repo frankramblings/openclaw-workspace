@@ -12,7 +12,7 @@ from backend.app import app
 from backend.tests.fake_gateway import FakeGateway
 
 SERVERS = {
-    "wistia": {"url": "https://api.wistia.com/mcp/api", "transport": "streamable-http", "auth": "oauth",
+    "vidhost": {"url": "https://vidhost.example/mcp/api", "transport": "streamable-http", "auth": "oauth",
                "headers": {"X-Token": "<redacted>"}},
     "local-fs": {"command": "npx", "args": ["-y", "fs-mcp"], "env": {"HOME": "<redacted>"}, "enabled": False,
                  "connectionTimeoutMs": 5000, "toolFilter": {"include": ["read_*"]}},
@@ -52,7 +52,7 @@ def test_list_maps_http_and_stdio_servers_sorted(client, monkeypatch, cfg):
     assert body["ok"] is True and body["source"] == "gateway" and body["hash"] == "hash-1"
     assert body["path"] == str(cfg)
     names = [s["id"] for s in body["servers"]]
-    assert names == ["local-fs", "wistia"]
+    assert names == ["local-fs", "vidhost"]
     fs, wi = body["servers"]
     assert fs["transport"] == "stdio" and fs["command"] == "npx" and fs["args"] == ["-y", "fs-mcp"]
     assert fs["is_enabled"] is False and fs["env_names"] == ["HOME"] and "env" not in fs
@@ -155,7 +155,7 @@ def test_add_backs_up_then_patches_with_base_hash(client, monkeypatch, cfg):
 
 def test_add_existing_is_409_without_patch_or_backup(client, monkeypatch, cfg):
     fake = install(monkeypatch, cfg)
-    r = client.post("/api/mcp/servers", json={"name": "wistia", "url": "https://x/"})
+    r = client.post("/api/mcp/servers", json={"name": "vidhost", "url": "https://x/"})
     assert r.status_code == 409 and r.json()["error"] == "exists"
     assert fake.calls_for("config.patch") == [] and store.list_backups("openclaw-json", "config") == []
     assert store.recent_audit()[0]["action"] == "mcp.add" and store.recent_audit()[0]["ok"] is False
@@ -223,8 +223,8 @@ def test_writes_disabled_short_circuits_every_write(client, monkeypatch, cfg):
     monkeypatch.setenv("WORKSPACE_AGENT_CONFIG_WRITES", "0")
     fake = install(monkeypatch, cfg)
     for method, url, body in (("post", "/api/mcp/servers", {"name": "d", "url": "https://x/"}),
-                              ("delete", "/api/mcp/servers/wistia", None),
-                              ("post", "/api/mcp/servers/wistia/enabled", {"enabled": False})):
+                              ("delete", "/api/mcp/servers/vidhost", None),
+                              ("post", "/api/mcp/servers/vidhost/enabled", {"enabled": False})):
         r = getattr(client, method)(url, json=body) if body is not None else getattr(client, method)(url)
         assert r.status_code == 503 and r.json()["error"] == "writes_disabled"
     assert fake.calls == [] and store.recent_audit() == []
@@ -234,10 +234,10 @@ def test_writes_disabled_short_circuits_every_write(client, monkeypatch, cfg):
 
 def test_remove_patches_null_and_backs_up(client, monkeypatch, cfg):
     fake = install(monkeypatch, cfg)
-    r = client.delete("/api/mcp/servers/wistia")
-    assert r.status_code == 200 and r.json()["removed"] == "wistia"
+    r = client.delete("/api/mcp/servers/vidhost")
+    assert r.status_code == 200 and r.json()["removed"] == "vidhost"
     (patch,) = fake.calls_for("config.patch")
-    assert json.loads(patch["raw"]) == {"mcp": {"servers": {"wistia": None}}}
+    assert json.loads(patch["raw"]) == {"mcp": {"servers": {"vidhost": None}}}
     assert len(store.list_backups("openclaw-json", "config")) == 1
     assert store.recent_audit()[0]["action"] == "mcp.remove"
 
@@ -259,18 +259,18 @@ def test_remove_bad_name_is_400(client, monkeypatch, cfg):
 
 def test_enabled_toggle_patches_only_the_flag(client, monkeypatch, cfg):
     fake = install(monkeypatch, cfg)
-    r = client.post("/api/mcp/servers/wistia/enabled", json={"enabled": False})
+    r = client.post("/api/mcp/servers/vidhost/enabled", json={"enabled": False})
     assert r.status_code == 200
     assert r.json()["server"]["is_enabled"] is False and r.json()["server"]["url"].startswith("https://")
     (patch,) = fake.calls_for("config.patch")
-    assert json.loads(patch["raw"]) == {"mcp": {"servers": {"wistia": {"enabled": False}}}}
+    assert json.loads(patch["raw"]) == {"mcp": {"servers": {"vidhost": {"enabled": False}}}}
     assert store.recent_audit()[0]["action"] == "mcp.enabled"
 
 
 def test_enabled_requires_boolean(client, monkeypatch, cfg):
     fake = install(monkeypatch, cfg)
-    assert client.post("/api/mcp/servers/wistia/enabled", json={"enabled": "no"}).status_code == 400
-    assert client.post("/api/mcp/servers/wistia/enabled", json={}).status_code == 400
+    assert client.post("/api/mcp/servers/vidhost/enabled", json={"enabled": "no"}).status_code == 400
+    assert client.post("/api/mcp/servers/vidhost/enabled", json={}).status_code == 400
     assert fake.calls == []
 
 
@@ -279,5 +279,5 @@ def test_enabled_requires_boolean(client, monkeypatch, cfg):
 def test_mcporter_routes_and_helpers_are_removed(client):
     assert not hasattr(settings_status, "_mcporter_json")
     assert not hasattr(settings_status, "_MCP_CACHE")
-    assert client.post("/api/mcp/servers/wistia/reconnect").status_code in (404, 405)
-    assert client.get("/api/mcp/servers/wistia/tools").status_code in (404, 405)
+    assert client.post("/api/mcp/servers/vidhost/reconnect").status_code in (404, 405)
+    assert client.get("/api/mcp/servers/vidhost/tools").status_code in (404, 405)

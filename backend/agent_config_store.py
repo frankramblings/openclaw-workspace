@@ -2,7 +2,7 @@
 an append-only audit log, and the writes kill switch.
 
 Everything lives under config.DATA_DIR/agent-config with 0700 directories
-and 0600 files: backups of openclaw.json carry secrets, and /home/frank
+and 0600 files: backups of openclaw.json carry secrets, and the operator's home directory
 grants another account --x, so directory modes are the real fence (the same
 lesson the change tracker learned in its final review).
 

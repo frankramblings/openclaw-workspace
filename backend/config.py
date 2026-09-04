@@ -329,6 +329,36 @@ def accent_color() -> str:
     )
 
 
+# The owner's display name, used wherever a prompt or a transcript label
+# addresses the person (branch preambles, follow-through nudges). Same
+# precedence as the agent name: env > branding.json > default. Never a real
+# name in code: the public tree must not know who runs it.
+DEFAULT_USER_NAME = "the user"
+# Host of the operator's local model box (embeddings on :11434, Whisper on
+# :9000). Consumers build their URLs from this unless their own env override
+# is set. The default is the maintainer's tailnet host; a fresh tenant with no
+# local box fails closed exactly as before (connection refused = feature off).
+DEFAULT_LOCAL_HOST = "100.97.60.15"
+
+
+def user_name() -> str:
+    """The owner's display name. Env > branding.json > default."""
+    return (
+        (os.environ.get("WORKSPACE_USER_NAME") or "").strip()
+        or str(load_branding().get("user_name") or "").strip()
+        or DEFAULT_USER_NAME
+    )
+
+
+def local_host() -> str:
+    """Host (no scheme, no port) of the local model box. Env > branding.json > default."""
+    return (
+        (os.environ.get("WORKSPACE_LOCAL_HOST") or "").strip()
+        or str(load_branding().get("local_host") or "").strip()
+        or DEFAULT_LOCAL_HOST
+    )
+
+
 def source_url() -> str:
     """Public URL to the source of THIS running version (AGPL-3.0 §13).
     Forks that modify the app should point this at their own repository.

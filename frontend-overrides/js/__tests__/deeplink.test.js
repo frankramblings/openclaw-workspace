@@ -6,14 +6,17 @@ import assert from 'node:assert';
 // stub it before pulling deeplink.js in, dynamically, so the stub is in
 // place first (a static import here would hoist ahead of the assignment
 // below; same "browser shim" pattern as chat-usage.test.js). Deliberately
-// NOT stubbing window/document: deeplink.js only auto-runs initDeepLinks()
-// when both are present, and these tests only exercise its pure exports.
+// NOT stubbing window/document at import time: deeplink.js only auto-runs
+// initDeepLinks() when both are present at MODULE LOAD, and neither is set
+// yet here, so it stays a no-op even though some tests below (applyPlan's
+// clip-failure DOM branch) set globalThis.document afterward, per-test.
 globalThis.location = { origin: 'http://localhost' };
 
 const {
   planForAction, serializePending, parsePending, ACTION_PLANS,
-  cleanedSearch, searchDispatchPlan, clipPlanFields,
+  cleanedSearch, searchDispatchPlan, clipPlanFields, applyPlan,
 } = await import('../deeplink.js');
+const { runtime } = await import('../redesign/live/runtime.js');
 
 // ---- planForAction ----------------------------------------------------
 
@@ -75,6 +78,108 @@ test('clipPlanFields: missing q -> empty clipUrl, never throws', () => {
   assert.deepEqual(clipPlanFields(new URLSearchParams('action=clip')), {
     clipUrl: '', mentionAfterClip: false, newChat: false,
   });
+});
+
+// ---- applyPlan: clip failure must never clobber an unsent draft ---------
+//
+// Fix round 1: the original catch branch always did
+// `plan.focus = 'input'; plan.prefill = plan.clipUrl` on a failed clip, even
+// without mention=1 -- newChat stays false there, so that composer is
+// whatever surface the user was already on, and the blind prefill silently
+// overwrote an unsent draft. Now: only touch the composer when it's empty;
+// otherwise leave it (and focus) untouched. mention=1 keeps forcing a fresh
+// (guaranteed-empty) chat, unaffected by this fix.
+
+function _fakeInput(initialValue) {
+  return {
+    value: initialValue,
+    focused: false,
+    focus() { this.focused = true; },
+    dispatchEvent() {},
+    setSelectionRange() {},
+  };
+}
+
+function _jsonRes(obj, ok = true, status = 200) {
+  return {
+    ok, status,
+    headers: { get: () => 'application/json' },
+    json: async () => obj,
+    text: async () => JSON.stringify(obj),
+  };
+}
+
+test('applyPlan: failed clip (no mention) leaves an existing draft untouched', async () => {
+  const input = _fakeInput('a message I was already typing');
+  globalThis.document = { querySelector: () => input };
+  globalThis.fetch = async () => _jsonRes({ ok: false, error: 'fetch_failed', detail: 'could not reach that host' }, false, 502);
+  const warnCalls = [];
+  const origWarn = console.warn;
+  console.warn = (...args) => warnCalls.push(args);
+  try {
+    const plan = { doClip: true, clipUrl: 'https://example.com/a', mentionAfterClip: false, newChat: false, focus: 'none', openAttach: false, openInbox: false };
+    await applyPlan(plan);
+    assert.equal(input.value, 'a message I was already typing');
+    assert.equal(input.focused, false);
+    assert.equal(plan.focus, 'none'); // untouched -- shared focus block never ran
+    assert.equal(warnCalls.length, 1);
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+test('applyPlan: failed clip (no mention) prefills an empty composer with the URL', async () => {
+  const input = _fakeInput('');
+  globalThis.document = { querySelector: () => input };
+  globalThis.fetch = async () => { throw new Error('network down'); };
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const plan = { doClip: true, clipUrl: 'https://example.com/b', mentionAfterClip: false, newChat: false, focus: 'none', openAttach: false, openInbox: false };
+    await applyPlan(plan);
+    assert.equal(input.value, 'https://example.com/b');
+    assert.equal(input.focused, true);
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+test('applyPlan: failed clip WITH mention=1 still forces the fresh-chat fallback (unchanged)', async () => {
+  // newChat=true (as clipPlanFields sets at parse time) drives applyPlan's
+  // pre-existing newChat branch too -- mock its targets (and runtime.actions
+  // so its convSearch-merge poll resolves on the first check) so this test
+  // isn't stuck in the real ~5s give-up timeout.
+  const newBtn = _fakeInput('');
+  const draft = _fakeInput('');
+  globalThis.document = {
+    querySelector: (sel) => (sel === '[data-act="newChat"]' ? newBtn : draft),
+  };
+  runtime.actions = { convSearch: () => {} };
+  globalThis.fetch = async () => { throw new Error('network down'); };
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const plan = { doClip: true, clipUrl: 'https://example.com/c', mentionAfterClip: true, newChat: true, focus: 'none', openAttach: false, openInbox: false };
+    await applyPlan(plan);
+    assert.equal(plan.focus, 'input');
+    assert.equal(plan.prefill, 'https://example.com/c');
+    assert.equal(draft.value, 'https://example.com/c'); // shared focus block actually applied it
+  } finally {
+    console.warn = origWarn;
+    runtime.actions = undefined;
+  }
+});
+
+test('applyPlan: successful clip (no mention) opens the document, unaffected by the failure-path fix', async () => {
+  runtime.actions = { openDoc: (id) => { runtime.actions._openedId = id; } };
+  globalThis.fetch = async () => _jsonRes({ ok: true, document: { id: 'doc-99' }, mention: '[[doc-99|a]]', meta: {} });
+  try {
+    const plan = { doClip: true, clipUrl: 'https://example.com/d', mentionAfterClip: false, newChat: false, focus: 'none', openAttach: false, openInbox: false };
+    await applyPlan(plan);
+    assert.equal(runtime.actions._openedId, 'doc-99');
+  } finally {
+    runtime.actions = undefined;
+  }
 });
 
 // initDeepLinks never mutates ACTION_PLANS directly — it spreads a shallow

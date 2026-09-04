@@ -170,9 +170,10 @@ export async function applyPlan(plan) {
   if (!plan) return;
   try {
     if (plan.doClip && plan.clipUrl) {
-      // Best-effort: land on a fresh, focused chat with the URL still in
-      // hand so a failed clip is at least visible and retryable, the same
-      // "never block boot" ethos this whole function already follows.
+      // Best-effort clip; never blocks boot. On success, opens the document
+      // (or, with mention=1, prefills a fresh chat's composer with the
+      // mention token). On failure, see the catch block below for what
+      // happens to the URL and the composer -- it depends on mentionAfterClip.
       try {
         const res = await apiJson('/api/clip', { url: plan.clipUrl });
         if (plan.mentionAfterClip) {
@@ -197,8 +198,35 @@ export async function applyPlan(plan) {
           return;
         }
       } catch (_) {
-        plan.focus = 'input';
-        plan.prefill = plan.clipUrl;
+        if (plan.mentionAfterClip) {
+          // Fresh chat is already forced (newChat=true, set at parse time by
+          // clipPlanFields), so the composer that's about to render is
+          // guaranteed empty -- same fallback as the success path above,
+          // just with the raw URL instead of a mention token.
+          plan.focus = 'input';
+          plan.prefill = plan.clipUrl;
+        } else {
+          // No fresh chat here (newChat stayed false) -- the composer about
+          // to render is whatever surface the user was already on, and it
+          // may hold an unsent draft. Never clobber it: only offer the
+          // failed URL back when the composer is empty, and leave
+          // focus/surface alone otherwise (skip the shared
+          // plan.focus === 'input' block entirely below by not setting it).
+          // Toast copy is Task 6's job (clipErrorMessage in
+          // redesign/clip-core.js); warn for now so a failed clip is at
+          // least visible somewhere.
+          console.warn('[clip] deep-link clip failed', plan.clipUrl);
+          const input = await _waitFor('[data-model="draft"], #message');
+          if (input && input.value.trim() === '') {
+            input.value = plan.clipUrl;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+            try {
+              const len = input.value.length;
+              if (typeof input.setSelectionRange === 'function') input.setSelectionRange(len, len);
+            } catch (_) {}
+          }
+        }
       }
     }
     if (plan.openInbox) {

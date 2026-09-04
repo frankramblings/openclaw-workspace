@@ -91,3 +91,22 @@ def test_router_delete_google_still_gets_primary_default(monkeypatch):
     assert resp.status_code == 200
     # Router passes None; Google's own delete_event defaults it to "primary"
     assert received["calendar"] is None or received["calendar"] == ""
+
+
+def test_events_endpoint_passes_through_provider_errors(monkeypatch):
+    """A provider that reports per-calendar failures gets its `errors` list
+    forwarded; a provider that still returns a bare list keeps working."""
+    async def fake_events(start, end):
+        return {"events": [{"uid": "e1"}], "errors": [{"calendar": "bad", "error": "400"}]}
+
+    monkeypatch.setattr(cal.calendar_config, "provider", lambda: "google")
+    monkeypatch.setattr(cal.calendar_google, "list_events", fake_events)
+    out = asyncio.run(cal.events())
+    assert out == {"events": [{"uid": "e1"}], "errors": [{"calendar": "bad", "error": "400"}]}
+
+    async def fake_list_events(start, end):
+        return [{"uid": "e2"}]
+
+    monkeypatch.setattr(cal.calendar_config, "provider", lambda: "caldav")
+    monkeypatch.setattr(cal.calendar_caldav, "list_events", fake_list_events)
+    assert asyncio.run(cal.events()) == {"events": [{"uid": "e2"}]}

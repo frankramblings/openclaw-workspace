@@ -18,7 +18,7 @@ import assert from 'node:assert';
 // api.js reads `location.origin` at module-load time.
 globalThis.location = { origin: 'http://localhost' };
 
-const { apiJson, apiDelete, ApiError } = await import('../redesign/live/api.js');
+const { apiGet, apiJson, apiDelete, ApiError } = await import('../redesign/live/api.js');
 
 function fakeRes({ ok, status, json, text, contentType = 'application/json' }) {
   return {
@@ -320,4 +320,43 @@ test('wipe/addUser/importData actions no longer exist on the settings module', (
   assert.equal(settingsMod.actions.wipe, undefined);
   assert.equal(settingsMod.actions.addUser, undefined);
   assert.equal(settingsMod.actions.importData, undefined);
+});
+
+// ---- apiGet timeout option --------------------------------------------------
+// A slow backend used to hang a tile until the loader's own guard fired, with
+// the request still in flight. apiGet takes an optional { timeoutMs }; callers
+// that pass nothing are unchanged (no signal invented for them).
+
+test('apiGet passes no signal by default and an AbortSignal when timeoutMs is set', async () => {
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = mock.fn(async (url, opts) => {
+    seen.push(opts);
+    return fakeRes({ ok: true, status: 200, json: { ok: true } });
+  });
+  try {
+    await apiGet('/api/x');
+    assert.equal(seen[0].signal, undefined, 'no timeout requested = no signal invented');
+    await apiGet('/api/x', { timeoutMs: 20000 });
+    assert.ok(seen[1].signal, 'timeoutMs produces an abort signal');
+    assert.equal(typeof seen[1].signal.aborted, 'boolean');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('an explicit signal still wins over timeoutMs', async () => {
+  const seen = [];
+  const realFetch = globalThis.fetch;
+  const ctrl = new AbortController();
+  globalThis.fetch = mock.fn(async (url, opts) => {
+    seen.push(opts);
+    return fakeRes({ ok: true, status: 200, json: { ok: true } });
+  });
+  try {
+    await apiGet('/api/x', { signal: ctrl.signal, timeoutMs: 5000 });
+    assert.equal(seen[0].signal, ctrl.signal);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

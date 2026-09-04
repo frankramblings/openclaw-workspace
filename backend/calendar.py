@@ -42,7 +42,16 @@ async def calendars():
 @router.get("/api/calendar/events")
 async def events(start: str = "", end: str = ""):
     try:
-        return {"events": await _provider().list_events(start, end)}
+        res = await _provider().list_events(start, end)
+        # google returns {"events", "errors"} so a per-calendar failure is
+        # visible instead of reading as an empty calendar; caldav still
+        # returns a bare list.
+        if isinstance(res, dict):
+            out = {"events": res.get("events", [])}
+            if res.get("errors"):
+                out["errors"] = res["errors"]
+            return out
+        return {"events": res}
     except Exception as exc:  # noqa: BLE001
         return JSONResponse({"events": [], "error": f"{exc!r}"})
 

@@ -176,8 +176,11 @@ export async function load(state /* , { force } = {} */) {
   // Friendly calendar label for an event's `sub` (name, then href, then '').
   const calLabel = (ev) => calNames[ev.calendar] || ev.calendar || '';
 
-  // events — fatal on failure so the loader keeps the mock.
-  const raw = await apiGet(`/api/calendar/events?start=${ymd(fetchStart)}&end=${ymd(fetchEnd)}`);
+  // events — fatal on failure so the loader keeps the mock. Bounded: a slow
+  // backend used to hang the tile until the loader's own guard fired.
+  const raw = await apiGet(
+    `/api/calendar/events?start=${ymd(fetchStart)}&end=${ymd(fetchEnd)}`,
+    { timeoutMs: 20000 });
   const events = Array.isArray(raw?.events) ? raw.events : [];
 
   // Index events by local day-key.

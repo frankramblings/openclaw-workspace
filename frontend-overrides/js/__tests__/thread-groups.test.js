@@ -25,13 +25,16 @@ test('OPEN takes threads opened within 48h, running, queued, or active; nothing 
   const g = build({ sessions, running: new Set(['run']), queued: new Set(['q']), activeId: 'act' });
   assert.equal(g[0].kind, 'open');
   assert.deepEqual(ids(g[0]).sort(), ['act', 'q', 'recent', 'run']);
-  assert.equal(ids(g[0])[0], 'run', 'running threads first');
   const rest = g.slice(1).flatMap((x) => x.rows.map((r) => r.id));
   assert.deepEqual(rest.sort(), ['plain', 'stale'], 'no duplicates across sections, archived hidden');
 });
 
-test('OPEN rows are ordered by opened desc and numbered 1..9', () => {
-  const sessions = [S('a', { opened: NOW - 3 * H }), S('b', { opened: NOW - 1 * H }), S('c', { opened: NOW - 2 * H })];
+test('OPEN rows are ordered by recency and numbered 1..9', () => {
+  const sessions = [
+    S('a', { opened: NOW - 3 * H, updated: NOW - 3 * H }),
+    S('b', { opened: NOW - 1 * H, updated: NOW - 1 * H }),
+    S('c', { opened: NOW - 2 * H, updated: NOW - 2 * H }),
+  ];
   const g = build({ sessions });
   assert.deepEqual(ids(g[0]), ['b', 'c', 'a']);
   assert.deepEqual(g[0].rows.map((r) => r.slot), [1, 2, 3]);
@@ -180,4 +183,29 @@ test('a stored unread flag lights the row dot and counts in the project roll-up'
 test('the active row never shows its own unread flag', () => {
   const g = build({ sessions: [S('a', { unread: true })], activeId: 'a' });
   assert.equal(g.flatMap((x) => x.rows).find((r) => r.id === 'a').notify, false);
+});
+
+test('a thread that starts running keeps its slot (order is recency only)', () => {
+  const sessions = [
+    S('a', { opened: NOW - 1 * H, updated: NOW - 1 * H }),
+    S('b', { opened: NOW - 2 * H, updated: NOW - 2 * H }),
+    S('c', { opened: NOW - 3 * H, updated: NOW - 3 * H }),
+  ];
+  const idle = build({ sessions });
+  assert.deepEqual(ids(idle[0]), ['a', 'b', 'c']);
+  const running = build({ sessions, running: new Set(['c']) });
+  assert.deepEqual(ids(running[0]), ['a', 'b', 'c'], 'running does not jump the shelf');
+  assert.deepEqual(running[0].rows.map((r) => r.slot), [1, 2, 3]);
+});
+
+test('a newly running thread beyond the cap still evicts the oldest non-running row', () => {
+  const sessions = [];
+  for (let i = 0; i < OPEN_CAP; i++) sessions.push(S(`s${i}`, { opened: NOW - i * H, updated: NOW - i * H }));
+  const old = S('oldrun', { opened: NOW - 40 * H, updated: NOW - 40 * H });
+  const g = build({ sessions: [...sessions, old], running: new Set(['oldrun']) });
+  const open = ids(g[0]);
+  assert.equal(open.length, OPEN_CAP);
+  assert.ok(open.includes('oldrun'), 'the running row always gets a place');
+  assert.ok(!open.includes(`s${OPEN_CAP - 1}`), 'the oldest non-running row yields');
+  assert.equal(open[open.length - 1], 'oldrun', 'and it lands in recency order, last');
 });

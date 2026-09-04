@@ -34,7 +34,8 @@ globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} }
 
 const { saveTarget, resetBufferIdentity, shouldWarnBeforeUnload, makeSaveGuard,
         libraryDocIdFor, consumeAttachDetach, selectionFromMarkdownEditor, selectionFromWysiwygText,
-        shouldAcceptDocUpdate, applyExternalUpdate, __setDirtyForTest } = await import('../redesign/live/document-editor.js');
+        shouldAcceptDocUpdate, applyExternalUpdate, acceptIncoming,
+        __setDirtyForTest, __setEditorForTest, __armAutosaveForTest } = await import('../redesign/live/document-editor.js');
 const { runtime } = await import('../redesign/live/runtime.js');
 
 function baseDoc(overrides) {
@@ -184,7 +185,7 @@ test('selectionFromMarkdownEditor: converts a nested [[line,ch],[line,ch]] pair 
   const md = 'line one\nline two\nline three\n';
   // "line two" is line 2, columns 1..9 (1-based, ch=9 is just past the 8th char)
   assert.deepStrictEqual(selectionFromMarkdownEditor(md, [[2, 1], [2, 9]]),
-    { text: 'line two', from: 9, to: 17, mode: 'md', lines: [2, 2] });
+    { text: 'line two', from: 9, to: 17, mode: 'md' });
 });
 
 test('selectionFromMarkdownEditor: a multi-line selection crossing a line boundary converts both endpoints correctly', () => {
@@ -193,7 +194,7 @@ test('selectionFromMarkdownEditor: a multi-line selection crossing a line bounda
   // end   = line 2, ch 3 (1-based) -> offset 6 + (3-1) = 8 (line 2 starts at offset 6, after "alpha\n")
   const md = 'alpha\nbeta\ngamma\n';
   assert.deepStrictEqual(selectionFromMarkdownEditor(md, [[1, 3], [2, 3]]),
-    { text: 'pha\nbe', from: 2, to: 8, mode: 'md', lines: [1, 2] });
+    { text: 'pha\nbe', from: 2, to: 8, mode: 'md' });
 });
 
 test('selectionFromMarkdownEditor: a collapsed selection, or a malformed/missing pair, is none', () => {
@@ -312,6 +313,69 @@ test('applyExternalUpdate: a malformed frame (missing/null/number content) is a 
     assert.strictEqual(d.status, 'Saved', `status must not change for ${JSON.stringify(frame)}`);
     assert.strictEqual(d.title, 'Mine', `title must not change for ${JSON.stringify(frame)}`);
     assert.strictEqual(d._incoming, null, `_incoming must not change for ${JSON.stringify(frame)}`);
+  }
+});
+
+// ---- Fix wave, I2: the conflict banner vs the armed autosave ----------------
+//
+// Before this fix the dirty branch put the banner up but left the 2.5s
+// autosave timer running, so it fired underneath the banner and PUT the
+// user's buffer straight over the edit the frame was reporting, then labelled
+// the buffer "Saved". __armAutosaveForTest stands in for markDirty()'s timer
+// (which needs a real editor 'change' event to arm).
+
+test('applyExternalUpdate: the dirty branch cancels the armed autosave instead of letting it overwrite the incoming edit', async () => {
+  const d = baseDoc({ id: 'doc-1', status: 'Unsaved', _incoming: null });
+  runtime.state = { docEditor: d };
+  runtime.render = () => {};
+  __setDirtyForTest(true);
+  let autosaveFired = 0;
+  __armAutosaveForTest(() => { autosaveFired++; }, 5);
+  try {
+    applyExternalUpdate({ type: 'doc_update', doc_id: 'doc-1', content: 'Gary\'s edit' });
+    assert.strictEqual(d._incoming, 'Gary\'s edit', 'the banner path still stashes the incoming content');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.strictEqual(autosaveFired, 0,
+      'the pending autosave must not fire while the user is being asked to resolve the conflict');
+  } finally {
+    __setDirtyForTest(false);
+  }
+});
+
+test('acceptIncoming: Reload disk re-saves the accepted content, so a buffer labelled Saved matches disk', async () => {
+  const d = baseDoc({ id: 'doc-1', status: 'Unsaved', _incoming: 'Gary\'s edit', saveFailed: true });
+  runtime.state = { docEditor: d };
+  runtime.render = () => {};
+  let saves = 0;
+  runtime.actions = { saveDoc: async () => { saves++; return 'ok'; } };
+  __setDirtyForTest(true);
+  __setEditorForTest({ setMarkdown() {}, getMarkdown: () => 'Gary\'s edit' });
+  try {
+    await acceptIncoming();
+    assert.strictEqual(d.status, 'Saved');
+    assert.strictEqual(saves, 1,
+      'a Library doc PUT has no version precondition, so the accepted content must be written back');
+  } finally {
+    __setDirtyForTest(false);
+    __setEditorForTest(null);
+  }
+});
+
+test('acceptIncoming: a workspace-file buffer needs no re-save (its content came off disk with a matching mtime)', async () => {
+  const d = baseDoc({ wsPath: 'notes/a.md', wsRootKey: 'workspace', wsMtimeNs: 1, _incoming: 'from disk', _incomingMtimeNs: 2 });
+  runtime.state = { docEditor: d };
+  runtime.render = () => {};
+  let saves = 0;
+  runtime.actions = { saveDoc: async () => { saves++; return 'ok'; } };
+  __setDirtyForTest(true);
+  __setEditorForTest({ setMarkdown() {}, getMarkdown: () => 'from disk' });
+  try {
+    await acceptIncoming();
+    assert.strictEqual(saves, 0);
+    assert.strictEqual(d.wsMtimeNs, 2, 'it adopts the incoming mtime instead');
+  } finally {
+    __setDirtyForTest(false);
+    __setEditorForTest(null);
   }
 });
 

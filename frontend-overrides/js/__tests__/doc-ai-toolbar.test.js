@@ -9,7 +9,9 @@ globalThis.window = { addEventListener() {}, innerWidth: 1200, toastui: null };
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
 const { aiToolbarHtml, aiKebabMenuHtml, resolveAiAction, consumeAttachDetach, libraryDocIdFor,
-        runAiAction, askAction, dispatchAiAction, turnBusyHere }
+        runAiAction, askAction, dispatchAiAction, turnBusyHere,
+        flushBeforeSend, flushOk, caretRestoreArgs,
+        __setDirtyForTest, __setEditorForTest }
   = await import('../redesign/live/document-editor.js');
 const { runtime } = await import('../redesign/live/runtime.js');
 const { ASK_PLACEHOLDER } = await import('../redesign/doc-ai-prompts.js');
@@ -23,9 +25,17 @@ test('aiToolbarHtml: exactly the four AI actions, each a stable data-act, no em 
   assert.ok(!html.includes('—'));
 });
 
-test('aiKebabMenuHtml: the same four actions, for the mobile dropdown, no em dash', () => {
+// Fix wave, I3: on the mobile shell the dock is 100vw and sits over the
+// composer, so Ask would focus a textarea the user cannot see and its
+// placeholder is cleared the moment the dock closes. The kebab offers the
+// three one-shot edit actions only; Ask stays on the desktop toolbar.
+test('aiKebabMenuHtml: the three edit actions only, no Ask, no em dash', () => {
   const html = aiKebabMenuHtml();
-  for (const act of ACT_NAMES) assert.match(html, new RegExp(`data-act="${act}"`));
+  for (const act of ['docAiSummarize', 'docAiRewrite', 'docAiContinue']) {
+    assert.match(html, new RegExp(`data-act="${act}"`));
+  }
+  assert.ok(!html.includes('docAiAsk'), 'Ask cannot work behind a full-width dock');
+  assert.equal((html.match(/data-act="docAi/g) || []).length, 3);
   assert.ok(!html.includes('—'));
 });
 
@@ -97,7 +107,7 @@ test('Important 2: runAiAction refuses to overwrite a non-empty unsent draft', (
   assert.match(runtime.state.inboxToast && runtime.state.inboxToast.msg, /Send or clear your draft first/);
 });
 
-test('Important 2: runAiAction proceeds normally once the draft is empty and nothing is busy', () => {
+test('Important 2: runAiAction proceeds normally once the draft is empty and nothing is busy', async () => {
   let sendCalls = 0;
   const d = { open: true, id: 'doc-1', wsPath: null, attachDetached: true };
   runtime.state = {
@@ -105,7 +115,7 @@ test('Important 2: runAiAction proceeds normally once the draft is empty and not
     live: { chat: { busySessionId: null, activeId: 's1' } },
   };
   runtime.actions = { send: () => { sendCalls++; } };
-  runAiAction('Continue writing from the end of the document.');
+  await runAiAction('Continue writing from the end of the document.');
   assert.equal(sendCalls, 1);
   assert.equal(runtime.state.draft, 'Continue writing from the end of the document.');
   assert.equal(d.attachDetached, false, 'force-attach ran once the guards passed');
@@ -132,4 +142,92 @@ test('Minor 3: dispatchAiAction toasts (not window.alert) when Rewrite has no se
   dispatchAiAction('docAiRewrite');
   assert.equal(sendCalls, 0);
   assert.match(runtime.state.inboxToast && runtime.state.inboxToast.msg, /Select some text in the document first/);
+});
+
+// ---- Fix wave: I1 (pre-send flush) and M1 (caret restore) -------------------
+
+const docBuf = (over) => Object.assign({
+  open: true, id: 'doc-1', title: 'Spec', status: '',
+  wsPath: null, wsRootKey: null, wsMtimeNs: null, wsAbsPath: null,
+  readOnly: false, loadFailed: false, saveFailed: false, attachDetached: false,
+}, over);
+
+test('flushBeforeSend: a clean buffer resolves skip without touching the network', async () => {
+  runtime.state = { docEditor: docBuf() };
+  runtime.render = () => {};
+  __setDirtyForTest(false);
+  __setEditorForTest({ getMarkdown: () => 'body' });
+  const calls = [];
+  globalThis.fetch = (url) => { calls.push(String(url)); return Promise.resolve({ ok: true }); };
+  assert.equal(await flushBeforeSend(), 'skip');
+  assert.deepStrictEqual(calls, [], 'a clean send pays nothing');
+  __setEditorForTest(null);
+});
+
+test('flushBeforeSend: a dirty attached document is PUT before the caller proceeds', async () => {
+  const d = docBuf();
+  runtime.state = { docEditor: d };
+  runtime.render = () => {};
+  __setDirtyForTest(true);
+  __setEditorForTest({ getMarkdown: () => 'the unsaved buffer' });
+  const calls = [];
+  globalThis.fetch = (url, opts) => {
+    calls.push({ url: String(url), body: JSON.parse(opts.body) });
+    return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+  };
+  const status = await flushBeforeSend();
+  assert.equal(status, 'ok');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, '/api/document/doc-1');
+  assert.equal(calls[0].body.content, 'the unsaved buffer');
+  assert.equal(d.status, 'Saved');
+  __setDirtyForTest(false);
+  __setEditorForTest(null);
+});
+
+test('flushBeforeSend: a dirty buffer whose document is detached still flushes nothing (no attach, no risk)', async () => {
+  runtime.state = { docEditor: docBuf({ attachDetached: true }) };
+  runtime.render = () => {};
+  __setDirtyForTest(true);
+  __setEditorForTest({ getMarkdown: () => 'x' });
+  const calls = [];
+  globalThis.fetch = (url) => { calls.push(String(url)); return Promise.resolve({ ok: true }); };
+  assert.equal(await flushBeforeSend(), 'skip');
+  assert.deepStrictEqual(calls, []);
+  __setDirtyForTest(false);
+  __setEditorForTest(null);
+});
+
+test('flushOk: only failed and conflict block a send', () => {
+  assert.equal(flushOk('ok'), true);
+  assert.equal(flushOk('skip'), true);
+  assert.equal(flushOk('stale'), true);
+  assert.equal(flushOk('failed'), false);
+  assert.equal(flushOk('conflict'), false);
+});
+
+test('I1: a failed flush aborts the toolbar action with a toast, and sends nothing', async () => {
+  let sendCalls = 0;
+  const d = docBuf({ attachDetached: false });
+  runtime.state = { docEditor: d, draft: '', inboxToast: null, live: { chat: {} } };
+  runtime.render = () => {};
+  runtime.actions = Object.assign({}, runtime.actions, { send: () => { sendCalls++; } });
+  __setDirtyForTest(true);
+  __setEditorForTest({ getMarkdown: () => 'unsaved' });
+  globalThis.fetch = () => Promise.resolve({ ok: false, status: 500 });
+  await runAiAction('Continue writing from the end of the document.');
+  assert.equal(sendCalls, 0, 'a stale attach must never reach the backend');
+  assert.equal(runtime.state.draft, '', 'the action never claimed the composer');
+  assert.match(runtime.state.inboxToast && runtime.state.inboxToast.msg, /Could not save the document/);
+  __setDirtyForTest(false);
+  __setEditorForTest(null);
+});
+
+test('M1: caretRestoreArgs splits the nested Toast UI pair into setSelection(start, end)', () => {
+  assert.deepStrictEqual(caretRestoreArgs({ sel: [[2, 1], [2, 9]] }), [[2, 1], [2, 9]]);
+  assert.equal(caretRestoreArgs({ sel: null }), null);
+  assert.equal(caretRestoreArgs(null), null);
+  assert.equal(caretRestoreArgs({ sel: [[2, 1]] }), null, 'a one-ended pair is not a selection');
+  assert.equal(caretRestoreArgs({ sel: { from: 1, to: 2 } }), null,
+    'the flat {from,to} shape this used to pass is not what setSelection takes');
 });

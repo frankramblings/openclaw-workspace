@@ -38,7 +38,7 @@ import { buildSwitcherSections, flatRows, clampSel } from '../switcher.js';
 import { buildThreadGroups } from '../thread-groups.js';
 import { afterTurn as changesAfterTurn, attachHistory as changesAttachHistory } from './changes.js';
 import { parseMoveArg, MOVE_NEW, MOVE_NONE } from '../project-menu.js';
-import { activeLibraryDocId, consumeAttachDetach, getSelection, applyExternalUpdate } from './document-editor.js';
+import { activeLibraryDocId, consumeAttachDetach, getSelection, applyExternalUpdate, flushBeforeSend, flushOk } from './document-editor.js';
 
 // The throttled per-token render only patches the active message bubble in
 // place — it does NOT re-render `.composer-wrap`, which is where the strip
@@ -1918,6 +1918,8 @@ async function dispatchSend(text, attachSnap) {
   const attachIds = (attachSnap || []).map((a) => a.id);
   if (!text && !attachIds.length) return;
 
+  if (!(await flushDocBeforeSend())) return;
+
   const sessionId = await ensureSessionId(chat);
   if (!sessionId) return;
 
@@ -1939,6 +1941,23 @@ async function dispatchSend(text, attachSnap) {
 // explicitly flushes it early (a second send, or Task 8's Save & Send).
 const BUFFER_MS = 700;
 
+// Fix wave, I1: a doc-bound turn makes the backend read the vault file from
+// disk (draft_mode.pre_turn snapshots it as the undo, post_turn_payload
+// diffs against it), and its docstring assumes the SPA saved first. So
+// whenever the open Library document will ride along as active_doc_id, wait
+// for its pending autosave to land before the request is built. On a failed
+// or conflicted save, abort the send instead of pointing the turn at a file
+// that does not hold what the user is looking at. Returns true when the
+// caller may proceed. keepaliveSend deliberately does NOT call this: it runs
+// from a pagehide teardown where the document may be gone before any await
+// resolves, so it stays a single synchronous fire-and-forget POST.
+async function flushDocBeforeSend() {
+  if (!activeLibraryDocId()) return true;
+  if (flushOk(await flushBeforeSend())) return true;
+  toast('Could not save the document, so nothing was sent. Fix the save first.');
+  return false;
+}
+
 // Buffered composer submit: append the optimistic bubble now (with
 // `_optimistic`/`_deadline` so it renders the countdown ring + the Edit
 // affordance), and defer the real network fire for BUFFER_MS. Returns false
@@ -1951,6 +1970,10 @@ async function submitFromComposer(text, attachSnap, opts = {}) {
   const chat = ensureChat(state);
   const attachIds = (attachSnap || []).map((a) => a.id);
   if (!text && !attachIds.length) return true;
+
+  // Fix wave, I1: save the attached document before anything else, including
+  // the optimistic bubble, so an aborted send leaves no bubble behind.
+  if (!(await flushDocBeforeSend())) return 'flush-failed';
 
   // A message is already buffered → flush it now, in submission order, before
   // this new one claims its own buffer window.
@@ -3326,7 +3349,14 @@ export const actions = {
     if (mode === 'steer') {
       state.draft = '';
       state.pendingAttach = [];
-      await submitFromComposer(text, [], { steer: true });
+      const steered = await submitFromComposer(text, [], { steer: true });
+      if (steered === 'flush-failed') {
+        // Fix wave, I1: the document could not be saved, so nothing left the
+        // browser. Put the text back exactly as it was; the toast already
+        // said why.
+        state.draft = text;
+        runtime.render();
+      }
       return;
     }
 
@@ -3335,6 +3365,14 @@ export const actions = {
     _persistDraftsNow(chat);
     state.pendingAttach = []; // consumed by this turn
     const ok = await submitFromComposer(text, attachSnap);
+    if (ok === 'flush-failed') {
+      // Fix wave, I1: the pre-send document save failed or hit a conflict and
+      // submitFromComposer already toasted. Restore what the user typed.
+      state.draft = text;
+      state.pendingAttach = attachSnap;
+      runtime.render();
+      return;
+    }
     if (ok === false) {
       // Session create failed (offline first send in a new chat). The old
       // behavior silently swallowed the message — no bubble, no error, text

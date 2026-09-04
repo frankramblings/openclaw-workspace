@@ -16,6 +16,7 @@ import { apiGet, apiJson } from './api.js';
 import { reload } from './index.js';
 import { openImageOverlay } from './image-viewer.js';
 import { buildSummarizePrompt, buildContinuePrompt, buildRewritePrompt, ASK_PLACEHOLDER } from '../doc-ai-prompts.js';
+import { libraryDocIdFor } from '../doc-pill.js';
 
 const CSS = '/static/js/vendor/toastui/toastui-editor.min.css';
 const CSS_DARK = '/static/js/vendor/toastui/toastui-editor-dark.min.css';
@@ -82,9 +83,18 @@ export function aiToolbarHtml() {
     `<button type="button" data-act="${act}" style="${AI_BTN_STYLE}">${label}</button>`).join('');
 }
 
-// Pure, DOM-free: the mobile kebab dropdown's HTML (same four actions).
+// The subset of AI_ACTIONS the mobile kebab offers. Fix wave, I3: on the
+// mobile shell the dock is 100vw and sits above the composer, so Ask would
+// focus a textarea the user cannot see and its placeholder is cleared the
+// moment the dock closes (onRender). The three one-shot actions work fine
+// there because they need no composer round trip. Ask stays on the desktop
+// toolbar; a minimized-dock state that would make it work on mobile is a
+// follow-up, not part of this wave.
+export const MOBILE_AI_ACTIONS = AI_ACTIONS.filter(([act]) => act !== 'docAiAsk');
+
+// Pure, DOM-free: the mobile kebab dropdown's HTML (the three edit actions).
 export function aiKebabMenuHtml() {
-  return AI_ACTIONS.map(([act, label]) =>
+  return MOBILE_AI_ACTIONS.map(([act, label]) =>
     `<div data-act="${act}" style="${AI_ITEM_STYLE}">${label}</div>`).join('');
 }
 
@@ -134,7 +144,7 @@ function docAiToast(msg) {
 // through: a blocked action (busy turn, unsent draft) must leave the pill's
 // detached state, and the draft, exactly as the user left them (fix round 1,
 // Important 1 + 2).
-export function runAiAction(text) {
+export async function runAiAction(text) {
   if (!text || !runtime.state) return;
   if (turnBusyHere(runtime.state)) {
     docAiToast('Wait for Gary to finish before running a document action');
@@ -142,6 +152,15 @@ export function runAiAction(text) {
   }
   if ((runtime.state.draft || '').trim()) {
     docAiToast('Send or clear your draft first');
+    return;
+  }
+  // Fix wave, I1: the turn this fires is doc-bound, and the backend loop
+  // (pre_turn's undo snapshot, wrap_message, post_turn_payload) reads the
+  // file on disk. An edit younger than the 2.5s autosave debounce would make
+  // Gary rewrite a body the user cannot see, so flush first and abort the
+  // action outright if the save did not land.
+  if (!flushOk(await flushBeforeSend())) {
+    docAiToast('Could not save the document. Nothing was sent.');
     return;
   }
   consumeAttachDetach();
@@ -274,11 +293,10 @@ export function makeSaveGuard(gen) {
 // The Library document id a chat send should carry as active_doc_id, or
 // null. Only a Library doc (saveTarget's 'doc' kind, never a workspace-file
 // 'ws' buffer) that is open and hasn't been detached via the pill's ×.
-export function libraryDocIdFor(d) {
-  if (!d || d.attachDetached) return null;
-  const target = saveTarget(d);
-  return target.kind === 'doc' ? target.id : null;
-}
+// Fix wave, M2: the rule itself lives in ../doc-pill.js so the composer pill
+// (desktop and mobile) and this module share one owner; re-exported here
+// because chat.js and the tests already import it from this module.
+export { libraryDocIdFor };
 
 // libraryDocIdFor bound to the live docState(): what chat.js calls.
 export function activeLibraryDocId() {
@@ -320,7 +338,7 @@ export function selectionFromMarkdownEditor(markdown, sel, selectedText) {
   const to = offset(end);
   if (from === to) return null; // collapsed selection
   const out = typeof selectedText === 'string' ? selectedText : text.slice(Math.min(from, to), Math.max(from, to));
-  return out ? { text: out, from, to, mode: 'md', lines: [start[0], end[0]] } : null;
+  return out ? { text: out, from, to, mode: 'md' } : null;
 }
 
 // Wysiwyg-mode selection: Toast UI's editor.getSelectedText() returns the
@@ -410,11 +428,27 @@ function snapshotEditorCaret() {
   } catch (_) { return null; }
 }
 
+// Pure: the two arguments restoreEditorCaret must pass to the markdown
+// editor's setSelection(start, end), or null when the snapshot carries no
+// usable selection. Fix wave, M1: this used to read `snap.sel.from` /
+// `snap.sel.to`, which are undefined on Toast UI's NESTED
+// [[startLine,startCh],[endLine,endCh]] pair, so every "silent reload with
+// the caret preserved" was a no-op. Verified against the vendored bundle:
+// MdEditor's `setSelection = function(e, t) { ... }` takes the two ends as
+// separate arguments (and defaults t to e when omitted).
+export function caretRestoreArgs(snap) {
+  const sel = snap && snap.sel;
+  if (!Array.isArray(sel) || sel.length !== 2) return null;
+  if (!Array.isArray(sel[0]) || !Array.isArray(sel[1])) return null;
+  return [sel[0], sel[1]];
+}
+
 function restoreEditorCaret(snap) {
   if (!snap || !editor) return;
   try {
     const inst = editor.mdEditor && editor.mdEditor.editor;
-    if (inst && snap.sel && inst.setSelection) inst.setSelection(snap.sel.from, snap.sel.to);
+    const args = caretRestoreArgs(snap);
+    if (inst && args && inst.setSelection) inst.setSelection(args[0], args[1]);
   } catch (_) {}
 }
 
@@ -450,7 +484,9 @@ async function handleExternalChange(newMtimeNs) {
   }
 
   // Buffer dirty — show a conflict banner and stash the incoming text so
-  // the user can accept it in one click without another fetch.
+  // the user can accept it in one click without another fetch. Fix wave, I2:
+  // cancel the armed autosave first, for the same reason as above.
+  clearTimeout(dirtyTO);
   d._incoming = text;
   d._incomingMtimeNs = mtimeNs;
   showConflict();
@@ -501,6 +537,11 @@ export function applyExternalUpdate(frame) {
     runtime.render();
     return;
   }
+  // Fix wave, I2: cancel the armed autosave before the banner goes up. Left
+  // running it fires 2.5s later and PUTs the user's buffer straight over the
+  // edit this frame is reporting, then labels the buffer "Saved" while the
+  // conflict banner is still asking the user to choose.
+  clearTimeout(dirtyTO);
   d._incoming = content;
   d._incomingMtimeNs = null; // Library docs use version_count, not mtime: the id match above is the guard
   showConflict();
@@ -542,19 +583,28 @@ function hideConflict() {
   if (d) { d._incoming = null; d._incomingMtimeNs = null; }
 }
 
-function acceptIncoming() {
+export async function acceptIncoming() {
   const d = docState();
   if (!d || d._incoming == null) { hideConflict(); return; }
+  clearTimeout(dirtyTO); // the local edits are being discarded; nothing left to autosave
   suppressChange = true;
-  try { editor.setMarkdown(d._incoming, false); } catch (_) {}
+  try { if (editor) editor.setMarkdown(d._incoming, false); } catch (_) {}
   setTimeout(() => { suppressChange = false; }, 60);
   d.wsMtimeNs = d._incomingMtimeNs || d.wsMtimeNs;
   d.status = 'Saved';
   dirty = false;
   d.saveFailed = false; // the unresolved-conflict save-failure no longer applies — we just discarded local edits
   if (statusEl) statusEl.textContent = 'Saved';
+  const wasDoc = saveTarget(d).kind === 'doc';
   hideConflict();
   flashChip('Reloaded');
+  // Fix wave, I2: a Library doc has no mtime precondition on its PUT, so a
+  // pending autosave may already have overwritten the incoming content on
+  // disk before the user clicked Reload disk. Labelling the buffer "Saved"
+  // is only honest if disk and buffer agree, so write the accepted content
+  // back. (Workspace files come straight off disk with a matching mtime, so
+  // they need no re-save.)
+  if (wasDoc && runtime.actions && runtime.actions.saveDoc) await runtime.actions.saveDoc();
 }
 
 async function keepMineAndSave() {
@@ -800,6 +850,49 @@ function markDirty() {
   if (statusEl) statusEl.textContent = 'Unsaved';
   clearTimeout(dirtyTO);
   dirtyTO = setTimeout(() => { if (runtime.actions && runtime.actions.saveDoc) runtime.actions.saveDoc(); }, 2500);
+}
+
+// ---- pre-send flush (fix wave, I1) -----------------------------------------
+//
+// The backend's doc-bound turn loop reads the vault file from disk:
+// pre_turn snapshots it as the user's undo, wrap_message names it, and
+// post_turn_payload diffs against it. backend/draft_mode.py's docstring says
+// outright that "the SPA auto-saves before sending, so it's fresh", and the
+// retired classic UI did exactly that. The redesign never did: an edit made
+// inside the 2.5s autosave debounce meant Gary read and rewrote a stale
+// body, and the pending autosave then landed mid-turn on top of his edit.
+//
+// flushBeforeSend() closes that hole. It cancels the armed autosave, then
+// resolves once the pending save of the attached Library document has
+// completed, using the very same actions.saveDoc() path autosave and Save
+// use. Status codes are saveDoc's: 'ok' | 'skip' | 'stale' | 'conflict' |
+// 'failed'. Nothing dirty, nothing attached, or no editor yet all resolve
+// 'skip' immediately, so a clean send pays nothing.
+export async function flushBeforeSend() {
+  clearTimeout(dirtyTO);
+  const d = docState();
+  if (!dirty || !editor || !libraryDocIdFor(d)) return 'skip';
+  try { return await actions.saveDoc(); } catch (_) { return 'failed'; }
+}
+
+// Whether a flushBeforeSend() status means the send may proceed. 'conflict'
+// and 'failed' must NOT: attaching the doc anyway would point the turn at a
+// file that does not hold what the user is looking at. 'stale' means the
+// buffer was switched away from mid-flush, so there is nothing left to
+// protect on this send.
+export function flushOk(status) {
+  return status !== 'failed' && status !== 'conflict';
+}
+
+// Test seams for the two module-private pieces the fix-wave tests need and
+// that no DOM-less harness can otherwise reach: the Toast UI instance
+// (saveDoc returns 'skip' without one) and the armed autosave timer.
+export function __setEditorForTest(inst) {
+  editor = inst;
+}
+export function __armAutosaveForTest(fn, ms) {
+  clearTimeout(dirtyTO);
+  dirtyTO = setTimeout(fn, ms);
 }
 
 // Flush a pending autosave-debounced edit on the currently open buffer, then

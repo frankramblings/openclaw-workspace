@@ -160,3 +160,82 @@ test('selectionField yields no field for a null or empty-text selection', () => 
   assert.deepEqual(selectionField('doc-1', { from: 0, to: 0, text: '' }), {});
   assert.deepEqual(selectionField(null, { from: 0, to: 5, text: 'hi' }), {});
 });
+
+// ---- Fix wave, I1: the pre-send flush --------------------------------------
+//
+// The doc-bound turn loop reads the vault file from disk, and
+// backend/draft_mode.py's docstring says the SPA saved it first. These drive
+// the real actions.send() path and assert against the ordered network calls,
+// same style as the attach tests above; __setDirtyForTest/__setEditorForTest
+// stand in for a real Toast UI buffer with an edit inside the autosave
+// debounce.
+const docEd = await import('../redesign/live/document-editor.js');
+
+test('I1: a dirty attached document is saved BEFORE the chat_stream POST goes out', async () => {
+  const state = freshState('sess-flush-1', baseDocEditor());
+  runtime.state = state; runtime.render = () => {};
+  const calls = [];
+  globalThis.fetch = (url, opts) => {
+    calls.push({ url: String(url), opts });
+    if (String(url).startsWith('/api/document/')) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+    }
+    return new Promise(() => {});
+  };
+  docEd.__setEditorForTest({ getMarkdown: () => 'the unsaved buffer' });
+  docEd.__setDirtyForTest(true);
+  state.draft = 'go';
+  await actions.send();
+  await tick();
+  const putIdx = calls.findIndex((c) => c.url === '/api/document/doc-9');
+  const sendIdx = calls.findIndex((c) => c.url.includes('/api/chat_stream'));
+  assert.ok(putIdx >= 0, 'the dirty buffer was flushed');
+  assert.ok(sendIdx >= 0, 'the turn still went out');
+  assert.ok(putIdx < sendIdx, 'the save must land before the turn that reads the file');
+  assert.equal(JSON.parse(calls[putIdx].opts.body).content, 'the unsaved buffer');
+  docEd.__setDirtyForTest(false);
+  docEd.__setEditorForTest(null);
+  actions.stopRun && await actions.stopRun();
+});
+
+test('I1: a clean attached document sends with no save round trip at all', async () => {
+  const state = freshState('sess-flush-2', baseDocEditor());
+  const calls = [];
+  docEd.__setDirtyForTest(false);
+  docEd.__setEditorForTest({ getMarkdown: () => 'body' });
+  const call = await sendAndGetCall(state, calls);
+  assert.ok(call, 'chat_stream POST fired');
+  assert.equal(calls.filter((c) => c.url.startsWith('/api/document/')).length, 0);
+  docEd.__setEditorForTest(null);
+  actions.stopRun && await actions.stopRun();
+});
+
+test('I1: a failed flush aborts the send, restores the draft, and posts nothing', async () => {
+  const state = freshState('sess-flush-3', baseDocEditor());
+  runtime.state = state; runtime.render = () => {};
+  const calls = [];
+  globalThis.fetch = (url, opts) => {
+    calls.push({ url: String(url), opts });
+    if (String(url).startsWith('/api/document/')) return Promise.resolve({ ok: false, status: 500 });
+    return new Promise(() => {});
+  };
+  docEd.__setEditorForTest({ getMarkdown: () => 'unsaved' });
+  docEd.__setDirtyForTest(true);
+  state.draft = 'go';
+  await actions.send();
+  await tick();
+  assert.equal(calls.filter((c) => c.url.includes('/api/chat_stream')).length, 0,
+    'a stale attach must never reach the backend');
+  assert.equal(state.draft, 'go', 'the message is handed back to the composer');
+  assert.equal((state.live.chat.thread || []).length, 0, 'no optimistic bubble was left behind');
+  docEd.__setDirtyForTest(false);
+  docEd.__setEditorForTest(null);
+});
+
+test('M8: any send consumes the Ask placeholder', async () => {
+  const state = freshState('sess-ask-1', baseDocEditor());
+  state.docAiAskPlaceholder = 'Ask about this document…';
+  await sendAndGetCall(state, []);
+  assert.equal(state.docAiAskPlaceholder, null);
+  actions.stopRun && await actions.stopRun();
+});

@@ -3,6 +3,7 @@
 
 import { I, icon, fortress } from '../icons.js';
 import { esc, map, when, stripMd } from '../dom.js';
+import { docPillHtml } from '../doc-pill.js';
 import { AVATAR } from '../data.js';
 import { QUICK_CHIPS, capNotice, INBOX_CAP, EMAIL_CAP } from '../surfaces.js';
 import { MORE_CARDS } from './mobile-data.js';
@@ -264,11 +265,7 @@ export function mChat(s) {
   <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;--m-scroll-btm-y:calc(env(safe-area-inset-bottom,0px) + 122px)">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
   <div class="m-composer${focused ? ' focused' : ''}">
     ${renderChatStrip(s.live?.chat?.chatStrip, { renderMarkdown })}
-    ${(() => {
-      const de = s.docEditor;
-      if (!de || !de.open || !de.id || de.wsPath || de.attachDetached) return '';
-      return `<div class="m-doc-pill">Editing: <b>${esc(de.title || 'Untitled document')}</b><button type="button" class="m-doc-pill-x" data-act="detachDocPill" aria-label="Stop attaching this document">×</button></div>`;
-    })()}
+    ${docPillHtml(s, { cls: 'm-doc-pill' })}
     ${when(s.mobileEditingPending, `<div class="m-comp-edit-chip"><span class="m-comp-edit-lbl">Editing message</span><button class="m-comp-edit-cancel" data-act="cancelMobileEdit">Cancel</button></div>`)}
     ${when(s.live?.chat?.queued, `<div class="m-queued" data-act="queueRecall"><span class="q-ico">⏳</span><span class="q-txt">Queued${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 50))}` : ' · image'}</span><button class="m-q-x" data-act="queueCancel">✕</button></div>`)}
     ${when(s.pendingAttach && s.pendingAttach.length, `<div class="m-attach-row">${map(s.pendingAttach || [], mAttachChip)}</div>`)}

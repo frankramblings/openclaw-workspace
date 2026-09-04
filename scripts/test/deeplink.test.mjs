@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
-import { planForAction, ACTION_PLANS, cleanedSearch, searchDispatchPlan } from '../../frontend-overrides/js/deeplink.js';
+
+// deeplink.js now statically imports api.js (for the clip action's POST
+// /api/clip call), which reads `location.origin` at module load time --
+// stub it before pulling deeplink.js in, dynamically, so the stub is in
+// place first (a static import here would hoist ahead of the assignment
+// below).
+globalThis.location = { origin: 'http://localhost' };
+
+const { planForAction, ACTION_PLANS, cleanedSearch, searchDispatchPlan } =
+  await import('../../frontend-overrides/js/deeplink.js');
 
 assert.equal(planForAction('new').newChat, true);
 assert.equal(planForAction('new').focus, 'input');
@@ -46,6 +55,7 @@ assert.throws(() => { ACTION_PLANS.new.newChat = false; });
 
 // cleanedSearch: pure param-stripping helper backing initDeepLinks' URL cleanup.
 assert.equal(cleanedSearch('?action=search&q=cats&autosend=1&extra=2'), '?extra=2');
+assert.equal(cleanedSearch('?action=clip&q=https://example.com/a&mention=1&extra=2'), '?extra=2');
 assert.equal(cleanedSearch('action=new&q=hi'), '');
 assert.equal(cleanedSearch('?foo=1&bar=2'), '?foo=1&bar=2');
 assert.equal(cleanedSearch(''), '');
@@ -59,4 +69,4 @@ assert.equal(searchDispatchPlan(null, 40, 40), 'give-up');
 assert.equal(searchDispatchPlan({ convSearch: () => {} }, 40, 40), 'ready');
 
 console.log('deeplink planForAction: 25 assertions OK');
-console.log('deeplink cleanedSearch/searchDispatchPlan/frozen-plans: 15 assertions OK');
+console.log('deeplink cleanedSearch/searchDispatchPlan/frozen-plans: 16 assertions OK');

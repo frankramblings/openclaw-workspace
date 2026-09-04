@@ -1,9 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import {
+
+// deeplink.js now statically imports api.js (for the clip action's POST
+// /api/clip call), which reads `location.origin` at module load time --
+// stub it before pulling deeplink.js in, dynamically, so the stub is in
+// place first (a static import here would hoist ahead of the assignment
+// below; same "browser shim" pattern as chat-usage.test.js). Deliberately
+// NOT stubbing window/document: deeplink.js only auto-runs initDeepLinks()
+// when both are present, and these tests only exercise its pure exports.
+globalThis.location = { origin: 'http://localhost' };
+
+const {
   planForAction, serializePending, parsePending, ACTION_PLANS,
-  cleanedSearch, searchDispatchPlan,
-} from '../deeplink.js';
+  cleanedSearch, searchDispatchPlan, clipPlanFields,
+} = await import('../deeplink.js');
 
 // ---- planForAction ----------------------------------------------------
 
@@ -32,12 +42,47 @@ test('planForAction: inbox → openInbox without a new chat', () => {
   assert.equal(plan.newChat, false);
 });
 
+// ---- clip action plan ---------------------------------------------------
+
+test('planForAction: clip -> doClip without a new chat by default', () => {
+  const plan = planForAction('clip');
+  assert.equal(plan.doClip, true);
+  assert.equal(plan.newChat, false);
+  assert.equal(plan.openInbox, false);
+  assert.equal(plan.runSearch, undefined);
+});
+
+test('clipPlanFields: mention=1 requests a fresh chat with the token queued', () => {
+  const params = new URLSearchParams('action=clip&q=https://example.com/a&mention=1');
+  assert.deepEqual(clipPlanFields(params), {
+    clipUrl: 'https://example.com/a', mentionAfterClip: true, newChat: true,
+  });
+});
+
+test('clipPlanFields: no mention param -> no new chat, still carries the URL', () => {
+  const params = new URLSearchParams('action=clip&q=https://example.com/a');
+  assert.deepEqual(clipPlanFields(params), {
+    clipUrl: 'https://example.com/a', mentionAfterClip: false, newChat: false,
+  });
+});
+
+test('clipPlanFields: mention=0 or anything but "1" behaves like no mention', () => {
+  const params = new URLSearchParams('action=clip&q=https://example.com/a&mention=0');
+  assert.equal(clipPlanFields(params).mentionAfterClip, false);
+});
+
+test('clipPlanFields: missing q -> empty clipUrl, never throws', () => {
+  assert.deepEqual(clipPlanFields(new URLSearchParams('action=clip')), {
+    clipUrl: '', mentionAfterClip: false, newChat: false,
+  });
+});
+
 // initDeepLinks never mutates ACTION_PLANS directly — it spreads a shallow
 // copy (`{ ...plan }`) before attaching request-specific fields (prefill,
 // searchQuery, autosend). Pin that the shared table survives that pattern
 // for every action it applies it to.
 test('planForAction: copy-then-mutate pattern (as used by initDeepLinks) never touches ACTION_PLANS', () => {
-  for (const action of ['new', 'photo', 'voice', 'search']) {
+  for (const action of ['new', 'photo', 'voice', 'search', 'clip']) {
     const before = JSON.stringify(ACTION_PLANS[action]);
     const copy = { ...planForAction(action) };
     copy.prefill = 'hello';
@@ -115,6 +160,10 @@ test('pending: garbage input → null, never throws', () => {
 
 test('cleanedSearch: strips action/q/autosend, preserves other params', () => {
   assert.equal(cleanedSearch('?action=search&q=cats&autosend=1&extra=2'), '?extra=2');
+});
+
+test('cleanedSearch: strips mention (clip-only), preserves other params', () => {
+  assert.equal(cleanedSearch('?action=clip&q=https://example.com/a&mention=1&extra=2'), '?extra=2');
 });
 
 test('cleanedSearch: works without a leading "?"', () => {

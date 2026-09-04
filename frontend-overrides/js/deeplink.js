@@ -1,4 +1,5 @@
 import { runtime } from './redesign/live/runtime.js';
+import { apiJson } from './redesign/live/api.js';
 
 // Widget/Shortcut deep links: ?action=new|photo|voice|inbox|search is
 // dispatched once at boot to the existing composer/inbox controls, then
@@ -38,12 +39,35 @@ export const ACTION_PLANS = Object.freeze({
   voice: Object.freeze({ newChat: true,  focus: 'input', openAttach: false, openInbox: false }),
   inbox: Object.freeze({ newChat: false, focus: 'none',  openAttach: false, openInbox: true  }),
   search:Object.freeze({ newChat: false, focus: 'none',  openAttach: false, openInbox: false, runSearch: true }),
+  // ?action=clip&q=<url>[&mention=1] -- an iOS Shortcut hands off a shared
+  // URL. newChat starts false (most clips just open the document); when
+  // mention=1 is requested, clipPlanFields flips it to true up front (at
+  // parse time, not after the async /api/clip call) so the SAME
+  // localStorage.removeItem('redesign.chat.activeId') anti-race guard
+  // `new`/`photo`/`voice` already get (below, in initDeepLinks) also
+  // covers this action.
+  clip:  Object.freeze({ newChat: false, focus: 'none',  openAttach: false, openInbox: false, doClip: true }),
 });
 
 // Pure: map an action string to its plan, or null if unrecognized.
 export function planForAction(action) {
   if (typeof action !== 'string') return null;
   return ACTION_PLANS[action.toLowerCase()] || null;
+}
+
+// Pure: derive the clip deep-link's per-request fields from its query
+// params. mention === '1' means "drop the mention token into a fresh
+// chat's composer after clipping" -- that implies a fresh chat, so newChat
+// is derived HERE (not left for applyPlan's async branch) so
+// initDeepLinks' early localStorage.removeItem (which only reads the
+// plan's STATIC newChat field, before any network call runs) sees it.
+export function clipPlanFields(searchParams) {
+  const mentionAfterClip = searchParams.get('mention') === '1';
+  return {
+    clipUrl: searchParams.get('q') || '',
+    mentionAfterClip,
+    newChat: mentionAfterClip,
+  };
 }
 
 // ---- pending-plan persistence (pure halves are unit-tested) ----------------
@@ -99,14 +123,19 @@ export function searchDispatchPlan(actionsObj, attempt, maxAttempts) {
 
 // Pure: `searchString` is a location.search-shaped string (leading '?'
 // optional — URLSearchParams tolerates either). Returns it with the
-// deep-link params (action/q/autosend) removed and every other param
+// deep-link params (action/q/autosend/mention) removed and every other param
 // preserved, in the same '?k=v&...'-or-'' shape location.search itself uses
-// — so callers can splice it straight back into pathname+hash.
+// — so callers can splice it straight back into pathname+hash. `mention` is
+// clip-only (see ACTION_PLANS.clip / clipPlanFields) but stripped
+// unconditionally like the others, same as autosend is stripped even for
+// actions that never read it -- a leftover deep-link param in the address
+// bar after the redirect is exactly what this strip exists to prevent.
 export function cleanedSearch(searchString) {
   const params = new URLSearchParams(searchString || '');
   params.delete('action');
   params.delete('q');
   params.delete('autosend');
+  params.delete('mention');
   const qs = params.toString();
   return qs ? '?' + qs : '';
 }
@@ -140,6 +169,38 @@ function _waitUntil(pred, tries = 40, interval = 50) {
 export async function applyPlan(plan) {
   if (!plan) return;
   try {
+    if (plan.doClip && plan.clipUrl) {
+      // Best-effort: land on a fresh, focused chat with the URL still in
+      // hand so a failed clip is at least visible and retryable, the same
+      // "never block boot" ethos this whole function already follows.
+      try {
+        const res = await apiJson('/api/clip', { url: plan.clipUrl });
+        if (plan.mentionAfterClip) {
+          // Fall through to the existing newChat/focus branches below --
+          // plan.newChat is already true (set at parse time by
+          // clipPlanFields), this just supplies the dynamic prefill they
+          // read.
+          plan.focus = 'input';
+          plan.prefill = (res && res.mention) || '';
+        } else {
+          // No mention requested: land straight on the clipped document,
+          // same as tapping a Library card. runtime.actions.openDoc is
+          // merged in asynchronously (see the runSearch/newChat branches'
+          // own comments on this exact race) -- poll for it the same way.
+          const ready = await _waitUntil(
+            () => runtime.actions && typeof runtime.actions.openDoc === 'function',
+            40, 125,
+          );
+          if (ready && res && res.document && res.document.id) {
+            try { runtime.actions.openDoc(res.document.id); } catch (_) {}
+          }
+          return;
+        }
+      } catch (_) {
+        plan.focus = 'input';
+        plan.prefill = plan.clipUrl;
+      }
+    }
     if (plan.openInbox) {
       // The redesign routes surfaces off location.hash — app.js seeds
       // state.surface from it on boot (SURFACES.includes(fromHash)) and also
@@ -340,6 +401,7 @@ export function initDeepLinks() {
     if (plan.runSearch) plan.searchQuery = params.get('q') || '';
     if (plan.newChat) plan.prefill = params.get('q') || '';
     if (plan.newChat && params.get('autosend') === '1' && plan.prefill) plan.autosend = true;
+    if (plan.doClip) Object.assign(plan, clipPlanFields(params));
     // Stash BEFORE the strip: if a reload lands mid-flow the next boot can
     // still see what it was supposed to do. Cleared in applyPlan's finally.
     _storePending(plan);

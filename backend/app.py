@@ -29,7 +29,7 @@ from . import (branch_context, bridge, capabilities, changes, chat_search, chat_
                 monitor, pending_tokens, project_discovery, promise_guard, push, sessions_store,
                 steer, syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
-from .security_headers import SecurityHeadersMiddleware
+from .security_headers import SecurityHeadersMiddleware, request_nonce
 from .memory import maybe_auto_extract
 from .auth_password import router as auth_password_router
 from .calendar import router as calendar_router
@@ -1407,7 +1407,7 @@ async def service_worker():
 # Mounted last so /api/* routes win. The SPA lives in frontend/ (copied from
 # Odysseus static/). index.html is the entry; everything else is static assets.
 
-def _spa_html(filename: str):
+def _spa_html(filename: str, request: Request | None = None):
     """Serve an SPA HTML entrypoint.
 
     When config.BASE_PATH is set (app hosted under a stripping subpath proxy),
@@ -1415,6 +1415,11 @@ def _spa_html(filename: str):
     under the prefix: markup asset refs are rewritten, an import map remaps
     absolute dynamic imports, and a tiny network shim prefixes fetch/EventSource/
     WebSocket calls. Backend routes are untouched (the proxy strips the prefix).
+    Both injected scripts are inline, so they carry the request's CSP nonce
+    (minted by SecurityHeadersMiddleware, read off request.state.csp_nonce);
+    without it a base-path tenant could never turn WORKSPACE_CSP_ENFORCE on.
+    With no BASE_PATH nothing is injected and no nonce appears in the body.
+
     With no BASE_PATH the raw file is served byte-for-byte (default install)."""
     path = config.FRONTEND_DIR / filename
     if not path.exists():
@@ -1425,9 +1430,11 @@ def _spa_html(filename: str):
     html = path.read_text(encoding="utf-8")
     html = html.replace('="/static/', f'="{base}/static/').replace('="/api/', f'="{base}/api/')
     b = json.dumps(base)
+    nonce = request_nonce(request.scope) if request is not None else ""
+    na = f' nonce="{nonce}"' if nonce else ""
     inject = (
-        '<script type="importmap">{"imports":{"/static/":"' + base + '/static/"}}</script>'
-        '<script>(function(){var B=' + b + ';'
+        '<script type="importmap"' + na + '>{"imports":{"/static/":"' + base + '/static/"}}</script>'
+        '<script' + na + '>(function(){var B=' + b + ';'
         'window.__WS_BASE__=B;'  # asset constants (e.g. AVATAR) prefix with this
         'function fix(u){try{'
         'if(u&&typeof u==="object"&&typeof Request!=="undefined"&&u instanceof Request){return new Request(fix(u.url),u);}'
@@ -1477,7 +1484,10 @@ def _manifest_response(filename: str = "manifest.json"):
     Like _spa_html: when BASE_PATH is set, absolute /static icon srcs and the
     root start_url/scope must resolve under the prefix, or an installed PWA
     pulls icons from the origin root (the wrong tenant on a shared funnel) and
-    launches at /. Served byte-for-byte when no BASE_PATH (default install)."""
+    launches at /. Served byte-for-byte when no BASE_PATH (default install).
+
+    Unlike _spa_html this injects no scripts (the response is JSON), so it needs
+    no CSP nonce."""
     path = config.FRONTEND_DIR / filename
     if not path.exists():
         return JSONResponse(status_code=404, content={"error": f"{filename} not built"})
@@ -1506,31 +1516,31 @@ if config.FRONTEND_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(config.FRONTEND_DIR)), name="static")
 
     @app.get("/")
-    async def index():
-        return _spa_html("index.html")
+    async def index(request: Request):
+        return _spa_html("index.html", request)
 
     @app.get("/home")
-    async def gary_home():
-        return _spa_html("newtab.html")
+    async def gary_home(request: Request):
+        return _spa_html("newtab.html", request)
 
     @app.get("/newtab")
-    async def gary_newtab():
-        return _spa_html("newtab.html")
+    async def gary_newtab(request: Request):
+        return _spa_html("newtab.html", request)
 
     @app.get("/gary-home.html")
-    async def gary_home_alias():
+    async def gary_home_alias(request: Request):
         # Path-compatible alias for the :8011 media-server copy, so a new-tab
         # setting pointed at .../gary-home.html works verbatim on this origin.
-        return _spa_html("newtab.html")
+        return _spa_html("newtab.html", request)
 
     @app.get("/classic")
-    async def index_classic():
+    async def index_classic(request: Request):
         # Task 18 step 1 (parity gate, instrumentation only — retirement is
         # deferred pending a week-long soak): one INFO line per hit so usage
         # can be tracked with `journalctl --user -u openclaw-workspace |
         # grep -c "classic UI served"`. No behavior change otherwise.
         _log.info("classic UI served")
-        return _spa_html("index-classic.html")
+        return _spa_html("index-classic.html", request)
 else:
     @app.get("/")
     async def index_missing():

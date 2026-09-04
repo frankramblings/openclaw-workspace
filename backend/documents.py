@@ -51,6 +51,7 @@ _META_KEYS = (
     "source_email_uid", "source_email_folder",
     "source_email_account_id", "source_email_message_id",
     "vault_path",
+    "source_url", "source_final_url", "source_site", "source_byline", "clipped_at",
 )
 
 

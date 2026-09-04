@@ -14,7 +14,13 @@ _log = logging.getLogger(__name__)
 # Local Whisper (MLX on the local Whisper box, Metal). Set GARY_STT_BASE="" to
 # disable and force the OpenAI path. Contract: POST /asr multipart audio_file
 # -> {"text": ...}.
-_KAMINO_STT = os.environ.get("GARY_STT_BASE", f"http://{config.local_host()}:9000")
+# A function, not a constant, so tests can call it directly and a per-tenant
+# host stays current.
+def _default_stt_base() -> str:
+    return f"http://{config.local_host()}:9000"
+
+
+_KAMINO_STT = os.environ.get("GARY_STT_BASE", _default_stt_base())
 
 
 def _local_base() -> str:
@@ -22,7 +28,7 @@ def _local_base() -> str:
 
 
 async def _transcribe_local(filename: str, content_type: str, data: bytes) -> str:
-    """Transcribe via the local kamino Whisper service. Raises on any failure."""
+    """Transcribe via the local Whisper box. Raises on any failure."""
     base = _local_base()
     if not base:
         raise TranscribeError("local STT disabled")

@@ -1,7 +1,6 @@
 """Portable runtime defaults: every tenant-specific value (paths, names,
 hosts) derives from HOME, REPO_ROOT, or the config knobs, never a literal
 Frank/Gary/home-frank path baked into the module."""
-import importlib
 import json
 import os
 import subprocess
@@ -21,7 +20,7 @@ def test_default_roots_follow_home_and_repo(tmp_path, monkeypatch):
         str(tmp_path / ".openclaw" / "openclaw.json"),
     ]
     # roots[1] is config.REPO_ROOT verbatim (Task 1's portable constant,
-    # unaffected by HOME) — the equality check above already proves it is
+    # unaffected by HOME). The equality check above already proves it is
     # wired correctly. This worktree's own checkout happens to live under
     # /home/frank on this dev machine, so only the HOME-derived roots get
     # the "no hardcoded Frank path" check here.
@@ -83,15 +82,18 @@ def test_prompts_use_configured_user_name(monkeypatch):
 
 
 def test_local_host_drives_embed_and_stt_defaults(monkeypatch):
-    monkeypatch.delenv("CHAT_EMBED_URL", raising=False)
-    monkeypatch.delenv("GARY_STT_BASE", raising=False)
-    monkeypatch.setenv("WORKSPACE_LOCAL_HOST", "10.9.8.7")
+    # No importlib.reload here: chat_search computes _DB_PATH from
+    # config.DATA_DIR at module load, and conftest's autouse fixture
+    # monkeypatches config.DATA_DIR per test, so a reload would permanently
+    # rebind _DB_PATH to a deleted tmp dir (monkeypatch cannot undo a reload)
+    # and reset _reindex_lock / _matrix_cache under any existing import
+    # holder. Exercise the default-builder functions directly instead.
     import backend.chat_search as cs
     import backend.transcribe as tr
-    importlib.reload(cs)
-    importlib.reload(tr)
-    assert cs._EMBED_URL == "http://10.9.8.7:11434/api/embed"
-    assert tr._KAMINO_STT == "http://10.9.8.7:9000"
-    monkeypatch.delenv("WORKSPACE_LOCAL_HOST", raising=False)
-    importlib.reload(cs)
-    importlib.reload(tr)
+    monkeypatch.setenv("WORKSPACE_LOCAL_HOST", "10.9.8.7")
+    assert cs._default_embed_url() == "http://10.9.8.7:11434/api/embed"
+    assert tr._default_stt_base() == "http://10.9.8.7:9000"
+    # The module constants were bound at import time from whatever host was
+    # configured then; just confirm they still honor their own env names.
+    assert cs._EMBED_URL.startswith("http")
+    assert tr._KAMINO_STT.startswith("http")

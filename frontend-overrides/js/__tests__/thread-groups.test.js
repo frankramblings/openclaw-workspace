@@ -160,3 +160,24 @@ test('project latest and roll-ups include threads on the shelf', () => {
   assert.equal(projGroups[0].meta.count, 2);
   assert.deepEqual(ids(projGroups[0]), ['y']);
 });
+
+test('a stored unread flag lights the row dot and counts in the project roll-up', () => {
+  const sessions = [
+    S('u1', { folder: 'p1', unread: true }),
+    S('u2', { folder: 'p1' }),
+    S('u3', { unread: true }),
+  ];
+  const g = build({ sessions, projects: [{ id: 'p1', name: 'Proj' }] });
+  const proj = g.find((x) => x.kind === 'project');
+  assert.equal(proj.meta.unseen, 1, 'unread threads count toward the roll-up pip');
+  const rows = g.flatMap((x) => x.rows);
+  assert.equal(rows.find((r) => r.id === 'u1').notify, true);
+  assert.equal(rows.find((r) => r.id === 'u2').notify, false);
+  assert.equal(rows.find((r) => r.id === 'u3').notify, true);
+  assert.equal(rows.find((r) => r.id === 'u1').unread, true);
+});
+
+test('the active row never shows its own unread flag', () => {
+  const g = build({ sessions: [S('a', { unread: true })], activeId: 'a' });
+  assert.equal(g.flatMap((x) => x.rows).find((r) => r.id === 'a').notify, false);
+});

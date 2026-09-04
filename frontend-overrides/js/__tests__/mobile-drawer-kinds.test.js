@@ -93,3 +93,18 @@ test('a queued row renders m-conv-dot queued', () => {
   const rowO2 = html.slice(html.indexOf('data-arg="o2"'));
   assert.ok(rowO2.includes('m-conv-dot queued'));
 });
+
+test('every drawer row carries a thread-actions trigger, and semantic hits do not', () => {
+  const html = renderConvDrawer(buildState());
+  assert.ok(html.includes('class="m-conv-more" data-act="openConvActions" data-arg="o1"'));
+  assert.ok(html.includes('data-act="openConvActions" data-arg="pe1"'));
+  const rows = (html.match(/data-act="mSelectSession"/g) || []).length;
+  assert.equal((html.match(/data-act="openConvActions"/g) || []).length, rows);
+});
+
+test('the trigger is out of the tab order while the drawer is closed', () => {
+  const s = buildState();
+  s.mDrawerOpen = false;
+  const html = renderConvDrawer(s);
+  assert.ok(html.includes('class="m-conv-more" data-act="openConvActions" data-arg="o1" tabindex="-1"'));
+});

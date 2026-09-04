@@ -19,7 +19,7 @@ import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile
 import { derivedDepth, closeTopmost, computeMobileLatch } from './mobile/mobile-history.js';
 import { maybeShowInstallHint } from './mobile/install-hint.js';
 import { maybeShowThreadsHint } from './mobile/threads-hint.js';
-import { startLongPress, moveLongPress, endLongPress, resetLongPress } from './mobile/longpress.js';
+import { startLongPress, moveLongPress, endLongPress, resetLongPress, armSwallow, shouldSwallowClick, scheduleSwallowDisarm } from './mobile/longpress.js';
 import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
 import { flushPending, queueForSession, answerQuestionCard, toast } from './live/chat.js';
 import { composeAnswer } from './live/question-card.js';
@@ -956,10 +956,11 @@ function topmostModal() {
 // user's next move.
 const MODAL_OPEN_ACTIONS = new Set([
   'composeNew', 'composeReply', 'composeAiDraft', 'openReader',
-  'openCompanion', 'openCapture', 'openModelSheet', 'openConvDrawer', 'openConvSheet', 'openSwitcher',
+  'openCompanion', 'openCapture', 'openModelSheet', 'openConvDrawer', 'openConvSheet', 'openConvActions', 'openSwitcher',
 ]);
 const MODAL_CLOSE_ACTIONS = new Set([
   'closeCompose', 'closeReader', 'closeCompanion', 'closeCapture', 'closeModelSheet', 'closeDrawer', 'closeSwitcher',
+  'closeConvActions',
   'switcherPick', // picking a row closes the switcher too (see closeSwitcher inside it)
 ]);
 
@@ -1116,15 +1117,40 @@ root.addEventListener('pointerup', (e) => {
 // Long-press on a mobile user bubble → open the message action sheet.
 // Uses a pure state machine (mobile/longpress.js) so behavior is unit-tested.
 const lpState = { active: null };
+// A long-press on a CONVERSATION row opens a sheet over a row that is itself
+// clickable (mSelectSession), so the synthetic click the browser fires on
+// release has to be eaten or the thread would open underneath the sheet.
+// Same gate mobile-app.js uses for the center "+" long-press.
+const lpSwallow = {};
+const lpSwallowIo = { setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t) };
 const lpIO = {
   setTimer: (fn, ms) => setTimeout(fn, ms),
   clearTimer: (t) => clearTimeout(t),
   dispatch: (name, arg) => {
     const fn = actions[name];
-    if (fn) { fn(arg); render(); }
+    if (fn) {
+      armSwallow(lpSwallow);
+      try { if (navigator.vibrate) navigator.vibrate(8); } catch (_) { /* no haptics */ }
+      fn(arg);
+      render();
+    }
   },
 };
+root.addEventListener('click', (e) => {
+  if (!shouldSwallowClick(lpSwallow)) return;
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
 root.addEventListener('pointerdown', (e) => {
+  // Drawer conversation row: hold to open the thread-actions sheet (the touch
+  // equivalent of the desktop row's hover-only kebab). The row's own "⋯"
+  // button is excluded so a hold on it doesn't fire the same sheet twice.
+  const convRow = e.target.closest('[data-conv-drawer] .m-conv-row[data-arg]');
+  if (convRow && !e.target.closest('.m-conv-more')) {
+    const id = convRow.getAttribute('data-arg');
+    if (id) startLongPress(lpState, { action: 'openConvActions', arg: id, x: e.clientX, y: e.clientY }, lpIO);
+    return;
+  }
   const bubble = e.target.closest('.m-msg-user');
   if (!bubble) return;
   const wrap = bubble.closest('[data-msg-id]');
@@ -1135,15 +1161,17 @@ root.addEventListener('pointerdown', (e) => {
 root.addEventListener('pointermove', (e) => {
   moveLongPress(lpState, { x: e.clientX, y: e.clientY }, lpIO);
 });
-root.addEventListener('pointerup', () => endLongPress(lpState, lpIO));
-root.addEventListener('pointercancel', () => resetLongPress(lpState, lpIO));
+root.addEventListener('pointerup', () => { endLongPress(lpState, lpIO); scheduleSwallowDisarm(lpSwallow, lpSwallowIo); });
+root.addEventListener('pointercancel', () => { resetLongPress(lpState, lpIO); scheduleSwallowDisarm(lpSwallow, lpSwallowIo); });
 document.addEventListener('scroll', () => resetLongPress(lpState, lpIO), true);
 
 // Swipe-down on the message action sheet dismisses it.
 let sheetTouchStart = null;
+let sheetTouchKind = 'msg';
 root.addEventListener('touchstart', (e) => {
-  const sheet = e.target.closest('.m-msg-sheet');
+  const sheet = e.target.closest('.m-msg-sheet, .m-conv-sheet');
   if (!sheet) { sheetTouchStart = null; return; }
+  sheetTouchKind = sheet.classList.contains('m-conv-sheet') ? 'conv' : 'msg';
   const t = e.touches[0];
   sheetTouchStart = { y: t.clientY, ts: Date.now() };
 }, { passive: true });
@@ -1153,7 +1181,7 @@ root.addEventListener('touchmove', (e) => {
   const dy = t.clientY - sheetTouchStart.y;
   const dtMs = Date.now() - sheetTouchStart.ts;
   if (shouldSwipeDismiss({ dy, dtMs })) {
-    const fn = actions.closeMobileMsgSheet;
+    const fn = sheetTouchKind === 'conv' ? actions.closeConvActions : actions.closeMobileMsgSheet;
     if (fn) { fn(); render(); }
     sheetTouchStart = null;
   }

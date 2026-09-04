@@ -120,3 +120,20 @@ test('scheduleSwallowDisarm is a no-op when the gate is not armed', () => {
   h.advance(0);
   assert.equal(shouldSwallowClick(gate), false);
 });
+
+test('an explicit action/arg overrides the message-sheet default', () => {
+  const h = harness();
+  const st = { active: null };
+  startLongPress(st, { action: 'openConvActions', arg: 's1', x: 0, y: 0 }, h);
+  h.advance(500);
+  assert.deepStrictEqual(h.dispatched, [['openConvActions', 's1']]);
+});
+
+test('an explicit action still cancels on movement', () => {
+  const h = harness();
+  const st = { active: null };
+  startLongPress(st, { action: 'openConvActions', arg: 's1', x: 0, y: 0 }, h);
+  moveLongPress(st, { x: 0, y: 9 }, h);
+  h.advance(500);
+  assert.deepStrictEqual(h.dispatched, []);
+});

@@ -154,7 +154,7 @@ def update(session_id: str, *, touch: bool = True, **fields) -> dict | None:
     project's latest roll-up."""
     allowed = {"name", "model", "folder", "archived", "important",
                "endpoint_url", "endpoint_id", "speed", "gary_terminal",
-               "opened", "parent_id"}
+               "opened", "parent_id", "unread"}
     with _LOCK:
         data = _load()
         for s in data.get("sessions", []):

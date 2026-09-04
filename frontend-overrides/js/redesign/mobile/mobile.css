@@ -895,14 +895,16 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
    painted OVER Undo's right edge (positioned el wins the stacking order). */
 .m-toast-x::after { content: ''; position: absolute; inset: -9px; }
 
-.m-msg-sheet-backdrop {
+.m-msg-sheet-backdrop,
+.m-conv-sheet-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.42);
   z-index: var(--z-msg-sheet-scrim);
   animation: mSheetFade var(--dur-panel) ease-out;
 }
-.m-msg-sheet {
+.m-msg-sheet,
+.m-conv-sheet {
   position: fixed;
   left: 0;
   right: 0;
@@ -929,7 +931,8 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   overflow: hidden;
   margin-bottom: 6px;
 }
-.m-msg-sheet-row {
+.m-msg-sheet-row,
+.m-conv-sheet-row {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -944,17 +947,74 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   cursor: pointer;
   border-radius: 10px;
 }
-.m-msg-sheet-row:active { background: color-mix(in srgb, var(--teal) 18%, transparent); }
-.m-msg-sheet-ic { display: inline-flex; align-items: center; color: var(--faint); }
-.m-msg-sheet-lbl { flex: 1; }
-.m-msg-sheet-cancel {
+.m-msg-sheet-row:active,
+.m-conv-sheet-row:active { background: color-mix(in srgb, var(--teal) 18%, transparent); }
+.m-msg-sheet-ic,
+.m-conv-sheet-ic { display: inline-flex; align-items: center; color: var(--faint); }
+.m-msg-sheet-lbl,
+.m-conv-sheet-lbl { flex: 1; }
+.m-msg-sheet-cancel,
+.m-conv-sheet-cancel {
   margin-top: 8px;
   justify-content: center;
   color: var(--faint);
   border-top: 1px solid color-mix(in srgb, var(--teal) 14%, transparent);
   border-radius: 0;
 }
-.m-msg-sheet-cancel .m-msg-sheet-lbl { flex: 0; }
+.m-msg-sheet-cancel .m-msg-sheet-lbl,
+.m-conv-sheet-cancel .m-conv-sheet-lbl { flex: 0; }
+
+/* Thread-actions sheet (mobile-conv-sheet.js). Shares the message sheet's
+   chrome above; only the header, the danger row and the current-project tick
+   are its own. Sits at the message sheet's z-index, i.e. above the drawer it
+   is opened from, so the list stays visible underneath. */
+.m-conv-sheet-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--faint);
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--teal) 14%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+.m-conv-sheet-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 12px 14px 6px;
+}
+.m-conv-sheet-danger { color: var(--red); }
+.m-conv-sheet-danger .m-conv-sheet-ic { color: inherit; }
+.m-conv-sheet-row.on .m-conv-sheet-lbl { color: var(--teal); }
+
+/* Per-row "⋯" trigger in the conversations drawer. The desktop kebab is
+   hover-only, which does not exist on touch, so this one is always visible.
+   44px tap target via the ::after box, anchored to the row's right edge so
+   it never overhangs a truncated title on the left. */
+.m-conv-more {
+  position: relative;
+  flex: none;
+  margin-left: 2px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--faint);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.m-conv-more::after { content: ''; position: absolute; left: auto; right: -7px; top: 50%; width: 44px; height: 44px; transform: translateY(-50%); }
+.m-conv-more:active { background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); }
+.m-conv-more:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
 
 @keyframes mSheetFade {
   from { opacity: 0; } to { opacity: 1; }

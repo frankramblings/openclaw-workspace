@@ -48,7 +48,12 @@ function rowOf(s, activeId, live) {
     endpointId: s.endpoint_id || '',
     parentId: s.parent_id || null,
     folder: s.folder || null,
-    notify: !active && live.notified.has(s.id),
+    // The dot means "something here you have not seen": a reply that landed
+    // while you were away (client-side, this session) OR a stored manual
+    // "Mark unread". `unread` is kept on the row too so the menu can flip
+    // its label without reaching back into the session record.
+    unread: !!s.unread,
+    notify: !active && (live.notified.has(s.id) || !!s.unread),
     working: !active && live.running.has(s.id),
     queued: !active && live.queued.has(s.id),
     depth: 0,
@@ -153,7 +158,7 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
       meta: {
         id: pid, count: bucket.all.length,
         working: bucket.all.filter((s) => live.running.has(s.id)).length,
-        unseen: bucket.all.filter((s) => live.notified.has(s.id)).length,
+        unseen: bucket.all.filter((s) => live.notified.has(s.id) || s.unread).length,
         collapsed: !containsActive && !exp.has(pid),
         latest: bucket.all.reduce((m, s) => Math.max(m, ts(s)), 0),
       },

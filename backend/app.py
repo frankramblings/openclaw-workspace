@@ -1012,6 +1012,16 @@ async def set_important(session_id: str, important: str = Form(default="true")):
     return {"ok": True, "important": val}
 
 
+@app.post("/api/session/{session_id}/unread")
+async def set_unread(session_id: str, unread: str = Form(default="true")):
+    """Manual "Mark unread" from the conversation menu / mobile sheet. Stored on
+    the record so the sidebar dot survives a reload; opening the thread clears
+    it (the client POSTs unread=false)."""
+    val = str(unread).lower() not in ("false", "0", "")
+    sessions_store.update(session_id, unread=val)
+    return {"ok": True, "unread": val}
+
+
 @app.post("/api/session/{session_id}/archive")
 async def archive_session(session_id: str):
     sessions_store.update(session_id, archived=True)

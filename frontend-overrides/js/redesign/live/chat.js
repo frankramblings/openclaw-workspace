@@ -3157,6 +3157,14 @@ export const actions = {
     chat.editingId = null;
     syncQueuedView(chat);       // banner now shows THIS thread's queued entry (if any)
     if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
+    // A stored "Mark unread" clears on open too; locally first (so the dot
+    // goes out in this render) and then server-side, fire-and-forget: a failed
+    // clear only means the dot comes back on the next refetch, never a stuck UI.
+    const openedRec = (chat.sessions || []).find((x) => x && x.id === id);
+    if (openedRec && openedRec.unread) {
+      openedRec.unread = false;
+      apiForm(`/api/session/${id}/unread`, { unread: 'false' }).catch(() => {});
+    }
     storeActiveId(id);
     // Rehydrate a carried branch prefix (Task 8): branchFromMessage stashes it
     // in localStorage keyed by the NEW session's id before switching to it, so
@@ -3873,6 +3881,48 @@ export const actions = {
     if (row) row.important = next; // optimistic
     runtime.render();
     try { await apiForm(`/api/session/${id}/important`, { important: String(next) }); } catch (_) {}
+    try { await load(state); } catch (_) {}
+    runtime.render();
+  },
+
+  // Sidebar / mobile sheet: flip a conversation's stored unread flag ->
+  // POST /api/session/{id}/unread. Optimistic (the dot moves on tap), reverted
+  // with a toast if the write fails. Marking the thread you are LOOKING AT
+  // unread is allowed: rowOf() suppresses the dot on the active row, so it
+  // shows up once you leave and come back, which is what "mark unread" means.
+  toggleUnread: async (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const chat = ensureChat(state);
+    chat.rowMenuOpen = null;
+    chat.mobileConvSheetId = null;
+    const rec = (chat.sessions || []).find((x) => x && x.id === id);
+    if (!rec) return;
+    const prev = !!rec.unread;
+    // Which way the toggle goes is decided by what the row currently SHOWS,
+    // not by the stored flag alone: a row lit only by the session-local
+    // "finished while away" set must go dark on tap, same as a stored one.
+    // The menu label is derived the same way (surfaces.js convMenu).
+    const lit = prev || !!(chat.notified && chat.notified.has(id) && chat.activeId !== id);
+    const next = !lit;
+    rec.unread = next;                 // optimistic
+    // A thread marked read should not keep the session-local flag either:
+    // clearing both means the one dot has one owner.
+    if (!next && chat.notified) chat.notified.delete(id);
+    rebuildGroups(chat);
+    runtime.render();
+    try {
+      await apiForm(`/api/session/${id}/unread`, { unread: String(next) });
+    } catch (_) {
+      rec.unread = prev;
+      rebuildGroups(chat);
+      runtime.render();
+      toast(next ? 'Couldn’t mark this unread.' : 'Couldn’t mark this read.');
+      return;
+    }
+    // Reconcile with the server, same as toggleFavorite: without this a
+    // sessions refetch already in flight when the optimistic flip happened
+    // lands afterwards and silently reverts the dot.
     try { await load(state); } catch (_) {}
     runtime.render();
   },

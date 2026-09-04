@@ -267,3 +267,18 @@ test('computeMobileLatch: the ceiling is configurable via touchCeiling', () => {
 test('computeMobileLatch: coarse+touch narrower than the plain breakpoint still latches (e.g. iPad Split View)', () => {
   assert.equal(computeMobileLatch({ coarsePointer: true, touchCapable: true, width: 700, touchCeiling: 1024 }), true);
 });
+
+test('the conversation actions sheet is its own Back layer, above the message sheet', () => {
+  const s = { live: { chat: { mobileConvSheetId: 's1', mobileSheetMsgId: 'u1' } }, mDrawerOpen: true };
+  assert.equal(derivedDepth(s), 3);
+  assert.equal(closeTopmost(s), true);
+  assert.equal(s.live.chat.mobileConvSheetId, null, 'the conv sheet closes first');
+  assert.equal(s.live.chat.mobileSheetMsgId, 'u1', 'the message sheet is untouched');
+  closeTopmost(s);
+  assert.equal(s.live.chat.mobileSheetMsgId, null);
+});
+
+test('an open conversation actions sheet blocks the edge-swipe drawer', () => {
+  assert.equal(edgeSwipeBlocked({ live: { chat: { mobileConvSheetId: 's1' } } }), true);
+  assert.equal(edgeSwipeBlocked({ live: { chat: {} } }), false);
+});

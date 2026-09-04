@@ -6,7 +6,8 @@
 //
 // Layers are closed ONE AT A TIME, top → bottom, in this priority order:
 //   1. the inbox snooze sheet (inboxSnoozeFor)
-//   2. the long-press message-tools sheet (live.chat.mobileSheetMsgId)
+//   2. the thread-actions sheet (live.chat.mobileConvSheetId)
+//   3. the long-press message-tools sheet (live.chat.mobileSheetMsgId)
 //   3. the quick-capture sheet
 //   4. the compose sheet
 //   5. a reader (email reader / inbox reader overlay)
@@ -28,6 +29,10 @@
 // exactly one flag, same as every other layer here.
 
 const hasMsgSheet = (s) => !!(s.live && s.live.chat && s.live.chat.mobileSheetMsgId);
+// The per-thread actions sheet (drawer row "⋯" / long-press). Sits ABOVE the
+// message sheet in the stack: it is opened from the drawer, which can itself
+// be open underneath, so Back must peel it off on its own.
+const hasConvSheet = (s) => !!(s.live && s.live.chat && s.live.chat.mobileConvSheetId);
 const hasReader = (s) => !!(s.mReader || s.inboxReader);
 const hasSnoozeSheet = (s) => !!s.inboxSnoozeFor;
 
@@ -39,6 +44,7 @@ const LAYERS = [
   // most transient overlay, so it closes first, same reasoning as the
   // message-tools sheet below it.
   { has: hasSnoozeSheet, close: (s) => { s.inboxSnoozeFor = null; } },
+  { has: hasConvSheet, close: (s) => { s.live.chat.mobileConvSheetId = null; } },
   { has: hasMsgSheet, close: (s) => { s.live.chat.mobileSheetMsgId = null; } },
   { has: (s) => !!s.quickCaptureOpen, close: (s) => { s.quickCaptureOpen = false; } },
   { has: (s) => !!s.composeOpen, close: (s) => { s.composeOpen = false; } },
@@ -72,7 +78,7 @@ export function closeTopmost(s) {
 export function edgeSwipeBlocked(s) {
   return !!(
     s.quickCaptureOpen || s.composeOpen || s.keyboard
-    || hasReader(s) || hasMsgSheet(s) || hasSnoozeSheet(s)
+    || hasReader(s) || hasMsgSheet(s) || hasConvSheet(s) || hasSnoozeSheet(s)
     || s.mDrawerOpen || s.mModelSheetOpen || s.companionSheetOpen
   );
 }

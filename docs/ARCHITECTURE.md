@@ -81,6 +81,16 @@ request from the cached blobs; revert restores the turn's before-state only if
 the file has not moved on. Roots and prune list live in `.data/changes.json`
 (Settings → Changes). It never uses git.
 
+### Tenant portability (2026-09)
+
+Nothing tenant-specific lives in code. `config.agent_name()`, `user_name()`,
+`local_host()` read env, then `.data/branding.json`. Change-tracker roots
+default from HOME and the checkout (`changes.default_roots()`); project seeds
+come from `.data/projects_seed.json`; a tenant with no projects gets one
+discovery pass (`project_discovery.py`) that writes proposals for Settings →
+Projects to accept. `scripts/publish-scan.sh` is the shared gate (also a
+pytest) and `scripts/deploy.sh` ships both tenants.
+
 ## The frontend: vendor + overrides + bake
 
 The UI is a vanilla-JS SPA. It is assembled, not hand-edited in place:

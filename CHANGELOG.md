@@ -23,6 +23,10 @@ not just the original maintainer's setup.
 - Projects: threads file themselves into projects at title time via the local title model (precision over recall); a one-time backfill seeds the starter list and files the last 90 days by title. Corrections: row kebab → Move to, drag a row onto a project header, `New project…` inline. Header reads `Project › Thread`, forks show `↳ from <parent>`. Settings → Projects lists, renames, archives, deletes, and re-runs the backfill. Mobile drawer mirrors the sections and lands on the active project.
 - Routes: `POST /api/session/{id}/close`, `POST /api/session/{id}/unfile`, `/api/projects` CRUD, `POST /api/projects/backfill`. Filing never counts as activity (`updated` untouched).
 
+### Tenant portability (2026-09)
+
+- Tenant portability: per-tenant names, roots, and project seeds; project discovery with accept/dismiss; shared publish scan in the test suite; scripts/deploy.sh deploys both tenants.
+
 ### Phase 1 — Genericization (already merged to main)
 
 - All maintainer-specific identifiers removed from source and committed assets.

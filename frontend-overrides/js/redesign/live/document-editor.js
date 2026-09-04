@@ -83,7 +83,7 @@ function docState() {
   if (!st.docEditor) st.docEditor = {
     open: false, id: null, title: '', status: '',
     wsPath: null, wsRootKey: null, wsMtimeNs: null, wsAbsPath: null,
-    readOnly: false, loadFailed: false, saveFailed: false,
+    readOnly: false, loadFailed: false, saveFailed: false, attachDetached: false,
   };
   return st.docEditor;
 }
@@ -127,6 +127,7 @@ export function resetBufferIdentity(d) {
   d.wsPath = null; d.wsRootKey = null; d.wsMtimeNs = null; d.wsAbsPath = null;
   d.readOnly = false;
   d.loadFailed = false;
+  d.attachDetached = false;
   d._incoming = null; d._incomingMtimeNs = null;
   return d;
 }
@@ -147,6 +148,73 @@ export function shouldWarnBeforeUnload(d, isDirty) {
  */
 export function makeSaveGuard(gen) {
   return { isStale: (nowGen) => nowGen !== gen };
+}
+
+// The Library document id a chat send should carry as active_doc_id, or
+// null. Only a Library doc (saveTarget's 'doc' kind, never a workspace-file
+// 'ws' buffer) that is open and hasn't been detached via the pill's ×.
+export function libraryDocIdFor(d) {
+  if (!d || d.attachDetached) return null;
+  const target = saveTarget(d);
+  return target.kind === 'doc' ? target.id : null;
+}
+
+// libraryDocIdFor bound to the live docState(): what chat.js calls.
+export function activeLibraryDocId() {
+  return libraryDocIdFor(docState());
+}
+
+// Spec 2.2: the pill's x detaches "for the next turn" only. Called once by
+// chat.js's fireSend/keepaliveSend, right after they've already read
+// activeLibraryDocId() for the send in progress: always leaves
+// attachDetached false afterward, so the NEXT send re-attaches by default.
+// Also called by Task 5's toolbar actions before they send, so a toolbar
+// click always targets the open document even if the pill was detached.
+export function consumeAttachDetach() {
+  const d = docState();
+  if (d) d.attachDetached = false;
+}
+
+// Markdown-mode selection: `sel` is Toast UI's NESTED [[startLine,startCh],
+// [endLine,endCh]] pair (both 1-based) from mdEditor.editor.getSelection():
+// NOT flat character offsets (see this task's "Correction from review").
+// Converts by summing line lengths (+1 per newline) up to each line, then
+// adding (ch - 1); a best-effort derivation against the raw markdown text,
+// since Toast UI's own conversion runs through ProseMirror node structure
+// internally that this does not replicate for nested block content (e.g.
+// inside a list item): flag any observed drift during Task 6's manual
+// verification. `selectedText`, when given (Toast UI's getSelectedText()),
+// is used verbatim instead of slicing, which sidesteps that gap entirely.
+export function selectionFromMarkdownEditor(markdown, sel, selectedText) {
+  if (!Array.isArray(sel) || sel.length !== 2) return null;
+  const [start, end] = sel;
+  if (!Array.isArray(start) || !Array.isArray(end)) return null;
+  const text = String(markdown || '');
+  const lines = text.split('\n');
+  const lineStart = []; // lineStart[i] = char offset where line i (0-based) begins
+  let acc = 0;
+  for (let i = 0; i < lines.length; i++) { lineStart[i] = acc; acc += lines[i].length + 1; }
+  const offset = ([line, ch]) => (lineStart[Math.max(0, Math.min(line - 1, lines.length - 1))] || 0) + Math.max(0, ch - 1);
+  const from = offset(start);
+  const to = offset(end);
+  if (from === to) return null; // collapsed selection
+  const out = typeof selectedText === 'string' ? selectedText : text.slice(Math.min(from, to), Math.max(from, to));
+  return out ? { text: out, from, to, mode: 'md', lines: [start[0], end[0]] } : null;
+}
+
+// Wysiwyg-mode selection: Toast UI's editor.getSelectedText() returns the
+// selected plain text directly (no character-offset range in this mode).
+export function selectionFromWysiwygText(text) {
+  if (typeof text !== 'string' || !text.trim()) return null;
+  return { text, from: null, to: null, mode: 'wysiwyg' };
+}
+
+// A doc_update SSE frame (backend/draft_mode.py's post_turn_payload shape:
+// {type:'doc_update', doc_id, content, version, title, language}) applies
+// only when it matches the Library doc currently open in the dock.
+export function shouldAcceptDocUpdate(d, frame) {
+  return !!(d && d.open && d.id && !d.wsPath && frame
+    && frame.type === 'doc_update' && frame.doc_id === d.id);
 }
 
 // ---- shared workspace-watch WebSocket (silent reload on disk changes) -------
@@ -261,6 +329,54 @@ async function handleExternalChange(newMtimeNs) {
   d._incoming = text;
   d._incomingMtimeNs = mtimeNs;
   showConflict();
+}
+
+// Current editor selection, or null. Delegates to the pure helpers above so
+// extraction is unit-tested without a real Toast UI instance; this wrapper
+// only supplies live editor/editorMode module state.
+export function getSelection() {
+  if (!editor || editorMode === 'preview') return null;
+  try {
+    // Top-level Editor#getSelectedText() delegates to whichever mode editor
+    // is current (confirmed in the vendored bundle) and returns the plain
+    // selected string in both markdown and wysiwyg mode: preferred over
+    // slicing when available, per selectionFromMarkdownEditor's contract.
+    const selectedText = typeof editor.getSelectedText === 'function' ? editor.getSelectedText() : undefined;
+    if (editorMode === 'wysiwyg') {
+      return selectionFromWysiwygText(typeof selectedText === 'string' ? selectedText : '');
+    }
+    const inst = editor.mdEditor && editor.mdEditor.editor;
+    if (!inst || !inst.getSelection) return null;
+    return selectionFromMarkdownEditor(editor.getMarkdown(), inst.getSelection(), selectedText);
+  } catch (_) { return null; }
+}
+
+// Apply an incoming doc_update frame. Mirrors handleExternalChange's
+// clean/dirty split: a clean buffer silently reloads with caret preserved;
+// a dirty buffer gets the same conflict banner an external disk change
+// shows. Title/status mutate unconditionally so this is observable with no
+// editor instance yet (e.g. in tests).
+export function applyExternalUpdate(frame) {
+  const d = docState();
+  if (!shouldAcceptDocUpdate(d, frame)) return;
+  const content = typeof frame.content === 'string' ? frame.content : '';
+  if (!dirty) {
+    const snap = snapshotEditorCaret();
+    suppressChange = true;
+    try { if (editor) editor.setMarkdown(content, false); } catch (_) {}
+    setTimeout(() => { suppressChange = false; }, 60);
+    if (frame.title) { d.title = frame.title; if (titleEl) titleEl.value = frame.title; }
+    d.status = 'Saved';
+    if (statusEl) statusEl.textContent = 'Saved';
+    restoreEditorCaret(snap);
+    flashChip('Updated');
+    runtime.render();
+    return;
+  }
+  d._incoming = content;
+  d._incomingMtimeNs = null; // Library docs use version_count, not mtime: the id match above is the guard
+  showConflict();
+  runtime.render();
 }
 
 // ---- transient "Updated" chip -----------------------------------------------
@@ -614,6 +730,17 @@ export function initDocEditor() {
 }
 
 export const actions = {
+  // Composer pill "x": stop attaching this document to the next send, without
+  // closing the dock (spec 2.2: detach is for the next turn only). Consumed
+  // by that one send (chat.js calls consumeAttachDetach after building it),
+  // and also cleared early by resetBufferIdentity if a doc/file is opened or
+  // the dock is closed before that send happens.
+  detachDocPill: () => {
+    const d = docState();
+    if (d) d.attachDetached = true;
+    runtime.render();
+  },
+
   // Library "+ New": create a blank doc, then open it.
   newDoc: async () => {
     try {

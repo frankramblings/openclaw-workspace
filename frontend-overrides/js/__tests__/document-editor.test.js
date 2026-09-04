@@ -32,13 +32,16 @@ globalThis.document = {
 globalThis.window = { addEventListener() {}, innerWidth: 1200, toastui: null };
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
-const { saveTarget, resetBufferIdentity, shouldWarnBeforeUnload, makeSaveGuard } = await import('../redesign/live/document-editor.js');
+const { saveTarget, resetBufferIdentity, shouldWarnBeforeUnload, makeSaveGuard,
+        libraryDocIdFor, consumeAttachDetach, selectionFromMarkdownEditor, selectionFromWysiwygText,
+        shouldAcceptDocUpdate } = await import('../redesign/live/document-editor.js');
+const { runtime } = await import('../redesign/live/runtime.js');
 
 function baseDoc(overrides) {
   return Object.assign({
     open: true, id: null, title: '', status: '',
     wsPath: null, wsRootKey: null, wsMtimeNs: null, wsAbsPath: null,
-    readOnly: false, loadFailed: false, saveFailed: false,
+    readOnly: false, loadFailed: false, saveFailed: false, attachDetached: false,
   }, overrides);
 }
 
@@ -156,5 +159,90 @@ test('makeSaveGuard: repeated isStale checks are pure (no internal mutation)', (
   assert.strictEqual(guard.isStale(5), false, 'checking twice must not itself change staleness');
   assert.strictEqual(guard.isStale(6), true);
   assert.strictEqual(guard.isStale(5), false, 'a later stale check against a newer gen must not retroactively poison an earlier-gen check');
+});
+
+// ---- libraryDocIdFor -------------------------------------------------------
+
+test('libraryDocIdFor: attached iff open + a Library doc + not detached', () => {
+  assert.equal(libraryDocIdFor(baseDoc({ id: 'doc-1' })), 'doc-1');
+  // workspace file (even with a stray id), closed, detached, no state
+  assert.equal(libraryDocIdFor(baseDoc({ id: 'doc-1', wsPath: 'notes/a.md', wsRootKey: 'workspace' })), null);
+  assert.equal(libraryDocIdFor(baseDoc({ open: false, id: 'doc-1' })), null);
+  assert.equal(libraryDocIdFor(baseDoc({ id: 'doc-1', attachDetached: true })), null);
+  assert.equal(libraryDocIdFor(null), null);
+});
+
+// ---- selection helpers ------------------------------------------------------
+//
+// Toast UI's markdown-mode getSelection() returns a NESTED pair
+// [[startLine, startCh], [endLine, endCh]], 1-based on both: verified
+// directly against frontend-overrides/js/vendor/toastui/toastui-editor-all.min.js
+// (its nl()/ol() line<->offset converters), not the {from,to} flat offsets
+// an earlier draft of this helper assumed.
+
+test('selectionFromMarkdownEditor: converts a nested [[line,ch],[line,ch]] pair to flat offsets', () => {
+  const md = 'line one\nline two\nline three\n';
+  // "line two" is line 2, columns 1..9 (1-based, ch=9 is just past the 8th char)
+  assert.deepStrictEqual(selectionFromMarkdownEditor(md, [[2, 1], [2, 9]]),
+    { text: 'line two', from: 9, to: 17, mode: 'md', lines: [2, 2] });
+});
+
+test('selectionFromMarkdownEditor: a collapsed selection, or a malformed/missing pair, is none', () => {
+  const md = 'line one\nline two\n';
+  assert.equal(selectionFromMarkdownEditor(md, [[2, 1], [2, 1]]), null); // collapsed
+  assert.equal(selectionFromMarkdownEditor(md, null), null);
+  assert.equal(selectionFromMarkdownEditor(md, [[1, 1]]), null); // wrong shape (not a pair of pairs)
+});
+
+test('selectionFromMarkdownEditor: prefers a provided selectedText (Toast UI getSelectedText()) over slicing', () => {
+  const md = 'line one\nline two\n';
+  const out = selectionFromMarkdownEditor(md, [[1, 1], [1, 5]], 'line');
+  assert.equal(out.text, 'line');
+});
+
+test("selectionFromWysiwygText: wraps Toast UI's getSelectedText() string; blank is no selection", () => {
+  assert.deepStrictEqual(selectionFromWysiwygText('hello'),
+    { text: 'hello', from: null, to: null, mode: 'wysiwyg' });
+  assert.equal(selectionFromWysiwygText(''), null);
+  assert.equal(selectionFromWysiwygText('   '), null);
+  assert.equal(selectionFromWysiwygText(null), null);
+});
+
+// ---- shouldAcceptDocUpdate --------------------------------------------------
+
+test('shouldAcceptDocUpdate: accepts an id-matching frame, rejects everything else', () => {
+  assert.equal(shouldAcceptDocUpdate(baseDoc({ id: 'doc-1' }), { type: 'doc_update', doc_id: 'doc-1', content: 'x' }), true);
+  assert.equal(shouldAcceptDocUpdate(baseDoc({ id: 'doc-1' }), { type: 'doc_update', doc_id: 'doc-2' }), false);
+  assert.equal(shouldAcceptDocUpdate(baseDoc({ id: 'doc-1', wsPath: 'a.md' }), { type: 'doc_update', doc_id: 'doc-1' }), false);
+  assert.equal(shouldAcceptDocUpdate(baseDoc({ open: false, id: 'doc-1' }), { type: 'doc_update', doc_id: 'doc-1' }), false);
+  assert.equal(shouldAcceptDocUpdate(null, { type: 'doc_update', doc_id: 'doc-1' }), false);
+  assert.equal(shouldAcceptDocUpdate(baseDoc({ id: 'doc-1' }), { type: 'other', doc_id: 'doc-1' }), false);
+});
+
+test('resetBufferIdentity: clears a detached-pill flag left by the previous buffer', () => {
+  const d = baseDoc({ attachDetached: true });
+  resetBufferIdentity(d);
+  assert.strictEqual(d.attachDetached, false);
+});
+
+// ---- consumeAttachDetach ----------------------------------------------------
+//
+// Spec 2.2: the pill's x detaches "for the next turn" only, not permanently.
+// consumeAttachDetach is the read-and-clear step chat.js (Task 3) calls once
+// per send, right after deciding whether THIS send attaches: it always
+// leaves attachDetached false afterward, so the send after that re-attaches.
+
+test('consumeAttachDetach: clears attachDetached on the live docState so the next send re-attaches', () => {
+  const d = baseDoc({ id: 'doc-1', attachDetached: true });
+  runtime.state = { docEditor: d };
+  assert.equal(libraryDocIdFor(d), null, 'detached: this send omits active_doc_id');
+  consumeAttachDetach();
+  assert.strictEqual(d.attachDetached, false);
+  assert.equal(libraryDocIdFor(d), 'doc-1', 'the send after that re-attaches by default');
+});
+
+test('consumeAttachDetach: a no-op with no runtime.state (never throws)', () => {
+  runtime.state = null;
+  assert.doesNotThrow(() => consumeAttachDetach());
 });
 

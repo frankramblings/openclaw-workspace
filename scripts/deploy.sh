@@ -97,9 +97,12 @@ http_code() { # url -> the HTTP status, or 000 when the request never landed
   "$CURL" -s -o /dev/null -m 5 -w '%{http_code}' "$1" 2>/dev/null || echo 000
 }
 # The SPA index behind a login wall answers 302, without one 200. Anything
-# else (000, 404, 5xx) means the static mount is broken.
+# else (000, 404, 5xx) means the static mount is broken. The probe announces
+# itself as a browser navigation (Accept: text/html): the auth gate 302s only
+# those and answers 401 to API-style clients, which is not a broken mount.
 smoke_static() { # url-base -> echoes the code, returns non-zero when it is bad
-  local code; code="$(http_code "$1/static/index.html")"
+  local code
+  code="$("$CURL" -s -o /dev/null -m 5 -H 'Accept: text/html' -w '%{http_code}' "$1/static/index.html" 2>/dev/null || echo 000)"
   printf '%s' "$code"
   case "$code" in 200|302) return 0 ;; *) return 1 ;; esac
 }

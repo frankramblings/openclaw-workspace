@@ -121,6 +121,9 @@ test('both tenants are probed on the paths the auth gate allowlists', () => {
   assert.ok(!curls.some((l) => /\/marissa\/api\//.test(l)), 'no /marissa/api/ probe');
   assert.ok(!curls.some((l) => /\/api\/capabilities/.test(l)), 'no /api/capabilities probe');
   assert.ok(!curls.some((l) => /\/api\/changes\//.test(l)), 'no changes-tracker call (it needs auth)');
+  const statics = curls.filter((l) => /\/static\/index\.html/.test(l));
+  assert.ok(statics.length >= 2, 'both static probes present');
+  assert.ok(statics.every((l) => /-H Accept: text\/html/.test(l)), 'static probes announce a browser navigation, so a login wall answers 302 not 401');
   assert.ok(curls.some((l) => /127\.0\.0\.1:8801\/static\/index\.html/.test(l)), 'her static index smoke');
   assert.ok(curls.some((l) => /127\.0\.0\.1:8800\/static\/index\.html/.test(l)), 'his static index smoke');
   assert.ok(r.stdout.includes('[summary] smoke:'), 'the summary reports both smoke results');

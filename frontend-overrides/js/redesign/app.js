@@ -11,6 +11,7 @@ import { AVATAR, filterSlashCommands } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
 import { renderCenter, renderChatList, chatMsg, inboxToastHtml } from './surfaces.js';
 import { suggestGhost } from './suggest-ghost.js';
+import { handleMentionKeydown } from './live/mention-picker.js';
 import { mChatMsg } from './mobile/mobile-surfaces.js';
 import { renderCompanion, renderReveal } from './companion.js';
 import { renderMobile, mobileActions, wireMobileGestures } from './mobile/mobile-app.js';
@@ -1462,6 +1463,23 @@ root.addEventListener('keydown', (e) => {
       e.preventDefault();
       state.slashDismissed = true;
       render();
+      return;
+    }
+  }
+
+  // @-mention picker (live/mention-picker.js): must run AFTER the slash menu
+  // (a "/" draft never has an open mention token, so this never fires while
+  // slash is active anyway, but the ordering documents the precedence) and
+  // BEFORE the ghost-suggestion / plain-Enter handling below, since Enter/Tab
+  // here pick a mention instead of sending or accepting a ghost. Runs for
+  // both draft (desktop) and mdraft (mobile) -- the picker itself is a
+  // direct-DOM widget with no render-loop dependency, so it works on the
+  // mobile composer the slash menu deliberately skips.
+  if ((fk === 'draft' || fk === 'mdraft')
+      && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter'
+          || e.key === 'Tab' || e.key === 'Escape')) {
+    if (handleMentionKeydown(e, t)) {
+      e.preventDefault();
       return;
     }
   }

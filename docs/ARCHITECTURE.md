@@ -336,6 +336,76 @@ Deploying this feature needs the same two steps as the mentions feature
 above: `scripts/sync-frontend.sh` for the frontend half, a service restart
 for the backend half.
 
+### URL clip (2026-09)
+
+`backend/clip.py`'s `POST /api/clip` is the first route in this codebase
+that fetches an arbitrary user-supplied URL, so the SSRF guard it
+introduces (`clip_guard.py`) was built from scratch, not adapted from an
+existing pattern (`backend/websearch.py` only ever calls SerpAPI's own
+JSON API). The pipeline is three modules with no shared state:
+`clip_guard.py` (pure SSRF policy, no I/O) validates a URL's scheme,
+credentials, and hostname shape, then `resolve_and_check` requires every
+DNS-resolved address to clear the same deny-list (loopback, RFC1918,
+link-local, multicast, reserved, unspecified, RFC 6598 shared/CGNAT
+space, and their IPv6 equivalents, plus `localhost` and any
+`.local`/`.internal`/`.lan` host); `clip_fetch.py` runs a manual,
+guard-revalidated redirect loop (`httpx.AsyncClient(follow_redirects=False)`)
+so every hop, not just the first URL, goes back through the same guard,
+capped at 3 redirects, under one wall-clock budget
+(`WORKSPACE_CLIP_TIMEOUT_S`, default 15 s) that covers both connecting
+and the streamed body read, checked before each hop and again on every
+chunk; the body is capped at `WORKSPACE_CLIP_MAX_BYTES` (default 5 MB),
+enforced mid-stream rather than trusting Content-Length, and the response
+Content-Type must be one of `text/html`, `application/xhtml+xml`,
+`text/plain`, `text/markdown`, `application/pdf`. `clip_extract.py` turns
+the fetched body into markdown: `trafilatura` when installed (falling
+back to a tag-stripped-text extractor if it is missing, raises, or
+returns nothing usable), a pass-through for `text/plain`/`text/markdown`,
+and the existing `attachments.py` PDF-text helper for `application/pdf`.
+
+Honest limitation, not fully closed: the guard is check-then-connect
+(`resolve_and_check` validates the resolved addresses, then httpx
+resolves the same hostname again when it actually connects), so a narrow
+DNS-rebinding window remains between those two resolutions. The per-hop
+re-check plus the deny-list closes the practical case (a redirect or a
+plain lookup landing on a static internal host); it does not close a
+live, precisely-timed TTL-0 rebinding attack. Closing that fully needs
+connecting directly to the already-checked IP with the original Host
+header preserved (an httpx transport-level change), accepted as a
+residual v1 risk.
+
+`POST /api/clip` takes JSON `{url, title?, session_id?}` and returns
+`{ok: true, document: <doc>, mention: "@[Title](doc:<id>)", meta:
+{source_url, final_url, site_name, byline, fetched_at, content_type,
+bytes, extractor, redirects}}` on success. A failure is `{ok: false,
+error, detail}` with `error` one of `bad_request` (400, a malformed JSON
+body or a non-string `title`/`session_id`), `bad_url` (400, an
+unparseable URL, a bad scheme, embedded credentials, or a control
+character), `blocked_host` (400, the SSRF guard), `fetch_failed` (502, a
+connection error, a non-200 status, or an unresolvable host),
+`too_large` (413), `unsupported_type` (415), `extract_failed` (422,
+nothing readable came out), or `write_failed` (500, the document write
+or version snapshot itself failed). Re-clipping a URL already in the
+Library (matched by an exact, `clip_guard`-normalized `source_url`)
+snapshots the existing document's body into version history, then
+updates it in place rather than creating a duplicate; a brand-new clip
+creates a `documents.py` entry with `source_url`, `source_final_url`,
+`source_site`, `source_byline`, and `clipped_at` alongside the usual
+fields.
+
+Three entry points share this one route: a Library "Clip URL" button
+that prompts for a URL and opens the resulting document; a composer
+"Clip" chip (`clip-core.js`) that appears whenever the trimmed draft is
+exactly one http(s) URL; and a `?action=clip&q=<url>[&mention=1]` deep
+link (`deeplink.js`) for an iOS Shortcut, which optionally drops the
+mention token into a fresh chat's composer.
+
+Deploying this needs `scripts/sync-frontend.sh` for the frontend half,
+and for the backend half both a service restart and `pip install -r
+backend/requirements.txt` to pick up `trafilatura` (an optional,
+lazily-imported dependency: without it, clip runs on the tag-stripped
+fallback extractor instead of failing).
+
 ## The frontend: vendor + overrides + bake
 
 The UI is a vanilla-JS SPA. It is assembled, not hand-edited in place:

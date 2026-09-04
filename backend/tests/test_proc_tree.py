@@ -11,7 +11,7 @@ def _procs(*rows):
 # The spike's shape A: `bin/task run -- bash -c 'sleep 16'` under shell 100.
 SHAPE_A = _procs(
     (100, 1, 10, "bash -i"),
-    (200, 100, 20, "python3 /home/frank/.openclaw/workspace/bin/task run --id x"),
+    (200, 100, 20, "python3 /srv/agent/bin/task run --id x"),
     (300, 200, 30, "bash -c sleep 16; echo done"),
     (400, 300, 40, "sleep 16"),
     (900, 1, 90, "some unrelated daemon"),

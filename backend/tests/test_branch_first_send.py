@@ -70,6 +70,7 @@ async def test_compose_helper_passthrough_when_no_pending_context(_isolated_bran
 def test_chat_stream_prepends_preamble_on_first_send(_isolated_branch_context_dir, monkeypatch):
     from backend import branch_context
 
+    monkeypatch.setattr(config, "user_name", lambda: "Frank")
     sess = sessions_store.create(name="branched", model=None)
     branch_context.write(
         sess["id"], "src-1",
@@ -123,6 +124,7 @@ def test_chat_stream_websearch_on_first_send_keeps_branch_preamble(
     dropped forever."""
     from backend import branch_context
 
+    monkeypatch.setattr(config, "user_name", lambda: "Frank")
     sess = sessions_store.create(name="branched", model=None)
     branch_context.write(
         sess["id"], "src-1",

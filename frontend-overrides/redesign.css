@@ -1294,3 +1294,8 @@ pre.diff .meta { color: var(--faint, #8a94a6); }
 /* Settings → Projects card (spec 6.3) */
 .set-proj-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)}
 .set-proj-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Settings → Projects: suggested projects (discovery proposals) */
+.set-proposal{flex-wrap:wrap}
+.set-proposal .set-proposal-samples{flex-basis:100%;font-size:12px;margin-top:2px}
+.set-btn.primary{border-color:var(--accent)}

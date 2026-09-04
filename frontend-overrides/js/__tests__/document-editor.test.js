@@ -86,7 +86,7 @@ test('saveTarget: nothing open (or no state) targets nothing', () => {
 
 test('resetBufferIdentity: switching from a workspace file to a Library doc drops the stale wsPath so autosave cannot cross-write', () => {
   // State left behind by a previous openWorkspaceFile call.
-  const d = baseDoc({ wsPath: 'notes/a.md', wsRootKey: 'workspace', wsMtimeNs: 42, wsAbsPath: '/home/x/notes/a.md', readOnly: false });
+  const d = baseDoc({ wsPath: 'notes/a.md', wsRootKey: 'workspace', wsMtimeNs: 42, wsAbsPath: '/srv/x/notes/a.md', readOnly: false });
   resetBufferIdentity(d);
   d.id = 'doc-9'; // openDoc assigns the new id after resetting
   assert.deepStrictEqual(saveTarget(d), { kind: 'doc', id: 'doc-9' }, 'must save to the newly-opened Library doc, not the stale workspace path');

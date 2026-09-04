@@ -254,11 +254,12 @@ def entities_enabled() -> bool:
 def entities_dir() -> Path:
     """Entities directory.
     Env INBOX_ENTITIES_DIR > inbox.json entities_dir >
-    /home/frank/.openclaw/workspace/OpenClaw_Vault/20_Reference/Knowledge/Entities.
+    ~/.openclaw/workspace/OpenClaw_Vault/20_Reference/Knowledge/Entities.
     """
     raw = (os.environ.get("INBOX_ENTITIES_DIR")
            or inbox_config().get("entities_dir")
-           or "/home/frank/.openclaw/workspace/OpenClaw_Vault/20_Reference/Knowledge/Entities")
+           or str(Path.home() / ".openclaw" / "workspace" / "OpenClaw_Vault"
+                  / "20_Reference" / "Knowledge" / "Entities"))
     return Path(raw).expanduser()
 
 

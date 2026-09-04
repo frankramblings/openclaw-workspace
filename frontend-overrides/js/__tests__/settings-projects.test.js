@@ -56,5 +56,7 @@ test('renderRow projects: empty state before load and no-active-projects state',
 
   const s2 = { surface: 'settings', setSection: 'projects', ui: {}, accent: '#4fe3d1', live: { projects: [] } };
   const html2 = renderCenter(s2);
-  assert.match(html2, /No active projects/);
+  // Task 6 replaces the old backfill-only empty state with the suggested
+  // projects flow's "No projects yet" copy (see projects-settings.js).
+  assert.match(html2, /No projects yet/);
 });

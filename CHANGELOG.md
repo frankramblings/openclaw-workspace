@@ -55,6 +55,10 @@ not just the original maintainer's setup.
 - Safety: a purpose-built SSRF guard, the first in this codebase to fetch an arbitrary user-supplied URL. Only http(s) URLs with a public hostname are fetchable; no localhost, private/link-local/reserved/CGNAT ranges, or `.local`/`.internal`/`.lan`/`.localhost` hosts, checked on the literal host and again on every resolved address and every redirect hop (up to 3), under one wall-clock budget (default 15 s) covering the whole fetch including the body read, with a 5 MB size cap enforced mid-stream and a content-type allow-list (HTML, plain text, markdown, PDF). Compressed responses are refused rather than decompressed, so the size cap always counts real wire bytes.
 - Extraction: readable article text via `trafilatura`, with a plain-text fallback when it is not installed; PDF and plain-text/markdown URLs are also supported. Deploying this needs `pip install -r backend/requirements.txt` to pick up `trafilatura`; without it, clip still works, just with the plainer fallback extractor.
 
+### Tenant portability (2026-09)
+
+- Tenant portability: per-tenant names, roots, and project seeds; project discovery with accept/dismiss; shared publish scan in the test suite; scripts/deploy.sh deploys both tenants.
+
 ### Phase 1 — Genericization (already merged to main)
 
 - All maintainer-specific identifiers removed from source and committed assets.

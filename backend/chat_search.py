@@ -37,8 +37,16 @@ log = logging.getLogger("workspace.chat_search")
 
 # --- Tunables ----------------------------------------------------------------
 _DB_PATH = config.DATA_DIR / "chat_search.db"
-# Local embed endpoint (kamino ollama, LAN). Override with CHAT_EMBED_URL.
-_EMBED_URL = os.environ.get("CHAT_EMBED_URL", "http://100.97.60.15:11434/api/embed")
+
+
+# Local embed endpoint (ollama, LAN); override with CHAT_EMBED_URL. A
+# function, not a constant, so tests can call it directly and a per-tenant
+# host stays current.
+def _default_embed_url() -> str:
+    return f"http://{config.local_host()}:11434/api/embed"
+
+
+_EMBED_URL = os.environ.get("CHAT_EMBED_URL", _default_embed_url())
 _EMBED_MODEL = os.environ.get("CHAT_EMBED_MODEL", "nomic-embed-text")
 # nomic-embed-text is asymmetric: index docs and queries get distinct task
 # prefixes for best retrieval quality.

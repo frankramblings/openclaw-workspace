@@ -28,6 +28,7 @@ import { usageLine, usageTitle, sessionTotalsLine } from './usage-view.js';
 import { usagePanelHtml } from './usage-panel.js';
 import { changesCardHtml } from './changes-view.js';
 import { changesSettingsHtml } from './changes-settings.js';
+import { projectsSettingsHtml } from './projects-settings.js';
 // Fetch caps for the task-6.2 "showing first N" disclosure footer (capNotice,
 // below). NOT imported from the live/*.js modules that own them — every
 // live/*.js file eventually imports api.js, which reads `location.origin` at
@@ -108,7 +109,7 @@ export function renderChatList(s) {
       <div style="display:flex;justify-content:flex-end;margin-top:6px"><button data-act="cycleSessionSort" title="Sort order" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer">${s.convSort === 'alpha' ? 'A–Z' : 'Recent'} ⇅</button></div>
     </div>
     <div class="conv-scroll">${convListBody(s)}</div>
-    <div class="conv-foot">${esc(s.live?.chat?.cwd ?? '/home/frank/.openclaw/workspace')}</div>
+    ${s.live?.chat?.cwd ? `<div class="conv-foot">${esc(s.live.chat.cwd)}</div>` : ''}
   </div>`;
 }
 
@@ -1299,20 +1300,8 @@ function settingsSurface(s) {
         return `<div class="set-shortcut"><span class="act">${esc(r.action)}</span>${map(r.keys, (k) => `<span class="set-key">${esc(k)}</span>`)}</div>`;
       case 'user':
         return `<div class="set-user"><span class="av">${esc(r.av)}</span><div style="flex:1"><div class="nm">${esc(r.name)}</div><div class="rl">${esc(r.role)}</div></div><span class="edit">Edit</span></div>`;
-      case 'projects': {
-        const list = s.live?.projects;
-        if (!Array.isArray(list)) return '<div class="set-text set-live-empty">Projects haven’t loaded yet.</div>';
-        const act = list.filter((p) => !p.archived).sort((a, b) => String(a.name).localeCompare(String(b.name)));
-        const arch = list.filter((p) => p.archived).sort((a, b) => String(a.name).localeCompare(String(b.name)));
-        const row = (p) => `<div class="set-proj-row"><span class="nm">${esc(p.name)}</span>`
-          + `<button class="set-btn" data-act="renameProject" data-arg="${esc(p.id)}">Rename</button>`
-          + (p.archived
-            ? `<button class="set-btn" data-act="unarchiveProject" data-arg="${esc(p.id)}">Unarchive</button>`
-            : `<button class="set-btn" data-act="archiveProject" data-arg="${esc(p.id)}">Archive</button>`)
-          + `<button class="set-btn danger" data-act="deleteProject" data-arg="${esc(p.id)}">Delete</button></div>`;
-        return (act.length ? map(act, row) : '<div class="set-text">No active projects. Run the backfill to seed the starter list.</div>')
-          + (arch.length ? `<div class="set-row-head" style="margin-top:10px">Archived</div>${map(arch, row)}` : '');
-      }
+      case 'projects':
+        return projectsSettingsHtml(s);
       case 'text':
         return `<div class="set-text">${esc(r.text)}</div>`;
       case 'accent': {

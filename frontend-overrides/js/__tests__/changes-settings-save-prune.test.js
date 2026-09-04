@@ -34,7 +34,7 @@ function freshState(prune_dirs) {
   return {
     live: {
       changesSettings: {
-        config: { roots: ['/home/frank/meetings'], prune_dirs, max_bytes: 262144 },
+        config: { roots: ['/srv/meetings'], prune_dirs, max_bytes: 262144 },
         stats: { blobs: 0, blob_bytes: 0, roots: [] },
         saving: false, error: null, rebuild: { running: false },
       },

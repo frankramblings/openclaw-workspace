@@ -1,5 +1,7 @@
 """Auto-filer (spec §6): strict pick-one-or-none prompt on the local title
 model, never raising into a turn; seeded backfill over titles."""
+import json
+
 import pytest
 
 from backend import config, local_llm, project_classify, projects_store, sessions_store
@@ -28,13 +30,23 @@ def _sess(name, **kw):
     return sessions_store.get(rec["id"])
 
 
-def test_seed_if_empty_creates_the_final_list_once():
+def _write_seed(entries):
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = config.DATA_DIR / project_classify.SEED_FILE_NAME
+    path.write_text(json.dumps({"schema_version": 1, "projects": entries}))
+
+
+def test_seed_if_empty_applies_seed_file_once():
+    _write_seed([
+        {"name": "Alpha", "archived": False, "hints": ["a"]},
+        {"name": "Beta", "archived": True, "hints": ["b"]},
+    ])
     n = project_classify.seed_if_empty()
     names = {p["name"]: p for p in projects_store.list_projects()}
-    assert n == len(project_classify.SEEDS) == 11
-    assert names["Wedding"]["archived"] is True
-    assert names["Social strategy"]["archived"] is False
-    assert "hootsuite" in names["Social strategy"]["hints"]
+    assert n == 2
+    assert names["Beta"]["archived"] is True
+    assert names["Alpha"]["archived"] is False
+    assert "a" in names["Alpha"]["hints"]
     assert project_classify.seed_if_empty() == 0
 
 
@@ -132,6 +144,7 @@ async def test_backfill_seeds_and_files_recent_unfiled_only(monkeypatch):
     base = int(_time.time() * 1000)
     times = iter(base + i * 1000 for i in range(50))
     monkeypatch.setattr(sessions_store, "_now_ms", lambda: next(times))
+    _write_seed([{"name": "Plex", "archived": False, "hints": ["plex"]}])
     old = _sess("ancient thing")
     fresh = _sess("Plex whisper server setup")
     filed = _sess("Kamino models", folder="p-already")
@@ -147,7 +160,6 @@ async def test_backfill_seeds_and_files_recent_unfiled_only(monkeypatch):
     monkeypatch.setattr(local_llm, "can_route", lambda ref: True)
     monkeypatch.setattr(local_llm, "complete", fake_complete)
     # make `old` fall outside the window by rewriting its updated stamp directly
-    import json
     data = json.loads(sessions_store._STORE_FILE.read_text())
     for s in data["sessions"]:
         if s["id"] == old["id"]:
@@ -162,7 +174,6 @@ async def test_backfill_seeds_and_files_recent_unfiled_only(monkeypatch):
     assert sessions_store.get(arch["id"])["folder"] is None
     assert sessions_store.get(old["id"])["folder"] is None
     assert len(seen) == 1
-    assert projects_store.find_by_name("Wedding")["archived"] is True
 
 
 @pytest.mark.anyio
@@ -174,6 +185,7 @@ async def test_backfill_aborts_after_three_consecutive_model_failures(monkeypatc
     # _BACKFILL_RETRY_DELAYS) before it counts as one strike; three
     # consecutive strikes -- 3 sessions x 4 attempts = 12 calls -- must
     # abort the run instead.
+    projects_store.create("Plex", hints=["plex"])
     ids = [_sess(f"thread {i}")["id"] for i in range(5)]
     calls = []
 

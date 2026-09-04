@@ -30,14 +30,22 @@ from . import config, fsutil
 log = logging.getLogger("changes")
 _LOCK = threading.RLock()
 
+
+def default_roots() -> list[str]:
+    """Roots a fresh tenant watches: the agent's workspace, this checkout, and
+    the gateway config, all derived from HOME and REPO_ROOT. Persisted
+    configs keep whatever roots they already list (load_config fills only
+    missing keys), so changing this never edits an existing tenant."""
+    home = Path.home()
+    return [
+        str(home / ".openclaw" / "workspace"),
+        str(config.REPO_ROOT),
+        str(home / ".openclaw" / "openclaw.json"),
+    ]
+
+
 DEFAULT_CONFIG = {
-    "roots": [
-        "/home/frank/.openclaw/workspace",
-        "/home/frank/openclaw-workspace",
-        "/home/frank/code/podcast-agent",
-        "/home/frank/meetings",
-        "/home/frank/.openclaw/openclaw.json",
-    ],
+    "roots": default_roots(),
     "prune_dirs": [
         ".git", "node_modules", ".venv*", ".venv_*", "__pycache__", ".tmp", ".trash",
         "tmp", "plugins", "mcp", ".attachments", ".chat-attachments",

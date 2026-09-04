@@ -176,7 +176,7 @@ function extractSharedImages(text) {
     const p = raw.trim();
     if (!p) return '';
     // http(s), data:, and same-origin URLs (`/api/…`, `/__openclaw__/…`) pass
-    // through as-is. Everything else (bare filesystem paths like `/home/frank/…`
+    // through as-is. Everything else (bare filesystem paths like `/srv/...`
     // or `~/…`) goes through the allow-listed workspace-media proxy. Without
     // the `/api/` / `/__openclaw__/` carve-out, managed-outgoing image URLs
     // rehydrated by `_map_history` on refresh got wrapped as file paths and

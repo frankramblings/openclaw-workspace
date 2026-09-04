@@ -11,6 +11,7 @@
 #
 # Flags:
 #   --name <NAME>           agent display name (skips the prompt)
+#   --user-name <NAME>      your name, how the agent addresses you (skips the prompt)
 #   --accent <#hex>         theme accent color   (default keeps current/ #4fe3d1)
 #   --yes, -y               accept defaults, no prompts (CI / scripted installs)
 #   --no-sync               skip the frontend sync step
@@ -43,6 +44,7 @@ DATA_DIR="$ROOT/.data"
 BRANDING="$DATA_DIR/branding.json"
 
 NAME=""
+USER_NAME=""
 ACCENT=""
 ASSUME_YES=0
 DO_SYNC=1
@@ -65,6 +67,7 @@ CALDAV_USER=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --name)         NAME="${2:-}"; shift 2 ;;
+    --user-name)    USER_NAME="${2:-}"; shift 2 ;;
     --accent)       ACCENT="${2:-}"; shift 2 ;;
     --yes|-y)       ASSUME_YES=1; shift ;;
     --no-sync)      DO_SYNC=0; shift ;;
@@ -181,8 +184,10 @@ except Exception:
 
 CUR_NAME="$(read_json agent_name)"
 CUR_ACCENT="$(read_json accent)"
+CUR_USER="$(read_json user_name)"
 DEF_NAME="${CUR_NAME:-Claw}"
 DEF_ACCENT="${CUR_ACCENT:-#4fe3d1}"
+DEF_USER="${CUR_USER:-}"
 
 echo "── OpenClaw Workspace setup ─────────────────────────────"
 echo
@@ -200,6 +205,13 @@ if [[ -z "$NAME" ]]; then
   fi
 fi
 
+# --- User name (optional) ---------------------------------------------------
+if [[ -z "$USER_NAME" && "$ASSUME_YES" != 1 ]]; then
+  printf "Your name, as %s should address you [%s]: " "${NAME:-$DEF_NAME}" "${DEF_USER:-skip}"
+  read -r USER_NAME || true
+fi
+USER_NAME="${USER_NAME:-$DEF_USER}"
+
 # --- Accent (optional) ------------------------------------------------------
 if [[ -z "$ACCENT" ]]; then
   if [[ "$ASSUME_YES" == 1 ]]; then
@@ -214,17 +226,19 @@ fi
 # --- Persist ----------------------------------------------------------------
 mkdir -p "$DATA_DIR"
 python3 -c 'import json,sys
-path, name, accent = sys.argv[1:4]
+path, name, accent, user = sys.argv[1:5]
 try:
     data = json.load(open(path))
 except Exception:
     data = {}
 data["agent_name"] = name.strip() or "Claw"
 data["accent"] = accent.strip() or "#4fe3d1"
+if user.strip():
+    data["user_name"] = user.strip()
 json.dump(data, open(path, "w"), indent=2)
 open(path, "a").write("\n")
-print("  saved %s: agent_name=%r accent=%r" % (path, data["agent_name"], data["accent"]))' \
-  "$BRANDING" "$NAME" "$ACCENT"
+print("  saved %s: agent_name=%r accent=%r user_name=%r" % (path, data["agent_name"], data["accent"], data.get("user_name")))' \
+  "$BRANDING" "$NAME" "$ACCENT" "$USER_NAME"
 echo
 
 # --- Gateway connection + doctor --------------------------------------------

@@ -95,11 +95,11 @@ def test_secret_path_with_quote_is_shell_safe():
     # A secret path containing a single quote must not break/inject auth.cmd.
     toml = ec.render_gmail_account(
         email="m@gmail.com", display_name="M",
-        secret_path="/home/o'reilly/.pw", is_default=True)
+        secret_path="/srv/o'reilly/.pw", is_default=True)
     d = tomllib.loads(toml)  # still valid TOML
     # the parsed auth.cmd is a valid POSIX command that cats the exact path
     cmd = d["accounts"]["gmail"]["backend"]["auth"]["cmd"]
-    assert cmd == "cat '/home/o'\\''reilly/.pw'"
+    assert cmd == "cat '/srv/o'\\''reilly/.pw'"
 
 
 def test_add_account_secret_is_600_atomic(tmp_path):

@@ -7,6 +7,7 @@ here is best-effort and never raises into the turn that triggered it."""
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -15,44 +16,51 @@ from . import config, local_llm, projects_store, sessions_store
 
 log = logging.getLogger(__name__)
 
-# Final seed list (Frank, 2026-09-01). Hints are lowercase example keywords
-# the prompt shows next to each project. Wedding seeds archived so its
-# threads leave RECENT without a live project.
-SEEDS: list[dict] = [
-    {"name": "Creator & partner program", "archived": False,
-     "hints": ["creator program", "influencer", "partnership", "partner", "collab", "amanda", "heike", "taylor deliverable", "briefs", "broadcast partner"]},
-    {"name": "UNBOUND", "archived": False,
-     "hints": ["unbound", "comms planning", "social first activation"]},
-    {"name": "Social strategy", "archived": False,
-     "hints": ["hootsuite", "linkedin", "youtube", "organic social", "engaged views", "okr", "audience", "brand forum", "social strategy"]},
-    {"name": "Team & 1:1s", "archived": False,
-     "hints": ["1:1", "1on1", "meeting notes", "agenda", "team changes", "feedback", "support team", "meeting recap"]},
-    {"name": "Wistia tooling", "archived": False,
-     "hints": ["wistia mcp", "smart crop", "multicam", "lipsync", "talking head", "webinars mcp", "granola", "obsidian sync", "github pipeline", "agenda automation"]},
-    {"name": "Local AI", "archived": False,
-     "hints": ["kamino", "local ai", "mlx", "qwen", "glm", "hermes", "omlx", "whisper server", "cloud vs local"]},
-    {"name": "Plex", "archived": False,
-     "hints": ["plex", "endor", "radarr", "vnc", "storage", "internet slowdown", "apple tv"]},
-    {"name": "Workspace", "archived": False,
-     "hints": ["workspace", "pwa", "gateway", "chat data", "cron jobs", "dashboard", "tts", "openclaw"]},
-    {"name": "BWG", "archived": False,
-     "hints": ["bwg", "digression", "episode", "doomsday", "fireside", "sdcc"]},
-    {"name": "Podcast pipeline", "archived": False,
-     "hints": ["podcast pipeline", "podcast editing", "side hustle", "monetization", "savage", "fireside migration", "rss"]},
-    {"name": "Wedding", "archived": True,
-     "hints": ["wedding", "toast", "cake", "marriage", "planner"]},
-]
+# Per-tenant seed list: DATA_DIR/projects_seed.json =
+# {"schema_version": 1, "projects": [{"name", "archived", "hints"}]}.
+# Written by the operator (or setup); missing or malformed means no seeding.
+# Project names are tenant data and never live in code.
+SEED_FILE_NAME = "projects_seed.json"
+
+
+def load_seeds() -> list[dict]:
+    """Seed entries from the tenant's seed file. Never raises; logs once and
+    returns [] when the file is missing, malformed, or has no valid entries."""
+    path = config.DATA_DIR / SEED_FILE_NAME
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        log.warning("projects seed file %s is not valid JSON; ignoring", path)
+        return []
+    items = data.get("projects") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        log.warning("projects seed file %s has no 'projects' list; ignoring", path)
+        return []
+    out: list[dict] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        name = " ".join(str(it.get("name") or "").split()).strip()
+        if not name:
+            continue
+        hints = it.get("hints") if isinstance(it.get("hints"), list) else []
+        out.append({"name": name, "archived": bool(it.get("archived")),
+                    "hints": [str(h).strip().lower() for h in hints if str(h).strip()]})
+    return out
+
 
 _ID_RE = re.compile(r"p-[0-9a-f]{8}")
 _BACKFILL_LOCK = asyncio.Lock()
 
 
 def seed_if_empty() -> int:
-    """Create the seed projects when the store has none. Idempotent."""
+    """Create the tenant's seed projects when the store has none. Idempotent."""
     if projects_store.list_projects():
         return 0
     n = 0
-    for s in SEEDS:
+    for s in load_seeds():
         try:
             projects_store.create(s["name"], hints=s["hints"], archived=s["archived"])
             n += 1

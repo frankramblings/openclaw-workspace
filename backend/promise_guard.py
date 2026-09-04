@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import re
 
-from . import task_registry, turn_state
+from . import config, task_registry, turn_state
 
 log = logging.getLogger(__name__)
 
@@ -68,20 +68,21 @@ _WAKE_MARKER = "[[promise-wake]]"
 def _wake_seed(phrase: str) -> str:
     """The user-role message that seeds the self-wake turn. First line is the
     marker followup.history_card keys on to render a compact card."""
+    name = config.user_name()
     return "\n".join([
         _WAKE_MARKER,
-        f'Follow-through check: at the end of your last turn you told Frank '
+        f'Follow-through check: at the end of your last turn you told {name} '
         f'"{phrase}", but no waker was registered — so nothing was going to '
-        f'bring you back and the promise would have died silently until he '
+        f'bring you back and the promise would have died silently until they '
         f'spoke again.',
         "",
         "You're back now, on your own. Make good on it for the ACTUAL horizon "
         "of what you promised:",
-        "- Can finish it now? Do it and report the outcome to Frank.",
+        f"- Can finish it now? Do it and report the outcome to {name}.",
         "- Depends on a background job? (Re)start it under bin/followup so its "
-        "completion pings you, then tell Frank it's running.",
+        f"completion pings you, then tell {name} it's running.",
         "- Genuinely later (hours/days)? Set a cron/reminder for that time and "
-        "tell Frank the plan + ETA in one line.",
+        f"tell {name} the plan + ETA in one line.",
         "- Already handled or needs nothing? Say so briefly and stop.",
         "",
         "Do NOT just re-promise into the void — register a real waker "

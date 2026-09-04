@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -39,6 +41,12 @@ def test_delete_unfiles_sessions():
 
 
 def test_backfill_starts_background_task(monkeypatch):
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    seed_path = config.DATA_DIR / project_classify.SEED_FILE_NAME
+    seed_path.write_text(json.dumps({"schema_version": 1, "projects": [
+        {"name": "Alpha", "archived": False, "hints": []},
+        {"name": "Beta", "archived": True, "hints": []},
+    ]}))
     ran = {}
 
     async def fake_backfill(since_days=90):
@@ -50,11 +58,11 @@ def test_backfill_starts_background_task(monkeypatch):
     assert r.status_code == 200 and r.json() == {"status": "started"}
     assert ran == {"since": 30}
     # I4: the route seeds synchronously (not inside the -- here faked --
-    # background backfill), so the sidebar has the 11 seeds to show the
-    # instant "Re-run backfill" returns, without waiting on the model.
+    # background backfill), so the sidebar has the seed file's projects to
+    # show the instant "Re-run backfill" returns, without waiting on the model.
     projects = client.get("/api/projects").json()
-    assert len(projects) == 11
-    assert next(p for p in projects if p["name"] == "Wedding")["archived"] is True
+    assert len(projects) == 2
+    assert next(p for p in projects if p["name"] == "Beta")["archived"] is True
     monkeypatch.setattr(project_classify, "backfill_running", lambda: True)
     assert client.post("/api/projects/backfill", json={}).json() == {"status": "running"}
 

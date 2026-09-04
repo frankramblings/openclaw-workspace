@@ -8,6 +8,9 @@
 #                          [--force-gateway] [--gateway-wait SECONDS]
 #
 # Rollback (also printed at the end): see docs/SHIPPING.md "Two tenants".
+#
+# DEPLOY_PREFLIGHT_CLEAN=1 skips BOTH preflight checks (deploy-from-main and
+# clean-tree). It is for tests and worktree dry runs only, never a real deploy.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -25,6 +28,9 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
 done
+if [[ ! "$GW_WAIT" =~ ^[0-9]+$ ]]; then
+  echo "--gateway-wait wants a non-negative whole number of seconds, got: $GW_WAIT" >&2; exit 2
+fi
 if [[ "$SKIP_TESTS" == 1 && "$I_KNOW" != 1 ]]; then
   echo "--skip-tests needs --i-know (you are shipping untested code to two tenants)" >&2; exit 2
 fi
@@ -54,8 +60,8 @@ say()  { printf '[%s] %s\n' "$1" "$2"; }
 # Only planned commands are logged; real runs are observed by what they touch.
 logc() { [[ -n "$LOG" && "$DRY" == 1 ]] && printf '%s\n' "$*" >> "$LOG" || true; }
 run()  { logc "$@"; if [[ "$DRY" == 1 ]]; then say plan "$*"; else "$@"; fi; }
-# Read-only commands run even under --dry-run.
-ro()   { "$@"; }
+# Read-only commands run even under --dry-run, and are logged there too.
+ro()   { logc "$@"; "$@"; }
 as_m() { run "$SUDO" -n -u "$M_USER" "$@"; }
 # Nothing runs as her under --dry-run except the preflight probe, so this is
 # plan-only there and prints nothing; callers fall back to a placeholder.
@@ -121,10 +127,16 @@ GW_RESTARTED=0
 if [[ "$SKIP_M" != 1 ]]; then
   T0=$SECONDS
   TS="$(date +%Y%m%d-%H%M%S)"
+  # Her current sha is the rollback target, so read and validate it before we
+  # touch anything.
+  M_OLD="$(as_m_ro bash -c "cd '$M_REPO' && git rev-parse HEAD" 2>/dev/null || echo '')"
+  if [[ "$DRY" == 1 ]]; then
+    M_OLD="${M_OLD:-(dry)}"
+  elif [[ ! "$M_OLD" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "could not read her current sha; refusing to reset $M_REPO" >&2; exit 1
+  fi
   say marissa:backup ".data -> .data.bak-$TS"
   as_m bash -c "cd '$M_REPO' && cp -a .data '.data.bak-$TS' && ls -dt .data.bak-* | tail -n +4 | xargs -r rm -rf"
-  M_OLD="$(as_m_ro bash -c "cd '$M_REPO' && git rev-parse HEAD" 2>/dev/null || echo '?')"
-  M_OLD="${M_OLD:-(dry)}"
   say marissa:reset "fetch + reset to origin/public (was $M_OLD)"
   as_m bash -c "cd '$M_REPO' && git fetch -q origin public && git reset -q --hard origin/public"
   if [[ -n "$OLD_PUBLIC" && -n "$NEW_PUBLIC" ]] && [[ -n "$($GIT diff --name-only "$OLD_PUBLIC" "$NEW_PUBLIC" -- pyproject.toml 2>/dev/null)" ]]; then
@@ -136,8 +148,13 @@ if [[ "$SKIP_M" != 1 ]]; then
   say marissa:restart "openclaw-workspace-marissa.service"; run "$SUDO" -n "$SYSTEMCTL" restart openclaw-workspace-marissa.service
   say marissa:smoke "$M_URL/marissa"
   if [[ "$DRY" != 1 ]]; then
-    wait_http "$M_URL/marissa/api/capabilities" 60 || wait_http "$M_URL/api/capabilities" 10 \
-      || { echo "Marissa's service did not come back; rollback: sudo -u $M_USER git -C $M_REPO reset --hard $M_OLD && restore .data.bak-$TS" >&2; exit 1; }
+    # Only her real mount counts; a bare /api/capabilities can answer while
+    # the /marissa mount is broken.
+    wait_http "$M_URL/marissa/api/capabilities" 60 \
+      || { echo "Marissa's service did not answer on /marissa/api/capabilities; rollback:" >&2
+           echo "  $SUDO -n -u $M_USER bash -c \"cd $M_REPO && git reset --hard $M_OLD && rm -rf .data && cp -a .data.bak-$TS .data\"" >&2
+           echo "  $SUDO -n $SYSTEMCTL restart openclaw-workspace-marissa.service" >&2
+           exit 1; }
     ro "$CURL" -fsS -m 5 -X POST "$M_URL/marissa/api/changes/rebuild" >/dev/null || say marissa:smoke "changes rebuild skipped"
   fi
 
@@ -154,15 +171,22 @@ if [[ "$SKIP_M" != 1 ]]; then
       say marissa:gateway "plan: wait for her gateway to be idle (up to ${GW_WAIT}s), then restart openclaw-gateway-marissa.service"
     else
       say marissa:gateway "waiting for her gateway to be idle (up to ${GW_WAIT}s)"
+      INFLIGHT_F="$M_REPO/.data/turns_inflight.json"
       waited=0; idle=0
       while (( waited < GW_WAIT )); do
-        inflight="$(as_m_ro cat "$M_REPO/.data/turns_inflight.json" 2>/dev/null || echo '{"inflight":{}}')"
-        if [[ "$inflight" == *'"inflight":{}'* || "$inflight" == *'"inflight": {}'* ]]; then idle=1; break; fi
-        if [[ "$(printf '%s' "$inflight" | "$PY" -c 'import json,sys
+        # Missing file = a fresh tenant = idle. Present but unreadable or
+        # unparseable = assume busy, never restart mid-turn.
+        if ! as_m_ro test -e "$INFLIGHT_F" >/dev/null 2>&1; then idle=1; break; fi
+        if inflight="$(as_m_ro cat "$INFLIGHT_F" 2>/dev/null)"; then
+          if [[ "$inflight" == *'"inflight":{}'* || "$inflight" == *'"inflight": {}'* ]]; then idle=1; break; fi
+          if [[ "$(printf '%s' "$inflight" | "$PY" -c 'import json,sys
 try:
     d = json.load(sys.stdin); print(0 if d.get("inflight") else 1)
 except Exception:
-    print(1)' 2>/dev/null || echo 1)" == 1 ]]; then idle=1; break; fi
+    print(0)' 2>/dev/null || echo 0)" == 1 ]]; then idle=1; break; fi
+        else
+          say marissa:gateway "could not read turns_inflight.json; treating her gateway as busy"
+        fi
         sleep 5; waited=$((waited + 5))
       done
       if [[ "$idle" == 1 ]]; then
@@ -180,5 +204,11 @@ fi
 # ---- summary ------------------------------------------------------------------
 say summary "main $($GIT rev-parse --short HEAD 2>/dev/null || echo '?'); public $OLD_PUBLIC -> $NEW_PUBLIC; marissa skipped=$SKIP_M gateway_restarted=$GW_RESTARTED dry_run=$DRY"
 if [[ "$SKIP_M" != 1 ]]; then
-  say rollback "sudo -u $M_USER git -C $M_REPO reset --hard ${M_OLD:-<old sha>}; restore $M_REPO/.data.bak-${TS:-<ts>}; sudo systemctl restart openclaw-workspace-marissa.service"
+    R_SHA="${M_OLD:-}"
+  if [[ ! "$R_SHA" =~ ^[0-9a-f]{40}$ ]]; then R_SHA="<previous sha>"; fi
+  say rollback "$SUDO -n -u $M_USER bash -c \"cd $M_REPO && git reset --hard $R_SHA && rm -rf .data && cp -a .data.bak-${TS:-<ts>} .data\""
+  say rollback "$SUDO -n $SYSTEMCTL restart openclaw-workspace-marissa.service"
+  if [[ "$R_SHA" == "<previous sha>" ]]; then
+    say rollback "find <previous sha> with: $SUDO -n -u $M_USER bash -c \"cd $M_REPO && git reflog\""
+  fi
 fi

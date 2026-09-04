@@ -14,7 +14,7 @@ function stubDir(overrides = {}) {
   mk('python', 'exit ${STUB_PYTEST_EXIT:-0}');
   mk('node', 'exit ${STUB_NODE_EXIT:-0}');
   // The preflight probe `sudo -n -u marissa true` is not logged as an action.
-  mk('sudo', 'if [ "$1" = "-n" ] && [ "$2" = "true" ]; then exit 0; fi; if [ "$1" = "-n" ] && [ "$2" = "-u" ]; then shift 3; if [ "$1" != "true" ]; then echo "as-marissa $*" >> "' + log + '"; fi; if [ "$1" = "cat" ]; then echo "${STUB_INFLIGHT:-{\\"inflight\\":{}}}"; fi; exit 0; fi; exit 0');
+  mk('sudo', 'if [ "$1" = "-n" ] && [ "$2" = "true" ]; then exit 0; fi; if [ "$1" = "-n" ] && [ "$2" = "-u" ]; then shift 3; if [ "$1" != "true" ]; then echo "as-marissa $*" >> "' + log + '"; fi; if [ "$1" = "cat" ]; then echo "${STUB_INFLIGHT:-{\\"inflight\\":{}}}"; fi; if [ "$1" = "bash" ]; then echo "${STUB_M_SHA:-0123456789abcdef0123456789abcdef01234567}"; fi; exit 0; fi; exit 0');
   mk('systemctl', 'exit 0');
   mk('curl', 'echo "{\\"ok\\":true}"; exit 0');
   mk('git', 'case "$1" in rev-parse) echo "abc1234";; diff) echo "${STUB_GW_DIFF:-}";; status) echo "";; branch) echo "main";; *) ;; esac; exit 0');
@@ -82,4 +82,5 @@ test('missing patch marker also triggers the gateway restart', () => {
 test('--skip-tests needs --i-know', () => {
   assert.notEqual(run(['--skip-tests'], stubDir()).status, 0);
   assert.equal(run(['--skip-tests', '--i-know', '--dry-run'], stubDir()).status, 0);
+  assert.equal(run(['--gateway-wait', 'soon', '--dry-run'], stubDir()).status, 2);
 });

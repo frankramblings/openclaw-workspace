@@ -75,6 +75,52 @@ def _host_has_valid_charset(host: str) -> bool:
     return bool(_HOSTNAME_CHARS_RE.match(host))
 
 
+def _normalize_and_validate_host(host: str) -> str:
+    """Lowercase `host` and reject it (as bad_url) if it is not a shape a
+    real hostname or IP literal can take. Shared by check_url (the static
+    URL gate) and resolve_and_check (the DNS-time gate) so neither can be
+    handed a host shape the other would have rejected.
+
+    A bracketed IPv6 literal ("[::1]", as _literal_ip also accepts, for a
+    caller that passes one directly rather than through urlsplit, which
+    strips the brackets itself) only needs its inner character set
+    checked -- the dot-label rules below are for DNS names.
+
+    Otherwise: strip exactly one trailing root-label dot ("example.com."
+    is the same host as "example.com"), then reject any host that still
+    has an empty label -- a leading dot, doubled dots anywhere, or a dot
+    that survives that single strip (i.e. two or more trailing dots, like
+    "localhost.."), all of which sail past a naive dot-strip-and-compare
+    and would otherwise defeat the exact-hostname/suffix, IP-literal, and
+    numeric-obfuscation checks below. Finally reject any character outside
+    the hostname/IP-literal alphabet (a NUL byte, an embedded space, ...)."""
+    host = host.lower()
+    if host.startswith("[") and host.endswith("]"):
+        inner = host[1:-1]
+        if not inner or not _IPV6_LITERAL_CHARS_RE.match(inner):
+            raise BlockedUrl("bad_url", f"host {host!r} contains characters outside the hostname alphabet")
+        return host
+    if host.endswith("."):
+        host = host[:-1]
+    if not host:
+        raise BlockedUrl("bad_url", "URL has no host")
+    if any(label == "" for label in host.split(".")):
+        raise BlockedUrl("bad_url", f"host {host!r} has an empty label (a leading, doubled, or trailing dot)")
+    if not _host_has_valid_charset(host):
+        raise BlockedUrl("bad_url", f"host {host!r} contains characters outside the hostname alphabet")
+    return host
+
+
+def _reject_if_blocked_hostname(host: str) -> None:
+    """Raise BlockedUrl(reason='blocked_host') for the static hostname
+    denylist (an exact "localhost" match or a `.local`/`.internal`/`.lan`
+    suffix). Shared by check_url and resolve_and_check so a hostname
+    check_url would refuse is refused the same way if resolve_and_check
+    is ever called with it directly (before any DNS lookup happens)."""
+    if host in _BLOCKED_HOSTNAMES or host.endswith(_BLOCKED_SUFFIXES):
+        raise BlockedUrl("blocked_host", f"{host} is not a fetchable host")
+
+
 class BlockedUrl(Exception):
     """Raised by check_url/resolve_and_check when a URL or a resolved
     address fails the SSRF guard. `reason` is a short machine-stable string
@@ -128,7 +174,10 @@ def check_url(url: str) -> str:
     "example.com") is stripped before every one of those checks runs, not
     just before the range check, since it defeats an exact-match hostname
     comparison ("localhost." != "localhost") just as easily as it defeats
-    the numeric-obfuscation and IP-literal checks."""
+    the numeric-obfuscation and IP-literal checks; a host with an empty
+    label anywhere (a leading dot, doubled dots, or two-or-more trailing
+    dots that a single-dot strip doesn't fully clear) is rejected outright
+    for the same reason -- see _normalize_and_validate_host."""
     if not isinstance(url, str) or not url.strip():
         raise BlockedUrl("bad_url", "empty URL")
     raw = url.strip()
@@ -144,15 +193,8 @@ def check_url(url: str) -> str:
     host = parts.hostname
     if not host:
         raise BlockedUrl("bad_url", "URL has no host")
-    host = host.lower()
-    if host.endswith("."):
-        host = host[:-1]
-    if not host:
-        raise BlockedUrl("bad_url", "URL has no host")
-    if not _host_has_valid_charset(host):
-        raise BlockedUrl("bad_url", f"host {host!r} contains characters outside the hostname alphabet")
-    if host in _BLOCKED_HOSTNAMES or host.endswith(_BLOCKED_SUFFIXES):
-        raise BlockedUrl("blocked_host", f"{host} is not a fetchable host")
+    host = _normalize_and_validate_host(host)
+    _reject_if_blocked_hostname(host)
     literal = _literal_ip(host)
     if literal is not None:
         if _is_blocked_ip(literal):
@@ -177,12 +219,20 @@ def resolve_and_check(host: str, *, resolver=None) -> list[str]:
     by the time the request actually fires. `resolver` defaults to
     socket.getaddrinfo(host, None); tests inject a fake with signature
     resolver(host, port) -> list of getaddrinfo-shaped tuples, so no real
-    DNS lookup happens under test. Raises BlockedUrl(reason='blocked_host')
-    if any address is blocked, or (reason='dns_failed') if resolution
-    itself raises -- any Exception, not just the OSError a real
-    socket.getaddrinfo raises, since an injected/custom resolver can fail
-    in other ways and this must fail closed regardless."""
+    DNS lookup happens under test. Raises BlockedUrl(reason='bad_url') if
+    `host` itself is not a shape check_url's static gate would have
+    accepted (an empty label, a bad character, ...) or (reason=
+    'blocked_host') if it is check_url's static hostname/suffix denylist
+    or a blocked IP-literal/resolved-address range, or (reason=
+    'dns_failed') if resolution itself raises -- any Exception, not just
+    the OSError a real socket.getaddrinfo raises, since an injected/custom
+    resolver can fail in other ways and this must fail closed regardless.
+    All of this runs, and can reject, before the resolver is ever called:
+    resolve_and_check must never be handed a host check_url would have
+    refused and have that host reach DNS or the network."""
     getaddrinfo = resolver or socket.getaddrinfo
+    host = _normalize_and_validate_host(host)
+    _reject_if_blocked_hostname(host)
     literal = _literal_ip(host)
     if literal is not None:
         return [str(literal)]

@@ -111,6 +111,23 @@ def test_check_url_rejects_numeric_obfuscated_host_with_trailing_root_dot():
 
 
 @pytest.mark.parametrize("url", [
+    "http://localhost../",     # two trailing dots: a single strip leaves "localhost."
+    "http://127.0.0.1../",     # same, on an IP-literal host
+    "http://foo.local../",     # same, on a blocked-suffix host
+    "http://.example.com/",    # leading dot: empty first label
+    "http://exa..mple.com/",   # doubled dot in the middle: empty label
+    "http://example.com.../",  # three trailing dots
+])
+def test_check_url_rejects_hosts_with_an_empty_label(url):
+    # Never silently allowed, whichever reason the guard settles on for a
+    # given shape (bad_url for the empty-label check itself, blocked_host
+    # if the normalized form also happens to hit the static denylist).
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url(url)
+    assert ei.value.reason in ("bad_url", "blocked_host")
+
+
+@pytest.mark.parametrize("url", [
     "http://100.63.255.255/",
     "http://100.128.0.0/",
 ])
@@ -206,3 +223,19 @@ def test_resolve_and_check_blocks_shared_address_space():
     with pytest.raises(cg.BlockedUrl) as ei:
         cg.resolve_and_check("cgnat.example", resolver=resolver)
     assert ei.value.reason == "blocked_host"
+
+
+def test_resolve_and_check_rejects_empty_label_host_without_calling_resolver():
+    def resolver(host, port):
+        raise AssertionError("must not be called for a host the static gate would reject")
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.resolve_and_check("localhost..", resolver=resolver)
+    assert ei.value.reason == "bad_url"
+
+
+def test_resolve_and_check_rejects_blocked_hostname_with_trailing_dot_without_calling_resolver():
+    def resolver(host, port):
+        raise AssertionError("must not be called for a host the static gate would reject")
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.resolve_and_check("LOCALHOST.", resolver=resolver)
+    assert ei.value.reason in ("bad_url", "blocked_host")

@@ -13,8 +13,19 @@ PUBLISH_EXCLUDES=(
   ':!scripts/publish-scan.sh' ':!scripts/publish-scan-patterns.txt'
   ':!frontend-vendor/' ':!ralph/' ':!RALPH.md' ':!docs/plans/' ':!docs/thrifty/'
 )
-if hits="$(git grep -nIE "$PATTERN" -- . "${PUBLISH_EXCLUDES[@]}" 2>/dev/null)"; then
+# git grep: 0 = matches found (dirty), 1 = no matches (clean), 2+ = a real
+# error (bad pattern, unreadable repo). Never report an error as "clean".
+set +e
+hits="$(git grep -nIE "$PATTERN" -- . "${PUBLISH_EXCLUDES[@]}" 2>&1)"
+rc=$?
+set -e
+if [[ "$rc" -eq 0 ]]; then
   printf '%s\n' "$hits"
   exit 1
+fi
+if [[ "$rc" -ge 2 ]]; then
+  echo "publish scan could not run (git grep exit $rc):" >&2
+  printf '%s\n' "$hits" >&2
+  exit 2
 fi
 exit 0

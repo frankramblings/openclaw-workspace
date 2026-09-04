@@ -69,26 +69,29 @@ if [[ "$ASSUME_YES" != 1 ]]; then
 fi
 
 SRC_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-git checkout --orphan "__public_tmp" >/dev/null 2>&1
-git add -A
+# The snapshot is built entirely in a TEMPORARY INDEX. The working tree and
+# HEAD are never touched: an earlier version checked out an orphan branch and
+# `rm -rf`d the internal trees, which deleted gitignored working files (all of
+# docs/superpowers/) for good. `git read-tree HEAD` snapshots the COMMITTED
+# tree, which the clean-tree check above already guarantees equals the working
+# tree.
+TMP_INDEX="$(mktemp)"
+trap 'rm -f "$TMP_INDEX"' EXIT
+GIT_INDEX_FILE="$TMP_INDEX" git read-tree HEAD
 # 3a. Drop internal dev-planning docs from the public snapshot.
 #     docs/superpowers/ (and the other internal trees below) contain planning/spec
 #     files with maintainer paths and tailnet names. The curated public docs
 #     (README, LICENSE, docs/ARCHITECTURE.md, etc.) are kept; only the internal
 #     working-docs subtrees are removed.
 for internal in docs/superpowers ralph RALPH.md docs/plans docs/thrifty; do
-  if [[ -e "$internal" ]]; then
-    git rm -r -q --cached "$internal" >/dev/null 2>&1 || true
-    rm -rf "$internal"
-  fi
+  GIT_INDEX_FILE="$TMP_INDEX" git rm -r -q --cached --ignore-unmatch "$internal" >/dev/null 2>&1 || true
 done
-git commit -q -m "OpenClaw Workspace — initial public release"
-git branch -D "$BRANCH" >/dev/null 2>&1 || true
-git branch -m "$BRANCH"
-git checkout "$SRC_BRANCH" >/dev/null 2>&1
+TREE="$(GIT_INDEX_FILE="$TMP_INDEX" git write-tree)"
+COMMIT="$(git commit-tree "$TREE" -m "OpenClaw Workspace: initial public release")"
+git branch -f "$BRANCH" "$COMMIT"
 
 echo
-echo "✓ built single-commit branch '$BRANCH' (back on '$SRC_BRANCH')."
+echo "✓ built single-commit branch '$BRANCH' (you never left '$SRC_BRANCH'; nothing on disk changed)."
 echo "  Inspect:  git log --oneline $BRANCH ; git ls-files | wc -l"
 echo "  Publish:  git push <your-remote> $BRANCH:main"
 echo "  (or set '$BRANCH' as the default branch on the remote.)"

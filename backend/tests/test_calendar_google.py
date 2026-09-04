@@ -161,12 +161,43 @@ def test_access_token_refreshes_once_under_concurrent_cold_misses(monkeypatch):
     google_auth._CACHE["token"] = None
     google_auth._CACHE["exp"] = 0.0
     out = []
-    threads = [threading.Thread(target=lambda: out.append(google_auth.access_token()))
-               for _ in range(18)]
-    for t in threads:
-        t.start()
-    gate.set()
-    for t in threads:
-        t.join(5)
-    assert calls["n"] == 1
-    assert out == ["tok"] * 18
+    try:
+        threads = [threading.Thread(target=lambda: out.append(google_auth.access_token()))
+                   for _ in range(18)]
+        for t in threads:
+            t.start()
+        gate.set()
+        for t in threads:
+            t.join(5)
+        assert calls["n"] == 1
+        assert out == ["tok"] * 18
+    finally:
+        # This test parks a far-future expiry in the module-level cache; leave
+        # it and every later test silently reuses "tok" instead of refreshing.
+        google_auth._CACHE["token"] = None
+        google_auth._CACHE["exp"] = 0.0
+
+
+def test_half_open_ranges_anchor_on_the_bound_they_were_given(monkeypatch):
+    """start-only or end-only must not produce timeMax < timeMin."""
+    seen = {}
+
+    def handler(request):
+        if request.url.path.endswith("/users/me/calendarList"):
+            return httpx.Response(200, json={"items": [{"id": "c1", "backgroundColor": "#111"}]})
+        seen.update(dict(request.url.params))
+        return httpx.Response(200, json={"items": []})
+
+    _fake_google(monkeypatch, handler)
+    iso = lambda v: datetime.datetime.fromisoformat(v.replace("Z", "+00:00"))
+
+    asyncio.run(calendar_google.list_events("2030-01-10", ""))
+    lo, hi = iso(seen["timeMin"]), iso(seen["timeMax"])
+    assert seen["timeMin"] == "2030-01-10T00:00:00Z"
+    assert hi > lo and (hi - lo).days == 60
+
+    seen.clear()
+    asyncio.run(calendar_google.list_events("", "2030-01-10"))
+    lo, hi = iso(seen["timeMin"]), iso(seen["timeMax"])
+    assert seen["timeMax"] == "2030-01-10T23:59:59Z"
+    assert hi > lo and (hi - lo).days == 60

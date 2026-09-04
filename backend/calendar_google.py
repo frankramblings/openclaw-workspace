@@ -130,14 +130,32 @@ async def list_calendars() -> list[dict]:
     return [map_calendar(c) for c in data.get("items", [])]
 
 
-def _default_range() -> tuple[str, str]:
-    """Range for a request that names none. Forwarding empty timeMin/timeMax
-    made Google answer 400 for every calendar, and the swallowed failure read
-    to the client as an empty calendar."""
+_RFC3339 = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def _parse_rfc3339(value: str) -> datetime.datetime | None:
+    try:
+        return datetime.datetime.fromisoformat((value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _fill_range(tmin: str, tmax: str) -> tuple[str, str]:
+    """Complete a missing bound. Forwarding empty timeMin/timeMax made Google
+    answer 400 for every calendar, and the swallowed failure read to the client
+    as an empty calendar. A half-open range anchors on the bound it was given,
+    so timeMax can never precede timeMin."""
+    span = datetime.timedelta(days=_DEFAULT_RANGE_DAYS)
     now = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
-    fmt = "%Y-%m-%dT%H:%M:%SZ"
-    return (now.strftime(fmt),
-            (now + datetime.timedelta(days=_DEFAULT_RANGE_DAYS)).strftime(fmt))
+    if tmin and not tmax:
+        anchor = _parse_rfc3339(tmin) or now
+        return tmin, (anchor + span).strftime(_RFC3339)
+    if tmax and not tmin:
+        anchor = _parse_rfc3339(tmax) or (now + span)
+        return (anchor - span).strftime(_RFC3339), tmax
+    if not tmin and not tmax:
+        return now.strftime(_RFC3339), (now + span).strftime(_RFC3339)
+    return tmin, tmax
 
 
 def _short_error(exc: Exception) -> str:
@@ -165,9 +183,7 @@ async def list_events(time_min: str, time_max: str) -> dict:
     read "events" are unaffected; "errors" lets the UI say what went wrong
     instead of showing a silently empty calendar."""
     tmin, tmax = _to_rfc3339(time_min, False), _to_rfc3339(time_max, True)
-    if not tmin or not tmax:
-        d_min, d_max = _default_range()
-        tmin, tmax = tmin or d_min, tmax or d_max
+    tmin, tmax = _fill_range(tmin, tmax)
     cal_data = await _get("/users/me/calendarList")
     cals = [(c["id"], c.get("backgroundColor") or _DEFAULT_COLOR)
             for c in cal_data.get("items", []) if not c.get("hidden")]

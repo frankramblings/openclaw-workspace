@@ -2,7 +2,7 @@
 synthesis server (bin/xtts-server.py; same locked Gary voice config on both hosts).
 
 Two backends, tried in order:
-  1. kamino (the configured local host, port 8123) — launchd ai.kamino.xtts-gary, ~1.5x faster synth.
+  1. kamino (the configured local host, port 8123): launchd ai.kamino.xtts-gary, ~1.5x faster synth.
   2. naboo  (127.0.0.1:8123)    — systemd xtts-tts.service, the reliable fallback.
 
 Each synth server holds the XTTS model + Gary voice latents resident and owns the

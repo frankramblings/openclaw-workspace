@@ -10,8 +10,16 @@ PATTERNS = ROOT / "scripts" / "publish-scan-patterns.txt"
 
 
 def _need_patterns():
-    if not PATTERNS.exists():
-        pytest.skip("no pattern file (public tree)")
+    """Skip only in a published snapshot, which has no .git of its own. In a
+    real checkout a missing pattern file is a deletion, not a public tree, and
+    must fail rather than quietly disarm the scan."""
+    if PATTERNS.exists():
+        return
+    if (ROOT / ".git").exists():
+        raise AssertionError(
+            "scripts/publish-scan-patterns.txt is missing from a git checkout: "
+            "the publish scan would silently pass")
+    pytest.skip("no pattern file (public tree)")
 
 
 def test_publish_scan_is_clean():

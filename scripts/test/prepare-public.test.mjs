@@ -69,3 +69,15 @@ test('publish-scan.sh exits 0 as a no-op when the pattern file is absent', () =>
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stderr, /nothing to scan/);
 });
+
+test('publish-scan.sh still exits 1 and names the file on a real hit', () => {
+  const dir = fixture();
+  // Built at runtime: a literal here would be a hit in THIS repo's own scan.
+  const leak = ['', 'home', 'someone', 'notes'].join('/');
+  writeFileSync(join(dir, 'leak.md'), `see ${leak} for details\n`);
+  git(dir, 'add', 'leak.md');
+  git(dir, 'commit', '-q', '-m', 'leak');
+  const r = spawnSync('bash', ['scripts/publish-scan.sh'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stdout, /leak\.md/);
+});

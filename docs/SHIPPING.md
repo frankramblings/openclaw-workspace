@@ -56,6 +56,29 @@ picks the top unchecked item, ships it, checks it off, commits.
   0 stray tokens, slugs intact; live `frontend/` (Gary) untouched. (User decision:
   *vendor it.*) DONE 2026-06-08.
 
+## Two tenants: one deploy
+
+Both tenants on this box run the same code line. `scripts/deploy.sh` is the
+only supported way to ship: gate (both suites + `scripts/publish-scan.sh`),
+Frank's tenant (sync, restart, smoke), `prepare-public.sh --yes`, then
+Marissa's tenant as her user (backup `.data`, reset to `public`, deps if
+`pyproject.toml` changed, sync, restart, smoke). Her gateway restarts only
+when the run changed `deploy/gateway-patches/` or the dist lacks the patch
+marker, and only after her `turns_inflight.json` has been empty; otherwise
+the script says `SKIPPED gateway restart` and you rerun with `--force-gateway`.
+
+Flags: `--dry-run` (plan only, read-only gate still runs), `--skip-marissa`,
+`--skip-tests --i-know`, `--force-gateway`, `--gateway-wait N`.
+
+Her steps need sudo, and the preflight probe uses `sudo -n`: run `sudo -v`
+once before the deploy (or use `--skip-marissa`, which needs no sudo at all).
+
+Rollback for her tenant is printed at the end of every run: reset her
+checkout to the previous sha, restore the newest `.data.bak-<ts>`, restart
+her workspace unit. Per-tenant data never lives in the repo: names in
+`.data/branding.json` (`agent_name`, `user_name`, `local_host`), project
+seeds in `.data/projects_seed.json`, watched roots in `.data/changes.json`.
+
 ## Pre-publish step (one command, at publish time)
 
 `main` keeps full history (with the maintainer's identifiers in old commits, now

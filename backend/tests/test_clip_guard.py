@@ -103,6 +103,15 @@ def test_check_url_rejects_root_dot_only_host():
     "http://[::ffff:10.1.2.3]/",   # IPv4-mapped IPv6, non-loopback private
     "http://240.0.0.1/",           # reserved (class E)
     "http://[::]/",                # unspecified IPv6 address
+    # Final review, Minor 4/5: pinned so the policy does not depend on the
+    # interpreter's own ipaddress tables or on a DNS answer coming back.
+    "http://foo.localhost/",          # RFC 6761 .localhost
+    "http://[2002:7f00:1::1]/",       # 6to4 wrapping 127.0.0.1
+    "http://[2002:a00:5::1]/",        # 6to4 wrapping 10.0.0.5
+    "http://[2001:0:4136:e378::1]/",  # Teredo
+    "http://[64:ff9b::7f00:1]/",      # NAT64 well-known prefix
+    "http://[64:ff9b:1::7f00:1]/",    # NAT64 local-use prefix
+    "http://[::7f00:1]/",             # ::/8 (IPv4-compatible IPv6)
 ])
 def test_check_url_rejects_blocked_hosts(url):
     with pytest.raises(cg.BlockedUrl) as ei:
@@ -264,3 +273,43 @@ def test_resolve_and_check_rejects_blocked_hostname_with_trailing_dot_without_ca
     with pytest.raises(cg.BlockedUrl) as ei:
         cg.resolve_and_check("LOCALHOST.", resolver=resolver)
     assert ei.value.reason in ("bad_url", "blocked_host")
+
+
+@pytest.mark.parametrize("url", [
+    "http://example.com:65536/",
+    "http://example.com:abc/",
+    "http://example.com:-1/",
+])
+def test_check_url_rejects_a_bad_port(url):
+    # Final review, Critical 2: urllib.parse validates the port lazily, on
+    # attribute access, so each of these used to raise ValueError straight
+    # out of check_url and became a bare 500 from the route.
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url(url)
+    assert ei.value.reason == "bad_url"
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "169.254.169.254", "0.0.0.0"])
+def test_resolve_and_check_rejects_a_blocked_ip_literal(host):
+    # Final review, Important 1: an IP-literal host used to be returned
+    # unchecked, so the deny list had one enforcement point (check_url)
+    # rather than the two the module docstring promises.
+    def resolver(host, port):
+        raise AssertionError("must not reach DNS for a literal")
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.resolve_and_check(host, resolver=resolver)
+    assert ei.value.reason == "blocked_host"
+
+
+@pytest.mark.parametrize("url", [
+    "http://127.0x0.0.1/",
+    "http://127.0.0.0x1/",
+    "http://0x7f.0x0.0x0.0x1/",
+])
+def test_check_url_rejects_mixed_decimal_and_hex_numeric_hosts(url):
+    # Final review, Minor 3: glibc's inet_aton family parses each of these
+    # as 127.0.0.1, but the old digits-only pattern only caught the pure
+    # forms, so these reached DNS instead of failing fast.
+    with pytest.raises(cg.BlockedUrl) as ei:
+        cg.check_url(url)
+    assert ei.value.reason == "bad_url"

@@ -32,6 +32,18 @@ MAX_REDIRECTS = 3
 _UA = "Mozilla/5.0 (compatible; GaryClip/1.0; +https://github.com/openclaw)"
 _ACCEPT = "text/html, application/xhtml+xml, text/plain, text/markdown, application/pdf"
 _REDIRECT_STATUS_CODES = (301, 302, 303, 307, 308)
+# Decompression bomb defense (final review, Critical 1). httpx's
+# res.aiter_bytes() decodes Content-Encoding (gzip/deflate/br) one socket
+# read at a time, BEFORE any size check this module can make, so a 172-byte
+# brotli body declaring 200 MiB of zeros allocated 175 MiB here before the
+# 5 MB cap ever fired. Two halves to the fix, both required: ask for an
+# identity (unencoded) body, and refuse outright any response that comes
+# back encoded anyway, before a single byte is handed to a decoder. With
+# every encoded response refused, the body loop's aiter_bytes() has nothing
+# left to decode, so the cap counts WIRE bytes and the worst case is
+# exactly max_bytes in memory.
+_ACCEPT_ENCODING = "identity"
+_IDENTITY_ENCODINGS = ("", "identity")
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +54,8 @@ class FetchFailed(Exception):
     total time budget was exhausted (during connect or mid-body-read).
 
     `reason` is a short machine-stable string (too_many_redirects,
-    redirect_without_location, timeout, http_status, transport) that
+    redirect_without_location, timeout, http_status, transport,
+    unsupported_encoding) that
     backend/clip.py (Task 4) can map onto an HTTP error code without
     parsing prose. `message` (what str(exc) returns) is always short and
     safe to surface. `detail` is additional diagnostic text for logging;
@@ -96,7 +109,18 @@ def _make_client(timeout_s: float) -> httpx.AsyncClient:
     hitting the network: same "kept as a function so tests can monkeypatch
     cleanly" reasoning as documents._find_pandoc (backend/documents.py:140-147)."""
     return httpx.AsyncClient(follow_redirects=False, timeout=timeout_s,
-                             headers={"User-Agent": _UA, "Accept": _ACCEPT})
+                             headers={"User-Agent": _UA, "Accept": _ACCEPT,
+                                      "Accept-Encoding": _ACCEPT_ENCODING})
+
+
+def _join_location(current: str, location: str) -> str:
+    """Absolutize a redirect's Location against the URL it came from. Its
+    own function (rather than inline in fetch) so a test can make the join
+    itself fail: httpx rejects the crudest malformed Location values in its
+    own header parsing, before fetch() ever sees them, but httpx.URL.join
+    can still raise httpx.InvalidURL, which is NOT an httpx.HTTPError and
+    so is not covered by fetch's transport handler."""
+    return str(httpx.URL(current).join(location))
 
 
 async def fetch(url: str, *, max_bytes: int, timeout_s: float, resolver=None) -> Fetched:
@@ -114,7 +138,18 @@ async def fetch(url: str, *, max_bytes: int, timeout_s: float, resolver=None) ->
     blocked_host/dns_failed) if the URL or any redirect target fails the
     guard, FetchFailed for a connection error/non-200 status/redirect
     loop/exhausted time budget, TooLarge past max_bytes, or UnsupportedType
-    for a content-type off the allowlist. `resolver` is forwarded to
+    for a content-type off the allowlist.
+
+    Known slack in the budget (final review, Minor 1): the deadline is
+    checked before each hop and after each body chunk arrives, but the
+    per-hop httpx read timeout is `remaining` computed at hop start. A
+    server that delivers one chunk just inside the deadline and then
+    stalls forever is cut off by that read timeout rather than by the
+    deadline, so the true worst case is about 2x timeout_s (30 s at the
+    default). Accepted: it is bounded, and it takes a deliberately
+    adversarial server to reach it.
+
+    `resolver` is forwarded to
     clip_guard.resolve_and_check on every hop (tests inject a fake DNS so
     no real lookup happens)."""
     current = clip_guard.check_url(url)
@@ -153,7 +188,16 @@ async def fetch(url: str, *, max_bytes: int, timeout_s: float, resolver=None) ->
                         if hop >= MAX_REDIRECTS:
                             raise FetchFailed("too_many_redirects",
                                                f"too many redirects (> {MAX_REDIRECTS})")
-                        nxt = clip_guard.check_url(str(httpx.URL(current).join(location)))
+                        try:
+                            target = _join_location(current, location)
+                        except (httpx.InvalidURL, ValueError) as exc:
+                            # Final review, Minor 2: httpx.InvalidURL is NOT an
+                            # httpx.HTTPError, so a hostile Location used to
+                            # escape fetch() entirely and land in the route's
+                            # catch-all as a misleading "fetch failed".
+                            raise clip_guard.BlockedUrl(
+                                "bad_url", "unparseable redirect target") from exc
+                        nxt = clip_guard.check_url(target)
                         # Minor 6 (Frank's ruling): an https -> http
                         # downgrade on redirect is allowed here -- a clip
                         # fetch carries no credentials and cookies are
@@ -171,8 +215,20 @@ async def fetch(url: str, *, max_bytes: int, timeout_s: float, resolver=None) ->
                     content_type = _content_type_ok(res.headers.get("content-type", ""))
                     if content_type is None:
                         raise UnsupportedType(res.headers.get("content-type", "") or "(none)")
+                    encoding = (res.headers.get("content-encoding") or "").strip().lower()
+                    if encoding not in _IDENTITY_ENCODINGS:
+                        # Refused BEFORE the body loop, so no compressed byte
+                        # ever reaches a decoder (see _ACCEPT_ENCODING above).
+                        raise FetchFailed("unsupported_encoding",
+                                           f"response used content-encoding {encoding!r}, "
+                                           "only an identity (unencoded) body is accepted")
                     chunks: list[bytes] = []
                     total = 0
+                    # aiter_bytes only ever DECODES a declared
+                    # content-encoding, and the check just above has already
+                    # refused every response that declares one, so these are
+                    # raw wire bytes: `total` is a true bound on how much
+                    # memory this response can cost.
                     async for chunk in res.aiter_bytes():
                         if time.monotonic() > deadline:
                             raise FetchFailed(

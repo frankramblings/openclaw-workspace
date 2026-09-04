@@ -163,6 +163,36 @@ def test_extract_fallback_keeps_sentence_with_inline_tag_on_one_line(monkeypatch
     assert out.markdown == "First with bold and more."
 
 
+def test_extract_fallback_separates_paragraphs_with_a_blank_line(monkeypatch):
+    # Final review, Important 2: joined with a single "\n" every block ran
+    # together, because a lone newline is a soft break in markdown, so a
+    # clipped article rendered as one wall of text.
+    monkeypatch.setattr(ce, "trafilatura", None)
+    html = b"<html><body><p>First para.</p><p>Second para.</p></body></html>"
+    out = ce.extract(_fetched("text/html", html), "https://example.com/a")
+    assert out.markdown == "First para.\n\nSecond para."
+
+
+def test_extract_fallback_strips_html_comments(monkeypatch):
+    # Final review, Minor 8: a comment containing a '>' leaked its tail into
+    # the text as "hidden -->".
+    monkeypatch.setattr(ce, "trafilatura", None)
+    html = b"<html><body><!-- <a>hidden</a> --><p>Visible.</p></body></html>"
+    out = ce.extract(_fetched("text/html", html), "https://example.com/a")
+    assert out.markdown == "Visible."
+
+
+def test_extract_fallback_does_not_treat_header_as_head(monkeypatch):
+    # Final review, Minor 8: "<head[^>]*>" also matched "<header ...>", so a
+    # page with an implicit </head> lost everything up to </header>.
+    monkeypatch.setattr(ce, "trafilatura", None)
+    html = (b"<html><header class=\"x\">Nav text</header>"
+            b"<head><title>T</title></head><body><p>Body.</p></body></html>")
+    out = ce.extract(_fetched("text/html", html), "https://example.com/a")
+    assert "Body." in out.markdown
+    assert "Nav text" in out.markdown
+
+
 def test_decode_body_uses_meta_charset_for_iso_8859_1():
     html = ('<html><head><meta charset="iso-8859-1"></head>'
             '<body><p>Café résumé.</p></body></html>')

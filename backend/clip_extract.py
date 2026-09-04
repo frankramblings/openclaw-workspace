@@ -56,7 +56,13 @@ class Extracted:
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-_HEAD_RE = re.compile(r"(?is)<head[^>]*>.*?</head>")
+# Anchored so <header ...> is not swallowed as a <head> (final review,
+# Minor 8): the tag name must be followed by whitespace or the closing '>'.
+_HEAD_RE = re.compile(r"(?is)<head(?:\s[^>]*)?>.*?</head>")
+# HTML comments are stripped BEFORE any tag handling: a comment containing
+# a '>' (e.g. "<!-- <a>hidden</a> -->") otherwise leaks its tail into the
+# extracted text as "hidden -->".
+_COMMENT_RE = re.compile(r"(?s)<!--.*?-->")
 _SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>")
 # Block-level tags become a line break in the fallback text; everything
 # else (b/i/a/span/em/strong/code, ...) is an inline tag and is stripped
@@ -124,12 +130,15 @@ def _fallback_markdown(html_text: str) -> str:
     raises, or returns nothing. Not real markdown, just readable text,
     but keeps the clip usable instead of failing the whole request over a
     missing dependency, an internal trafilatura error, or a page
-    trafilatura's readability heuristic gives up on. <head> (title/meta/
-    script/style) is dropped first so its text never leaks into the body.
+    trafilatura's readability heuristic gives up on. HTML comments and
+    <head> (title/meta/script/style) are dropped first so neither leaks
+    into the body, and blocks are joined with a BLANK line so they stay
+    separate paragraphs rather than collapsing into one.
     Entities are unescaped LAST, after every tag is gone, so an entity
     like &lt;script&gt; in the visible text can't be mistaken for markup
     partway through."""
-    text = _HEAD_RE.sub(" ", html_text)
+    text = _COMMENT_RE.sub(" ", html_text)
+    text = _HEAD_RE.sub(" ", text)
     text = _SCRIPT_STYLE_RE.sub(" ", text)
     text = _BLOCK_TAG_RE.sub("\n", text)
     text = _TAG_RE.sub("", text)
@@ -137,7 +146,12 @@ def _fallback_markdown(html_text: str) -> str:
     text = _WS_RE.sub(" ", text)
     text = _BLANKLINES_RE.sub("\n\n", text)
     lines = [ln.strip() for ln in text.splitlines()]
-    return "\n".join(ln for ln in lines if ln).strip()
+    # Final review, Important 2: joined with a single "\n" every block ran
+    # together into one paragraph, because a lone newline is a SOFT break in
+    # markdown. Blocks are separated by a blank line so a clipped article
+    # renders as paragraphs in the dock preview and reads that way when it
+    # is mentioned into a turn.
+    return _BLANKLINES_RE.sub("\n\n", "\n\n".join(ln for ln in lines if ln)).strip()
 
 
 def _title_fallback(meta_title: str | None, html_text: str | None, url: str) -> str:

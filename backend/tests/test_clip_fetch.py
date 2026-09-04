@@ -239,4 +239,132 @@ async def test_make_client_uses_safe_defaults():
         assert client.follow_redirects is False
         assert client.headers.get("user-agent") == cf._UA
         assert client.headers.get("accept") == cf._ACCEPT
+        assert client.headers.get("accept-encoding") == "identity"
         assert client.timeout == httpx.Timeout(5)
+
+
+@pytest.mark.asyncio
+async def test_fetch_requests_an_identity_encoding(monkeypatch):
+    """The other half of the decompression-bomb fix (final review, C1):
+    ask servers not to compress in the first place, so the refusal below
+    only ever fires against a server that ignored the request."""
+    seen = {}
+
+    def handler(request):
+        seen["accept-encoding"] = request.headers.get("accept-encoding")
+        return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<p>hi</p>")
+
+    def make_client(timeout_s):
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False,
+                                 timeout=timeout_s,
+                                 headers={"User-Agent": cf._UA, "Accept": cf._ACCEPT,
+                                          "Accept-Encoding": cf._ACCEPT_ENCODING})
+    monkeypatch.setattr(cf, "_make_client", make_client)
+    await cf.fetch("https://example.com/a", max_bytes=1000, timeout_s=5, resolver=_resolver)
+    assert seen["accept-encoding"] == "identity"
+
+
+@pytest.mark.asyncio
+async def test_fetch_refuses_a_compressed_body_without_decoding_it(monkeypatch):
+    """A 200 MiB-of-zeros brotli bomb compresses to a few hundred bytes.
+    Before the fix, httpx's aiter_bytes decoded it one socket read at a
+    time and the size cap only ever saw the DECODED length, so the process
+    grew by about 175 MiB before too_large fired. The response is now
+    refused on its content-encoding header, before a single byte reaches a
+    decoder, so peak RSS barely moves."""
+    import resource
+
+    brotli = pytest.importorskip("brotli")
+    bomb = brotli.compress(b"\0" * (200 * 1024 * 1024))
+    assert len(bomb) < 4096
+    iterated = []
+
+    class _BombStream(httpx.AsyncByteStream):
+        """A real streaming body (not a materialized `content=`, which
+        MockTransport would read and decode itself before fetch() ever saw
+        the response) so this test can prove the refusal happens BEFORE any
+        byte is pulled through the decoder."""
+
+        async def __aiter__(self):
+            iterated.append(True)
+            yield bomb
+
+        async def aclose(self):
+            pass
+
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "text/html",
+                                            "content-encoding": "br"},
+                              stream=_BombStream())
+    _client_with(handler, monkeypatch)
+    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    with pytest.raises(cf.FetchFailed) as exc:
+        await cf.fetch("https://example.com/a", max_bytes=5 * 1024 * 1024, timeout_s=5,
+                       resolver=_resolver)
+    after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    assert exc.value.reason == "unsupported_encoding"
+    assert iterated == [], "the compressed body must never be read or decoded"
+    # ru_maxrss is in KiB on Linux: the bomb would have added about 190 MiB.
+    assert after - before < 50 * 1024
+
+
+@pytest.mark.asyncio
+async def test_fetch_accepts_an_explicit_identity_encoding(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "text/html",
+                                            "content-encoding": "identity"},
+                              content=b"<p>hi</p>")
+    _client_with(handler, monkeypatch)
+    out = await cf.fetch("https://example.com/a", max_bytes=1000, timeout_s=5, resolver=_resolver)
+    assert out.body == b"<p>hi</p>"
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_an_unparseable_redirect_target(monkeypatch):
+    """Final review, Minor 2: httpx.InvalidURL is not an httpx.HTTPError,
+    so an unjoinable Location used to escape fetch() entirely and reach the
+    route's catch-all as a misleading "fetch failed". httpx's own header
+    parsing rejects the crudest malformed Location values before fetch()
+    sees them, so the join itself is made to fail here."""
+    def handler(request):
+        return httpx.Response(302, headers={"location": "/next"})
+
+    def bad_join(current, location):
+        raise httpx.InvalidURL("nope")
+    monkeypatch.setattr(cf, "_join_location", bad_join)
+    _client_with(handler, monkeypatch)
+    with pytest.raises(cg.BlockedUrl) as exc:
+        await cf.fetch("https://example.com/a", max_bytes=1000, timeout_s=5, resolver=_resolver)
+    assert exc.value.reason == "bad_url"
+
+
+@pytest.mark.asyncio
+async def test_fetch_redirect_to_a_dns_private_host_is_refused_before_connecting(monkeypatch):
+    """Spec 3.3's second redirect case: hop 2's target is an ordinary
+    hostname, and only DNS reveals that it points into a private range.
+    Nothing must connect to it."""
+    requested = []
+
+    def handler(request):
+        requested.append(str(request.url))
+        return httpx.Response(302, headers={"location": "http://internal.example/secret"})
+
+    def resolver(host, port=None):
+        if host == "internal.example":
+            return [(2, 1, 6, "", ("10.0.0.5", 0))]
+        return [(2, 1, 6, "", ("93.184.216.34", 0))]
+    _client_with(handler, monkeypatch)
+    with pytest.raises(cg.BlockedUrl) as exc:
+        await cf.fetch("https://example.com/a", max_bytes=1000, timeout_s=5, resolver=resolver)
+    assert exc.value.reason == "blocked_host"
+    assert requested == ["https://example.com/a"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_maps_a_read_timeout_to_the_timeout_reason(monkeypatch):
+    def handler(request):
+        raise httpx.ReadTimeout("too slow", request=request)
+    _client_with(handler, monkeypatch)
+    with pytest.raises(cf.FetchFailed) as exc:
+        await cf.fetch("https://example.com/a", max_bytes=1000, timeout_s=5, resolver=_resolver)
+    assert exc.value.reason == "timeout"

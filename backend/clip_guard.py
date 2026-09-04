@@ -18,8 +18,8 @@ live, precisely-timed DNS-rebinding attack (an attacker-controlled answer
 with TTL 0 flipping between the two resolutions). Closing that fully
 needs connecting directly to the already-checked IP with the original
 Host header preserved (an httpx transport-level change), which is not
-built in this plan and is flagged in Task 7's spec fold-back as a new
-open decision for Frank.
+built in this plan: it is spec decision 14, which Frank decided by
+accepting this residual window for v1.
 
 No allowlist/SSRF guard existed anywhere in this codebase before this
 module (backend/websearch.py only ever calls SerpAPI's own JSON API, never
@@ -32,19 +32,22 @@ import re
 import socket
 from urllib.parse import urlsplit, urlunsplit
 
-_BLOCKED_SUFFIXES = (".local", ".internal", ".lan")
+_BLOCKED_SUFFIXES = (".local", ".internal", ".lan", ".localhost")
 _BLOCKED_HOSTNAMES = {"localhost"}
-# A hostname made only of digits and dots (any label count, including a
-# leading-zero label like "0177") or starting with "0x". ipaddress.ip_address
-# is strict (exactly four decimal octets, no leading zeros) so it does NOT
-# parse a bare 32-bit decimal (2130706433 == 127.0.0.1), a short dotted form
+# A numeric-IP lookalike hostname: EVERY dot-separated label is either all
+# decimal digits or an "0x" hex literal. ipaddress.ip_address is strict
+# (exactly four decimal octets, no leading zeros) so it does NOT parse a bare
+# 32-bit decimal (2130706433 == 127.0.0.1), a short dotted form
 # (127.1 == 127.0.0.1), a hex form (0x7f000001), or an octal-looking dotted
 # form (0177.0.0.1) -- those fall through _literal_ip as "not a literal" and
 # would otherwise reach resolve_and_check/DNS, where some platform resolvers
 # (libc inet_aton-family numeric-address fallbacks) still accept them as
-# real IPv4 addresses. A real DNS hostname is never purely digits and dots
-# together with no letters anywhere, so rejecting this shape outright is safe.
-_NUMERIC_HOST_RE = re.compile(r"^[0-9]+(\.[0-9]+)*$")
+# real IPv4 addresses. Final review, Minor 3: the per-label rule also covers
+# the MIXED forms a digits-only pattern missed ("127.0x0.0.1",
+# "127.0.0.0x1"), which glibc parses as 127.0.0.1 just the same. A real DNS
+# hostname always has a letter-bearing label somewhere, so refusing this
+# shape outright is safe.
+_NUMERIC_LABEL_RE = re.compile(r"^(?:[0-9]+|0x[0-9a-f]+)$")
 # The character set a real hostname/dotted-IPv4 (letters, digits, hyphen,
 # dot) or an IPv6 literal (hex digits, colon, dot for the IPv4-mapped
 # form) can legally contain. Anything else -- a NUL byte, an embedded
@@ -57,6 +60,21 @@ _IPV6_LITERAL_CHARS_RE = re.compile(r"^[0-9a-f:.]+$")
 # check rather than falling out of the is_private/is_reserved properties
 # _is_blocked_ip otherwise relies on.
 _SHARED_ADDRESS_SPACE = ipaddress.ip_network("100.64.0.0/10")
+# Final review, Minor 5: these five IPv6 ranges are classified as private
+# or reserved by Python 3.14's ipaddress tables, but NOT by every older
+# interpreter, where some of them come back global. Pinning them here
+# means this guard's policy does not move with the interpreter version.
+# 2002::/16 (6to4) and 2001::/32 (Teredo) additionally EMBED an IPv4
+# address, and 64:ff9b::/96 plus 64:ff9b:1::/48 (NAT64) translate one, so
+# reaching them is a way to ask a gateway to reach the embedded IPv4:
+# _is_blocked_ip checks that embedded address against the same deny list.
+_BLOCKED_V6_NETWORKS = tuple(ipaddress.ip_network(n) for n in (
+    "2002::/16",       # 6to4
+    "2001::/32",       # Teredo
+    "64:ff9b::/96",    # NAT64 well-known prefix
+    "64:ff9b:1::/48",  # NAT64 local-use prefix
+    "::/8",            # includes ::ffff:0:0/96 and the IPv4-compatible space
+))
 # Fix round 1, Critical 2: a control character (NUL, ESC, ...) or embedded
 # whitespace ANYWHERE in the URL -- not just the host, which is all
 # _HOSTNAME_CHARS_RE below covers -- used to sail straight through
@@ -69,7 +87,8 @@ _UNSAFE_URL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f\s]")
 
 
 def _looks_like_numeric_ip_obfuscation(host: str) -> bool:
-    return host.startswith("0x") or bool(_NUMERIC_HOST_RE.match(host))
+    labels = host.split(".")
+    return all(_NUMERIC_LABEL_RE.match(label) for label in labels)
 
 
 def _host_has_valid_charset(host: str) -> bool:
@@ -157,11 +176,23 @@ def _is_blocked_ip(ip) -> bool:
     RFC 6598 shared (CGNAT) address space, their IPv6 equivalents, and an
     IPv4-mapped IPv6 address whose embedded IPv4 is any of the above
     (::ffff:127.0.0.1 must not slip past the guard just because the outer
-    address is technically IPv6)."""
+    address is technically IPv6). Also true for the explicitly pinned
+    6to4/Teredo/NAT64/::/8 networks (_BLOCKED_V6_NETWORKS) and for a 6to4
+    or Teredo address whose EMBEDDED IPv4 is itself blocked."""
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
     if isinstance(ip, ipaddress.IPv4Address) and ip in _SHARED_ADDRESS_SPACE:
         return True
+    if isinstance(ip, ipaddress.IPv6Address):
+        if any(ip in net for net in _BLOCKED_V6_NETWORKS):
+            return True
+        # 6to4/Teredo carry an IPv4 address inside them; a public-looking
+        # v6 wrapper must not launder a loopback or RFC1918 v4 target.
+        embedded = [ip.sixtofour]
+        if ip.teredo is not None:
+            embedded.extend(ip.teredo)
+        if any(e is not None and _is_blocked_ip(e) for e in embedded):
+            return True
     return bool(
         ip.is_loopback or ip.is_private or ip.is_link_local
         or ip.is_multicast or ip.is_reserved or ip.is_unspecified
@@ -179,7 +210,8 @@ def check_url(url: str) -> str:
     ANYWHERE in the URL (not just the host -- httpx.URL raises its own
     uncaught InvalidURL on a NUL/control byte in the path, so this is
     checked before urlsplit ever runs), a non-http(s) scheme, embedded
-    credentials, an unparseable/hostless URL, or a host containing a
+    credentials, an unparseable/hostless URL, an out-of-range or
+    non-numeric port, or a host containing a
     character outside the hostname alphabet; BlockedUrl(reason='blocked_host')
     for localhost, a `.local`/`.internal`/`.lan` suffix, or an IP-literal
     host in a blocked range. The root-label dot ("example.com." is the same host as
@@ -214,14 +246,22 @@ def check_url(url: str) -> str:
         if _is_blocked_ip(literal):
             raise BlockedUrl("blocked_host", f"{host} resolves to a blocked address range")
     elif _looks_like_numeric_ip_obfuscation(host):
-        # Not parseable by ipaddress (see _NUMERIC_HOST_RE's comment above)
+        # Not parseable by ipaddress (see _NUMERIC_LABEL_RE's comment above)
         # but still numeric-shaped: reject before it ever reaches DNS.
         raise BlockedUrl("bad_url", f"{host} looks like a numeric IP address in disguise, not a real hostname")
     netloc = f"[{host}]" if literal is not None and literal.version == 6 else host
-    if parts.port is not None:
+    try:
+        port = parts.port
+    except ValueError as exc:
+        # urllib.parse validates the port LAZILY, on attribute access, so
+        # ":65536", ":abc" and ":-1" raise here rather than at urlsplit.
+        # Uncaught, that was a bare 500 out of the route (final review,
+        # Critical 2); it is a malformed URL like any other.
+        raise BlockedUrl("bad_url", "invalid port") from exc
+    if port is not None:
         default_port = 80 if scheme == "http" else 443
-        if parts.port != default_port:
-            netloc += f":{parts.port}"
+        if port != default_port:
+            netloc += f":{port}"
     return urlunsplit((scheme, netloc, parts.path or "/", parts.query, ""))
 
 
@@ -249,6 +289,13 @@ def resolve_and_check(host: str, *, resolver=None) -> list[str]:
     _reject_if_blocked_hostname(host)
     literal = _literal_ip(host)
     if literal is not None:
+        # Final review, Important 1: this used to return the literal
+        # unchecked, contradicting the docstring above and leaving the deny
+        # list with a single enforcement point (check_url) rather than the
+        # two the design claims. Any future caller that trusts the
+        # documented contract is now actually covered.
+        if _is_blocked_ip(literal):
+            raise BlockedUrl("blocked_host", f"{host} is in a blocked address range")
         return [str(literal)]
     try:
         infos = getaddrinfo(host, None)

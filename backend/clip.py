@@ -27,6 +27,23 @@ router = APIRouter()
 # Open decision 12 (confirm or change these two caps).
 _DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 _DEFAULT_TIMEOUT_S = 15.0
+# Final review, Minor 6: the env overrides used to be taken at face value.
+# WORKSPACE_CLIP_TIMEOUT_S="inf" disabled the wall-clock budget entirely and
+# "nan" made every deadline comparison false (the preemptive check never
+# fires), while 0 or a negative value made every clip fail instantly. The
+# byte cap had the same shape of problem at the bottom end. Both are clamped
+# into a range that keeps the safety properties true, and a clamp is logged
+# so an operator who typed a value out of range is not left guessing.
+_MIN_TIMEOUT_S = 1.0
+_MAX_TIMEOUT_S = 300.0
+_MIN_MAX_BYTES = 1024
+_MAX_MAX_BYTES = 256 * 1024 * 1024
+
+# Final review, Minor 9: extraction (pypdf on a 5 MB PDF, a regex sweep over
+# 5 MB of HTML) has no internal time bound, and the fetch budget covers only
+# the fetch. This is the ceiling for the extraction stage: a few seconds
+# beyond the default fetch budget, enough that no honest page hits it.
+_EXTRACT_TIMEOUT_S = 20.0
 
 _WS_RE = re.compile(r"\s+")
 
@@ -43,8 +60,26 @@ def _caps() -> tuple[int, float]:
     a test can monkeypatch os.environ per-test with zero cross-test state
     -- monkeypatch's own teardown handles the reset, nothing here needs to
     remember or restore anything."""
-    return (config._env_int("WORKSPACE_CLIP_MAX_BYTES", _DEFAULT_MAX_BYTES),
-            config._env_float("WORKSPACE_CLIP_TIMEOUT_S", _DEFAULT_TIMEOUT_S))
+    max_bytes = _clamp("WORKSPACE_CLIP_MAX_BYTES",
+                       config._env_int("WORKSPACE_CLIP_MAX_BYTES", _DEFAULT_MAX_BYTES),
+                       _MIN_MAX_BYTES, _MAX_MAX_BYTES, _DEFAULT_MAX_BYTES)
+    timeout_s = _clamp("WORKSPACE_CLIP_TIMEOUT_S",
+                       config._env_float("WORKSPACE_CLIP_TIMEOUT_S", _DEFAULT_TIMEOUT_S),
+                       _MIN_TIMEOUT_S, _MAX_TIMEOUT_S, _DEFAULT_TIMEOUT_S)
+    return (int(max_bytes), float(timeout_s))
+
+
+def _clamp(name, value, low, high, default):
+    """`value` forced into [low, high], with a NaN (which compares false
+    against everything, so it would slip through a plain min/max) falling
+    back to `default`. Logs whenever it changes the value."""
+    if value != value:  # NaN
+        log.warning("clip: %s is not a number, using the default %s", name, default)
+        return default
+    clamped = min(max(value, low), high)
+    if clamped != value:
+        log.warning("clip: %s=%s is out of range, clamped to %s", name, value, clamped)
+    return clamped
 
 
 def _err(status: int, error: str, detail: str) -> JSONResponse:
@@ -192,9 +227,20 @@ async def clip_url(request: Request):
         return _err(502, "fetch_failed", "fetch failed")
 
     try:
-        extracted = await asyncio.to_thread(clip_extract.extract, fetched, normalized)
+        # asyncio.wait_for bounds how long the REQUEST waits, not the worker
+        # thread: a to_thread task cannot be cancelled from outside, so on
+        # expiry the thread keeps running to completion in the default
+        # executor and only its result is discarded. That is the accepted
+        # tradeoff (Minor 9): the caller gets a prompt, honest error instead
+        # of hanging for as long as pypdf feels like taking.
+        extracted = await asyncio.wait_for(
+            asyncio.to_thread(clip_extract.extract, fetched, normalized),
+            timeout=_EXTRACT_TIMEOUT_S)
     except clip_extract.ExtractFailed as exc:
         return _err(422, "extract_failed", str(exc))
+    except (asyncio.TimeoutError, TimeoutError):
+        log.warning("clip: extraction exceeded %ss for %s", _EXTRACT_TIMEOUT_S, normalized)
+        return _err(422, "extract_failed", "took too long to read that page")
 
     title = _clean_title(title_override or extracted.title)
     now = vs.now_iso()

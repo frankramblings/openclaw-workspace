@@ -3,10 +3,12 @@ create/update by source_url). clip_fetch.fetch is monkeypatched so no
 network or trafilatura dependency is exercised here -- clip_guard,
 clip_fetch, and clip_extract each have their own unit tests
 (test_clip_guard.py, test_clip_fetch.py, test_clip_extract.py)."""
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import clip, clip_fetch, clip_guard, documents
+from backend import clip, clip_extract, clip_fetch, clip_guard, documents
 from backend.app import app
 from backend.clip_fetch import Fetched
 
@@ -205,10 +207,10 @@ def test_env_caps_are_registered_and_configurable(monkeypatch):
     the env and calls _caps() directly, with no importlib.reload(clip)
     needed and therefore no reload-mutated module state leaking into any
     later test in the session."""
-    monkeypatch.setenv("WORKSPACE_CLIP_MAX_BYTES", "1000")
+    monkeypatch.setenv("WORKSPACE_CLIP_MAX_BYTES", "100000")
     monkeypatch.setenv("WORKSPACE_CLIP_TIMEOUT_S", "3")
     max_bytes, timeout_s = clip._caps()
-    assert max_bytes == 1000
+    assert max_bytes == 100000
     assert timeout_s == 3.0
 
 
@@ -285,3 +287,64 @@ def test_clip_h1_neutralizes_leading_hash_and_brackets(client, vault_docs, monke
     assert doc["title"] == "#1 [Best] Deals"
     h1_line = doc["current_content"].splitlines()[0]
     assert h1_line == "# \\#1 \\[Best\\] Deals"
+
+
+@pytest.mark.parametrize("url", [
+    "http://example.com:65536/",
+    "http://example.com:abc/",
+    "http://example.com:-1/",
+])
+def test_clip_bad_port_is_a_400_not_a_bare_500(client, vault_docs, monkeypatch, url):
+    # Final review, Critical 2: parts.port raises ValueError for each of
+    # these and the route only caught BlockedUrl, so all three were 500s.
+    async def fake_fetch(*a, **kw):
+        raise AssertionError("must not fetch a URL with a bad port")
+    monkeypatch.setattr(clip_fetch, "fetch", fake_fetch)
+    r = client.post("/api/clip", json={"url": url})
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "bad_url"
+
+
+@pytest.mark.parametrize("timeout_env,expected", [
+    ("inf", clip._MAX_TIMEOUT_S),
+    ("0", clip._MIN_TIMEOUT_S),
+    ("-5", clip._MIN_TIMEOUT_S),
+    ("100000", clip._MAX_TIMEOUT_S),
+    ("nan", clip._DEFAULT_TIMEOUT_S),
+])
+def test_caps_clamp_out_of_range_timeouts(monkeypatch, timeout_env, expected):
+    # Final review, Minor 6: "inf" disabled the wall-clock budget entirely
+    # and "nan" made every deadline comparison false, so the preemptive
+    # check never fired.
+    monkeypatch.setenv("WORKSPACE_CLIP_TIMEOUT_S", timeout_env)
+    assert clip._caps()[1] == expected
+
+
+@pytest.mark.parametrize("bytes_env,expected", [
+    ("0", clip._MIN_MAX_BYTES),
+    ("-1", clip._MIN_MAX_BYTES),
+    ("10", clip._MIN_MAX_BYTES),
+    ("999999999999", clip._MAX_MAX_BYTES),
+])
+def test_caps_clamp_out_of_range_byte_caps(monkeypatch, bytes_env, expected):
+    monkeypatch.setenv("WORKSPACE_CLIP_MAX_BYTES", bytes_env)
+    assert clip._caps()[0] == expected
+
+
+def test_clip_extraction_that_runs_too_long_is_extract_failed(client, vault_docs, monkeypatch):
+    """Final review, Minor 9: extraction had no time bound at all (the
+    fetch budget covers only the fetch), so a pathological PDF could keep
+    the request hanging for as long as pypdf took."""
+    async def fake_fetch(url, *, max_bytes, timeout_s, resolver=None):
+        return Fetched(final_url=url, content_type="text/html",
+                       body=b"<html><body><p>hi</p></body></html>", redirects=[])
+    monkeypatch.setattr(clip_fetch, "fetch", fake_fetch)
+
+    def slow_extract(fetched, url):
+        time.sleep(5)
+        raise AssertionError("the request should not have waited for this")
+    monkeypatch.setattr(clip_extract, "extract", slow_extract)
+    monkeypatch.setattr(clip, "_EXTRACT_TIMEOUT_S", 0.05)
+    r = client.post("/api/clip", json={"url": "https://example.com/slow"})
+    assert r.status_code == 422, r.text
+    assert r.json()["error"] == "extract_failed"

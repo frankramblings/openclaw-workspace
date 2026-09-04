@@ -130,6 +130,12 @@ export async function load(state) {
     const projects = await apiGet('/api/projects');
     state.live.projects = Array.isArray(projects) ? projects : (state.live.projects || []);
   } catch (_) { if (!Array.isArray(state.live.projects)) state.live.projects = []; }
+
+  // 6) Suggested projects (discovery proposals) for the Projects card.
+  try {
+    const pp = await apiGet('/api/projects/proposals');
+    state.live.projectProposals = { proposals: pp?.proposals || [], error: pp?.error || null, running: !!pp?.running, busy: false };
+  } catch (_) { state.live.projectProposals = state.live.projectProposals || { proposals: [], error: null, running: false, busy: false }; }
 }
 
 // Settings → Usage: GET /api/usage/summary?days=7|30 into state.live.usage.
@@ -422,5 +428,43 @@ export const actions = {
     cs.rebuild = { running: true, root: 'all roots' }; runtime.render();
     try { await apiJson('/api/changes/rebuild', {}); } catch (_) { cs.error = 'Rebuild failed or already running.'; }
     await loadChangesSettings(state);
+  },
+
+  // Settings → Projects: accept/dismiss a suggested project, or kick off a
+  // fresh discovery pass. `pp.busy` blocks a double-click while accept is
+  // in flight; a failed accept sets `pp.error` (the renderer shows a line
+  // for it) rather than a toast, matching the Changes actions' pattern.
+  projectsAccept: async (pid) => {
+    const state = runtime.state; const pp = state.live.projectProposals; if (!pp || pp.busy) return;
+    pp.busy = true; pp.error = null; runtime.render();
+    try {
+      const rec = await apiJson(`/api/projects/proposals/${encodeURIComponent(pid)}/accept`, {}, 'POST');
+      pp.proposals = pp.proposals.filter((p) => p.id !== pid);
+      if (rec && rec.id) state.live.projects = [...(state.live.projects || []), rec];
+    } catch (e) {
+      if (e?.status === 409 || e?.status === 404) pp.proposals = pp.proposals.filter((p) => p.id !== pid);
+      else pp.error = 'accept_failed';
+    } finally { pp.busy = false; runtime.render(); }
+  },
+  projectsDismiss: async (pid) => {
+    const state = runtime.state; const pp = state.live.projectProposals; if (!pp || pp.busy) return;
+    pp.proposals = pp.proposals.filter((p) => p.id !== pid); runtime.render();
+    try { await apiJson(`/api/projects/proposals/${encodeURIComponent(pid)}/dismiss`, {}, 'POST'); } catch (_) {}
+  },
+  projectsDiscover: async () => {
+    const state = runtime.state;
+    const pp = state.live.projectProposals || (state.live.projectProposals = { proposals: [], error: null, running: false, busy: false });
+    if (pp.running || pp.busy) return;
+    pp.running = true; pp.error = null; runtime.render();
+    try { await apiJson('/api/projects/discover', {}, 'POST'); } catch (_) {}
+    // Poll until the proposal file lands (discover is a background task).
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const res = await apiGet('/api/projects/proposals');
+        if (res && !res.running) { pp.proposals = res.proposals || []; pp.error = res.error || null; pp.running = false; runtime.render(); return; }
+      } catch (_) {}
+    }
+    pp.running = false; runtime.render();
   },
 };

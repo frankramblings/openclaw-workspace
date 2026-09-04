@@ -32,7 +32,9 @@ for (const page of PAGES) {
 
   test(`${page}: no inline on<event>= handler attributes`, () => {
     const html = read(page);
-    const handlers = html.match(/\son[a-z]+\s*=\s*["']/gi) || [];
+    // Unquoted attribute values count too: onclick=doThing() is just as
+    // blocked as onclick="doThing()", and just as easy to reintroduce.
+    const handlers = html.match(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>=`]+)/gi) || [];
     assert.deepEqual(handlers, [], `inline handlers in ${page}: ${handlers.join(', ')}`);
   });
 
@@ -40,23 +42,47 @@ for (const page of PAGES) {
     assert.ok(!read(page).includes('CSP_NONCE'), `${page} still carries CSP_NONCE`);
   });
 
-  test(`${page}: no remote image sources`, () => {
+  test(`${page}: no remote subresource URLs`, () => {
+    // default-src 'self' covers more than images: a remote <script src>, a
+    // remote stylesheet <link href> and a url(https://...) inside a style
+    // attribute are all blocked too. Anchors and <a href> are NOT subresources
+    // and stay allowed (landing.html links to GitHub on purpose).
     const html = read(page);
     const remote = [];
-    const re = /<(?:img|source)\b[^>]*\b(?:src|srcset|poster)\s*=\s*"([^"]*)"/gi;
-    let m;
-    while ((m = re.exec(html)) !== null) {
-      if (/^https?:\/\//i.test(m[1].trim())) remote.push(m[1]);
+
+    const attrRe = /<(?:img|source|script|link|video|audio|track|iframe|embed)\b[^>]*>/gi;
+    const valueRe = /\b(src|srcset|href|poster|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>=`]+))/gi;
+    let tag;
+    while ((tag = attrRe.exec(html)) !== null) {
+      let a;
+      valueRe.lastIndex = 0;
+      while ((a = valueRe.exec(tag[0])) !== null) {
+        const raw = (a[2] !== undefined ? a[2] : a[3] !== undefined ? a[3] : a[4]) || '';
+        for (const part of a[1].toLowerCase() === 'srcset' ? raw.split(',') : [raw]) {
+          const url = part.trim().split(/\s+/)[0];
+          if (/^(?:https?:)?\/\//i.test(url)) remote.push(`${a[1]}=${url}`);
+        }
+      }
     }
-    assert.deepEqual(remote, [], `remote images in ${page}: ${remote.join(', ')}`);
+
+    // url(...) inside an inline style attribute (background images).
+    const styleRe = /\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+    let st;
+    while ((st = styleRe.exec(html)) !== null) {
+      const css = st[1] !== undefined ? st[1] : st[2];
+      const urls = css.match(/url\(\s*['"]?(?:https?:)?\/\/[^)]*\)/gi) || [];
+      remote.push(...urls.map((u) => `style ${u}`));
+    }
+
+    assert.deepEqual(remote, [], `remote subresources in ${page}: ${remote.join(', ')}`);
   });
 
   test(`${page}: every referenced js/pages/*.js file exists`, () => {
     const html = read(page);
-    const re = /<script\b[^>]*\bsrc\s*=\s*"([^"]+)"/gi;
+    const re = /<script\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)')/gi;
     const refs = [];
     let m;
-    while ((m = re.exec(html)) !== null) refs.push(m[1]);
+    while ((m = re.exec(html)) !== null) refs.push(m[1] !== undefined ? m[1] : m[2]);
     const pageRefs = refs.filter((r) => r.includes('js/pages/'));
     assert.ok(pageRefs.length > 0, `${page} references no js/pages/ script`);
     for (const ref of pageRefs) {

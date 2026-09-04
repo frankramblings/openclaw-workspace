@@ -451,8 +451,20 @@ So one config value (the agent name) propagates to the whole UI at build time;
 `backend/security_headers.py` sends the policy as `content-security-policy-report-only`
 by default and as the enforcing `content-security-policy` when `WORKSPACE_CSP_ENFORCE=1`
 is set on the unit (per tenant, so Frank's user unit and Marissa's system unit flip
-independently). Under `script-src 'self'` no inline `<script>` block and no inline
-`on<event>=` attribute runs, and `img-src 'self' data: blob:` drops remote images.
+independently). A tenant that also sets `WORKSPACE_BASE_PATH` needs one extra thing:
+`_spa_html()` (backend/app.py) has to inject an inline import map and an inline
+network shim to make absolute `/static` and `/api` references resolve under the
+prefix, and both are inline scripts. They now carry a per-request nonce, minted by
+the middleware and published on `request.state.csp_nonce`, which is added to
+`script-src` in both header variants, so a base-path tenant can enforce safely. Any
+future inline script the backend injects must take its nonce the same way, or
+enforcement will silently drop it.
+
+Under `script-src 'self'` no un-nonced inline `<script>` block runs, and no inline
+`on<event>=` attribute runs at all (attributes cannot be nonced); `img-src 'self'
+data: blob:` drops remote images and `default-src 'self'` drops remote scripts and
+stylesheets.
+
 Verified enforcement-clean today: the redesign SPA (`/static/index.html`, every
 surface including mobile) and the three standalone pages `login.html`, `newtab.html`
 and `landing.html`, whose scripts now live in `frontend-overrides/js/pages/` and whose

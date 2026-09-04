@@ -16,6 +16,7 @@ import { renderActivity } from './chat-activity.js';
 import { suggestGhost } from './suggest-ghost.js';
 import './task-rows.js'; // side-effect: boots the feed subscription and injects live rows
 import { renderMarkdown } from './markdown.js';
+import { renderWithMentionChips } from './mention-core.js';
 import { providerLogo } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
 import { renderSwitcher } from './switcher.js';
@@ -312,6 +313,9 @@ function renderRounds(m, s) {
 // { role:'assistant'|'user', time, model, text, activity? }
 export function chatMsg(m, s, ghostCtx) {
   const hasText = String(m.text || '').trim().length > 0;
+  // Mention tokens in a sent user message render as chips, never as the
+  // markdown renderer's dead link (its scheme is rejected by safeUrl, so the
+  // token used to show up as an anchor that opens a blank tab).
   const paras = hasText ? renderMarkdown(m.text) : '';
   const carriedCls = m._carried ? ` msg-carried${m._carriedFirst ? ' msg-carried-first' : ''}` : '';
   if (m.role === 'user' && m.sys) {
@@ -345,12 +349,16 @@ export function chatMsg(m, s, ghostCtx) {
     // redesign.css) driven off this element's own mount time — no per-frame
     // JS render loop needed, so it never competes with the surgical-patch
     // rendering the rest of chat.js relies on.
+    // Mention tokens in a sent user message render as chips, never as the
+    // markdown renderer's dead link (safeUrl rejects the note:/doc: scheme, so
+    // the token used to show as an anchor that opens a blank tab).
+    const userParas = hasText ? renderWithMentionChips(m.text, renderMarkdown) : '';
     let pendingRing = '';
     if (m._optimistic && m._deadline) {
       const remaining = Math.max(0, m._deadline - Date.now());
       pendingRing = `<span class="msg-pending-ring" title="Sending in ${Math.ceil(remaining / 100) / 10}s — edit to change it"></span>`;
     }
-    return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span>${pendingRing}<span class="you">You</span></div>${attachHtml}${paras || (attachHtml ? '' : '<p></p>')}${steerCaptionHtml(m)}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
+    return `<div class="msg-user-wrap${carriedCls}" data-msg-id="${esc(m.id)}"><div class="msg-user"><div class="meta"><span class="time">${esc(m.time || '')}</span>${pendingRing}<span class="you">You</span></div>${attachHtml}${userParas || (attachHtml ? '' : '<p></p>')}${steerCaptionHtml(m)}</div>${hasText ? msgTools(m, s.live?.chat?.msgMenuOpen, ctx) : ''}</div>`;
   }
   // Empty/failed turn safeguard: when a turn produced no text and no tool work
   // (e.g. the model isn't served on this plan, or the request errored), show an

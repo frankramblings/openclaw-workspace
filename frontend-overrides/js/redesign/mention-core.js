@@ -125,3 +125,42 @@ export function renderPickerHtml(items, highlighted) {
   }).join('');
   return `<div class="mention-menu">${rows}</div>`;
 }
+
+// A completed mention token in a SENT message. Mirrors backend/mentions.py's
+// MENTION_RE (same title and id grammar) so both sides agree on what counts
+// as a token.
+const MENTION_TOKEN_RE = /@\[([^\]\n]{1,200})\]\((note|doc):([A-Za-z0-9_-]{1,32})\)/g;
+
+// Sentinels that carry a token past the inner renderer untouched. Both are
+// control characters that never appear in chat text, and neither esc() nor
+// the markdown renderer transforms them (markdown.js uses its own, different
+// pair for inline code spans).
+const CHIP_OPEN = '\u0011';
+const CHIP_CLOSE = '\u0012';
+
+/**
+ * renderWithMentionChips(text, renderInner) -> HTML
+ *
+ * Renders a sent user message so `@[Title](note:id)` reads as a chip instead
+ * of leaking the raw token (mobile) or being turned into a dead link by the
+ * markdown renderer (desktop, where `[Title](note:id)` is link syntax whose
+ * scheme safeUrl rejects). Every mention token is swapped for a sentinel
+ * BEFORE `renderInner` runs, so the inner renderer never sees link syntax,
+ * and each sentinel becomes an escaped chip afterwards.
+ *
+ * `renderInner` is the surface's normal text renderer: renderMarkdown on
+ * desktop, an escape-plus-line-break pass on mobile. Pure: no DOM, no
+ * globals, titles always escaped.
+ */
+export function renderWithMentionChips(text, renderInner) {
+  const titles = [];
+  const marked = String(text == null ? '' : text).replace(
+    MENTION_TOKEN_RE, (_m, title) => {
+      titles.push(title);
+      return `${CHIP_OPEN}${titles.length - 1}${CHIP_CLOSE}`;
+    });
+  const html = renderInner ? renderInner(marked) : esc(marked);
+  return String(html).replace(
+    new RegExp(`${CHIP_OPEN}(\\d+)${CHIP_CLOSE}`, 'g'),
+    (_m, i) => `<span class="mention-chip">@${esc(titles[Number(i)] || '')}</span>`);
+}

@@ -490,7 +490,18 @@ html.shell-mobile .oc-toast{max-width:none}
 .mode-toggle button.active-agent{background:var(--teal);color:var(--ink)}
 .mode-toggle button.active-chat{background:var(--elev);color:var(--fg)}
 
-.slash-menu{position:absolute;left:22px;right:22px;bottom:100%;margin-bottom:8px;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:7px;animation:cm-pop var(--dur-micro) var(--ease-decel)}
+/* Final review M3: ONE rule for both composer menus, so the mention picker
+   lines up with the slash menu instead of sitting ~22px further in. Both are
+   inserted into .composer-wrap (desktop) or .m-composer (mobile).
+
+   z-index (Fix round 1, Critical 1 hardening): unlike desktop's .slash-menu
+   (whose only positioned neighbor is composer-wrap's own DOM-order stacking,
+   which already paints it on top), the mobile composer has several other
+   z-indexed siblings (.ghost-suggest at --z-ghost, .m-scroll-btm at
+   --z-row-raised) sharing .m-composer's new positioned box (see mobile.css)
+   -- an explicit --z-dropdown (40, same tier .m-scrim/.m-sheet use for
+   dropdown-ish overlays) keeps the picker on top regardless of DOM order. */
+.slash-menu,.mention-menu{position:absolute;left:22px;right:22px;bottom:100%;margin-bottom:8px;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:7px;z-index:var(--z-dropdown);animation:cm-pop var(--dur-micro) var(--ease-decel)}
 .slash-menu .hd{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--faint);padding:6px 9px 4px}
 .slash-cmd{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:9px;cursor:pointer}
 .slash-cmd:hover,.slash-cmd.sel{background:var(--row-hover)}
@@ -498,19 +509,14 @@ html.shell-mobile .oc-toast{max-width:none}
 .slash-cmd .name{font-family:var(--mono);font-size:14px;color:var(--fg)}
 .slash-cmd .desc{font-size:13px;color:var(--faint)}
 
-/* z-index (Fix round 1, Critical 1 hardening): unlike desktop's .slash-menu
-   (whose only positioned neighbor is composer-wrap's own DOM-order stacking,
-   which already paints it on top), the mobile composer has several other
-   z-indexed siblings (.ghost-suggest at --z-ghost, .m-scroll-btm at
-   --z-row-raised) sharing .m-composer's new positioned box (see mobile.css)
-   -- an explicit --z-dropdown (40, same tier .m-scrim/.m-sheet use for
-   dropdown-ish overlays) keeps the picker on top regardless of DOM order. */
-.mention-menu{position:absolute;left:22px;right:22px;bottom:100%;margin-bottom:8px;background:var(--elev);border:1px solid var(--bd);border-radius:13px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:7px;z-index:var(--z-dropdown);animation:cm-pop var(--dur-micro) var(--ease-decel)}
 .mention-empty{padding:9px 10px;font-size:13px;color:var(--faint)}
 .mention-row{display:flex;align-items:center;justify-content:space-between;gap:11px;padding:9px 10px;border-radius:9px;cursor:pointer}
 .mention-row:hover,.mention-row.sel{background:var(--row-hover)}
 .mention-title{font-size:14px;color:var(--fg)}
 .mention-kind{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+/* A mention token in a sent message renders as a chip on both surfaces
+   (mention-core.js renderWithMentionChips), never as raw token text. */
+.mention-chip{display:inline;padding:1px 6px;border-radius:7px;background:var(--row-hover);border:1px solid var(--bd);color:var(--fg);font-size:.94em;white-space:nowrap}
 
 /* Was a viewport media query (769–1100px) gating on the WHOLE window's
    width — a crude proxy for "the companion pane is open and narrowed the

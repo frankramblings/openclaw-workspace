@@ -42,6 +42,7 @@ globalThis.document = {
 
 const { handleMentionKeydown, __mentionPickerTestHooks } =
   await import('../redesign/live/mention-picker.js');
+const { runtime } = await import('../redesign/live/runtime.js');
 
 test('self-boot: readyState "complete" at import time means initMentionPicker already ran, not deferred to DOMContentLoaded', () => {
   // The module-level self-boot guard ran synchronously when this file
@@ -144,9 +145,10 @@ class FakeNode {
   }
 }
 
-function makeTa(value, selectionStart, focus = 'draft') {
+function makeTa(value, selectionStart, focus = 'draft', model = 'draft') {
   const node = new FakeNode('textarea');
   node.setAttribute('data-focus', focus);
+  node.setAttribute('data-model', model);
   const state = { value, selectionStart };
   Object.defineProperty(node, 'value', {
     get: () => state.value,
@@ -175,12 +177,11 @@ const drain = async () => {
 
 // Opens a token, elapses the debounce, and drains the fetch -- the setup
 // every test below starts from.
-async function openWithResults(results) {
+async function openWithResults(results, ta = makeTa('@a', 2)) {
   const hooks = __mentionPickerTestHooks;
   const savedFetch = globalThis.fetch;
   globalThis.fetch = () => Promise.resolve(jsonRes({ results }));
-  const wrap = new FakeNode('div', 'composer');
-  const ta = makeTa('@a', 2);
+  const wrap = new FakeNode('div', 'composer-wrap');
   wrap.appendChild(ta);
   hooks.onInput({ target: ta });
   mock.timers.tick(120);
@@ -305,7 +306,7 @@ test('stale-response guard: an earlier slow /api/palette response resolving afte
   try {
     const calls = [];
     globalThis.fetch = (url) => new Promise((resolve) => { calls.push({ url: String(url), resolve }); });
-    const wrap = new FakeNode('div', 'composer');
+    const wrap = new FakeNode('div', 'composer-wrap');
     const ta = makeTa('@a', 2);
     wrap.appendChild(ta);
 
@@ -337,7 +338,7 @@ test('stale-response guard: an earlier slow /api/palette response resolving afte
   }
 });
 
-test('Fix round 1, Important 2: a menu node removed out from under an open picker (a background render) bails instead of committing invisibly', async () => {
+test('Final review I5: a menu node removed out from under an open picker repaints and handles the key when the token is still live', async () => {
   const hooks = __mentionPickerTestHooks;
   hooks.closeMenu();
   mock.timers.enable({ apis: ['setTimeout'] });
@@ -352,12 +353,63 @@ test('Fix round 1, Important 2: a menu node removed out from under an open picke
     // would destroy it too) -- `open` stays armed, unaware.
     wrap.removeChild(menuEl);
 
+    assert.strictEqual(handleMentionKeydown({ key: 'Enter' }, ta), true,
+      'the key is handled, never handed to the Enter-to-send fallthrough');
+    assert.strictEqual(ta.value, '@[Alpha](note:n1) ',
+      'the still-live token commits into the textarea the user is typing in');
+    assert.strictEqual(hooks.getOpenState(), null, 'the picker closes after the commit');
+  } finally {
+    mock.timers.reset();
+    hooks.closeMenu();
+  }
+});
+
+test('Final review I5: a detached picker that cannot repaint swallows the Enter instead of sending the half-typed token', async () => {
+  const hooks = __mentionPickerTestHooks;
+  hooks.closeMenu();
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const { wrap, ta } = await openWithResults([{ kind: 'note', id: 'n1', title: 'Alpha' }]);
+    wrap.removeChild(wrap.querySelector('.mention-menu'));
+    // The textarea is out of its composer wrapper too, so there is nowhere to
+    // repaint: the picker must disarm AND still report the key as handled.
+    wrap.removeChild(ta);
+
     const before = ta.value;
-    assert.strictEqual(handleMentionKeydown({ key: 'Enter' }, ta), false,
-      'a detached menu must not read as "handled"');
-    assert.strictEqual(ta.value, before, 'nothing was inserted into the now-invisible textarea');
+    assert.strictEqual(handleMentionKeydown({ key: 'Enter' }, ta), true,
+      'a stale picker swallows one Enter rather than converting it into a send');
+    assert.strictEqual(ta.value, before, 'nothing was inserted');
     assert.strictEqual(hooks.getOpenState(), null, 'the stale state was cleared, not left armed');
   } finally {
+    mock.timers.reset();
+    hooks.closeMenu();
+  }
+});
+
+test('Final review C1: a commit writes the state field the textarea binds (data-model), so the mobile composer sends the picked mention', async () => {
+  const hooks = __mentionPickerTestHooks;
+  hooks.closeMenu();
+  mock.timers.enable({ apis: ['setTimeout'] });
+  const savedState = runtime.state;
+  try {
+    runtime.state = { draft: '@a', mdraft: 'unused' };
+    // The mobile composer: focus-keyed 'mdraft', MODEL-bound to 'draft'.
+    const ta = makeTa('@a', 2, 'mdraft', 'draft');
+    await openWithResults([{ kind: 'note', id: 'n1', title: 'Alpha' }], ta);
+    assert.strictEqual(handleMentionKeydown({ key: 'Enter' }, ta), true);
+    assert.strictEqual(runtime.state.draft, ta.value,
+      'send reads state.draft, so Enter must have written it');
+    assert.strictEqual(runtime.state.mdraft, 'unused');
+
+    // Same for a row click.
+    runtime.state = { draft: '@a', mdraft: 'unused' };
+    const ta2 = makeTa('@a', 2, 'mdraft', 'draft');
+    const { wrap } = await openWithResults([{ kind: 'note', id: 'n2', title: 'Beta' }], ta2);
+    hooks.onClick({ target: wrap.querySelector('.mention-row') });
+    assert.strictEqual(runtime.state.draft, ta2.value);
+    assert.strictEqual(runtime.state.mdraft, 'unused');
+  } finally {
+    runtime.state = savedState;
     mock.timers.reset();
     hooks.closeMenu();
   }
@@ -370,7 +422,7 @@ test('Fix round 1, Important 3: a failed /api/palette request paints a distinct 
   const savedFetch = globalThis.fetch;
   try {
     globalThis.fetch = () => Promise.reject(new Error('network down'));
-    const wrap = new FakeNode('div', 'composer');
+    const wrap = new FakeNode('div', 'composer-wrap');
     const ta = makeTa('@a', 2);
     wrap.appendChild(ta);
     hooks.onInput({ target: ta });

@@ -6,8 +6,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 
-const { mentionTokenAtCaret, shouldClose, insertMention, renderPickerHtml } =
+const { mentionTokenAtCaret, shouldClose, insertMention, renderPickerHtml,
+        renderWithMentionChips } =
   await import('../redesign/mention-core.js');
+const { renderMarkdown } = await import('../redesign/markdown.js');
 
 // ---- mentionTokenAtCaret ---------------------------------------------------
 
@@ -175,4 +177,34 @@ test('renderPickerHtml: no em dashes anywhere in the rendered copy', () => {
   const html = renderPickerHtml(
     [{ kind: 'note', id: 'n1', title: 'Weekly notes' }], 0);
   assert.ok(!html.includes('—'));
+});
+
+// ---- renderWithMentionChips ------------------------------------------------
+
+test('renderWithMentionChips: a sent token becomes a chip, and the markdown renderer never sees it as a link', () => {
+  const html = renderWithMentionChips(
+    'what is on @[Groceries](note:n1) today?', renderMarkdown);
+  assert.ok(html.includes('<span class="mention-chip">@Groceries</span>'));
+  assert.ok(!html.includes('<a '), 'the dud note: link is gone');
+  assert.ok(!html.includes('(note:n1)'), 'the raw token is not shown');
+  assert.ok(html.includes('today?'), 'the surrounding text still renders');
+});
+
+test('renderWithMentionChips: a title containing markup is escaped inside the chip', () => {
+  const html = renderWithMentionChips(
+    'see @[<script>x</script> notes](doc:d1)', (t) => t);
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.ok(!html.includes('<script>'));
+});
+
+test('renderWithMentionChips: several tokens each keep their own title', () => {
+  const html = renderWithMentionChips(
+    '@[Alpha](note:n1) and @[Beta](doc:d1)', (t) => t);
+  assert.ok(html.includes('>@Alpha</span>'));
+  assert.ok(html.includes('>@Beta</span>'));
+});
+
+test('renderWithMentionChips: text with no token is left to the inner renderer', () => {
+  assert.strictEqual(renderWithMentionChips('plain text', (t) => t), 'plain text');
+  assert.strictEqual(renderWithMentionChips(null, (t) => t), '');
 });

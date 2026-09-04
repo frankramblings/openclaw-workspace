@@ -27,10 +27,6 @@ let open = null;        // { start, ta, query, items, highlighted, error, el } |
 let debounceTimer = null;
 let fetchToken = 0;      // staleness guard: only the newest debounced fetch may paint
 
-function composerField(ta) {
-  return ta.getAttribute('data-focus') === 'mdraft' ? 'mdraft' : 'draft';
-}
-
 // Fix round 1, Important 2 + Minor 2: closeMenu used to re-find the node via
 // a global `document.querySelector('.mention-menu')` -- scoped to nothing in
 // particular, and wrong the moment two composers could each have painted one
@@ -60,7 +56,12 @@ function menuDetached() {
 
 function paintMenu(ta) {
   if (!open || typeof document === 'undefined') return;
-  const wrap = ta.closest && ta.closest('.composer, .m-composer');
+  // Final review M3: the desktop anchor is `.composer-wrap`, the same
+  // positioned box `.slash-menu` hangs off, so one shared CSS rule lines the
+  // two menus up. `.composer` (one level in, plus its own padding) inset the
+  // picker ~22px further than the slash menu. Mobile keeps `.m-composer`,
+  // whose position:relative fix mobile.css added stays load bearing.
+  const wrap = ta.closest && ta.closest('.composer-wrap, .m-composer');
   if (!wrap) return;
   const existing = wrap.querySelector('.mention-menu');
   if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
@@ -129,7 +130,13 @@ function commitPick(ta, item) {
   const { text, caret: newCaret } = insertMention(ta.value || '', open.start, caret, item);
   ta.value = text;
   if (ta.setSelectionRange) ta.setSelectionRange(newCaret, newCaret);
-  if (runtime.state) runtime.state[composerField(ta)] = text;
+  // Final review C1: write the state field the textarea itself binds
+  // (data-model), not one derived from data-focus. The mobile textarea is
+  // focus-keyed 'mdraft' but MODEL-bound to 'draft' (mobile-surfaces.js), and
+  // send reads state.draft, so writing 'mdraft' dropped a picked mention from
+  // the request whenever the pick was the last edit before Send.
+  const field = (ta.getAttribute && ta.getAttribute('data-model')) || 'draft';
+  if (runtime.state) runtime.state[field] = text;
   closeMenu();
 }
 
@@ -146,7 +153,26 @@ export function handleMentionKeydown(e, ta) {
   // a background render() replaced the composer out from under this state.
   // Bail and clear rather than act on (or commit into) something the user
   // can no longer see -- see menuDetached()'s banner and commitPick's.
-  if (ta !== open.ta || menuDetached()) { open = null; return false; }
+  if (ta !== open.ta) { open = null; return false; }
+  // Final review I5: a background render() can detach the painted menu while
+  // the token is still being typed. Returning false here handed that same
+  // Enter to app.js's Enter-to-send fallthrough, which sent the half-typed
+  // token. When the token is still valid in this textarea, adopt it again and
+  // repaint into the fresh wrapper; otherwise disarm but still swallow one
+  // Enter or Tab, so a stale picker can never turn into a send.
+  if (menuDetached()) {
+    const at = ta.selectionStart == null ? (ta.value || '').length : ta.selectionStart;
+    const hit = mentionTokenAtCaret(ta.value || '', at);
+    if (hit && hit.start === open.start) {
+      open.ta = ta;
+      open.query = hit.query;
+      paintMenu(ta);
+      if (menuDetached()) { open = null; return e.key === 'Enter' || e.key === 'Tab'; }
+    } else {
+      open = null;
+      return e.key === 'Enter' || e.key === 'Tab';
+    }
+  }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     if (!open.items.length) return false;
     const dir = e.key === 'ArrowDown' ? 1 : -1;

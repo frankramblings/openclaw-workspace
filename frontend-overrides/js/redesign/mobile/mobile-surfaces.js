@@ -9,6 +9,7 @@ import { MORE_CARDS } from './mobile-data.js';
 import { renderActivity } from '../chat-activity.js';
 import { renderChatStrip } from '../chat-strip.js';
 import { renderMarkdown } from '../markdown.js';
+import { renderWithMentionChips } from '../mention-core.js';
 import { providerLogo } from '../provider-logo.js';
 import { projectName } from '../project-menu.js';
 import { suggestGhost } from '../suggest-ghost.js';
@@ -113,7 +114,11 @@ export function mChatMsg(m, s, ghostCtx) {
     const ring = pending ? `<span class="m-msg-pending-ring" title="Sending…"></span>` : '';
     const chip = pending ? `<button class="m-msg-edit-chip" data-act="editPendingOnMobile" data-arg="${esc(m.id)}">Tap to edit</button>` : '';
     const meta = pending ? `<div class="m-msg-user-meta">${ring}${chip}</div>` : '';
-    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${esc(m.text || '').replace(/\n/g, '<br>')}${steerCaptionHtml(m)}</div>${meta}</div>`;
+    // Mention tokens render as chips here too, so a sent mention reads the
+    // same on both surfaces instead of leaking the raw token text.
+    const userTextHtml = renderWithMentionChips(
+      m.text || '', (t) => esc(t).replace(/\n/g, '<br>'));
+    return `<div class="m-msg-user-wrap" data-msg-id="${esc(m.id)}"><div class="m-msg-user">${attachHtml ? `<div class="m-msg-attachments">${attachHtml}</div>` : ''}${userTextHtml}${steerCaptionHtml(m)}</div>${meta}</div>`;
   }
   const streamAttr = m.streaming ? ' data-streaming="1"' : '';
   // Promise guard (Phase 3, mirrors surfaces.js): amber nudge when a reply

@@ -83,7 +83,10 @@ GIT_INDEX_FILE="$TMP_INDEX" git read-tree HEAD
 #     files with maintainer paths and tailnet names. The curated public docs
 #     (README, LICENSE, docs/ARCHITECTURE.md, etc.) are kept; only the internal
 #     working-docs subtrees are removed.
-for internal in docs/superpowers ralph RALPH.md docs/plans docs/thrifty; do
+#     scripts/publish-scan-patterns.txt is dropped too: it is a list of the
+#     private identifiers we scan for, which has no value to a public reader.
+for internal in docs/superpowers ralph RALPH.md docs/plans docs/thrifty \
+                scripts/publish-scan-patterns.txt; do
   GIT_INDEX_FILE="$TMP_INDEX" git rm -r -q --cached --ignore-unmatch "$internal" >/dev/null 2>&1 || true
 done
 TREE="$(GIT_INDEX_FILE="$TMP_INDEX" git write-tree)"

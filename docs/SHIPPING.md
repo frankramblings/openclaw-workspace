@@ -102,8 +102,9 @@ collection error, one frontend ghost-test failure), so until those are fixed
 the first deploy needs `--skip-tests --i-know`, which must be a conscious
 choice, not a habit.
 
-`scripts/publish-scan-patterns.txt` ships in the public snapshot on purpose:
-the same identifiers are already public inside `prepare-public.sh`.
+`scripts/publish-scan-patterns.txt` is dropped from the public snapshot, so
+`scripts/publish-scan.sh` is a no-op there: with no pattern file it prints
+`publish-scan: no pattern file, nothing to scan` and exits 0.
 
 Flags: `--dry-run` (plan only, read-only gate still runs), `--skip-marissa`,
 `--skip-tests --i-know`, `--force-gateway`, `--force-deps`,

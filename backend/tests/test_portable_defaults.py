@@ -22,9 +22,9 @@ def test_default_roots_follow_home_and_repo(tmp_path, monkeypatch):
     # roots[1] is config.REPO_ROOT verbatim (Task 1's portable constant,
     # unaffected by HOME). The equality check above already proves it is
     # wired correctly. This worktree's own checkout happens to live under
-    # /home/frank on this dev machine, so only the HOME-derived roots get
-    # the "no hardcoded Frank path" check here.
-    assert not any("/home/frank" in r for r in (roots[0], roots[2]))
+    # the real home directory on this dev machine, so only the HOME-derived
+    # roots get the "no hardcoded dev-machine path" check here.
+    assert all(r.startswith(str(tmp_path)) for r in (roots[0], roots[2]))
 
 
 def test_load_config_uses_default_roots_when_missing(tmp_path, monkeypatch):
@@ -39,8 +39,8 @@ def test_load_config_uses_default_roots_when_missing(tmp_path, monkeypatch):
     roots = changes.load_config()["roots"]
     assert roots == changes.default_roots()
     # See test_default_roots_follow_home_and_repo: roots[1] is REPO_ROOT,
-    # which legitimately lives under /home/frank on this dev machine.
-    assert not any("/home/frank" in r for r in (roots[0], roots[2]))
+    # which legitimately lives under the real home directory on this dev machine.
+    assert all(r.startswith(str(tmp_path)) for r in (roots[0], roots[2]))
 
 
 def test_default_config_roots_wired_at_import(tmp_path):

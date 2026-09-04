@@ -48,7 +48,7 @@ test('workspace vault links open via file action instead of navigating', () => {
 });
 
 test('absolute workspace links are normalized before opening', () => {
-  const html = inline('[draft](/home/frank/.openclaw/workspace/memory/radar.md)');
+  const html = inline('[draft](/srv/agent/.openclaw/workspace/memory/radar.md)');
   assert.match(html, /data-act="wsOpenFile"/);
   assert.match(html, /data-arg="memory\/radar\.md"/);
 });

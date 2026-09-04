@@ -3,15 +3,15 @@ import assert from 'node:assert';
 import { changesSettingsHtml } from '../redesign/changes-settings.js';
 
 const model = {
-  config: { roots: ['/home/frank/meetings', '/home/frank/.openclaw/workspace'], prune_dirs: ['.git', 'tmp'], max_bytes: 262144 },
-  stats: { blobs: 120, blob_bytes: 3 * 1024 * 1024, roots: [{ path: '/home/frank/meetings', files: 40, exists: true, scanned_ms: 1 }, { path: '/home/frank/.openclaw/workspace', files: 23000, exists: true, scanned_ms: 1 }] },
+  config: { roots: ['/srv/meetings', '/srv/agent/workspace'], prune_dirs: ['.git', 'tmp'], max_bytes: 262144 },
+  stats: { blobs: 120, blob_bytes: 3 * 1024 * 1024, roots: [{ path: '/srv/meetings', files: 40, exists: true, scanned_ms: 1 }, { path: '/srv/agent/workspace', files: 23000, exists: true, scanned_ms: 1 }] },
   draftRoot: '', saving: false, error: null, rebuild: { running: false, root: null },
 };
 
 test('lists roots with counts and remove buttons, add form, prune textarea, cache size, rebuild', () => {
   const h = changesSettingsHtml(model);
-  assert.ok(h.includes('/home/frank/meetings') && h.includes('40 files'));
-  assert.ok(h.includes('data-act="changesRemoveRoot"') && h.includes('data-arg="/home/frank/meetings"'));
+  assert.ok(h.includes('/srv/meetings') && h.includes('40 files'));
+  assert.ok(h.includes('data-act="changesRemoveRoot"') && h.includes('data-arg="/srv/meetings"'));
   assert.ok(h.includes('data-model="changesRootDraft"') && h.includes('data-act="changesAddRoot"'));
   assert.ok(h.includes('data-model="changesPruneDraft"') && h.includes('.git\ntmp'));
   assert.ok(h.includes('3.0 MB') && h.includes('120 cached copies'));

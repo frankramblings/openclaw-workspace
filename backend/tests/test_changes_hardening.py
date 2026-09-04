@@ -255,14 +255,14 @@ def test_revert_route_rejects_a_non_numeric_turn(bad):
     assert r.status_code == (422 if bad == "x" else 404)
 
 
-def test_config_put_dedupes_roots_and_refuses_slash_and_nesting():
+def test_config_put_dedupes_roots_and_refuses_slash_and_nesting(tmp_path):
     c = _route_client()
     r = c.put("/api/changes/config", json={"roots": ["/a/b", "/a/b"]})
     assert r.status_code == 200 and r.json()["config"]["roots"] == ["/a/b"]
     assert c.put("/api/changes/config", json={"roots": ["/"]}).status_code == 400
-    r = c.put("/api/changes/config", json={"roots": ["/home/frank", "/home/frank/meetings"]})
+    r = c.put("/api/changes/config", json={"roots": [str(tmp_path), str(tmp_path / "meetings")]})
     assert r.status_code == 400 and "overlaps" in r.json()["reason"]
     assert c.put("/api/changes/config",
-                 json={"roots": ["/home/frank/meetings", "/home/frank"]}).status_code == 400
+                 json={"roots": [str(tmp_path / "meetings"), str(tmp_path)]}).status_code == 400
     # a shared string prefix that is not a real parent stays allowed
     assert c.put("/api/changes/config", json={"roots": ["/a/bee", "/a/beetle"]}).status_code == 200

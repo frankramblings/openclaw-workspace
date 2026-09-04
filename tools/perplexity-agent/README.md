@@ -25,7 +25,7 @@ systemctl --user restart perplexity-web-api.service
 The service runs:
 
 ```bash
-/home/frank/.local/bin/pwm api --host 127.0.0.1 --port 18080 --log-level warning
+~/.local/bin/pwm api --host 127.0.0.1 --port 18080 --log-level warning
 ```
 
 If real prompts fail, check the upstream auth/session first:
@@ -47,7 +47,7 @@ pwm login --email you@example.com --code 123456
 Command:
 
 ```bash
-node /home/frank/openclaw-workspace/tools/perplexity-agent/src/server.mjs
+node ~/openclaw-workspace/tools/perplexity-agent/src/server.mjs
 ```
 
 Tool:

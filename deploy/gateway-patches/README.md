@@ -17,9 +17,12 @@ Install (Frank, once):
 Then add to `~/.config/systemd/user/openclaw-gateway.service.d/claude-cli-steer.conf`:
 
     [Service]
-    ExecStartPre=-/usr/bin/sudo -n /usr/bin/python3 /home/frank/.openclaw/patches/claude-cli-steer.py
+    ExecStartPre=-/usr/bin/sudo -n /usr/bin/python3 %h/.openclaw/patches/claude-cli-steer.py
 
-and `systemctl --user daemon-reload`. The leading `-` is deliberate: steering is
+`%h` is systemd's home-directory specifier; it expands per-user, so this works
+unchanged in any user unit.
+
+Then run `systemctl --user daemon-reload`. The leading `-` is deliberate: steering is
 optional, and a failing pre-step must never keep the gateway down. The shared
 dist means Marissa's gateway picks the patch up on her next restart; do not
 restart her unit.

@@ -137,8 +137,8 @@ def test_restore_cwd_prefers_existing_saved_dir(tmp_path):
 
 
 def test_restore_separator_contains_marker_and_cwd():
-    sep = terminals._restore_separator("/home/admin/project")
-    assert "restored" in sep and "/home/admin/project" in sep
+    sep = terminals._restore_separator("/srv/project")
+    assert "restored" in sep and "/srv/project" in sep
 
 
 def test_get_or_create_seeds_buffer_from_log():

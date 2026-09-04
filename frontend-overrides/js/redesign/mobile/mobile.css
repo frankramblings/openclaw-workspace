@@ -979,14 +979,22 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   text-overflow: ellipsis;
   margin-bottom: 6px;
 }
+.m-conv-sheet-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 12px 14px 6px;
+}
 .m-conv-sheet-danger { color: var(--red); }
 .m-conv-sheet-danger .m-conv-sheet-ic { color: inherit; }
 .m-conv-sheet-row.on .m-conv-sheet-lbl { color: var(--teal); }
 
 /* Per-row "⋯" trigger in the conversations drawer. The desktop kebab is
    hover-only, which does not exist on touch, so this one is always visible.
-   44px tap target via the ::after inset, while the painted glyph stays small
-   and clear of the row's dot/spinner/check to its left. */
+   44px tap target via the ::after box, anchored to the row's right edge so
+   it never overhangs a truncated title on the left. */
 .m-conv-more {
   position: relative;
   flex: none;
@@ -1004,7 +1012,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.m-conv-more::after { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); }
+.m-conv-more::after { content: ''; position: absolute; left: auto; right: -7px; top: 50%; width: 44px; height: 44px; transform: translateY(-50%); }
 .m-conv-more:active { background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--fg); }
 .m-conv-more:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
 

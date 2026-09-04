@@ -8,11 +8,16 @@ export function shouldSwipeDismiss({ dy, dtMs }) {
   return dy >= SWIPE_MIN_DY && dtMs <= SWIPE_MAX_MS;
 }
 
+// The attribute VALUE names which sheet to close, so a row in one sheet can
+// never dismiss the other: "conv" for the thread-actions sheet, anything else
+// (including the legacy "1" the message sheet has always emitted) for the
+// message sheet.
+const SHEET_FIELD = { conv: 'mobileConvSheetId', msg: 'mobileSheetMsgId' };
+
 export function applyCloseSheet(state, flag) {
   if (!flag) return;
   if (!state.live || !state.live.chat) return;
-  state.live.chat.mobileSheetMsgId = null;
-  state.live.chat.mobileConvSheetId = null;
+  state.live.chat[SHEET_FIELD[flag] || SHEET_FIELD.msg] = null;
 }
 
 // Pure first half of the animated-close sequence: marks a sheet as "closing"

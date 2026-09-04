@@ -37,7 +37,8 @@ test('rows dispatch the desktop actions with the row id and close the sheet', ()
   // Every action row carries the close flag so a tap dismisses the sheet.
   const rows = html.match(/class="m-conv-sheet-row[^"]*"[^>]*data-act="[^"]+"/g) || [];
   assert.ok(rows.length >= 7);
-  assert.equal((html.match(/data-close-sheet="1"/g) || []).length, rows.length - 1, 'all but Cancel close via the flag');
+  assert.equal((html.match(/data-close-sheet="conv"/g) || []).length, rows.length - 1, 'all but Cancel close THIS sheet by name');
+  assert.doesNotMatch(html, /data-close-sheet="1"/, 'never the message sheet\'s flag');
 });
 
 test('favorite and unread labels flip with the row state', () => {
@@ -46,6 +47,25 @@ test('favorite and unread labels flip with the row state', () => {
   const flipped = convActionSheet(state({}, { important: true, unread: true }));
   assert.match(flipped, /Unfavorite<\/span>/);
   assert.match(flipped, /Mark read<\/span>/);
+});
+
+test('the move rows sit under a Move to head, and the head is dropped with no rows', () => {
+  const html = convActionSheet(state());
+  const headIdx = html.indexOf('m-conv-sheet-head');
+  assert.ok(headIdx > -1, 'section head rendered');
+  assert.ok(headIdx < html.indexOf('data-act="moveToProject"'), 'head precedes the rows');
+  const bare = convActionSheet({ live: { projects: [], chat: {
+    mobileConvSheetId: 's1',
+    groups: [{ rows: [{ id: 's1', title: 'Plain chat', folder: null }] }],
+  } } });
+  assert.doesNotMatch(bare, /m-conv-sheet-head/, 'no head when there is nowhere to move to');
+  assert.doesNotMatch(bare, /moveToProject/);
+});
+
+test('a row lit by the finished-while-away flag also reads Mark read', () => {
+  // `notify` is what rowOf hands the renderer once EITHER source lit the dot.
+  assert.match(convActionSheet(state({}, { notify: true })), /Mark read<\/span>/);
+  assert.match(convActionSheet(state()), /Mark unread<\/span>/);
 });
 
 test('one move row per non-archived project, alphabetical, archived hidden', () => {

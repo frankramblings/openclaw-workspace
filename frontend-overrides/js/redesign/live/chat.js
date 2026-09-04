@@ -3157,7 +3157,7 @@ export const actions = {
     chat.editingId = null;
     syncQueuedView(chat);       // banner now shows THIS thread's queued entry (if any)
     if (chat.notified) chat.notified.delete(id);  // opening it clears its dot
-    // A stored "Mark unread" clears on open too — locally first (so the dot
+    // A stored "Mark unread" clears on open too; locally first (so the dot
     // goes out in this render) and then server-side, fire-and-forget: a failed
     // clear only means the dot comes back on the next refetch, never a stuck UI.
     const openedRec = (chat.sessions || []).find((x) => x && x.id === id);
@@ -3899,10 +3899,15 @@ export const actions = {
     const rec = (chat.sessions || []).find((x) => x && x.id === id);
     if (!rec) return;
     const prev = !!rec.unread;
-    const next = !prev;
+    // Which way the toggle goes is decided by what the row currently SHOWS,
+    // not by the stored flag alone: a row lit only by the session-local
+    // "finished while away" set must go dark on tap, same as a stored one.
+    // The menu label is derived the same way (surfaces.js convMenu).
+    const lit = prev || !!(chat.notified && chat.notified.has(id) && chat.activeId !== id);
+    const next = !lit;
     rec.unread = next;                 // optimistic
-    // A thread marked unread by hand should not ALSO keep the session-local
-    // "finished while away" flag: clearing it means the one dot has one owner.
+    // A thread marked read should not keep the session-local flag either:
+    // clearing both means the one dot has one owner.
     if (!next && chat.notified) chat.notified.delete(id);
     rebuildGroups(chat);
     runtime.render();
@@ -3912,8 +3917,14 @@ export const actions = {
       rec.unread = prev;
       rebuildGroups(chat);
       runtime.render();
-      toast(next ? 'Couldn\u2019t mark this unread.' : 'Couldn\u2019t mark this read.');
+      toast(next ? 'Couldn’t mark this unread.' : 'Couldn’t mark this read.');
+      return;
     }
+    // Reconcile with the server, same as toggleFavorite: without this a
+    // sessions refetch already in flight when the optimistic flip happened
+    // lands afterwards and silently reverts the dot.
+    try { await load(state); } catch (_) {}
+    runtime.render();
   },
 
   // Message toolbar: copy one message's text to the clipboard.

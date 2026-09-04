@@ -54,7 +54,7 @@ export const I = {
   plus: (s = 17) => icon('<path d="M12 5v14M5 12h14"/>', { size: s, sw: 2.2 }),
   send: (s = 17) => icon('<path d="M5 12h14M13 6l6 6-6 6"/>', { size: s, sw: 2.2 }),
   x: (s = 14) => icon('<path d="M18 6 6 18M6 6l12 12"/>', { size: s, sw: 1.8 }),
-  // Small filled circle — the "Mark unread" menu glyph, matching the
+  // Small filled circle: the "Mark unread" menu glyph, matching the
   // conv-row dot it turns on.
   dot: (n = 14, c = 'currentColor') => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="${c}"><circle cx="12" cy="12" r="5"/></svg>`,
   copy: (s = 15) => icon('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>', { size: s, sw: 1.8 }),

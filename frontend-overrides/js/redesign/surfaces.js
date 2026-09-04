@@ -118,7 +118,13 @@ export function renderChatList(s) {
 // they neither select the row nor close the menu.
 function convMenu(r, s) {
   const fav = r.important ? 'Unfavorite' : 'Favorite';
-  const unread = !!r.unread;
+  // The dot has two sources (a stored `unread`, and this session's "finished
+  // while away" set, which rowOf already ORs into `notify`), and one label has
+  // to describe both: a lit row reads "Mark read" whichever lit it, or tapping
+  // a notified row would set unread=true and change nothing visible. `notify`
+  // is suppressed on the ACTIVE row, so a stored flag still speaks for itself
+  // there.
+  const unread = !!r.unread || !!r.notify;
   const item = (act, glyph, label, extra = '') =>
     `<button class="cm-item${extra}" data-act="${act}" data-arg="${esc(r.id)}" role="menuitem"><span class="cm-ic">${glyph}</span>${label}</button>`;
   return `<div class="conv-menu" data-act="noop" role="menu">`

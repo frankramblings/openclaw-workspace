@@ -61,3 +61,11 @@ test('the menu carries a Mark unread item that flips label when the row is unrea
   state.live.chat.groups[0].rows[0].unread = true;
   assert.match(renderChatList(state), /data-act="toggleUnread" data-arg="s1"[\s\S]*?Mark read<\/button>/);
 });
+
+test('a row lit by the finished-while-away dot reads Mark read, not Mark unread', () => {
+  // rowOf ORs both dot sources into `notify`, so the label has to follow it or
+  // tapping a notified row would set unread=true and change nothing on screen.
+  const s = baseState({ rowMenuOpen: 's2' });
+  s.live.chat.groups[0].rows[1].notify = true;
+  assert.match(renderChatList(s), /data-act="toggleUnread" data-arg="s2"[\s\S]*?Mark read<\/button>/);
+});

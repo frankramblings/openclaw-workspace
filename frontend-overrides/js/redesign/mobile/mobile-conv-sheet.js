@@ -23,11 +23,12 @@ export function convActionSheet(s) {
   if (!id) return '';
   const row = (chat.groups || []).flatMap((g) => g.rows || []).find((r) => r && r.id === id);
   if (!row) return '';
-  const unread = !!row.unread;
+  // Lit by EITHER source reads "Mark read"; see convMenu in surfaces.js.
+  const unread = !!row.unread || !!row.notify;
   const fav = row.important ? 'Unfavorite' : 'Favorite';
 
   const rowHtml = (act, arg, glyph, label, extra = '') =>
-    `<button class="m-conv-sheet-row${extra}" data-act="${act}" data-arg="${esc(arg)}" data-close-sheet="1">`
+    `<button class="m-conv-sheet-row${extra}" data-act="${act}" data-arg="${esc(arg)}" data-close-sheet="conv">`
     + `<span class="m-conv-sheet-ic">${glyph}</span><span class="m-conv-sheet-lbl">${label}</span>`
     + `</button>`;
   const act = (name, glyph, label, extra = '') => rowHtml(name, id, glyph, label, extra);
@@ -44,6 +45,9 @@ export function convActionSheet(s) {
       it.kind === 'none' ? 'Remove from project' : esc(it.label),
       it.on ? ' on' : ''))
     .join('');
+  // Labelled like the desktop submenu's cm-sub-head, and only when there is
+  // something to move to (no projects and no folder = no rows at all).
+  const moveHtml = moveRows ? `<div class="m-conv-sheet-head">Move to</div>${moveRows}` : '';
 
   return `<div class="m-conv-sheet-backdrop" data-act="closeConvActions"></div>`
     + `<div class="m-conv-sheet" role="dialog" aria-modal="true" aria-label="Conversation actions">`
@@ -52,7 +56,7 @@ export function convActionSheet(s) {
       + act('toggleFavorite', I.star(19, !!row.important), fav)
       + act('toggleUnread', unread ? I.check(19) : I.dot(19), unread ? 'Mark read' : 'Mark unread')
       + act('copyTranscript', I.copy(19), 'Copy chat')
-      + moveRows
+      + moveHtml
       + act('archiveSession', I.archive(19), 'Archive')
       + act('deleteSession', I.trash(19), 'Delete', ' m-conv-sheet-danger')
       + `<button class="m-conv-sheet-row m-conv-sheet-cancel" data-act="closeConvActions"><span class="m-conv-sheet-lbl">Cancel</span></button>`

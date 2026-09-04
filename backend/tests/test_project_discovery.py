@@ -125,3 +125,18 @@ def test_remove_proposal():
     assert gone["name"] == "A"
     assert [p["id"] for p in pd.load_proposals()["proposals"]] == ["d-00000002"]
     assert pd.remove_proposal("d-nope") is None
+
+
+@pytest.mark.anyio
+async def test_discover_while_running_returns_current_file(monkeypatch):
+    pd.save_proposals({"schema_version": 1, "created": 1, "model": "m", "error": None, "proposals": [
+        {"id": "d-00000001", "name": "A", "hints": [], "sample_titles": [], "count": 3}]})
+
+    async def must_not_be_called(model_ref, prompt, **kw):
+        pytest.fail("local_llm.complete should not be called while discover() is already running")
+    monkeypatch.setattr(local_llm, "complete", must_not_be_called)
+
+    async with pd._LOCK:
+        assert pd.running() is True
+        assert await pd.discover() == pd.load_proposals()
+    assert pd.running() is False

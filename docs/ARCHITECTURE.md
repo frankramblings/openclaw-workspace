@@ -347,21 +347,31 @@ JSON API). The pipeline is three modules with no shared state:
 credentials, and hostname shape, then `resolve_and_check` requires every
 DNS-resolved address to clear the same deny-list (loopback, RFC1918,
 link-local, multicast, reserved, unspecified, RFC 6598 shared/CGNAT
-space, and their IPv6 equivalents, plus `localhost` and any
-`.local`/`.internal`/`.lan` host); `clip_fetch.py` runs a manual,
+space, and their IPv6 equivalents, including explicitly pinned 6to4,
+Teredo, NAT64 and `::/8` prefixes whose embedded IPv4 is checked too,
+plus `localhost` and any `.local`/`.internal`/`.lan`/`.localhost` host); `clip_fetch.py` runs a manual,
 guard-revalidated redirect loop (`httpx.AsyncClient(follow_redirects=False)`)
 so every hop, not just the first URL, goes back through the same guard,
 capped at 3 redirects, under one wall-clock budget
 (`WORKSPACE_CLIP_TIMEOUT_S`, default 15 s) that covers both connecting
 and the streamed body read, checked before each hop and again on every
 chunk; the body is capped at `WORKSPACE_CLIP_MAX_BYTES` (default 5 MB),
-enforced mid-stream rather than trusting Content-Length, and the response
+enforced mid-stream rather than trusting Content-Length. Both caps are
+clamped into a sane range (1 to 300 s, 1 KB to 256 MB) so a stray `inf`,
+`nan`, zero or negative env value cannot disable them. The request asks
+for an identity (unencoded) body and any response that still declares a
+`Content-Encoding` is refused before the body is read at all: httpx would
+otherwise decompress each socket read before the size cap could see it,
+so a few hundred bytes of brotli could allocate gigabytes. The response
 Content-Type must be one of `text/html`, `application/xhtml+xml`,
 `text/plain`, `text/markdown`, `application/pdf`. `clip_extract.py` turns
 the fetched body into markdown: `trafilatura` when installed (falling
 back to a tag-stripped-text extractor if it is missing, raises, or
 returns nothing usable), a pass-through for `text/plain`/`text/markdown`,
 and the existing `attachments.py` PDF-text helper for `application/pdf`.
+Extraction runs in a worker thread under its own 20 s bound; on expiry the
+request returns `extract_failed` (the thread itself runs to completion,
+since a `to_thread` task cannot be cancelled from outside).
 
 Honest limitation, not fully closed: the guard is check-then-connect
 (`resolve_and_check` validates the resolved addresses, then httpx
@@ -380,12 +390,14 @@ residual v1 risk.
 bytes, extractor, redirects}}` on success. A failure is `{ok: false,
 error, detail}` with `error` one of `bad_url` (400, an unparseable JSON
 body, an unparseable URL, a bad scheme, embedded credentials, or a
-control character), `bad_request` (400, a JSON body that parses but is
+control character, an out-of-range or non-numeric port, or an
+unparseable redirect target), `bad_request` (400, a JSON body that parses but is
 not an object, or a non-string `title`/`session_id`), `blocked_host`
 (400, the SSRF guard), `fetch_failed` (502, a
-connection error, a non-200 status, or an unresolvable host),
+connection error, a non-200 status, an unresolvable host, or a response
+body that arrived compressed),
 `too_large` (413), `unsupported_type` (415), `extract_failed` (422,
-nothing readable came out), or `write_failed` (500, the document write
+nothing readable came out, or extraction ran past its own time bound), or `write_failed` (500, the document write
 or version snapshot itself failed). Re-clipping a URL already in the
 Library (matched by an exact, `clip_guard`-normalized `source_url`)
 snapshots the existing document's body into version history, then

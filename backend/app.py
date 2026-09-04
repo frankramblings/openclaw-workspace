@@ -830,6 +830,9 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
         data = {"history": mapped.get("history", []),
                 "model": mapped.get("model"),
                 "hasMore": False, "nextCursor": None}
+        # Local recovery lane for old workspace threads whose registry row
+        # survived but whose gateway transcript was orphaned during migration.
+        _prepend_history_backfill(session_id, data)
     # use_web turns store the augmented brain message (search block + the
     # user's text) in the transcript; show only what the user typed.
     for m in data.get("history", []):
@@ -863,6 +866,52 @@ async def history(session_id: str, limit: int = 200, cursor: str | None = None):
     # replay them locked with the chosen answer (chat.js fetchThread).
     data["question_answers"] = _qc_answers_for(session_id)
     return data
+
+
+def _prepend_history_backfill(session_id: str, data: dict) -> None:
+    """Prepend archived local transcript fragments for a session.
+
+    The normal source of truth is still the gateway brain. This only fills gaps
+    where an old thread's workspace row survived but the bridge history cannot
+    hydrate its original messages anymore.
+    """
+    p = config.DATA_DIR / "history_backfill" / f"{session_id}.json"
+    try:
+        payload = json.loads(p.read_text())
+    except FileNotFoundError:
+        return
+    except Exception as exc:  # noqa: BLE001 - bad backfill should not blank chat
+        logging.getLogger("workspace.history").warning(
+            "history backfill read failed for %s: %r", session_id, exc)
+        return
+    recovered = payload.get("history")
+    if not isinstance(recovered, list) or not recovered:
+        return
+    live = data.get("history")
+    if not isinstance(live, list):
+        live = []
+
+    seen = {
+        (m.get("role"), (m.get("content") or "").strip())
+        for m in live if isinstance(m, dict)
+    }
+    merged = []
+    for m in recovered:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        content = m.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
+            continue
+        key = (role, content.strip())
+        if key in seen:
+            continue
+        meta = dict(m.get("metadata") or {})
+        meta.setdefault("backfilled", True)
+        merged.append({"role": role, "content": content, "metadata": meta})
+        seen.add(key)
+    if merged:
+        data["history"] = merged + live
 
 
 @app.post("/api/question-answer")

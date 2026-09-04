@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import logging
 import os
 import sqlite3
@@ -168,6 +169,41 @@ def _extract_chunks(session: dict, history: list[dict]) -> list[dict]:
     return chunks
 
 
+def _prepend_history_backfill(session_id: str, history: list[dict]) -> list[dict]:
+    p = config.DATA_DIR / "history_backfill" / f"{session_id}.json"
+    try:
+        payload = json.loads(p.read_text())
+    except FileNotFoundError:
+        return history
+    except Exception as exc:  # noqa: BLE001 - bad backfill should not break indexing
+        log.warning("chat_search: history backfill read failed for %s: %r",
+                    session_id, exc)
+        return history
+    recovered = payload.get("history")
+    if not isinstance(recovered, list) or not recovered:
+        return history
+    seen = {
+        (m.get("role"), (m.get("content") or "").strip())
+        for m in history if isinstance(m, dict)
+    }
+    merged = []
+    for m in recovered:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        content = m.get("content")
+        if role not in ("user", "assistant") or not isinstance(content, str) or not content.strip():
+            continue
+        key = (role, content.strip())
+        if key in seen:
+            continue
+        meta = dict(m.get("metadata") or {})
+        meta.setdefault("backfilled", True)
+        merged.append({"role": role, "content": content, "metadata": meta})
+        seen.add(key)
+    return merged + history if merged else history
+
+
 async def _reindex_session(conn: sqlite3.Connection, session: dict,
                            force: bool) -> tuple[str, int]:
     """(Re)index one session. Returns ("indexed"|"skipped"|"error", n_chunks)."""
@@ -185,7 +221,8 @@ async def _reindex_session(conn: sqlite3.Connection, session: dict,
     # so it's never rebuilt). The caller catches and skips on the raise.
     hist = await bridge.fetch_history(session["sessionKey"], limit=_HISTORY_LIMIT,
                                       strict=True)
-    chunks = _extract_chunks(session, hist.get("history") or [])
+    history = _prepend_history_backfill(sid, hist.get("history") or [])
+    chunks = _extract_chunks(session, history)
     if not chunks:
         # Defense in depth for the non-raising empty case (e.g. gateway returns
         # ok:true with an empty payload mid-restart): if we previously indexed

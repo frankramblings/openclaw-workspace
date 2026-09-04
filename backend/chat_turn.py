@@ -447,7 +447,7 @@ async def busy_stream():
 
 
 async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
-                     draft_doc, rec, session_key: str, run_info: dict,
+                     draft_doc, draft_selection=None, rec, session_key: str, run_info: dict,
                      chat_attachments: list, title_task,
                      active_runs: dict, spawn, auto_extract, log_turn_timing,
                      session: str = "", compose=None):
@@ -510,7 +510,7 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                                        "output": f"web search failed: {exc}",
                                        "exit_code": 1})
         if draft_doc is not None:
-            brain_message = draft_mode.wrap_message(brain_message, draft_doc)
+            brain_message = draft_mode.wrap_message(brain_message, draft_doc, draft_selection)
         # Gary-drive: when terminal control is on for this chat, prepend a
         # per-turn capability hint + a freshly-minted token (stripped from
         # the history view in the /api/history handler below).

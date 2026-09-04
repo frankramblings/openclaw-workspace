@@ -21,7 +21,39 @@ docs/superpowers/specs/2026-06-05-documents-drafting-mode-design.md
 """
 from __future__ import annotations
 
+import json
+
 from . import documents, vault_store as vs
+
+SELECTION_MAX_BYTES = 8 * 1024  # active_doc_selection FormData cap
+
+
+def parse_selection(raw: str) -> dict | None:
+    """Parse the optional active_doc_selection FormData field: JSON
+    {"from": int|None, "to": int|None, "text": str}, capped at 8 KB. A
+    selection hint is a nice-to-have that sharpens wrap_message's note, never
+    a reason to fail the turn: any malformed, oversized, or empty input is
+    silently ignored (returns None), same posture as this codebase's other
+    soft-fail context injections (websearch.search, _prepend_text_attachments)."""
+    if not raw:
+        return None
+    if len(raw.encode("utf-8")) > SELECTION_MAX_BYTES:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    text = data.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    frm, to = data.get("from"), data.get("to")
+    if frm is not None and not isinstance(frm, int):
+        return None
+    if to is not None and not isinstance(to, int):
+        return None
+    return {"from": frm, "to": to, "text": text}
 
 
 def pre_turn(doc_id: str) -> dict | None:
@@ -37,8 +69,11 @@ def pre_turn(doc_id: str) -> dict | None:
     return doc
 
 
-def wrap_message(message: str, doc: dict) -> str:
-    """Prefix the user message with the co-drafting context note for this doc."""
+def wrap_message(message: str, doc: dict, selection: dict | None = None) -> str:
+    """Prefix the user message with the co-drafting context note for this doc.
+    `selection` (from parse_selection) names the exact passage the dock's
+    Rewrite button (Task 5) always sends, and a typed message sends whenever
+    the dock has a live selection when Send is pressed."""
     path = documents._path(doc["id"])
     note = (
         f'[draft mode] We are co-drafting the document "{doc.get("title") or "Untitled"}" '
@@ -46,13 +81,27 @@ def wrap_message(message: str, doc: dict) -> str:
         "or remove it; edit only the markdown body below it. When I ask for changes to "
         "the document, apply them directly to that file with your file tools, then reply "
         "with one short line on what changed — do not paste the document back into chat. "
-        "If I'm just asking a question, answer normally and leave the file alone.\n\n"
+        "If I'm just asking a question, answer normally and leave the file alone."
     )
-    return note + message
+    text = selection.get("text") if selection else None
+    if text:
+        note += (
+            ' The user has selected this passage in the editor; when asked to rewrite or '
+            'edit "the selection", change exactly this text and leave the rest alone:\n'
+            f'── selected passage ──\n{text}\n── end selected passage ──'
+        )
+    return note + "\n\n" + message
 
 
 _WRAP_PREFIX = '[draft mode] We are co-drafting the document "'
 _WRAP_TAIL = "leave the file alone.\n\n"
+# When wrap_message received a selection, the note's closing sentence is no
+# longer immediately followed by the blank line (a selection block comes
+# between them, ending in this literal) -- see wrap_message. Try the plain
+# tail first (the common case, and the only one before Pillar C2's selection
+# hint existed), then this one, so a selection-wrapped message still strips
+# down to exactly what the user typed instead of passing through unstripped.
+_WRAP_SELECTION_TAIL = "── end selected passage ──\n\n"
 
 
 def strip_wrapper(text):
@@ -65,6 +114,9 @@ def strip_wrapper(text):
     if not isinstance(text, str) or not text.startswith(_WRAP_PREFIX):
         return text
     _, sep, rest = text.partition(_WRAP_TAIL)
+    if sep:
+        return rest
+    _, sep, rest = text.partition(_WRAP_SELECTION_TAIL)
     return rest if sep else text
 
 

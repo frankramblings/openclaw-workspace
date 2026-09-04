@@ -105,7 +105,7 @@ def test_chat_stream_post_disconnect_keeps_recording(monkeypatch):
 
         resp = await app_module.chat_stream(
             message="hi", session="", use_web="", allow_web_search="",
-            attachments="", active_doc_id="")
+            attachments="", active_doc_id="", active_doc_selection="")
 
         # A reader consumes the POST tail until the first frame, then disconnects
         # (its task is cancelled — exactly what uvicorn does on client drop).

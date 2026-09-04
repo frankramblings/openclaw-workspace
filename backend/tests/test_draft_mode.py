@@ -1,4 +1,6 @@
 """Unit tests for the draft-mode turn hooks (pure file work, no gateway)."""
+import json
+
 from backend import documents, draft_mode
 
 
@@ -72,3 +74,53 @@ def test_post_turn_none_when_file_deleted(vault_docs):
     pre = draft_mode.pre_turn(doc["id"])
     documents._path(doc["id"]).unlink()
     assert draft_mode.post_turn_payload(pre) is None
+
+
+def test_parse_selection_valid():
+    raw = json.dumps({"from": 10, "to": 42, "text": "Hello world"})
+    assert draft_mode.parse_selection(raw) == {"from": 10, "to": 42, "text": "Hello world"}
+
+
+def test_parse_selection_empty_malformed_or_wrong_shape_is_none():
+    assert draft_mode.parse_selection("") is None
+    assert draft_mode.parse_selection(None) is None
+    assert draft_mode.parse_selection("{not json") is None
+    assert draft_mode.parse_selection("[1, 2, 3]") is None                          # not an object
+    assert draft_mode.parse_selection(json.dumps({"from": 0, "to": 5})) is None     # no text
+    assert draft_mode.parse_selection(json.dumps({"from": 0, "to": 5, "text": "  "})) is None
+    assert draft_mode.parse_selection(json.dumps({"from": "0", "to": 5, "text": "x"})) is None
+    assert draft_mode.parse_selection(json.dumps({"from": 0, "to": 5, "text": 5})) is None
+
+
+def test_parse_selection_null_offsets_ok():
+    # wysiwyg-mode selections carry no character offsets (Task 2's frontend
+    # getSelection() helper): from/to are allowed to be JSON null.
+    raw = json.dumps({"from": None, "to": None, "text": "whole selection"})
+    assert draft_mode.parse_selection(raw) == {"from": None, "to": None, "text": "whole selection"}
+
+
+def test_parse_selection_over_cap_is_none():
+    raw = json.dumps({"from": 0, "to": 1, "text": "x" * 9000})
+    assert len(raw.encode("utf-8")) > draft_mode.SELECTION_MAX_BYTES
+    assert draft_mode.parse_selection(raw) is None
+
+
+def test_wrap_message_includes_selected_passage_and_stays_backward_compatible(vault_docs):
+    doc = vault_docs()
+    assert draft_mode.wrap_message("hi", doc) == draft_mode.wrap_message("hi", doc, None)
+    wrapped = draft_mode.wrap_message("rewrite this", doc, {"from": 0, "to": 11, "text": "First draft."})
+    assert "First draft." in wrapped and "selected passage" in wrapped
+    assert wrapped.endswith("rewrite this") and "[draft mode]" in wrapped
+    assert "selected passage" not in draft_mode.wrap_message("hi", doc, {"from": 0, "to": 0, "text": ""})
+
+
+def test_strip_wrapper_handles_selection_wrapped_message(vault_docs):
+    """strip_wrapper (history_display's draft-mode layer) must still recover
+    the user's original typed text when wrap_message carried a selection hint
+    -- the selection block sits between the note's closing sentence and the
+    blank-line separator, so the plain (no-selection) tail literal never
+    matches; strip_wrapper falls back to the selection-block tail."""
+    doc = vault_docs()
+    wrapped = draft_mode.wrap_message("rewrite this", doc,
+                                      {"from": 0, "to": 11, "text": "First draft."})
+    assert draft_mode.strip_wrapper(wrapped) == "rewrite this"

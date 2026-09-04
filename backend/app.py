@@ -507,7 +507,8 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
                       use_web: str = Form(default=""),
                       allow_web_search: str = Form(default=""),
                       attachments: str = Form(default=""),
-                      active_doc_id: str = Form(default="")):
+                      active_doc_id: str = Form(default=""),
+                      active_doc_selection: str = Form(default="")):
     """Stream a turn from OpenClaw's brain as Odysseus-shaped SSE.
 
     The posted `session` is the SPA's session id; we resolve it to that chat's
@@ -593,6 +594,9 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     # open (auto-saving the doc first). Snapshot now (the user's undo), wrap
     # the message in gen(), detect agent edits after the turn (draft_mode.py).
     draft_doc = draft_mode.pre_turn(active_doc_id) if active_doc_id else None
+    # Selection hint (optional): the dock's Rewrite button always sends one;
+    # a typed message sends one whenever the dock has a live selection.
+    draft_selection = draft_mode.parse_selection(active_doc_selection)
 
     title_task = None
     if rec and message.strip() and _needs_title(rec):
@@ -613,7 +617,7 @@ async def chat_stream(message: str = Form(...), session: str = Form(default=""),
     def _source():
         return chat_turn.drive_turn(
             message=message, use_web=use_web, allow_web_search=allow_web_search,
-            draft_doc=draft_doc, rec=rec, session_key=session_key,
+            draft_doc=draft_doc, draft_selection=draft_selection, rec=rec, session_key=session_key,
             run_info=run_info, chat_attachments=chat_attachments,
             title_task=title_task, active_runs=_ACTIVE_RUNS, spawn=_spawn,
             auto_extract=maybe_auto_extract, log_turn_timing=_log_turn_timing,

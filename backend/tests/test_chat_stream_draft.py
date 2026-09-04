@@ -110,3 +110,52 @@ def test_doc_deleted_mid_turn_emits_no_update(vault_docs, monkeypatch):
     assert res.status_code == 200
     assert "doc_update" not in res.text
     assert "[DONE]" in res.text
+
+
+def test_doc_bound_turn_with_selection_wraps_selected_passage(vault_docs, monkeypatch):
+    doc = vault_docs()
+    sent = {}
+
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None, **kwargs):
+        sent["message"] = message
+        yield bridge._sse({"delta": "Rewrote it."})
+        yield bridge._sse("[DONE]")
+
+    async def fake_extract(session_key):
+        return None
+
+    monkeypatch.setattr(bridge, "stream_turn", fake_stream_turn)
+    monkeypatch.setattr(app_module, "maybe_auto_extract", fake_extract)
+
+    client = TestClient(app)
+    selection = json.dumps({"from": 0, "to": 11, "text": "First draft."})
+    res = client.post("/api/chat_stream",
+                      data={"message": "rewrite this", "session": "",
+                            "active_doc_id": doc["id"], "active_doc_selection": selection})
+    assert res.status_code == 200
+    assert "First draft." in sent["message"] and "selected passage" in sent["message"]
+    assert sent["message"].endswith("rewrite this")
+
+
+def test_malformed_selection_is_silently_ignored(vault_docs, monkeypatch):
+    doc = vault_docs()
+    sent = {}
+
+    async def fake_stream_turn(message, session_key=None, model_ref=None, run_info=None, **kwargs):
+        sent["message"] = message
+        yield bridge._sse({"delta": "ok"})
+        yield bridge._sse("[DONE]")
+
+    async def fake_extract(session_key):
+        return None
+
+    monkeypatch.setattr(bridge, "stream_turn", fake_stream_turn)
+    monkeypatch.setattr(app_module, "maybe_auto_extract", fake_extract)
+
+    client = TestClient(app)
+    res = client.post("/api/chat_stream",
+                      data={"message": "tighten the intro", "session": "",
+                            "active_doc_id": doc["id"], "active_doc_selection": "{not json"})
+    assert res.status_code == 200
+    assert "selected passage" not in sent["message"]
+    assert "[draft mode]" in sent["message"]

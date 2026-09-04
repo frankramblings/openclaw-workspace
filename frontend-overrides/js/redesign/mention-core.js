@@ -16,6 +16,14 @@ import { esc } from './dom.js';
 // with no intervening whitespace or second "@", can be the open token.
 const MENTION_TRIGGER_RE = /(^|\s)@([^\s@]*)$/;
 
+// A candidate query that contains "[", "]", "(" or ")" is never a mention
+// in progress -- it's the caret sitting somewhere inside an ALREADY
+// completed token (`@[Title](note:id)`), which mentionTokenAtCaret's plain
+// backward scan can't otherwise tell apart from a fresh trigger (fix round
+// 1, Critical 2: this used to hand back garbage queries like
+// "[Groceries](note:n1)").
+const MENTION_QUERY_GARBAGE_RE = /[[\]()]/;
+
 /**
  * mentionTokenAtCaret(text, caret) -> {start, query} | null
  * `start` is the index of the "@" itself; `query` is everything typed since
@@ -26,7 +34,9 @@ export function mentionTokenAtCaret(text, caret) {
   const head = text.slice(0, caret);
   const m = MENTION_TRIGGER_RE.exec(head);
   if (!m) return null;
-  return { start: m.index + m[1].length, query: m[2] };
+  const query = m[2];
+  if (MENTION_QUERY_GARBAGE_RE.test(query)) return null;
+  return { start: m.index + m[1].length, query };
 }
 
 /**
@@ -41,6 +51,30 @@ export function shouldClose(text, caret, tokenStart) {
   return /[\s@]/.test(text.slice(tokenStart + 1, caret));
 }
 
+// Mirrors backend/mentions.py's MENTION_RE id class exactly
+// (`[A-Za-z0-9_-]{1,32}`): an id that wouldn't round-trip through the
+// backend's parser must never be written into the draft (fix round 1,
+// Important 3).
+const MENTION_ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
+
+// backend/mentions.py's MENTION_RE title class is `[^\]\n]{1,200}` -- a
+// title containing "]" or "\n" would either close the token early or break
+// the single-line token grammar, and the backend would silently ignore the
+// whole token (fix round 1, Critical 1). Sanitizes at least as strictly as
+// the backend accepts: drop "]", "\r" and "\n" outright (not replaced with
+// a space -- these are hostile bytes, not word separators), collapse any
+// remaining whitespace runs to one space, trim, and cap at 200 characters.
+// Parentheses are left alone: they don't appear in the backend's exclusion
+// class and can't prematurely close the title (only "]" can).
+function sanitizeMentionTitle(rawTitle, id) {
+  const cleaned = String(rawTitle == null ? '' : rawTitle)
+    .replace(/[\]\r\n]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+  return cleaned || String(id);
+}
+
 /**
  * insertMention(text, start, caret, item) -> {text, caret}
  * Replaces the open token's range [start, caret) with the plain-text
@@ -53,11 +87,17 @@ export function shouldClose(text, caret, tokenStart) {
  * space, when one was added). `item.kind` comes from /api/palette's
  * vocabulary ("note" | "document" | "session"); "document" maps to the
  * short "doc" used inside the token, everything else defaults to "note".
+ * `item.title` is sanitized to fit backend/mentions.py's title grammar
+ * (falling back to the id when nothing printable survives); `item.id` is
+ * validated against the backend's id grammar and, when it fails, nothing is
+ * inserted at all -- `text`/`caret` come back unchanged (fix round 1,
+ * Critical 1 and Important 3).
  */
 export function insertMention(text, start, caret, item) {
-  const kind = (item && item.kind === 'document') ? 'doc' : 'note';
-  const title = (item && item.title) || '';
   const id = (item && item.id) || '';
+  if (!MENTION_ID_RE.test(id)) return { text, caret };
+  const kind = (item && item.kind === 'document') ? 'doc' : 'note';
+  const title = sanitizeMentionTitle(item && item.title, id);
   const before = text.slice(0, start);
   const after = text.slice(caret);
   const trailer = /^\s/.test(after) ? '' : ' ';

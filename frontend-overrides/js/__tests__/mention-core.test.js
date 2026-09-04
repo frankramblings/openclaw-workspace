@@ -46,6 +46,29 @@ test('mentionTokenAtCaret: tolerates non-string/non-number input', () => {
   assert.strictEqual(mentionTokenAtCaret('@abc', undefined), null);
 });
 
+test('mentionTokenAtCaret: every caret position inside an already-completed token is null (no garbage query), all the way through its trailing space', () => {
+  // Built by insertMention itself so the fixture can't drift from the real
+  // token shape: "@[Groceries](note:n1) ".
+  const built = insertMention('@x', 0, 2, { kind: 'note', id: 'n1', title: 'Groceries' });
+  const text = built.text;
+  // caret === 1 is right after the bare "@", before the "[" -- with nothing
+  // typed yet since the "@" this is indistinguishable from a fresh,
+  // empty-query trigger (the same state a brand new "@" starts in), so it
+  // legitimately stays open rather than closing.
+  assert.deepStrictEqual(mentionTokenAtCaret(text, 1), { start: 0, query: '' });
+  // From the first bracket character onward -- through "]", "(", the kind,
+  // id, ")" and the trailing space -- every position must be null.
+  for (let caret = 2; caret <= text.length; caret++) {
+    assert.strictEqual(mentionTokenAtCaret(text, caret), null, `caret=${caret} in ${JSON.stringify(text)}`);
+  }
+});
+
+test('mentionTokenAtCaret: a fresh "@query" typed right after a completed token still triggers', () => {
+  const built = insertMention('@x', 0, 2, { kind: 'note', id: 'n1', title: 'Groceries' });
+  const text = built.text + '@gro';
+  assert.deepStrictEqual(mentionTokenAtCaret(text, text.length), { start: built.text.length, query: 'gro' });
+});
+
 // ---- shouldClose ------------------------------------------------------------
 
 test('shouldClose: false while the caret stays inside the open token', () => {
@@ -88,6 +111,45 @@ test('insertMention: replaces exactly the [start, caret) range, keeping earlier 
   // `after` is " after" (already starts with a space) -- single space out.
   const out = insertMention('before @qu after', 7, 10, { kind: 'note', id: 'n9', title: 'Q' });
   assert.strictEqual(out.text, 'before @[Q](note:n9) after');
+});
+
+test('insertMention: a title with "]", "(" and a newline is sanitized to match backend/mentions.py\'s MENTION_RE title grammar ([^\\]\\n]{1,200})', () => {
+  // "]" and "\n" are removed outright (never replaced with a space); "("
+  // and ")" are left alone -- the backend's title class only excludes "]"
+  // and newline, so parentheses round-trip through the backend parser fine.
+  const out = insertMention('@x', 0, 2, { kind: 'note', id: 'n1', title: 'Foo]Bar(Baz)\nQux' });
+  assert.strictEqual(out.text, '@[FooBar(Baz)Qux](note:n1) ');
+});
+
+test('insertMention: runs of whitespace in the title collapse to a single space and the title is trimmed', () => {
+  const out = insertMention('@x', 0, 2, { kind: 'note', id: 'n1', title: '  Foo   Bar\t\tBaz  ' });
+  assert.strictEqual(out.text, '@[Foo Bar Baz](note:n1) ');
+});
+
+test('insertMention: a title longer than 200 characters is capped at 200, matching the backend grammar\'s {1,200} bound', () => {
+  const out = insertMention('@x', 0, 2, { kind: 'note', id: 'n1', title: 'x'.repeat(250) });
+  const captured = out.text.match(/^@\[([^\]]*)\]/)[1];
+  assert.strictEqual(captured.length, 200);
+});
+
+test('insertMention: a title that sanitizes to nothing falls back to the id', () => {
+  const out = insertMention('@x', 0, 2, { kind: 'note', id: 'n1', title: ']\n\r' });
+  assert.strictEqual(out.text, '@[n1](note:n1) ');
+});
+
+test('insertMention: an id outside backend/mentions.py\'s id grammar ([A-Za-z0-9_-]{1,32}) inserts nothing, returning the input unchanged', () => {
+  const out = insertMention('hi @gro there', 3, 7, { kind: 'note', id: 'bad id', title: 'X' });
+  assert.deepStrictEqual(out, { text: 'hi @gro there', caret: 7 });
+});
+
+test('insertMention: an empty id inserts nothing, returning the input unchanged', () => {
+  const out = insertMention('@x', 0, 2, { kind: 'note', id: '', title: 'X' });
+  assert.deepStrictEqual(out, { text: '@x', caret: 2 });
+});
+
+test('insertMention: an id longer than 32 characters inserts nothing, returning the input unchanged', () => {
+  const out = insertMention('@x', 0, 2, { kind: 'note', id: 'a'.repeat(33), title: 'X' });
+  assert.deepStrictEqual(out, { text: '@x', caret: 2 });
 });
 
 // ---- renderPickerHtml -----------------------------------------------------------

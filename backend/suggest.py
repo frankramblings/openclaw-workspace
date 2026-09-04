@@ -33,8 +33,14 @@ _MAX_CONTEXT = 4000       # chars of conversation context embedded in the prompt
 _MAX_SUGGESTION = 120     # longer output than this = model rambled, reject
 _SESSION_KEY = f"{config.web_session_prefix()}-suggester"
 
-_RULES = ("Imperative mood, specific, under 80 characters, no surrounding "
-          "quotes, no trailing punctuation. Output ONLY the message text.")
+_RULES = ("Imperative mood, under 80 characters, no surrounding quotes, no "
+          "trailing punctuation. GROUNDING: never invent specific facts — "
+          "names, titles, song/book/product names, quotes, dates, numbers, or "
+          "URLs — that are not already present in the conversation above. If you "
+          "would need such a fact, phrase the suggestion as a request or "
+          "question to the assistant instead of a factual claim (e.g. prefer "
+          "'find a classic Wal bass tone demo' over naming a specific track). "
+          "Output ONLY the message text.")
 
 _PROMPTS = {
     "followup": (
@@ -78,7 +84,7 @@ async def chat_suggest(body: dict = Body(...)):
         if local_llm.can_route(config.SUGGEST_MODEL):
             raw = await local_llm.complete(
                 config.SUGGEST_MODEL, prompt, max_tokens=40,
-                temperature=0.4, timeout=_TIMEOUT_S)
+                temperature=0.2, timeout=_TIMEOUT_S)
         else:
             raw = await asyncio.wait_for(
                 bridge.run_text(prompt, _SESSION_KEY,

@@ -6,7 +6,7 @@ const baseState = () => ({
   draft: '', pendingAttach: [], keyboard: false, refreshing: false, dismissed: [],
   mobileEditingPending: null,
   live: { chat: {
-    thread: [],
+    thread: [{ id: 'm1', role: 'assistant', text: 'hi' }],
     activeId: 's1',
     mobileSheetMsgId: null, msgMenuOpen: null,
     title: 't', endpointId: 'x', model: 'y',
@@ -42,4 +42,13 @@ test('ghost from another session never renders (archived/switched thread)', () =
   const s = baseState();
   s.live.chat.suggest = { ...SUG, sessionId: 'other-session' };
   assert.doesNotMatch(mChat(s), /ghost-suggest/);
+});
+
+test('followup ghost still renders in the composer with an empty thread', () => {
+  const s = baseState();
+  s.live.chat.thread = [];
+  s.live.chat.suggest = { ...SUG, mode: 'followup' };
+  const html = mChat(s);
+  assert.match(html, /ghost-suggest m-ghost/);
+  assert.match(html, /data-act="acceptSuggest"/);
 });

@@ -160,6 +160,71 @@ deployment (backend and gateway on different hosts) every MCP write answers
 500 `backup_failed`; MCP reads are unaffected, since they go through
 `config.get` over the gateway connection and never touch the local disk.
 
+### @mentions (2026-09)
+
+`backend/mentions.py` parses `@[Title](note:id)` / `@[Title](doc:id)` tokens
+out of the sent chat message, resolves each against the existing vault
+stores (notes via `notes._path` + `vault_store.load_entry`, documents via
+`documents._load`), and prepends a citation-tagged context block using the
+same message-text-prefix convention every other injection in this app uses.
+It is the closest sibling to `websearch.py`'s `context_block`/
+`strip_context_block`, but uses its own marker
+(`"\n\n---\n\nUser message (mentions resolved above): "`), not websearch's:
+in production the two wraps nest (`prepend_mentions` runs first, at the
+route boundary; `chat_turn.py`'s websearch wrap runs later, around the
+already-mentions-wrapped text), and a shared marker would let one strip
+swallow the other's block. `mentions.strip_context_block` only matches its
+own intro text at the two positions it can structurally occupy (the very
+start of the string, or immediately after websearch's own prefix and
+marker), never at an arbitrary position, so a message that merely quotes
+the wrapper text is never mistaken for a real wrap. `GET
+/api/history/{id}` runs the display-side strip chain outer-to-inner,
+matching `chat_turn.py`'s real nesting order: the terminal-control note
+first (`terminals.strip_capability_note`), then websearch, then mentions.
+
+Wired into `chat_stream` right after `_prepend_text_attachments` and before
+`_scrub_secrets`; the steer route (`POST /api/chat/steer/{id}`) does not
+expand mentions. The picker's data comes from `GET
+/api/palette?kinds=note,document` (`backend/palette_routes.py`'s optional
+`kinds` filter, added for this feature; the palette gained no new source
+and no caching layer). Document Q&A v1 is not a separate mechanism: it is
+a mention plus a question, grounded on the whole body of each mentioned
+note or document (capped, like every text injection here, at 100 KB per
+item and 200 KB per turn) with `[Title › Heading]` anchors prefixed onto
+every heading line of a mentioned document's body so Gary can cite a
+specific section. A resolve failure (missing id, unreadable vault file)
+never breaks the turn: the item renders as `── Note: Title (not found)
+──` in the context block instead.
+
+The frontend picker (`frontend-overrides/js/redesign/mention-core.js` for
+the pure token/insertion helpers, `frontend-overrides/js/redesign/live/
+mention-picker.js` for the direct-DOM widget) is painted with
+`insertAdjacentHTML` above the composer and updated on `input` events
+outside the render loop, the same pattern as the ghost-suggestion overlay,
+because the mobile composer never re-renders on keystroke. It self-boots
+on import (a `DOMContentLoaded` guard, like `live/jobs.js`) and serves both
+the desktop `draft` and mobile `mdraft` composers from one instance.
+`app.js`'s keydown handler runs the picker's `handleMentionKeydown` after
+the slash menu and before the ghost-suggestion/plain-Enter fallthrough, so
+Enter/Tab/Arrow keys pick a mention instead of sending or completing a
+slash command while a mention token is open. `.m-composer` carries
+`position: relative` and `.mention-menu` a `z-index: var(--z-dropdown)` so
+the menu paints above the mobile composer's own layout; a click outside
+the menu (and outside the composer it opened on) closes it on both
+surfaces, and a failed `/api/palette` fetch renders "Could not search
+notes" rather than the empty-results copy.
+
+Riding along: mobile quick-capture posted `body` on `POST /api/notes` while
+the route only ever read `content`, so a capture always saved with an
+empty body. `mobile-app.js`'s `sendCapture` now posts `content`, and
+`create_note` accepts `body` as a compatibility alias when `content` is
+absent or empty (content always wins when both are present).
+
+Deploying either the backend or frontend half of this feature to the
+served app still requires `scripts/sync-frontend.sh`: `frontend-overrides/`
+edits have no effect until the build step bakes them into the gitignored
+`frontend/`.
+
 ## The frontend: vendor + overrides + bake
 
 The UI is a vanilla-JS SPA. It is assembled, not hand-edited in place:

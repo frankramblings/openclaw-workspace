@@ -31,6 +31,14 @@ not just the original maintainer's setup.
 - Gateway log tail: `GET /api/logs/tail?cursor&limit&max_bytes` (secret-scrubbed twice).
 - Cross-cutting: backups and an audit log under `.data/agent-config` (0700/0600), `GET /api/agent-config/status` and `/audit`, the `agent_config` capability, and the `WORKSPACE_AGENT_CONFIG_WRITES=0` kill switch. No Settings UI yet; `scripts/livefire-agent-config.sh` exercises the routes.
 
+### Pillar C1: @mention notes/documents, doc Q&A v1 (2026-09)
+
+- Chat: type `@` at the start of the draft or right after a space to open a picker over your notes and documents (desktop and mobile composer); Enter, Tab, or a tap inserts `@[Title](note:id)` or `@[Title](doc:id)`. The mentioned note's or document's full text travels with the turn as a citation-tagged context block ("Cite them as [Title] when you use them"); documents get `[Title › Heading]` anchors on every heading line. History shows your own typed text, not the injected block.
+- Document Q&A v1: mentioning one or more notes/documents plus a question is the whole mechanism, no new endpoint and no vector index. A semantic v2 (chunked retrieval over notes and documents) is described in the design spec but not planned.
+- `GET /api/palette` gained an optional `kinds=` filter (comma-separated subset of `session,note,document,email`; existing behavior unchanged when absent), the mention picker's only new backend surface (it always passes `kinds=note,document`).
+- Fixed: mobile quick-capture notes saved with an empty body, the composer posted `body` while the backend only ever read `content`. The client now posts `content` and `backend/notes.py` also accepts `body` as a compatibility alias on `POST /api/notes` for any older caller.
+- Caps: 100 KB per mentioned item, 200 KB total per turn (the existing text-attachment caps, reused), 8 distinct mentions per turn.
+
 ### Phase 1 — Genericization (already merged to main)
 
 - All maintainer-specific identifiers removed from source and committed assets.

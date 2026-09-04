@@ -378,10 +378,11 @@ residual v1 risk.
 `{ok: true, document: <doc>, mention: "@[Title](doc:<id>)", meta:
 {source_url, final_url, site_name, byline, fetched_at, content_type,
 bytes, extractor, redirects}}` on success. A failure is `{ok: false,
-error, detail}` with `error` one of `bad_request` (400, a malformed JSON
-body or a non-string `title`/`session_id`), `bad_url` (400, an
-unparseable URL, a bad scheme, embedded credentials, or a control
-character), `blocked_host` (400, the SSRF guard), `fetch_failed` (502, a
+error, detail}` with `error` one of `bad_url` (400, an unparseable JSON
+body, an unparseable URL, a bad scheme, embedded credentials, or a
+control character), `bad_request` (400, a JSON body that parses but is
+not an object, or a non-string `title`/`session_id`), `blocked_host`
+(400, the SSRF guard), `fetch_failed` (502, a
 connection error, a non-200 status, or an unresolvable host),
 `too_large` (413), `unsupported_type` (415), `extract_failed` (422,
 nothing readable came out), or `write_failed` (500, the document write

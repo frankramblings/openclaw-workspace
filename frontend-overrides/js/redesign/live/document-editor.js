@@ -90,12 +90,94 @@ export function aiKebabMenuHtml() {
 
 // Pure: what an AI action sends, given the current selection/markdown.
 // null means "nothing to send" (docAiAsk: composer-focus only; docAiRewrite
-// with nothing selected: the caller shows an alert instead).
+// with nothing selected: the caller shows a toast instead).
 export function resolveAiAction(actName, selection, markdown) {
   if (actName === 'docAiSummarize') return buildSummarizePrompt();
   if (actName === 'docAiContinue') return buildContinuePrompt();
   if (actName === 'docAiRewrite') return buildRewritePrompt(selection, markdown);
   return null; // docAiAsk, or an unrecognized name
+}
+
+// Fix round 1, Important 1: whether a turn is currently streaming for the
+// session the user is looking at right now. Same busySessionId/activeId
+// comparison chat.js's own send() (busyHere) and steer-view.js's
+// steerComposerHints() already use: chat.js sets `chat.busySessionId` on
+// state, not just a module-private variable, exactly so other modules can
+// read it without importing chat.js (which already imports THIS module
+// statically, so importing back would be a cycle). A toolbar action must
+// never fire straight into that running turn as a plain, document-blind
+// steer (no active_doc_id, no selection): runAiAction checks this before
+// touching anything.
+export function turnBusyHere(state) {
+  const chat = (state && state.live && state.live.chat) || {};
+  return !!chat.busySessionId && chat.busySessionId === chat.activeId;
+}
+
+// Fix round 1, Minor 3: the shared cross-surface toast (state.inboxToast +
+// render()) that live/email.js, live/calendar.js and live/settings.js
+// already use for exactly this reason (no import from chat.js's private,
+// unexported toast(); see turnBusyHere's comment on the cycle).
+function docAiToast(msg) {
+  if (!runtime.state) return;
+  runtime.state.inboxToast = { msg, undoTs: null };
+  runtime.render();
+}
+
+// AI actions: Summarize / Rewrite / Continue / Ask (spec 2.2). Desktop shows
+// all four next to the mode toggle; mobile collapses them into one kebab +
+// dropdown (both built in ensureEditor(), wired to these). Module-level (not
+// nested in ensureEditor) so they're directly testable with a fake runtime.
+//
+// consumeAttachDetach() force-attaches the open document for this send even
+// if the composer pill was detached (see this task's "Force-attach fix"
+// note) -- but only once the guards below have already let the action
+// through: a blocked action (busy turn, unsent draft) must leave the pill's
+// detached state, and the draft, exactly as the user left them (fix round 1,
+// Important 1 + 2).
+export function runAiAction(text) {
+  if (!text || !runtime.state) return;
+  if (turnBusyHere(runtime.state)) {
+    docAiToast('Wait for Gary to finish before running a document action');
+    return;
+  }
+  if ((runtime.state.draft || '').trim()) {
+    docAiToast('Send or clear your draft first');
+    return;
+  }
+  consumeAttachDetach();
+  runtime.state.draft = text;
+  runtime.state.docAiAskPlaceholder = null;
+  runtime.render();
+  if (runtime.actions && runtime.actions.send) runtime.actions.send();
+}
+
+// Ask never sends by itself -- the user types the question and hits Send
+// normally, which already goes through the same busy/queue/steer-aware
+// send() path -- so (fix round 1, Important 2) it never touches the draft,
+// only the placeholder and composer focus, plus the same force-attach the
+// other three actions get.
+export function askAction() {
+  if (!runtime.state) return;
+  consumeAttachDetach();
+  runtime.state.docAiAskPlaceholder = ASK_PLACEHOLDER;
+  runtime.render();
+  setTimeout(() => {
+    const ta = document.querySelector('[data-focus="draft"], [data-focus="mdraft"]');
+    if (ta) ta.focus();
+  }, 0);
+}
+
+export function dispatchAiAction(actName) {
+  if (actName === 'docAiAsk') { askAction(); return; }
+  const sel = getSelection();
+  const md = (() => { try { return editor.getMarkdown(); } catch (_) { return ''; } })();
+  const text = resolveAiAction(actName, sel, md);
+  if (actName === 'docAiRewrite' && !text) {
+    // Fix round 1, Minor 3: was window.alert, swapped for the shared toast.
+    docAiToast('Select some text in the document first.');
+    return;
+  }
+  runAiAction(text);
 }
 
 function injectCss(href) {
@@ -592,40 +674,9 @@ async function ensureEditor() {
 
   // AI actions: Summarize / Rewrite / Continue / Ask (spec §2.2). Desktop
   // shows all four next to the mode toggle; mobile collapses them into one
-  // kebab + dropdown. consumeAttachDetach() forces the send to target the
-  // open document even if the composer pill was detached (see this task's
-  // "Force-attach fix" note).
-  function runAiAction(text) {
-    if (!text || !runtime.state) return;
-    consumeAttachDetach();
-    runtime.state.draft = text;
-    runtime.state.docAiAskPlaceholder = null;
-    runtime.render();
-    if (runtime.actions && runtime.actions.send) runtime.actions.send();
-  }
-  function askAction() {
-    if (!runtime.state) return;
-    consumeAttachDetach();
-    runtime.state.draft = '';
-    runtime.state.docAiAskPlaceholder = ASK_PLACEHOLDER;
-    runtime.render();
-    setTimeout(() => {
-      const ta = document.querySelector('[data-focus="draft"], [data-focus="mdraft"]');
-      if (ta) ta.focus();
-    }, 0);
-  }
-  function dispatchAiAction(actName) {
-    if (actName === 'docAiAsk') { askAction(); return; }
-    const sel = getSelection();
-    const md = (() => { try { return editor.getMarkdown(); } catch (_) { return ''; } })();
-    const text = resolveAiAction(actName, sel, md);
-    if (actName === 'docAiRewrite' && !text) {
-      try { window.alert('Select some text in the document first.'); } catch (_) {}
-      return;
-    }
-    runAiAction(text);
-  }
-
+  // kebab + dropdown. runAiAction/askAction/dispatchAiAction are module-level
+  // (defined above, near aiToolbarHtml/aiKebabMenuHtml/resolveAiAction) so
+  // they're directly testable with a fake runtime.
   aiBar = document.createElement('div');
   aiBar.className = 'oc-ai-bar';
   aiBar.style.cssText = 'display:flex;gap:4px;flex:none';
@@ -652,6 +703,18 @@ async function ensureEditor() {
     dispatchAiAction(t.getAttribute('data-act'));
   });
   aiKebabBtn.onclick = () => { aiMenu.style.display = aiMenu.style.display === 'none' ? 'block' : 'none'; };
+  // Fix round 1, Minor 4: close the kebab dropdown on an outside click. One
+  // document-level delegated listener, attached once here (ensureEditor only
+  // ever runs once, see `if (editor) return editor;` above), not one per
+  // open; ignores clicks inside the menu itself and on the kebab button
+  // (whose own onclick above already toggles it: without this exclusion the
+  // same click that OPENS the menu would bubble to this listener and
+  // immediately close it again).
+  document.addEventListener('click', (e) => {
+    if (!aiMenu || aiMenu.style.display === 'none') return;
+    if (aiMenu.contains(e.target) || aiKebabBtn.contains(e.target)) return;
+    aiMenu.style.display = 'none';
+  });
 
   saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
@@ -828,6 +891,11 @@ function onRender() {
   } else {
     document.body.classList.remove('oc-doc-docked');
     document.documentElement.style.setProperty('--doc-dock-w', '0px');
+    // Fix round 1, Minor 4 + 5: closing the dock (without ever sending) must
+    // not leave the mobile kebab dropdown open or the composer stuck on a
+    // document-specific "Ask about this document" placeholder.
+    if (aiMenu) aiMenu.style.display = 'none';
+    if (runtime.state && runtime.state.docAiAskPlaceholder) runtime.state.docAiAskPlaceholder = null;
   }
 }
 

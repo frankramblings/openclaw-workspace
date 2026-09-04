@@ -446,6 +446,21 @@ The UI is a vanilla-JS SPA. It is assembled, not hand-edited in place:
 So one config value (the agent name) propagates to the whole UI at build time;
 `GET /api/config` also exposes it for any runtime use.
 
+### Content-Security-Policy readiness (2026-09)
+
+`backend/security_headers.py` sends the policy as `content-security-policy-report-only`
+by default and as the enforcing `content-security-policy` when `WORKSPACE_CSP_ENFORCE=1`
+is set on the unit (per tenant, so Frank's user unit and Marissa's system unit flip
+independently). Under `script-src 'self'` no inline `<script>` block and no inline
+`on<event>=` attribute runs, and `img-src 'self' data: blob:` drops remote images.
+Verified enforcement-clean today: the redesign SPA (`/static/index.html`, every
+surface including mobile) and the three standalone pages `login.html`, `newtab.html`
+and `landing.html`, whose scripts now live in `frontend-overrides/js/pages/` and whose
+testimonial avatars are inline SVG instead of CDN images. `index-classic.html` is NOT
+clean: it still carries seven inline blocks plus a jsdelivr KaTeX load, so flipping
+enforcement breaks `/classic` until it is fixed or retired. `frontend-overrides/js/__tests__/csp-static-pages.test.js`
+guards the three clean pages against regressions.
+
 ## Branding flow (the headline feature)
 
 ```

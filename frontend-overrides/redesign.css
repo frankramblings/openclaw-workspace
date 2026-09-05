@@ -82,6 +82,10 @@ html.shell-mobile body.oc-doc-docked{padding-right:0}
    hover feedback the rest of the composer's icon buttons get from CSS. */
 .oc-ai-bar [data-act]:hover{border-color:var(--teal2);color:var(--fg)}
 .oc-ai-kebab:hover{border-color:var(--teal2);color:var(--fg)}
+/* Dock header tools row (mode toggle + AI actions). overflow-x:auto (inline,
+   document-editor.js) is its last-resort guard against spilling past the
+   dock; keep that fallback scroll track invisible on WebKit too. */
+.oc-doc-tools::-webkit-scrollbar{display:none}
 .oc-ai-menu [data-act]:hover{background:var(--tealtint);color:var(--fg)}
 
 /* Files pane root picker — small popover of allowlisted roots the tree can walk.

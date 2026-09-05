@@ -92,10 +92,32 @@ export function aiToolbarHtml() {
 // follow-up, not part of this wave.
 export const MOBILE_AI_ACTIONS = AI_ACTIONS.filter(([act]) => act !== 'docAiAsk');
 
-// Pure, DOM-free: the mobile kebab dropdown's HTML (the three edit actions).
-export function aiKebabMenuHtml() {
-  return MOBILE_AI_ACTIONS.map(([act, label]) =>
+// Pure, DOM-free: the kebab dropdown's HTML. Default = the three edit
+// actions (mobile shell). includeAsk adds Ask for the narrow DESKTOP dock,
+// where the composer stays visible beside the dock so Ask can work.
+export function aiKebabMenuHtml({ includeAsk = false } = {}) {
+  return (includeAsk ? AI_ACTIONS : MOBILE_AI_ACTIONS).map(([act, label]) =>
     `<div data-act="${act}" style="${AI_ITEM_STYLE}">${label}</div>`).join('');
+}
+
+// Dock width at or above which the tools row can hold the mode toggle
+// (about 178px) plus all four AI buttons (about 273px) with the row's own
+// padding and gap (measured in a header harness at the app's font; ~490px
+// total, so 520 leaves slack for a wider fallback font). Below it the four
+// collapse into the kebab. Keyed on the MEASURED dock width, not the shell
+// latch: a desktop dock dragged to DOCK_MIN (360px) is narrower than a
+// phone, and before this the header was one flex row of flex:none items
+// that pushed Save and Close 114px past the dock's right edge at the
+// default width (183px with "Unsaved changes" showing).
+export const AI_BAR_MIN_DOCK = 520;
+
+// Pure: 'bar' (four buttons) or 'kebab' (one button + dropdown) for a dock
+// of this width. The mobile shell always collapses (Fix wave I3: Ask cannot
+// work behind a 100vw dock, and the phone is under the threshold anyway);
+// an unknown width collapses too, the safe default.
+export function aiLayoutFor(dockWidth, mobile) {
+  if (mobile) return 'kebab';
+  return Number.isFinite(dockWidth) && dockWidth >= AI_BAR_MIN_DOCK ? 'bar' : 'kebab';
 }
 
 // Pure: what an AI action sends, given the current selection/markdown.
@@ -694,8 +716,24 @@ async function ensureEditor() {
   grabber.addEventListener('pointerdown', onGrabberDown);
   overlay.appendChild(grabber);
 
+  // Header = TWO rows. Row 1 (head): title, status, flash chip, Save, Close.
+  // Row 2 (tools): mode toggle on the left, AI actions on the right. Every
+  // non-title item is flex:none, so with everything in one row the fixed
+  // content (~640px) exceeded the dock (560 default, 360 min, ~390 on a
+  // phone) and the trailing Save/Close spilled past the viewport's right
+  // edge. Splitting keeps row 1's fixed content near 210px, so the title
+  // absorbs the rest and Close is always inside the dock.
   const head = document.createElement('div');
-  head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border,#2a2d33);flex:none';
+  head.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 16px 8px;flex:none;min-width:0';
+
+  const tools = document.createElement('div');
+  tools.className = 'oc-doc-tools';
+  // overflow-x:auto is the last-resort guard: if a fallback font renders the
+  // row wider than AI_BAR_MIN_DOCK assumes, it scrolls inside the dock rather
+  // than spilling out of it (the scrollbar itself is hidden in redesign.css).
+  tools.style.cssText = 'display:flex;align-items:center;gap:8px;padding:0 16px 10px;border-bottom:1px solid var(--border,#2a2d33);flex:none;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none';
+  const toolsSpacer = document.createElement('span');
+  toolsSpacer.style.cssText = 'flex:1';
 
   titleEl = document.createElement('input');
   titleEl.placeholder = 'Untitled document';
@@ -722,9 +760,11 @@ async function ensureEditor() {
     modeSeg.appendChild(btn);
   }
 
-  // AI actions: Summarize / Rewrite / Continue / Ask (spec §2.2). Desktop
-  // shows all four next to the mode toggle; mobile collapses them into one
-  // kebab + dropdown. runAiAction/askAction/dispatchAiAction are module-level
+  // AI actions: Summarize / Rewrite / Continue / Ask (spec §2.2). A dock at
+  // or above AI_BAR_MIN_DOCK shows all four in the tools row; a narrower
+  // dock, and always the mobile shell, collapses them into one kebab +
+  // dropdown (applyAiToolbarLayout, driven from applyDockWidth so a resize
+  // drag re-decides live). runAiAction/askAction/dispatchAiAction are module-level
   // (defined above, near aiToolbarHtml/aiKebabMenuHtml/resolveAiAction) so
   // they're directly testable with a fake runtime.
   aiBar = document.createElement('div');
@@ -740,7 +780,7 @@ async function ensureEditor() {
   aiKebabBtn.className = 'oc-ai-kebab';
   aiKebabBtn.textContent = '✦';
   aiKebabBtn.title = 'AI actions';
-  aiKebabBtn.style.cssText = 'height:30px;width:30px;border-radius:8px;border:1px solid var(--border,#2a2d33);background:transparent;color:var(--faint,#8a8f98);cursor:pointer;flex:none;display:none';
+  aiKebabBtn.style.cssText = 'height:30px;width:30px;border-radius:8px;border:1px solid var(--border,#2a2d33);background:transparent;color:var(--faint,#8a8f98);cursor:pointer;flex:none;display:none;align-items:center;justify-content:center';
 
   aiMenu = document.createElement('div');
   aiMenu.className = 'oc-ai-menu';
@@ -752,7 +792,13 @@ async function ensureEditor() {
     aiMenu.style.display = 'none';
     dispatchAiAction(t.getAttribute('data-act'));
   });
-  aiKebabBtn.onclick = () => { aiMenu.style.display = aiMenu.style.display === 'none' ? 'block' : 'none'; };
+  aiKebabBtn.onclick = () => {
+    const opening = aiMenu.style.display === 'none';
+    // Anchor just under the kebab. It lives in the tools row now, so the
+    // offset is read at open time rather than hard-coded to row 1's height.
+    if (opening) aiMenu.style.top = (aiKebabBtn.offsetTop + aiKebabBtn.offsetHeight + 4) + 'px';
+    aiMenu.style.display = opening ? 'block' : 'none';
+  };
   // Fix round 1, Minor 4: close the kebab dropdown on an outside click. One
   // document-level delegated listener, attached once here (ensureEditor only
   // ever runs once, see `if (editor) return editor;` above), not one per
@@ -777,7 +823,8 @@ async function ensureEditor() {
   closeBtn.style.cssText = 'height:30px;width:32px;border-radius:8px;border:1px solid var(--border,#2a2d33);background:transparent;color:var(--faint,#8a8f98);cursor:pointer;flex:none';
   closeBtn.onclick = () => { if (runtime.actions && runtime.actions.closeDoc) runtime.actions.closeDoc(); };
 
-  head.append(titleEl, statusEl, flashEl, modeSeg, aiBar, aiKebabBtn, saveBtn, closeBtn);
+  head.append(titleEl, statusEl, flashEl, saveBtn, closeBtn);
+  tools.append(modeSeg, toolsSpacer, aiBar, aiKebabBtn);
 
   // Conflict banner: shows when the file changed on disk while we have
   // unsaved local edits. User picks: reload disk, or keep mine (force-save).
@@ -811,7 +858,7 @@ async function ensureEditor() {
   host = document.createElement('div');
   host.style.cssText = 'flex:1;min-height:0;overflow:hidden';
 
-  overlay.append(head, aiMenu, conflictBanner, errorBanner, host);
+  overlay.append(head, tools, aiMenu, conflictBanner, errorBanner, host);
   document.body.appendChild(overlay);
 
   editor = new window.toastui.Editor({
@@ -942,6 +989,7 @@ function applyDockWidth(px) {
   if (isMobileShell()) {
     overlay.style.width = '100vw';
     document.documentElement.style.setProperty('--doc-dock-w', '0px');
+    applyAiToolbarLayout(window.innerWidth);
     return;
   }
   const max = Math.max(DOCK_MIN, Math.floor(window.innerWidth * DOCK_MAX_VW));
@@ -949,6 +997,9 @@ function applyDockWidth(px) {
   overlay.style.width = clamped + 'px';
   // Body padding uses this var — set to 0 on mobile so nothing shifts.
   document.documentElement.style.setProperty('--doc-dock-w', clamped + 'px');
+  // The AI bar/kebab choice follows the width that was just applied, so a
+  // resize drag or a window resize re-decides it live.
+  applyAiToolbarLayout(clamped);
   return clamped;
 }
 
@@ -978,8 +1029,7 @@ function onRender() {
   const isOpen = !!(d && d.open);
   overlay.style.display = isOpen ? 'flex' : 'none';
   if (isOpen) {
-    applyDockWidth(readSavedWidth());
-    applyAiToolbarLayout();
+    applyDockWidth(readSavedWidth()); // also applies the AI bar/kebab layout
     document.body.classList.add('oc-doc-docked');
   } else {
     document.body.classList.remove('oc-doc-docked');
@@ -992,11 +1042,20 @@ function onRender() {
   }
 }
 
-function applyAiToolbarLayout() {
+let aiMenuKey = null; // last-rendered kebab menu variant, so its markup is rebuilt only on change
+
+function applyAiToolbarLayout(dockWidth) {
   const mobile = isMobileShell();
-  if (aiBar) aiBar.style.display = mobile ? 'none' : 'flex';
-  if (aiKebabBtn) aiKebabBtn.style.display = mobile ? 'flex' : 'none';
-  if (!mobile && aiMenu) aiMenu.style.display = 'none';
+  const layout = aiLayoutFor(dockWidth, mobile);
+  if (aiBar) aiBar.style.display = layout === 'bar' ? 'flex' : 'none';
+  if (aiKebabBtn) aiKebabBtn.style.display = layout === 'kebab' ? 'flex' : 'none';
+  if (!aiMenu) return;
+  // Ask needs a visible composer: it is in the menu on a narrow desktop dock
+  // but not on the mobile shell (Fix wave I3, see MOBILE_AI_ACTIONS).
+  const key = mobile ? 'mobile' : 'desktop';
+  if (key !== aiMenuKey) { aiMenu.innerHTML = aiKebabMenuHtml({ includeAsk: !mobile }); aiMenuKey = key; }
+  // No kebab on screen means nothing should own an open dropdown.
+  if (layout === 'bar') aiMenu.style.display = 'none';
 }
 
 export function initDocEditor() {

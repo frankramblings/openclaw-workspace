@@ -231,3 +231,38 @@ test('M1: caretRestoreArgs splits the nested Toast UI pair into setSelection(sta
   assert.equal(caretRestoreArgs({ sel: { from: 1, to: 2 } }), null,
     'the flat {from,to} shape this used to pass is not what setSelection takes');
 });
+
+// ---- Dock header overflow --------------------------------------------------
+// The header used to be one flex row of flex:none items; adding the four AI
+// buttons pushed Save and Close past the dock's right edge (114px past it at
+// the default 560px width, 33 to 102px on a 390px phone). Now the title row
+// and the tools row are separate, and the AI bar collapses to the kebab by
+// measured dock width, not by shell.
+const { aiLayoutFor, AI_BAR_MIN_DOCK } = await import('../redesign/live/document-editor.js');
+
+test('aiLayoutFor: the four-button bar only on a dock wide enough for it, kebab otherwise', () => {
+  assert.equal(typeof AI_BAR_MIN_DOCK, 'number');
+  assert.ok(AI_BAR_MIN_DOCK <= 560, 'the default dock width must still show the full bar');
+  assert.ok(AI_BAR_MIN_DOCK > 360, 'the minimum dock width cannot fit mode toggle + four buttons');
+  assert.equal(aiLayoutFor(560, false), 'bar');
+  assert.equal(aiLayoutFor(AI_BAR_MIN_DOCK, false), 'bar');
+  assert.equal(aiLayoutFor(AI_BAR_MIN_DOCK - 1, false), 'kebab');
+  assert.equal(aiLayoutFor(360, false), 'kebab');
+});
+
+test('aiLayoutFor: the mobile shell always collapses, and an unknown width collapses (safe default)', () => {
+  assert.equal(aiLayoutFor(1200, true), 'kebab');
+  assert.equal(aiLayoutFor(NaN, false), 'kebab');
+  assert.equal(aiLayoutFor(undefined, false), 'kebab');
+  assert.equal(aiLayoutFor(0, false), 'kebab');
+});
+
+test('aiKebabMenuHtml: includeAsk adds Ask for the narrow desktop dock, where the composer stays visible', () => {
+  const html = aiKebabMenuHtml({ includeAsk: true });
+  assert.equal((html.match(/data-act="docAi/g) || []).length, 4);
+  assert.match(html, /data-act="docAiAsk"/);
+  assert.ok(!html.includes('—'));
+  // The no-arg form is unchanged: the mobile kebab still omits Ask.
+  assert.ok(!aiKebabMenuHtml().includes('docAiAsk'));
+  assert.ok(!aiKebabMenuHtml({ includeAsk: false }).includes('docAiAsk'));
+});

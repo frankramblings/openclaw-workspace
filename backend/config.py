@@ -126,9 +126,9 @@ def default_model() -> tuple[str, str]:
         else:
             # Minimal configs (e.g. a fresh single-tenant install) carry no
             # agents.list and set the active model under agents.defaults.model.
-            raw = agents.get("defaults", {}).get("model") or "openai/gpt-5.5"
+            raw = agents.get("defaults", {}).get("model") or "openai/gpt-5.6-sol"
     if isinstance(raw, dict):  # {"primary": "...", "fallbacks": [...]}
-        raw = raw.get("primary") or "openai/gpt-5.5"
+        raw = raw.get("primary") or "openai/gpt-5.6-sol"
     provider, _, model = raw.partition("/")
     if not model:  # no provider prefix
         provider, model = "openai", provider
@@ -227,13 +227,16 @@ UNIT_POLL_S = _env_int("WORKSPACE_UNIT_POLL_S", 5)
 # turn through codex on the big one. NOT openai/* (and NOT gemini/*): those
 # stream only the first token then [DONE] through this gateway, so every new
 # thread collapsed to a one-word title (e.g. "Lex", "Casino"). claude-cli/* is
-# plan-billed and returns full titles; haiku keeps it cheap + fast.
+# plan-billed and returns full titles. The dated haiku id this used to name
+# is not in the gateway allowlist (82 "model not allowed" rejections on
+# 2026-08-26); Sonnet 5 is allowed, cheap, and always 1M. Frank's unit
+# overrides this with a kamino model via WORKSPACE_TITLE_MODEL.
 TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL",
-                             "claude-cli/claude-haiku-4-5-20251001")
+                             "claude-cli/claude-sonnet-5")
 # Composer ghost-text suggestions run on a cheap model, same rationale as
 # titles. NOT openai/*: those return empty through this gateway.
 SUGGEST_MODEL = os.environ.get("WORKSPACE_SUGGEST_MODEL",
-                               "anthropic/claude-sonnet-4-6")
+                               "claude-cli/claude-sonnet-5")
 
 # Auto-file new threads into projects at title time (spec 6.1). Runs only on
 # the local title model; off = threads stay unfiled until moved by hand.

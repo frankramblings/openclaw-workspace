@@ -1,4 +1,5 @@
 """Pure-function tests for the workspace explorer backend (Hermes UI)."""
+import errno
 import os
 from pathlib import Path
 
@@ -563,29 +564,149 @@ def test_home_root_final_open_is_nonblocking(tmp_path, monkeypatch):
     assert final_flags[0] & os.O_NONBLOCK
 
 
-def test_home_root_text_preview_reads_only_cap_plus_one(tmp_path, monkeypatch):
+def test_home_root_text_preview_handles_short_reads_with_bounded_total(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
-    (fake_home / "large.md").write_bytes(b"x" * (wf.PREVIEW_CAP + 100))
+    preview_cap = 32
+    (fake_home / "large.md").write_bytes(b"x" * 100)
     monkeypatch.setattr(wf, "_allowed_roots", lambda: {
         "workspace": wf.workspace_root(),
         "home": fake_home,
     })
+    monkeypatch.setattr(wf, "PREVIEW_CAP", preview_cap)
     real_read = os.read
-    read_sizes = []
+    requested_sizes = []
+    returned_sizes = []
 
     def recording_read(fd, size):
-        read_sizes.append(size)
-        return real_read(fd, size)
+        requested_sizes.append(size)
+        chunk = real_read(fd, min(size, 7))
+        returned_sizes.append(len(chunk))
+        return chunk
 
     monkeypatch.setattr(wf.os, "read", recording_read)
 
     response = client.get("/api/workspace/file?path=large.md&root_key=home")
 
     assert response.status_code == 200
-    assert len(response.content) == wf.PREVIEW_CAP
+    assert len(response.content) == preview_cap
     assert response.headers["X-Truncated"] == "1"
-    assert read_sizes == [wf.PREVIEW_CAP + 1]
+    assert sum(returned_sizes) == preview_cap + 1
+    consumed = 0
+    for requested, returned in zip(requested_sizes, returned_sizes, strict=True):
+        assert requested == preview_cap + 1 - consumed
+        consumed += returned
+
+
+def _assert_fd_closed(fd):
+    with pytest.raises(OSError) as exc_info:
+        os.fstat(fd)
+    assert exc_info.value.errno == errno.EBADF
+
+
+def test_iter_fd_closes_descriptor_when_consumer_disconnects(tmp_path):
+    target = tmp_path / "payload.bin"
+    target.write_bytes(b"abc")
+    file_fd = os.open(target, os.O_RDONLY)
+    iterator = wf._iter_fd(file_fd, chunk_size=1)
+
+    assert next(iterator) == b"a"
+    iterator.close()
+
+    _assert_fd_closed(file_fd)
+
+
+def test_iter_fd_closes_descriptor_when_read_fails(tmp_path, monkeypatch):
+    target = tmp_path / "payload.bin"
+    target.write_bytes(b"abc")
+    file_fd = os.open(target, os.O_RDONLY)
+
+    def failing_read(fd, size):
+        raise OSError(errno.EIO, "read failed")
+
+    monkeypatch.setattr(wf.os, "read", failing_read)
+
+    with pytest.raises(OSError, match="read failed"):
+        next(wf._iter_fd(file_fd))
+
+    _assert_fd_closed(file_fd)
+
+
+def test_home_root_closes_descriptor_when_response_handoff_fails(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    target = fake_home / "payload.ipynb"
+    target.write_bytes(b"{}")
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+    opened = []
+    real_open_home_file = wf._open_home_file
+
+    def recording_open(root, rel):
+        file_fd, metadata = real_open_home_file(root, rel)
+        opened.append(file_fd)
+        return file_fd, metadata
+
+    def failing_response(*args, **kwargs):
+        raise RuntimeError("response construction failed")
+
+    monkeypatch.setattr(wf, "_open_home_file", recording_open)
+    monkeypatch.setattr(wf, "StreamingResponse", failing_response)
+
+    with pytest.raises(RuntimeError, match="response construction failed"):
+        wf.workspace_file("payload.ipynb", "home")
+
+    assert len(opened) == 1
+    _assert_fd_closed(opened[0])
+
+
+@pytest.mark.parametrize(("open_errno", "expected_status"), [
+    (errno.ENOENT, 404),
+    (errno.ENOTDIR, 404),
+    (errno.ELOOP, 403),
+    (errno.EACCES, 403),
+    (errno.EPERM, 403),
+])
+def test_home_root_maps_expected_open_failures(
+        tmp_path, monkeypatch, open_errno, expected_status):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    def failing_open(root, rel):
+        raise OSError(open_errno, os.strerror(open_errno))
+
+    monkeypatch.setattr(wf, "_open_home_file", failing_open)
+
+    response = client.get("/api/workspace/file?path=note.md&root_key=home")
+
+    assert response.status_code == expected_status
+
+
+@pytest.mark.parametrize("open_errno", [errno.EMFILE, errno.EIO])
+def test_home_root_unexpected_open_failures_surface_as_5xx(
+        tmp_path, monkeypatch, open_errno):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    def failing_open(root, rel):
+        raise OSError(open_errno, os.strerror(open_errno))
+
+    monkeypatch.setattr(wf, "_open_home_file", failing_open)
+    error_client = TestClient(app, raise_server_exceptions=False)
+
+    response = error_client.get("/api/workspace/file?path=note.md&root_key=home")
+
+    assert response.status_code == 500
 
 
 @pytest.mark.parametrize("path", ["", "."])

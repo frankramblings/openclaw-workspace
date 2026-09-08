@@ -7,6 +7,7 @@ additionally refuse SKIP_CONTENTS segments and the workspace root itself.
 """
 from __future__ import annotations
 
+import errno
 import io
 import mimetypes
 import os
@@ -21,7 +22,6 @@ from urllib.parse import quote
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel
-from starlette.background import BackgroundTask
 
 from . import vault_store as vs
 
@@ -175,11 +175,34 @@ def _open_home_file(root: Path, rel: str) -> tuple[int, os.stat_result]:
     """
     parts = Path(_validated_home_rel(rel)).parts
 
+    # This security boundary intentionally requires Unix/Linux openat support:
+    # O_NOFOLLOW/O_DIRECTORY/O_CLOEXEC plus dir_fd prevent symlink races.
     nofollow = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
-    dir_fd = os.open(root, nofollow | os.O_DIRECTORY)
+
+    def open_dir(path: str | Path, parent_fd: int | None = None) -> int:
+        metadata = os.stat(path, dir_fd=parent_fd, follow_symlinks=False)
+        if stat.S_ISLNK(metadata.st_mode):
+            raise OSError(errno.ELOOP, "symlink path component", path)
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise OSError(errno.ENOTDIR, "not a directory", path)
+        try:
+            return os.open(
+                path, nofollow | os.O_DIRECTORY, dir_fd=parent_fd)
+        except OSError as exc:
+            # Linux reports O_NOFOLLOW|O_DIRECTORY symlinks as ENOTDIR. Recheck
+            # after the race-safe open so a swapped-in symlink remains a 403.
+            if exc.errno == errno.ENOTDIR:
+                current = os.stat(
+                    path, dir_fd=parent_fd, follow_symlinks=False)
+                if stat.S_ISLNK(current.st_mode):
+                    raise OSError(
+                        errno.ELOOP, "symlink path component", path) from exc
+            raise
+
+    dir_fd = open_dir(root)
     try:
         for part in parts[:-1]:
-            next_fd = os.open(part, nofollow | os.O_DIRECTORY, dir_fd=dir_fd)
+            next_fd = open_dir(part, dir_fd)
             os.close(dir_fd)
             dir_fd = next_fd
         file_fd = os.open(parts[-1], nofollow | os.O_NONBLOCK, dir_fd=dir_fd)
@@ -194,9 +217,33 @@ def _open_home_file(root: Path, rel: str) -> tuple[int, os.stat_result]:
 
 
 def _iter_fd(file_fd: int, chunk_size: int = 64 * 1024):
-    """Yield descriptor content in bounded chunks; lifecycle owns close."""
-    while chunk := os.read(file_fd, chunk_size):
-        yield chunk
+    """Yield descriptor content in bounded chunks and always close it."""
+    try:
+        while chunk := os.read(file_fd, chunk_size):
+            yield chunk
+    finally:
+        os.close(file_fd)
+
+
+def _read_fd_preview(file_fd: int, limit: int) -> bytes:
+    """Read through short reads without consuming more than ``limit`` bytes."""
+    data = bytearray()
+    while len(data) < limit:
+        chunk = os.read(file_fd, limit - len(data))
+        if not chunk:
+            break
+        data.extend(chunk[:limit - len(data)])
+    return bytes(data)
+
+
+def _raise_home_open_error(exc: OSError) -> None:
+    """Map expected path failures; leave operational faults as server errors."""
+    if exc.errno in {errno.ENOENT, errno.ENOTDIR}:
+        raise HTTPException(status_code=404, detail="not a file") from exc
+    if exc.errno in {errno.ELOOP, errno.EACCES, errno.EPERM}:
+        raise HTTPException(
+            status_code=403, detail="not permitted under home root") from exc
+    raise exc
 
 
 _cache: dict = {}  # (root_key, hidden_flag) -> (timestamp, data); cleared on any mutation
@@ -589,42 +636,42 @@ def workspace_file(path: str, root_key: str = "workspace"):
             file_fd, metadata = _open_home_file(root, normalized_path)
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid path")
-        except OSError:
-            raise HTTPException(status_code=403, detail="not permitted under home root")
+        except OSError as exc:
+            _raise_home_open_error(exc)
 
-        target = root / normalized_path
-        if not stat.S_ISREG(metadata.st_mode):
-            os.close(file_fd)
-            raise HTTPException(status_code=404, detail="not a file")
-        if not _home_text_ok(target, normalized_path):
-            os.close(file_fd)
-            raise HTTPException(status_code=403, detail="not permitted under home root")
+        try:
+            target = root / normalized_path
+            if not stat.S_ISREG(metadata.st_mode):
+                raise HTTPException(status_code=404, detail="not a file")
+            if not _home_text_ok(target, normalized_path):
+                raise HTTPException(
+                    status_code=403, detail="not permitted under home root")
 
-        mtime_ns = metadata.st_mtime_ns
-        mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-        headers = {"X-Mtime-Ns": str(mtime_ns)}
-        if target.suffix.lower() in TEXT_EXTS or mime.startswith("text/"):
-            try:
-                data = os.read(file_fd, PREVIEW_CAP + 1)
-            finally:
+            mtime_ns = metadata.st_mtime_ns
+            mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            headers = {"X-Mtime-Ns": str(mtime_ns)}
+            if target.suffix.lower() in TEXT_EXTS or mime.startswith("text/"):
+                data = _read_fd_preview(file_fd, PREVIEW_CAP + 1)
+                if len(data) > PREVIEW_CAP:
+                    headers["X-Truncated"] = "1"
+                return PlainTextResponse(
+                    data[:PREVIEW_CAP].decode("utf-8", "replace"), headers=headers)
+
+            headers["Content-Length"] = str(metadata.st_size)
+            if not mime.startswith("image/"):
+                quoted_name = quote(target.name)
+                if quoted_name != target.name:
+                    disposition = f"attachment; filename*=utf-8''{quoted_name}"
+                else:
+                    disposition = f'attachment; filename="{target.name}"'
+                headers["Content-Disposition"] = disposition
+            response = StreamingResponse(
+                _iter_fd(file_fd), media_type=mime, headers=headers)
+            file_fd = None  # the iterator owns it after response handoff
+            return response
+        finally:
+            if file_fd is not None:
                 os.close(file_fd)
-            if len(data) > PREVIEW_CAP:
-                headers["X-Truncated"] = "1"
-            return PlainTextResponse(
-                data[:PREVIEW_CAP].decode("utf-8", "replace"), headers=headers)
-
-        headers["Content-Length"] = str(metadata.st_size)
-        if not mime.startswith("image/"):
-            quoted_name = quote(target.name)
-            if quoted_name != target.name:
-                disposition = f"attachment; filename*=utf-8''{quoted_name}"
-            else:
-                disposition = f'attachment; filename="{target.name}"'
-            headers["Content-Disposition"] = disposition
-        return StreamingResponse(
-            _iter_fd(file_fd), media_type=mime, headers=headers,
-            background=BackgroundTask(os.close, file_fd),
-        )
 
     try:
         target = resolve_safe(root, path)

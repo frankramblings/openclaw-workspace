@@ -246,6 +246,29 @@ def _raise_home_open_error(exc: OSError) -> None:
     raise exc
 
 
+class _ClosingStreamingResponse(StreamingResponse):
+    """Ensure a sync stream is torn down when ASGI sending is interrupted."""
+
+    def __init__(self, content, **kwargs):
+        self._source_iterator = content
+        super().__init__(content, **kwargs)
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            source = self._source_iterator
+            self._source_iterator = None
+            try:
+                aclose = getattr(self.body_iterator, "aclose", None)
+                if aclose is not None:
+                    await aclose()
+            finally:
+                close = getattr(source, "close", None)
+                if close is not None:
+                    close()
+
+
 _cache: dict = {}  # (root_key, hidden_flag) -> (timestamp, data); cleared on any mutation
 
 
@@ -665,7 +688,7 @@ def workspace_file(path: str, root_key: str = "workspace"):
                 else:
                     disposition = f'attachment; filename="{target.name}"'
                 headers["Content-Disposition"] = disposition
-            response = StreamingResponse(
+            response = _ClosingStreamingResponse(
                 _iter_fd(file_fd), media_type=mime, headers=headers)
             file_fd = None  # the iterator owns it after response handoff
             return response

@@ -1,9 +1,11 @@
 """Pure-function tests for the workspace explorer backend (Hermes UI)."""
+import asyncio
 import errno
 import os
 from pathlib import Path
 
 import pytest
+from starlette.requests import ClientDisconnect
 
 from backend import workspace_files as wf
 
@@ -632,6 +634,43 @@ def test_iter_fd_closes_descriptor_when_read_fails(tmp_path, monkeypatch):
     _assert_fd_closed(file_fd)
 
 
+def test_home_root_asgi_disconnect_closes_stream_descriptor(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / "payload.ipynb").write_bytes(b"stream payload")
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+    opened = []
+    real_open_home_file = wf._open_home_file
+
+    def recording_open(root, rel):
+        file_fd, metadata = real_open_home_file(root, rel)
+        opened.append(file_fd)
+        return file_fd, metadata
+
+    monkeypatch.setattr(wf, "_open_home_file", recording_open)
+    response = wf.workspace_file("payload.ipynb", "home")
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def disconnected_send(message):
+        if message["type"] == "http.response.body":
+            raise OSError(errno.EPIPE, "client disconnected")
+
+    scope = {"type": "http", "asgi": {"spec_version": "2.4"}}
+    async def exercise_disconnect():
+        with pytest.raises(ClientDisconnect):
+            await response(scope, receive, disconnected_send)
+        # Assert before asyncio.run() shuts down pending async generators.
+        assert len(opened) == 1
+        _assert_fd_closed(opened[0])
+
+    asyncio.run(exercise_disconnect())
+
+
 def test_home_root_closes_descriptor_when_response_handoff_fails(tmp_path, monkeypatch):
     fake_home = tmp_path / "home"
     fake_home.mkdir()
@@ -653,7 +692,7 @@ def test_home_root_closes_descriptor_when_response_handoff_fails(tmp_path, monke
         raise RuntimeError("response construction failed")
 
     monkeypatch.setattr(wf, "_open_home_file", recording_open)
-    monkeypatch.setattr(wf, "StreamingResponse", failing_response)
+    monkeypatch.setattr(wf, "_ClosingStreamingResponse", failing_response)
 
     with pytest.raises(RuntimeError, match="response construction failed"):
         wf.workspace_file("payload.ipynb", "home")
@@ -738,6 +777,20 @@ def test_home_root_attachment_filename_uses_rfc5987(tmp_path, monkeypatch):
     )
 
     assert response.status_code == 200
+    assert response.content == b"{}"
     assert response.headers["Content-Disposition"] == (
         "attachment; filename*=utf-8''snowman%E2%98%83%22.ipynb"
     )
+
+
+def test_workspace_root_file_route_preserves_range_requests(api_ws):
+    (api_ws / "payload.bin").write_bytes(b"0123456789")
+
+    response = client.get(
+        "/api/workspace/file?path=payload.bin&root_key=workspace",
+        headers={"Range": "bytes=2-5"},
+    )
+
+    assert response.status_code == 206
+    assert response.content == b"2345"
+    assert response.headers["Content-Range"] == "bytes 2-5/10"

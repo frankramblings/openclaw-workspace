@@ -522,3 +522,101 @@ def test_home_root_file_route_reads_already_opened_inode(tmp_path, monkeypatch):
     assert calls == [(fake_home, "note.md")]
     assert response.status_code == 200
     assert response.text == "opened inode"
+
+
+def test_home_root_file_route_normalizes_policy_path(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    secret_dir = fake_home / ".config" / "openclaw-secrets"
+    secret_dir.mkdir(parents=True)
+    (secret_dir / "benign.json").write_text('{"secret": true}')
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    assert client.get(
+        "/api/workspace/file",
+        params={"path": "./.config/openclaw-secrets/benign.json", "root_key": "home"},
+    ).status_code == 403
+
+
+def test_home_root_final_open_is_nonblocking(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / "note.md").write_text("hello")
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+    real_open = os.open
+    final_flags = []
+
+    def recording_open(path, flags, *args, **kwargs):
+        if path == "note.md":
+            final_flags.append(flags)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(wf.os, "open", recording_open)
+
+    assert client.get("/api/workspace/file?path=note.md&root_key=home").status_code == 200
+    assert len(final_flags) == 1
+    assert final_flags[0] & os.O_NONBLOCK
+
+
+def test_home_root_text_preview_reads_only_cap_plus_one(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / "large.md").write_bytes(b"x" * (wf.PREVIEW_CAP + 100))
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+    real_read = os.read
+    read_sizes = []
+
+    def recording_read(fd, size):
+        read_sizes.append(size)
+        return real_read(fd, size)
+
+    monkeypatch.setattr(wf.os, "read", recording_read)
+
+    response = client.get("/api/workspace/file?path=large.md&root_key=home")
+
+    assert response.status_code == 200
+    assert len(response.content) == wf.PREVIEW_CAP
+    assert response.headers["X-Truncated"] == "1"
+    assert read_sizes == [wf.PREVIEW_CAP + 1]
+
+
+@pytest.mark.parametrize("path", ["", "."])
+def test_home_root_file_route_rejects_empty_normalized_path(tmp_path, monkeypatch, path):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    assert client.get(
+        "/api/workspace/file", params={"path": path, "root_key": "home"}
+    ).status_code == 400
+
+
+def test_home_root_attachment_filename_uses_rfc5987(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    filename = 'snowman☃".ipynb'
+    (fake_home / filename).write_text("{}")
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    response = client.get(
+        "/api/workspace/file", params={"path": filename, "root_key": "home"}
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Content-Disposition"] == (
+        "attachment; filename*=utf-8''snowman%E2%98%83%22.ipynb"
+    )

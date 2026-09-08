@@ -16,10 +16,12 @@ import subprocess
 import time
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from . import vault_store as vs
 
@@ -154,6 +156,16 @@ def _home_text_ok(target: Path, rel_from_home: str = "") -> bool:
     return lname in _HOME_TEXT_BASENAMES
 
 
+def _validated_home_rel(rel: str) -> str:
+    """Validate and lexically normalize a path relative to the home root."""
+    if not rel or rel.startswith(("/", "\\")) or "\x00" in rel:
+        raise ValueError("invalid path")
+    parts = Path(rel).parts
+    if not parts or ".." in parts:
+        raise ValueError("invalid path")
+    return Path(*parts).as_posix()
+
+
 def _open_home_file(root: Path, rel: str) -> tuple[int, os.stat_result]:
     """Open a home-root file without following any path-component symlink.
 
@@ -161,11 +173,7 @@ def _open_home_file(root: Path, rel: str) -> tuple[int, os.stat_result]:
     Invalid paths raise ``ValueError``; filesystem inspection/open failures
     raise ``OSError`` and are deliberately handled as permission refusals.
     """
-    if not rel or rel.startswith(("/", "\\")) or "\x00" in rel:
-        raise ValueError("invalid path")
-    parts = Path(rel).parts
-    if ".." in parts:
-        raise ValueError("invalid path")
+    parts = Path(_validated_home_rel(rel)).parts
 
     nofollow = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
     dir_fd = os.open(root, nofollow | os.O_DIRECTORY)
@@ -174,7 +182,7 @@ def _open_home_file(root: Path, rel: str) -> tuple[int, os.stat_result]:
             next_fd = os.open(part, nofollow | os.O_DIRECTORY, dir_fd=dir_fd)
             os.close(dir_fd)
             dir_fd = next_fd
-        file_fd = os.open(parts[-1], nofollow, dir_fd=dir_fd)
+        file_fd = os.open(parts[-1], nofollow | os.O_NONBLOCK, dir_fd=dir_fd)
         try:
             metadata = os.fstat(file_fd)
         except Exception:
@@ -183,6 +191,12 @@ def _open_home_file(root: Path, rel: str) -> tuple[int, os.stat_result]:
         return file_fd, metadata
     finally:
         os.close(dir_fd)
+
+
+def _iter_fd(file_fd: int, chunk_size: int = 64 * 1024):
+    """Yield descriptor content in bounded chunks; lifecycle owns close."""
+    while chunk := os.read(file_fd, chunk_size):
+        yield chunk
 
 
 _cache: dict = {}  # (root_key, hidden_flag) -> (timestamp, data); cleared on any mutation
@@ -571,35 +585,45 @@ def workspace_file(path: str, root_key: str = "workspace"):
     resolved_key, root = _root_for_key(root_key)
     if resolved_key == "home":
         try:
-            file_fd, metadata = _open_home_file(root, path)
+            normalized_path = _validated_home_rel(path)
+            file_fd, metadata = _open_home_file(root, normalized_path)
         except ValueError:
             raise HTTPException(status_code=400, detail="invalid path")
         except OSError:
             raise HTTPException(status_code=403, detail="not permitted under home root")
 
-        target = root / path
+        target = root / normalized_path
         if not stat.S_ISREG(metadata.st_mode):
             os.close(file_fd)
             raise HTTPException(status_code=404, detail="not a file")
-        if not _home_text_ok(target, path):
+        if not _home_text_ok(target, normalized_path):
             os.close(file_fd)
             raise HTTPException(status_code=403, detail="not permitted under home root")
 
         mtime_ns = metadata.st_mtime_ns
         mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-        with os.fdopen(file_fd, "rb") as opened_file:
-            data = opened_file.read()
         headers = {"X-Mtime-Ns": str(mtime_ns)}
-        if mime.startswith("image/"):
-            return Response(data, media_type=mime, headers=headers)
         if target.suffix.lower() in TEXT_EXTS or mime.startswith("text/"):
+            try:
+                data = os.read(file_fd, PREVIEW_CAP + 1)
+            finally:
+                os.close(file_fd)
             if len(data) > PREVIEW_CAP:
                 headers["X-Truncated"] = "1"
             return PlainTextResponse(
                 data[:PREVIEW_CAP].decode("utf-8", "replace"), headers=headers)
-        return Response(
-            data, media_type=mime,
-            headers={**headers, "Content-Disposition": f'attachment; filename="{target.name}"'},
+
+        headers["Content-Length"] = str(metadata.st_size)
+        if not mime.startswith("image/"):
+            quoted_name = quote(target.name)
+            if quoted_name != target.name:
+                disposition = f"attachment; filename*=utf-8''{quoted_name}"
+            else:
+                disposition = f'attachment; filename="{target.name}"'
+            headers["Content-Disposition"] = disposition
+        return StreamingResponse(
+            _iter_fd(file_fd), media_type=mime, headers=headers,
+            background=BackgroundTask(os.close, file_fd),
         )
 
     try:

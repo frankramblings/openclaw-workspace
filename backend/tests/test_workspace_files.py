@@ -618,6 +618,28 @@ def test_iter_fd_closes_descriptor_when_consumer_disconnects(tmp_path):
     _assert_fd_closed(file_fd)
 
 
+def test_iter_fd_close_is_idempotent_after_descriptor_number_reuse(tmp_path):
+    source = tmp_path / "source.bin"
+    replacement = tmp_path / "replacement.bin"
+    source.write_bytes(b"old")
+    replacement.write_bytes(b"new")
+    file_fd = os.open(source, os.O_RDONLY)
+    iterator = wf._iter_fd(file_fd)
+
+    iterator.close()
+    _assert_fd_closed(file_fd)
+
+    replacement_fd = os.open(replacement, os.O_RDONLY)
+    if replacement_fd != file_fd:
+        os.dup2(replacement_fd, file_fd)
+        os.close(replacement_fd)
+    try:
+        iterator.close()
+        assert os.read(file_fd, 3) == b"new"
+    finally:
+        os.close(file_fd)
+
+
 def test_iter_fd_closes_descriptor_when_read_fails(tmp_path, monkeypatch):
     target = tmp_path / "payload.bin"
     target.write_bytes(b"abc")
@@ -665,6 +687,43 @@ def test_home_root_asgi_disconnect_closes_stream_descriptor(tmp_path, monkeypatc
         with pytest.raises(ClientDisconnect):
             await response(scope, receive, disconnected_send)
         # Assert before asyncio.run() shuts down pending async generators.
+        assert len(opened) == 1
+        _assert_fd_closed(opened[0])
+
+    asyncio.run(exercise_disconnect())
+
+
+def test_home_root_asgi_header_disconnect_closes_unstarted_stream_fd(
+        tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / "payload.ipynb").write_bytes(b"stream payload")
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+    opened = []
+    real_open_home_file = wf._open_home_file
+
+    def recording_open(root, rel):
+        file_fd, metadata = real_open_home_file(root, rel)
+        opened.append(file_fd)
+        return file_fd, metadata
+
+    monkeypatch.setattr(wf, "_open_home_file", recording_open)
+    response = wf.workspace_file("payload.ipynb", "home")
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def disconnected_send(message):
+        assert message["type"] == "http.response.start"
+        raise OSError(errno.EPIPE, "client disconnected before body")
+
+    scope = {"type": "http", "asgi": {"spec_version": "2.4"}}
+    async def exercise_disconnect():
+        with pytest.raises(ClientDisconnect):
+            await response(scope, receive, disconnected_send)
         assert len(opened) == 1
         _assert_fd_closed(opened[0])
 

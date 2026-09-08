@@ -216,13 +216,41 @@ def _open_home_file(root: Path, rel: str) -> tuple[int, os.stat_result]:
         os.close(dir_fd)
 
 
-def _iter_fd(file_fd: int, chunk_size: int = 64 * 1024):
-    """Yield descriptor content in bounded chunks and always close it."""
-    try:
-        while chunk := os.read(file_fd, chunk_size):
-            yield chunk
-    finally:
+class _FdIterator:
+    """Idempotent iterator that owns and closes one file descriptor."""
+
+    def __init__(self, file_fd: int, chunk_size: int):
+        self._file_fd: int | None = file_fd
+        self._chunk_size = chunk_size
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> bytes:
+        if self._file_fd is None:
+            raise StopIteration
+        try:
+            chunk = os.read(self._file_fd, self._chunk_size)
+        except BaseException:
+            self.close()
+            raise
+        if not chunk:
+            self.close()
+            raise StopIteration
+        return chunk
+
+    def close(self) -> None:
+        file_fd = self._file_fd
+        if file_fd is None:
+            return
+        # Clear ownership first: retrying close() after an error could close a
+        # different file if the OS has already reused this descriptor number.
+        self._file_fd = None
         os.close(file_fd)
+
+
+def _iter_fd(file_fd: int, chunk_size: int = 64 * 1024) -> _FdIterator:
+    return _FdIterator(file_fd, chunk_size)
 
 
 def _read_fd_preview(file_fd: int, limit: int) -> bytes:

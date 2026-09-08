@@ -316,6 +316,7 @@ def test_default_model_floats_to_front_of_its_provider(monkeypatch):
     default for every new chat)."""
     from backend import bridge, config
     monkeypatch.setattr(config, "default_model", lambda: ("openai", "gpt-5.5"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
     payload = {"models": [
         {"id": "gpt-5.4", "provider": "openai", "name": "GPT-5.4"},
         {"id": "gpt-5.4-mini", "provider": "openai", "name": "GPT-5.4 mini"},
@@ -350,3 +351,97 @@ def test_build_model_items_keeps_anthropic_setup_token_endpoint():
     endpoints = [item["endpoint_id"] for item in out["items"]]
     assert "anthropic" in endpoints
     assert "claude-cli" in endpoints
+
+
+def test_openai_picker_prefers_gpt56_sol_over_alphabetical(monkeypatch):
+    """The gateway sorts a provider's models alphabetically, which puts
+    gpt-5.4-mini ahead of the gpt-5.6 trio. The openai row is not the default
+    provider (claude-cli is), so the default-float rule never touches it, and
+    the PWA would show the weakest model first. Preferred models lead; the
+    rest keep gateway order."""
+    from backend import bridge, config
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-4-8"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
+    payload = {"models": [
+        {"id": "gpt-5.4-mini", "provider": "openai", "name": "GPT-5.4-Mini"},
+        {"id": "gpt-5.6-luna", "provider": "openai", "name": "GPT-5.6-Luna"},
+        {"id": "gpt-5.6-sol", "provider": "openai", "name": "GPT-5.6-Sol"},
+        {"id": "gpt-5.6-terra", "provider": "openai", "name": "GPT-5.6-Terra"},
+        {"id": "gpt-9-future", "provider": "openai", "name": "GPT-9"},
+        {"id": "claude-opus-4-8", "provider": "claude-cli", "name": "Opus"},
+    ]}
+    out = bridge._build_model_items(payload, {})
+    openai_item = next(i for i in out["items"] if i["endpoint_id"] == "openai")
+    assert openai_item["models"] == [
+        "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.4-mini", "gpt-9-future"]
+    assert openai_item["models_display"][0] == "GPT-5.6-Sol"
+
+
+def test_claude_cli_picker_keeps_default_first_then_current_generation(monkeypatch):
+    """claude-cli is the default provider, so the configured primary (opus 4.8)
+    must stay in slot 0 for new chats; after it, the current generation leads
+    and the rest keep gateway (alphabetical) order."""
+    from backend import bridge, config
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-4-8"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
+    payload = {"models": [
+        {"id": "claude-fable-5-1", "provider": "claude-cli", "name": "Fable 5.1"},
+        {"id": "claude-opus-4-8", "provider": "claude-cli", "name": "Opus 4.8"},
+        {"id": "claude-opus-5", "provider": "claude-cli", "name": "Opus 5"},
+        {"id": "claude-sonnet-4-6", "provider": "claude-cli", "name": "Sonnet 4.6"},
+        {"id": "claude-sonnet-5", "provider": "claude-cli", "name": "Sonnet 5"},
+    ]}
+    out = bridge._build_model_items(payload, {})
+    item = next(i for i in out["items"] if i["endpoint_id"] == "claude-cli")
+    assert item["models"] == [
+        "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5", "claude-fable-5-1", "claude-sonnet-4-6"]
+    assert item["models_display"][0] == "Opus 4.8"
+
+
+def test_display_name_prettifies_when_gateway_echoes_the_id(monkeypatch):
+    """A config-declared model the gateway catalog doesn't know comes back with
+    name == id; the picker must not show a raw slug for it."""
+    from backend import bridge, config
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-4-8"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
+    payload = {"models": [
+        {"id": "claude-opus-5", "provider": "claude-cli", "name": "claude-opus-5"},
+        {"id": "claude-fable-5-1", "provider": "claude-cli", "name": ""},
+        {"id": "claude-sonnet-5", "provider": "claude-cli", "name": "Claude Sonnet 5 (Claude CLI)"},
+        {"id": "claude-opus-5", "provider": "anthropic", "name": "claude-opus-5"},
+    ]}
+    out = bridge._build_model_items(payload, {})
+    cli = next(i for i in out["items"] if i["endpoint_id"] == "claude-cli")
+    assert dict(zip(cli["models"], cli["models_display"])) == {
+        "claude-opus-5": "Claude Opus 5 (Claude CLI)",
+        "claude-sonnet-5": "Claude Sonnet 5 (Claude CLI)",
+        "claude-fable-5-1": "Claude Fable 5.1 (Claude CLI)",
+    }
+    anth = next(i for i in out["items"] if i["endpoint_id"] == "anthropic")
+    assert anth["models_display"] == ["Claude Opus 5"]
+
+
+def test_saved_default_chat_model_floats_to_front(monkeypatch):
+    """The picker's slot 0 must match what GET /api/default-chat hands a new
+    chat: the saved preference wins over the gateway's configured primary."""
+    from backend import bridge, config
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-4-8"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: ("claude-cli", "claude-opus-5"))
+    payload = {"models": [
+        {"id": "claude-fable-5-1", "provider": "claude-cli", "name": "Fable 5.1"},
+        {"id": "claude-opus-4-8", "provider": "claude-cli", "name": "Opus 4.8"},
+        {"id": "claude-opus-5", "provider": "claude-cli", "name": "Opus 5"},
+        {"id": "claude-sonnet-5", "provider": "claude-cli", "name": "Sonnet 5"},
+    ]}
+    out = bridge._build_model_items(payload, {})
+    item = next(i for i in out["items"] if i["endpoint_id"] == "claude-cli")
+    assert item["models"] == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1", "claude-opus-4-8"]
+
+
+def test_saved_default_reads_settings_and_tolerates_absence(monkeypatch):
+    from backend import bridge, websearch
+    monkeypatch.setattr(websearch, "load_settings", lambda: {})
+    assert bridge._saved_default_model() is None
+    monkeypatch.setattr(websearch, "load_settings",
+                        lambda: {"default_chat_model": {"model": "claude-opus-5", "endpoint_id": "claude-cli"}})
+    assert bridge._saved_default_model() == ("claude-cli", "claude-opus-5")

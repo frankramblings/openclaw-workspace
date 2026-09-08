@@ -937,6 +937,37 @@ def _pretty_model(model_id: str) -> str:
     return model_id
 
 
+def _saved_default_model() -> tuple[str, str] | None:
+    """The user's saved new-chat model (.data/settings.json), or None."""
+    try:
+        from backend import websearch
+        pref = websearch.load_settings().get("default_chat_model") or {}
+    except Exception:  # noqa: BLE001 - a settings hiccup must not break the picker
+        return None
+    model = (pref.get("model") or "").strip()
+    endpoint = (pref.get("endpoint_id") or "").strip()
+    return (endpoint, model) if model and endpoint else None
+
+
+def _effective_default_model() -> tuple[str, str]:
+    """What a NEW chat will actually land on: saved preference, else the
+    gateway's configured primary. Mirrors GET /api/default-chat, so the
+    picker's slot 0 and the new-chat default can never disagree."""
+    return _saved_default_model() or config.default_model()
+
+
+def _display_name(provider: str, m: dict) -> str:
+    """Gateway display name, unless the gateway just echoed the id (a model
+    declared in openclaw.json that its bundled catalog doesn't know, e.g.
+    claude-opus-5 on 2026.7.1-2) -- then prettify it and keep the provider
+    suffix the catalog uses for its own claude-cli rows."""
+    name = (m.get("name") or "").strip()
+    if name and name != m.get("id"):
+        return name
+    label = _pretty_model(m["id"])
+    return f"{label} (Claude CLI)" if provider == "claude-cli" else label
+
+
 def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
     roots = _AUTH_ROOTS.get(model_provider, (model_provider,))
     for name, status in auth_status.items():
@@ -954,6 +985,18 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
 # which bypasses the picker entirely. It's a tools-less 7B and makes a poor
 # interactive chat model, so keep it OUT of the chat model dropdown.
 _HIDDEN_ENDPOINTS = {"local-lms"}
+
+# Per-provider models that should lead their picker row. The gateway sorts a
+# provider's catalog alphabetically, so "gpt-5.4-mini" lands above the gpt-5.6
+# trio; a non-default provider never gets the default-float below, so the PWA
+# would show its weakest model first. Listed ids lead in this order, the rest
+# keep gateway order.
+_PREFERRED_ORDER: dict[str, tuple[str, ...]] = {
+    "openai": ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
+    # The configured primary still floats to slot 0 below; this only orders
+    # the rest so the current generation sits above the 4.x models.
+    "claude-cli": ("claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"),
+}
 
 # Per-provider model ids to hide from the picker even if the gateway lists them.
 # `google/gemini-3.1-pro-preview` is present in the catalog but 429s on the free
@@ -974,8 +1017,9 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
     for m in models_payload.get("models") or []:
         by_provider.setdefault(m.get("provider", "other"), []).append(m)
 
-    # Default provider (the configured primary agent's) sorts first.
-    default_provider, default_model = config.default_model()
+    # Default provider sorts first: the user's saved new-chat preference
+    # (POST /api/default-chat) when there is one, else the configured primary.
+    default_provider, default_model = _effective_default_model()
     order = sorted(by_provider, key=lambda p: (p != default_provider, p))
 
     items = []
@@ -986,6 +1030,10 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
         objs = [m for m in by_provider[provider] if m.get("id") and m["id"] not in hidden]
         if not objs:
             continue
+        preferred = _PREFERRED_ORDER.get(provider)
+        if preferred:
+            rank = {mid: i for i, mid in enumerate(preferred)}
+            objs.sort(key=lambda m: rank.get(m["id"], len(rank)))  # stable
         # The SPA picker auto-defaults every NEW chat to models[0] (it never
         # consults /api/default-chat) — so that slot must be the configured
         # primary. The gateway catalog is sorted, and gpt-5.4's arrival put
@@ -1008,8 +1056,7 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
             # like "(chat only)" for tool-less providers (perplexity-web). Fall
             # back to a prettified id. NOT `alias`: for some providers that's a
             # short routing key (codex → "gpt"), not a human label.
-            "models_display": [(m.get("name") or "").strip() or _pretty_model(m["id"])
-                               for m in objs],
+            "models_display": [_display_name(provider, m) for m in objs],
             "models_extra": [],
             "models_extra_display": [],
         })

@@ -1,5 +1,5 @@
 """Cross-pair guard: PATCH/POST /api/session must reject a model that the
-catalog places on a DIFFERENT endpoint (e.g. claude-cli + gpt-5.5 — the
+catalog places on a DIFFERENT endpoint (e.g. claude-cli + gpt-5.6-sol — the
 "model not allowed" refs the gateway bounced on 2026-07-24), while staying
 fail-open for models the catalog doesn't know (claude-opus-4-8[1m]-style
 drift) and for catalog outages."""
@@ -16,7 +16,7 @@ CATALOG = {"items": [
      "models": ["claude-opus-4-8", "claude-sonnet-4-6"],
      "models_extra": []},
     {"endpoint_id": "openai", "endpoint_name": "ChatGPT",
-     "models": ["gpt-5.5", "gpt-5.4-mini"],
+     "models": ["gpt-5.6-sol", "gpt-5.4-mini"],
      "models_extra": []},
     {"endpoint_id": "perplexity-web", "endpoint_name": "Perplexity",
      "models": ["claude-sonnet-4-6"],
@@ -34,7 +34,7 @@ OFFLINE_CATALOG = {"items": [
      "models_extra": []},
     {"endpoint_id": "openai", "endpoint_name": "ChatGPT",
      "offline": False,
-     "models": ["gpt-5.5", "gpt-5.4-mini"],
+     "models": ["gpt-5.6-sol", "gpt-5.4-mini"],
      "models_extra": []},
 ]}
 
@@ -63,10 +63,10 @@ def _mk(model="claude-opus-4-8", endpoint_id="claude-cli"):
 # --- PATCH ------------------------------------------------------------------
 
 def test_patch_cross_pair_rejected(catalog):
-    """model=gpt-5.5 onto a claude-cli record (no endpoint_id sent) is the
-    exact bug: the stale endpoint would produce claude-cli/gpt-5.5."""
+    """model=gpt-5.6-sol onto a claude-cli record (no endpoint_id sent) is the
+    exact bug: the stale endpoint would produce claude-cli/gpt-5.6-sol."""
     sid = _mk()
-    resp = TestClient(app).patch(f"/api/session/{sid}", data={"model": "gpt-5.5"})
+    resp = TestClient(app).patch(f"/api/session/{sid}", data={"model": "gpt-5.6-sol"})
     assert resp.status_code == 400
     assert sessions_store.get(sid)["model"] == "claude-opus-4-8"
 
@@ -75,10 +75,10 @@ def test_patch_valid_pair_accepted(catalog):
     sid = _mk()
     resp = TestClient(app).patch(
         f"/api/session/{sid}",
-        data={"model": "gpt-5.5", "endpoint_id": "openai"})
+        data={"model": "gpt-5.6-sol", "endpoint_id": "openai"})
     assert resp.status_code == 200
     rec = sessions_store.get(sid)
-    assert (rec["endpoint_id"], rec["model"]) == ("openai", "gpt-5.5")
+    assert (rec["endpoint_id"], rec["model"]) == ("openai", "gpt-5.6-sol")
 
 
 def test_patch_model_within_endpoint_accepted(catalog):
@@ -90,7 +90,7 @@ def test_patch_model_within_endpoint_accepted(catalog):
 
 
 def test_patch_endpoint_alone_cross_pair_rejected(catalog):
-    sid = _mk(model="gpt-5.5", endpoint_id="openai")
+    sid = _mk(model="gpt-5.6-sol", endpoint_id="openai")
     resp = TestClient(app).patch(
         f"/api/session/{sid}", data={"endpoint_id": "claude-cli"})
     assert resp.status_code == 400
@@ -120,7 +120,7 @@ def test_patch_catalog_outage_fails_open(monkeypatch):
         raise RuntimeError("gateway down")
     monkeypatch.setattr(app_module.bridge, "fetch_models", boom)
     sid = _mk()
-    resp = TestClient(app).patch(f"/api/session/{sid}", data={"model": "gpt-5.5"})
+    resp = TestClient(app).patch(f"/api/session/{sid}", data={"model": "gpt-5.6-sol"})
     assert resp.status_code == 200
 
 
@@ -140,17 +140,17 @@ def test_patch_without_model_fields_skips_catalog(monkeypatch):
 def test_create_cross_pair_rejected(catalog):
     resp = TestClient(app).post(
         "/api/session",
-        data={"name": "bad", "model": "gpt-5.5", "endpoint_id": "claude-cli"})
+        data={"name": "bad", "model": "gpt-5.6-sol", "endpoint_id": "claude-cli"})
     assert resp.status_code == 400
 
 
 def test_create_valid_pair_accepted(catalog):
     resp = TestClient(app).post(
         "/api/session",
-        data={"name": "ok", "model": "gpt-5.5", "endpoint_id": "openai"})
+        data={"name": "ok", "model": "gpt-5.6-sol", "endpoint_id": "openai"})
     assert resp.status_code == 200
     rec = sessions_store.get(resp.json()["id"])
-    assert (rec["endpoint_id"], rec["model"]) == ("openai", "gpt-5.5")
+    assert (rec["endpoint_id"], rec["model"]) == ("openai", "gpt-5.6-sol")
 
 
 def test_create_placeholder_untouched(monkeypatch):
@@ -189,7 +189,7 @@ def test_default_chat_skips_offline_saved_default(monkeypatch):
     resp = TestClient(app).get("/api/default-chat")
     assert resp.status_code == 200
     body = resp.json()
-    assert (body["endpoint_id"], body["model"]) == ("openai", "gpt-5.5")
+    assert (body["endpoint_id"], body["model"]) == ("openai", "gpt-5.6-sol")
 
 
 def test_set_default_chat_rejects_offline_endpoint(monkeypatch):
@@ -239,7 +239,7 @@ def _open_turn_with_gateway(monkeypatch, responses):
 
     async def go():
         ws, run_id, use_warm = await bridge._open_turn(
-            "hi", "k", "claude-cli/gpt-5.5", None, None, allow_warm=False)
+            "hi", "k", "claude-cli/gpt-5.6-sol", None, None, allow_warm=False)
         pinned.update(bridge._pinned)
         if use_warm:
             bridge._warm.lock.release()
@@ -260,4 +260,4 @@ def test_rejected_pin_not_recorded(monkeypatch):
 
 def test_successful_pin_recorded(monkeypatch):
     pinned = _open_turn_with_gateway(monkeypatch, {})
-    assert pinned.get("k") == "claude-cli/gpt-5.5"
+    assert pinned.get("k") == "claude-cli/gpt-5.6-sol"

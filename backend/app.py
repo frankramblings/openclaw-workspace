@@ -685,11 +685,12 @@ def _first_online_model(catalog: dict) -> tuple[str, str] | None:
     rank = {"openai": 0, "google": 1, "perplexity-web": 2}
     items.sort(key=lambda it: rank.get((it.get("endpoint_id") or "").strip(), 99))
     model_rank = {
-        "gpt-5.5": 0,
-        "gpt-5.4-mini": 1,
-        "gpt-5.4": 2,
-        "gemini-3-flash-preview": 3,
-        "perplexity-auto": 4,
+        "gpt-5.6-sol": 0,
+        "gpt-5.6-terra": 1,
+        "gpt-5.6-luna": 2,
+        "gpt-5.4-mini": 3,
+        "gemini-3-flash-preview": 4,
+        "perplexity-auto": 5,
     }
     for it in items:
         if it.get("offline"):

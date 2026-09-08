@@ -477,3 +477,48 @@ def test_home_root_file_route_allows_normal_markdown(tmp_path, monkeypatch):
     response = client.get("/api/workspace/file?path=note.md&root_key=home")
     assert response.status_code == 200
     assert response.text == "hello"
+
+
+def test_home_root_file_route_rejects_dotdot_symlink_bypass(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    (fake_home / "existing-dir").mkdir()
+    (fake_home / "real.md").write_text("safe text")
+    (fake_home / "alias.md").symlink_to(fake_home / "real.md")
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    assert client.get(
+        "/api/workspace/file?path=existing-dir/../alias.md&root_key=home"
+    ).status_code == 400
+
+
+def test_home_root_file_route_reads_already_opened_inode(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    target = fake_home / "note.md"
+    target.write_text("opened inode")
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    calls = []
+
+    def open_then_swap(root, rel):
+        calls.append((root, rel))
+        fd = os.open(root / rel, os.O_RDONLY)
+        metadata = os.fstat(fd)
+        target.unlink()
+        target.write_text("replacement inode")
+        return fd, metadata
+
+    monkeypatch.setattr(wf, "_open_home_file", open_then_swap, raising=False)
+
+    response = client.get("/api/workspace/file?path=note.md&root_key=home")
+
+    assert calls == [(fake_home, "note.md")]
+    assert response.status_code == 200
+    assert response.text == "opened inode"

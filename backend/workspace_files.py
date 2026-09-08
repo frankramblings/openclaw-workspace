@@ -154,28 +154,35 @@ def _home_text_ok(target: Path, rel_from_home: str = "") -> bool:
     return lname in _HOME_TEXT_BASENAMES
 
 
-def _home_path_has_no_symlinks(root: Path, rel: str) -> bool:
-    """Return whether every literal component below ``root`` is not a symlink.
+def _open_home_file(root: Path, rel: str) -> tuple[int, os.stat_result]:
+    """Open a home-root file without following any path-component symlink.
 
-    Invalid and escaping paths are left to ``resolve_safe`` so they retain its
-    400 response. Filesystem inspection failures fail closed.
+    The returned descriptor is the verified inode that callers must read.
+    Invalid paths raise ``ValueError``; filesystem inspection/open failures
+    raise ``OSError`` and are deliberately handled as permission refusals.
     """
     if not rel or rel.startswith(("/", "\\")) or "\x00" in rel:
-        return True
+        raise ValueError("invalid path")
     parts = Path(rel).parts
     if ".." in parts:
-        return True
-    current = root
+        raise ValueError("invalid path")
+
+    nofollow = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    dir_fd = os.open(root, nofollow | os.O_DIRECTORY)
     try:
-        for part in parts:
-            if part in ("", "."):
-                continue
-            current = current / part
-            if stat.S_ISLNK(current.lstat().st_mode):
-                return False
-    except OSError:
-        return False
-    return True
+        for part in parts[:-1]:
+            next_fd = os.open(part, nofollow | os.O_DIRECTORY, dir_fd=dir_fd)
+            os.close(dir_fd)
+            dir_fd = next_fd
+        file_fd = os.open(parts[-1], nofollow, dir_fd=dir_fd)
+        try:
+            metadata = os.fstat(file_fd)
+        except Exception:
+            os.close(file_fd)
+            raise
+        return file_fd, metadata
+    finally:
+        os.close(dir_fd)
 
 
 _cache: dict = {}  # (root_key, hidden_flag) -> (timestamp, data); cleared on any mutation
@@ -562,25 +569,45 @@ def workspace_file_write(body: FileWriteBody):
 @router.get("/api/workspace/file")
 def workspace_file(path: str, root_key: str = "workspace"):
     resolved_key, root = _root_for_key(root_key)
-    if resolved_key == "home" and not _home_path_has_no_symlinks(root, path):
-        raise HTTPException(status_code=403, detail="symlinks not permitted under home root")
+    if resolved_key == "home":
+        try:
+            file_fd, metadata = _open_home_file(root, path)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="invalid path")
+        except OSError:
+            raise HTTPException(status_code=403, detail="not permitted under home root")
+
+        target = root / path
+        if not stat.S_ISREG(metadata.st_mode):
+            os.close(file_fd)
+            raise HTTPException(status_code=404, detail="not a file")
+        if not _home_text_ok(target, path):
+            os.close(file_fd)
+            raise HTTPException(status_code=403, detail="not permitted under home root")
+
+        mtime_ns = metadata.st_mtime_ns
+        mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+        with os.fdopen(file_fd, "rb") as opened_file:
+            data = opened_file.read()
+        headers = {"X-Mtime-Ns": str(mtime_ns)}
+        if mime.startswith("image/"):
+            return Response(data, media_type=mime, headers=headers)
+        if target.suffix.lower() in TEXT_EXTS or mime.startswith("text/"):
+            if len(data) > PREVIEW_CAP:
+                headers["X-Truncated"] = "1"
+            return PlainTextResponse(
+                data[:PREVIEW_CAP].decode("utf-8", "replace"), headers=headers)
+        return Response(
+            data, media_type=mime,
+            headers={**headers, "Content-Disposition": f'attachment; filename="{target.name}"'},
+        )
+
     try:
         target = resolve_safe(root, path)
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid path")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="not a file")
-    # Guardrail: `home` root exposes all of $HOME, so gate reads to known-safe
-    # text file types (see _home_text_ok) — refuses credential files even when
-    # they're text-formatted (~/.ssh/id_ed25519, ~/.aws/credentials, .env, …).
-    # `workspace` and named sub-roots stay permissive.
-    if resolved_key == "home":
-        try:
-            rel_from_home = target.resolve().relative_to(root.resolve()).as_posix()
-        except (OSError, ValueError):
-            rel_from_home = ""
-        if not _home_text_ok(target, rel_from_home):
-            raise HTTPException(status_code=403, detail="not permitted under home root")
     try:
         mtime_ns = target.stat().st_mtime_ns
     except OSError:

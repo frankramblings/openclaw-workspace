@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import mimetypes
 import os
+import stat
 import shutil
 import subprocess
 import time
@@ -151,6 +152,30 @@ def _home_text_ok(target: Path, rel_from_home: str = "") -> bool:
     if suf:
         return suf in _HOME_TEXT_SUFFIXES
     return lname in _HOME_TEXT_BASENAMES
+
+
+def _home_path_has_no_symlinks(root: Path, rel: str) -> bool:
+    """Return whether every literal component below ``root`` is not a symlink.
+
+    Invalid and escaping paths are left to ``resolve_safe`` so they retain its
+    400 response. Filesystem inspection failures fail closed.
+    """
+    if not rel or rel.startswith(("/", "\\")) or "\x00" in rel:
+        return True
+    parts = Path(rel).parts
+    if ".." in parts:
+        return True
+    current = root
+    try:
+        for part in parts:
+            if part in ("", "."):
+                continue
+            current = current / part
+            if stat.S_ISLNK(current.lstat().st_mode):
+                return False
+    except OSError:
+        return False
+    return True
 
 
 _cache: dict = {}  # (root_key, hidden_flag) -> (timestamp, data); cleared on any mutation
@@ -537,6 +562,8 @@ def workspace_file_write(body: FileWriteBody):
 @router.get("/api/workspace/file")
 def workspace_file(path: str, root_key: str = "workspace"):
     resolved_key, root = _root_for_key(root_key)
+    if resolved_key == "home" and not _home_path_has_no_symlinks(root, path):
+        raise HTTPException(status_code=403, detail="symlinks not permitted under home root")
     try:
         target = resolve_safe(root, path)
     except ValueError:

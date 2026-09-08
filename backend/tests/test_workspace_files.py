@@ -429,3 +429,51 @@ def test_home_root_file_route_enforces_policy(tmp_path, monkeypatch):
     # Workspace root stays permissive (unchanged behavior).
     (wf.workspace_root() / "secret.env").write_text("still readable via workspace root")
     assert client.get("/api/workspace/file?path=secret.env&root_key=workspace").status_code == 200
+
+
+def test_home_root_file_route_refuses_final_symlink(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    (fake_home / "real.md").write_text("safe text")
+    (fake_home / "alias.md").symlink_to(fake_home / "real.md")
+
+    assert client.get(
+        "/api/workspace/file?path=alias.md&root_key=home"
+    ).status_code == 403
+
+
+def test_home_root_file_route_refuses_intermediate_symlink(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    real_dir = fake_home / "real"
+    real_dir.mkdir(parents=True)
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    (real_dir / "note.md").write_text("safe text")
+    (fake_home / "linked-dir").symlink_to(real_dir, target_is_directory=True)
+
+    assert client.get(
+        "/api/workspace/file?path=linked-dir/note.md&root_key=home"
+    ).status_code == 403
+
+
+def test_home_root_file_route_allows_normal_markdown(tmp_path, monkeypatch):
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {
+        "workspace": wf.workspace_root(),
+        "home": fake_home,
+    })
+
+    (fake_home / "note.md").write_text("hello")
+
+    response = client.get("/api/workspace/file?path=note.md&root_key=home")
+    assert response.status_code == 200
+    assert response.text == "hello"

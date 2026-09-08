@@ -332,26 +332,28 @@ def test_default_model_floats_to_front_of_its_provider(monkeypatch):
     assert openai_item["models"][1:] == ["gpt-5.4", "gpt-5.4-mini"]
 
 
-def test_build_model_items_keeps_anthropic_setup_token_endpoint():
-    """The `anthropic` endpoint may be backed by Claude setup-token auth.
-    Hiding it forces the PWA onto `claude-cli`, whose OAuth access token shows
-    an 8h expiry even when Frank has a one-year setup token configured."""
-    from backend import bridge
-
+def test_build_model_items_hides_anthropic_and_google_rows(monkeypatch):
+    """The picker shows Claude CLI, OpenAI and Local only. The `anthropic`
+    catalog entries stay in the gateway allowlist (they route through the
+    Claude CLI runtime) but were a duplicate "Claude" row; google is a cron
+    fallback, not a chat pick. A thread already pinned to a hidden endpoint is
+    unaffected: the pair guard fails open for endpoints missing from the catalog."""
+    from backend import bridge, config
+    from backend import app as app_module
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-5"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
     payload = {"models": [
-        {"id": "claude-opus-4-8", "provider": "anthropic",
-         "name": "Claude Opus 4.8"},
-        {"id": "claude-opus-4-8", "provider": "claude-cli",
-         "name": "Claude Opus 4.8 (Claude CLI)"},
+        {"id": "claude-opus-5", "provider": "anthropic", "name": "Claude Opus 5"},
+        {"id": "claude-opus-5", "provider": "claude-cli", "name": "Claude Opus 5 (Claude CLI)"},
+        {"id": "gemini-3-flash-preview", "provider": "google", "name": "Gemini 3 Flash"},
+        {"id": "gpt-5.6-sol", "provider": "openai", "name": "GPT-5.6-Sol"},
+        {"id": "mlx-community/GLM-4-9B-0414-4bit", "provider": "local", "name": "GLM-4-9B (Local)"},
     ]}
-    out = bridge._build_model_items(payload, {
-        "providers": [{"provider": "claude-cli", "status": "expiring"}]
-    })
-
+    out = bridge._build_model_items(payload, {})
     endpoints = [item["endpoint_id"] for item in out["items"]]
-    assert "anthropic" in endpoints
-    assert "claude-cli" in endpoints
-
+    assert "anthropic" not in endpoints and "google" not in endpoints
+    assert endpoints[0] == "claude-cli" and set(endpoints) == {"claude-cli", "openai", "local"}
+    assert app_module._catalog_model_error(out, "anthropic", "claude-opus-4-8") is None
 
 def test_openai_picker_prefers_gpt56_sol_over_alphabetical(monkeypatch):
     """The gateway sorts a provider's models alphabetically, which puts
@@ -417,8 +419,8 @@ def test_display_name_prettifies_when_gateway_echoes_the_id(monkeypatch):
         "claude-sonnet-5": "Claude Sonnet 5 (Claude CLI)",
         "claude-fable-5-1": "Claude Fable 5.1 (Claude CLI)",
     }
-    anth = next(i for i in out["items"] if i["endpoint_id"] == "anthropic")
-    assert anth["models_display"] == ["Claude Opus 5"]
+    # The anthropic row is hidden from the picker (see _HIDDEN_ENDPOINTS).
+    assert all(i["endpoint_id"] != "anthropic" for i in out["items"])
 
 
 def test_saved_default_chat_model_floats_to_front(monkeypatch):

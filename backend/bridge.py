@@ -976,15 +976,20 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
     return True  # no auth info for this provider → don't hide it
 
 
-# Endpoints hidden from the model picker. Keep this empty by default: Anthropic's
-# `anthropic` endpoint can be backed by a long-lived setup-token, not only a
-# metered API key, so hiding it forces the PWA onto the short-lived Claude CLI
-# OAuth path even after setup-token auth is configured.
-# local-lms (Qwen2.5-VL on kamino) is wired ONLY for utility completions —
-# chat titles + composer suggestions via the direct path (backend/local_llm.py),
-# which bypasses the picker entirely. It's a tools-less 7B and makes a poor
-# interactive chat model, so keep it OUT of the chat model dropdown.
-_HIDDEN_ENDPOINTS = {"local-lms"}
+# Endpoints hidden from the model picker.
+# - anthropic: the `anthropic/...` catalog entries exist for the gateway's
+#   allowlist and route through the Claude CLI runtime anyway; showing them as
+#   a second "Claude" row next to "Claude CLI" was a duplicate (Frank, 2026-09-08).
+# - google: gemini-3.1-pro 429s on the free tier and gemini-3-flash is a
+#   last-resort cron fallback, not something to pick for a chat (Frank, 2026-09-08).
+# - local-lms (Qwen2.5-VL on kamino) is wired ONLY for utility completions —
+#   chat titles + composer suggestions via the direct path (backend/local_llm.py),
+#   which bypasses the picker entirely. It's a tools-less 7B and makes a poor
+#   interactive chat model, so keep it OUT of the chat model dropdown.
+# Existing threads pinned to a hidden endpoint keep working: the pair guard
+# fails open for endpoints absent from the catalog, and the gateway allowlist
+# is untouched. Only the picker rows go away.
+_HIDDEN_ENDPOINTS = {"anthropic", "google", "local-lms"}
 
 # Per-provider models that should lead their picker row. The gateway sorts a
 # provider's catalog alphabetically, so "gpt-5.4-mini" lands above the gpt-5.6
@@ -1326,6 +1331,9 @@ _STRIP_INPUT_TOOLS = {
     # claude-cli agent path here — TaskCreate seeds a step, TaskUpdate mutates
     # its status, TaskList reconciles). EnterPlanMode pairs with ExitPlanMode.
     "TaskCreate", "TaskUpdate", "TaskList", "EnterPlanMode",
+    # OpenClaw's plan tool — its input.plan (array of {step,status}) feeds the
+    # chat-strip step tracker, same as TodoWrite on the Claude Code harness.
+    "update_plan", "mcp__openclaw__update_plan",
 }
 
 # Tools whose raw output the frontend chat-strip needs (to extract task IDs

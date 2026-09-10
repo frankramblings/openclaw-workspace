@@ -1041,6 +1041,28 @@ _PREFERRED_ORDER: dict[str, tuple[str, ...]] = {
 _HIDDEN_MODELS = {"google": {"gemini-3.1-pro-preview"}}
 
 
+def _allowed_for_agent(provider: str, objs: list[dict]) -> list[dict]:
+    """Drop rows our agent would refuse to run.
+
+    `models.list` serves the WHOLE gateway catalog, not this agent's slice, and
+    chat_turn._model_ref sends `<endpoint_id>/<model id>` — so a row the agent's
+    allowlist omits is a picker entry that errors on use. Post-2026.9.3 that is
+    exactly the Claude row: all seven Claude models arrive as provider
+    "anthropic" (runtime claude-cli) and get grouped under claude-cli, but the
+    main agent only allows five of them as `claude-cli/...`; Opus 4.6 and 4.7
+    are absent (4.7 belongs to the separate `claude` agent). Filtering on the
+    ref we actually send keeps the picker honest.
+
+    Fails open per provider: an agent with no allowlist, or one that names no
+    model at all for this provider, keeps its full row rather than vanishing.
+    """
+    allowed = config.agent_allowed_models()
+    if not allowed:
+        return objs
+    keep = [m for m in objs if f"{provider}/{m['id']}" in allowed]
+    return keep or objs
+
+
 def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
     """Map models.list + models.authStatus onto the SPA's {items:[...]} shape."""
     auth_status = {p.get("provider", ""): p.get("status", "")
@@ -1065,6 +1087,7 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
             continue  # per-token API endpoint — see _HIDDEN_ENDPOINTS
         hidden = _HIDDEN_MODELS.get(provider, set())
         objs = [m for m in by_provider[provider] if m.get("id") and m["id"] not in hidden]
+        objs = _allowed_for_agent(provider, objs)
         if not objs:
             continue
         preferred = _PREFERRED_ORDER.get(provider)

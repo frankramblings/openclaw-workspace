@@ -161,6 +161,30 @@ def _agent_id_from_openclaw() -> str | None:
         return None
 
 
+def agent_allowed_models() -> set[str]:
+    """The `provider/model` refs our agent is allowed to run, or an empty set
+    when the config declares no allowlist (which means "no restriction").
+
+    `models.list` is NOT agent-scoped: it serves the whole gateway catalog, so
+    the picker can offer a model this agent will refuse on send. Reading the
+    allowlist lets the picker show only what will actually run. Empty on any
+    read failure, and callers treat empty as "allow everything" — a config move
+    must never blank the picker.
+    """
+    try:
+        agents = _openclaw_json()["agents"]
+        entries = agents.get("entries")
+        if isinstance(entries, dict):
+            entry = entries.get(agent_id()) or {}
+        else:  # legacy agents.list — an ARRAY of {id, ...}
+            entry = next((a for a in (agents.get("list") or [])
+                          if isinstance(a, dict) and a.get("id") == agent_id()), {})
+        models = (entry or {}).get("models")
+        return set(models) if isinstance(models, dict) else set(models or [])
+    except (KeyError, TypeError, AttributeError):
+        return set()
+
+
 def agent_id() -> str:
     """The OpenClaw agent id the workspace talks to. Env > connection.json >
     OpenClaw config (agents.entries, or legacy agents.list) > 'main'. v1

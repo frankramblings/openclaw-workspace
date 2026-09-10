@@ -34,6 +34,13 @@ def _isolated_data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
     monkeypatch.setattr(changes, "DEFAULT_CONFIG", {**changes.DEFAULT_CONFIG, "roots": []})
     monkeypatch.setattr(changes, "_ACTIVE", {})
+    # The picker now filters model rows against the agent's allowlist, which
+    # config reads from the REAL ~/.openclaw/openclaw.json. Left alone, every
+    # picker test's synthetic catalog gets judged against the developer's own
+    # config (a made-up "gpt-9-future" is not in it, so the row silently
+    # shrinks). Default to no allowlist = no restriction; tests that exercise
+    # the filter set their own.
+    monkeypatch.setattr(config, "agent_allowed_models", lambda: set())
 
 
 @pytest.fixture

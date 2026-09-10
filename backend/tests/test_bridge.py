@@ -480,3 +480,52 @@ def test_build_model_items_maps_claude_cli_runtime_back_to_its_endpoint(monkeypa
     # Default floats to slot 0, then the preferred order; the raw API row is gone.
     assert item["models"] == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"]
     assert item["endpoint_name"] == "Claude"
+
+
+def test_picker_hides_claude_models_the_agent_may_not_run(monkeypatch):
+    """Post-2026.9.3 every Claude model arrives as provider "anthropic" with
+    agentRuntime claude-cli and gets grouped under claude-cli — including ones
+    this agent cannot run. chat_turn._model_ref sends `claude-cli/<id>`, so
+    Opus 4.6/4.7 (absent from main's allowlist; 4.7 belongs to the separate
+    `claude` agent) were picker rows that error on use. Filter on the ref we
+    actually send."""
+    from backend import bridge, config
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-5"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
+    monkeypatch.setattr(config, "agent_allowed_models", lambda: {
+        "claude-cli/claude-opus-5", "claude-cli/claude-sonnet-5",
+        "claude-cli/claude-fable-5-1", "claude-cli/claude-opus-4-8",
+        "claude-cli/claude-sonnet-4-6", "openai/gpt-5.6-sol",
+    })
+    rt = {"agentRuntime": {"id": "claude-cli"}}
+    payload = {"models": [
+        {"id": "claude-opus-5", "provider": "anthropic", "name": "Claude Opus 5", **rt},
+        {"id": "claude-sonnet-5", "provider": "anthropic", "name": "Claude Sonnet 5", **rt},
+        {"id": "claude-fable-5-1", "provider": "anthropic", "name": "Claude Fable 5.1", **rt},
+        {"id": "claude-opus-4-8", "provider": "anthropic", "name": "Claude Opus 4.8", **rt},
+        {"id": "claude-sonnet-4-6", "provider": "anthropic", "name": "Claude Sonnet 4.6", **rt},
+        {"id": "claude-opus-4-6", "provider": "anthropic", "name": "Claude Opus 4.6", **rt},
+        {"id": "claude-opus-4-7", "provider": "anthropic", "name": "Claude Opus 4.7", **rt},
+        {"id": "gpt-5.6-sol", "provider": "openai", "name": "GPT-5.6-Sol",
+         "agentRuntime": {"id": "codex"}},
+    ]}
+    item = next(i for i in bridge._build_model_items(payload, {})["items"]
+                if i["endpoint_id"] == "claude-cli")
+    assert item["models"] == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1",
+                              "claude-opus-4-8", "claude-sonnet-4-6"]
+    assert "claude-opus-4-6" not in item["models"]
+    assert "claude-opus-4-7" not in item["models"]
+
+
+def test_allowlist_filter_fails_open_rather_than_blanking_a_row(monkeypatch):
+    """An allowlist that names no model for a provider (a config move, a
+    renamed provider) must leave that row intact — a picker with no models is
+    strictly worse than one offering a model that might be refused."""
+    from backend import bridge, config
+    monkeypatch.setattr(config, "default_model", lambda: ("openai", "gpt-5.6-sol"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
+    monkeypatch.setattr(config, "agent_allowed_models", lambda: {"some-other-provider/x"})
+    payload = {"models": [{"id": "gpt-5.6-sol", "provider": "openai", "name": "GPT-5.6-Sol"}]}
+    item = next(i for i in bridge._build_model_items(payload, {})["items"]
+                if i["endpoint_id"] == "openai")
+    assert item["models"] == ["gpt-5.6-sol"]

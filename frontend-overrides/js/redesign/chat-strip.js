@@ -21,6 +21,9 @@ const STRIP_TOOLS = new Set([
   'TaskCreate', 'TaskUpdate', 'TaskList',
   'ExitPlanMode',
   'Task', 'sessions_spawn',
+  // OpenClaw's plan tool (claude-cli path). Its input.plan is an ARRAY of
+  // { step, status } — distinct from ExitPlanMode's string plan.
+  'update_plan', 'mcp__openclaw__update_plan',
 ]);
 
 // Regex for parsing task ids out of TaskCreate/TaskList/TaskUpdate output text
@@ -99,6 +102,23 @@ export function stripReducer(strip, ev, now = Date.now()) {
       // A `deleted` status hides the row entirely.
       const kept = items.filter((it) => it.status !== 'deleted');
       return { ...strip, todos: { ...strip.todos, items: kept, updatedAt: now } };
+    }
+    if ((ev.tool === 'update_plan' || ev.tool === 'mcp__openclaw__update_plan')
+        && Array.isArray(input.plan)) {
+      // Map OpenClaw plan steps → the same todos shape the step tracker renders.
+      // Statuses already align (pending | in_progress | completed).
+      return {
+        ...strip,
+        todos: {
+          msgId: ev.msg_id || null,
+          items: input.plan.map((p) => ({
+            content: p.step || '',
+            status: p.status || 'pending',
+            activeForm: p.step || '',
+          })),
+          updatedAt: now,
+        },
+      };
     }
     if (ev.tool === 'ExitPlanMode' && typeof input.plan === 'string') {
       return {

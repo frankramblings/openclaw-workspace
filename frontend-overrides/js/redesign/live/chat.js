@@ -41,30 +41,37 @@ import { parseMoveArg, MOVE_NEW, MOVE_NONE } from '../project-menu.js';
 import { activeLibraryDocId, consumeAttachDetach, getSelection, applyExternalUpdate, flushBeforeSend, flushOk } from './document-editor.js';
 
 // The throttled per-token render only patches the active message bubble in
-// place — it does NOT re-render `.composer-wrap`, which is where the strip
+// place — it does NOT re-render the top status dock, which is where the strip
 // lives. So each reducer mutation needs its own targeted DOM patch or nothing
 // visible changes until the next full render (which may never come during a
-// long tool-heavy turn). This finds the existing `.chat-strip` and swaps its
-// outerHTML for the freshly-rendered version; if none exists yet (idle → first
-// tool event), it inserts the new one at the top of `.composer-wrap`. Empty
-// strip → remove the node entirely so nothing lingers when idle.
+// long tool-heavy turn). This finds the existing `.chat-strip` in the dock and
+// swaps it for the freshly-rendered version; if none exists yet (idle → first
+// tool event), it inserts the new one into the dock (after the working banner,
+// before the progress bars, matching the template order). Empty strip → remove
+// the node entirely so nothing lingers when idle.
+//
+// It MUST target the same dock the full-render template uses (.oc-status-dock /
+// .m-status-dock). Patching a different container (e.g. the old .composer-wrap)
+// makes the strip render at the bottom during a live turn and then jump to the
+// top on the next full render — the exact bug this replaced.
 function patchChatStrip(chat) {
   if (!chat) return;
   persistStripToServer(chat.activeId, chat.chatStrip);
   try {
-    // Desktop: .composer-wrap (strip is first child, above .composer).
-    // Mobile: .m-composer (strip is first child, above .bar).
-    const wrap = document.querySelector('.composer-wrap') || document.querySelector('.m-composer');
-    if (!wrap) return;
+    const dock = document.querySelector('.oc-status-dock') || document.querySelector('.m-status-dock');
+    if (!dock) return;
     const html = renderChatStrip(chat.chatStrip, { renderMarkdown });
-    const existing = wrap.querySelector(':scope > .chat-strip');
+    const existing = dock.querySelector(':scope > .chat-strip');
     if (!html) { if (existing) existing.remove(); return; }
     const tmp = document.createElement('div');
     tmp.innerHTML = html;
     const fresh = tmp.firstElementChild;
     if (!fresh) { if (existing) existing.remove(); return; }
-    if (existing) existing.replaceWith(fresh);
-    else wrap.insertBefore(fresh, wrap.firstChild);
+    if (existing) { existing.replaceWith(fresh); return; }
+    // New insert: keep dock order → [working banner] [chat-strip] [progress bars].
+    const rows = dock.querySelector(':scope > .oc-task-rows');
+    if (rows) dock.insertBefore(fresh, rows);
+    else dock.appendChild(fresh);
   } catch (_) { /* fall back to next full render */ }
 }
 
@@ -122,13 +129,21 @@ function fmtTime(ts) {
 }
 
 const EXPANDED_KEY = 'oc-proj-expanded';
-function _loadExpanded() {
-  try { const arr = JSON.parse(localStorage.getItem(EXPANDED_KEY) || '[]'); return new Set(Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : []); }
+// Projects the user collapsed on purpose. Kept separate from the expanded set
+// because "holds the active thread" auto-expands a project, and an explicit
+// collapse has to survive that.
+const COLLAPSED_KEY = 'oc-proj-collapsed';
+function _loadIdSet(key) {
+  try { const arr = JSON.parse(localStorage.getItem(key) || '[]'); return new Set(Array.isArray(arr) ? arr.filter((x) => typeof x === 'string') : []); }
   catch (_) { return new Set(); }
 }
-function _persistExpanded(set) {
-  try { localStorage.setItem(EXPANDED_KEY, JSON.stringify([...set])); } catch (_) { /* storage unavailable */ }
+function _persistIdSet(key, set) {
+  try { localStorage.setItem(key, JSON.stringify([...set])); } catch (_) { /* storage unavailable */ }
 }
+function _loadExpanded() { return _loadIdSet(EXPANDED_KEY); }
+function _persistExpanded(set) { _persistIdSet(EXPANDED_KEY, set); }
+function _loadCollapsed() { return _loadIdSet(COLLAPSED_KEY); }
+function _persistCollapsed(set) { _persistIdSet(COLLAPSED_KEY, set); }
 
 // Rebuild the sidebar/drawer sections from the raw session list plus the live
 // sets (running turns, finished-while-away, queued sends). Cheap enough to run
@@ -153,6 +168,7 @@ function rebuildGroups(chat, activeId) {
     now: Date.now(),
     activeId: activeId === undefined ? chat.activeId : activeId,
     expanded: chat.expandedProjects || new Set(),
+    collapsed: chat.collapsedProjects || new Set(),
   });
 }
 
@@ -248,6 +264,7 @@ function ensureChat(state) {
   if (!c.scroll) c.scroll = {};
   if (!Array.isArray(c.sessions)) c.sessions = [];
   if (!(c.expandedProjects instanceof Set)) c.expandedProjects = _loadExpanded();
+  if (!(c.collapsedProjects instanceof Set)) c.collapsedProjects = _loadCollapsed();
   // F1: optimistic OPEN-shelf overlay (session id -> epoch ms), keyed
   // independently of chat.sessions so a brand-new chat's very first send
   // survives a stale /api/sessions refetch landing before the server has
@@ -1081,9 +1098,13 @@ function _ensureWorkingBanner() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'oc-working-banner';
+    // Full-width bar that sits BETWEEN the chat header and the scrolling
+    // thread — not sticky inside the padded scroll area. Prepending it inside
+    // .chat-thread (padding:22px 26px) left a band above the bar where
+    // scrolling messages showed through and made it look inset/floating.
     el.style.cssText = [
-      'position:sticky;top:0;z-index:50;',
-      'padding:5px 12px 5px 10px;',
+      'position:relative;z-index:5;flex:none;',
+      'padding:6px 26px;',
       'background:var(--panel,#1a1b1f);',
       'border-bottom:1px solid var(--border,rgba(255,255,255,.08));',
       'font-size:12px;color:var(--faint,#7a7e8a);',
@@ -1093,9 +1114,17 @@ function _ensureWorkingBanner() {
     el.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:var(--teal,#0dc);display:inline-block;animation:pulse var(--loop-slow) ease-in-out infinite"></span>'
       + '<span class="oc-wb-text">Gary is working…</span>'
       + '<span class="act-elapsed" style="margin-left:auto;font-family:var(--mono,monospace);font-size:11px;opacity:.65"></span>';
-    // Insert at the top of the thread container
-    const thread = document.querySelector('.m-thread, .chat-thread, #chat-history');
-    if (thread) thread.prepend(el);
+    // Mount into the top status dock (the persistent bar zone between the chat
+    // header and the scrolling thread) so the working banner, plan/step
+    // tracker and live progress bars all stack in the same place. Fall back to
+    // a flex sibling above the thread if the dock isn't in the DOM yet.
+    const dock = document.querySelector('.oc-status-dock, .m-status-dock');
+    if (dock) dock.prepend(el);
+    else {
+      const thread = document.querySelector('.m-thread, .chat-thread, #chat-history');
+      if (thread && thread.parentNode) thread.parentNode.insertBefore(el, thread);
+      else if (thread) thread.prepend(el);
+    }
   }
   return el;
 }
@@ -2980,8 +3009,14 @@ export const actions = {
   toggleProject: (pid) => {
     const state = runtime.state; if (!state || !pid) return;
     const chat = ensureChat(state);
-    if (chat.expandedProjects.has(pid)) chat.expandedProjects.delete(pid); else chat.expandedProjects.add(pid);
+    // Flip whatever is on screen right now, not just the expanded set: a
+    // project holding the active thread renders expanded without being in it.
+    const grp = (chat.groups || []).find((g) => g.kind === 'project' && g.meta && g.meta.id === pid);
+    const isCollapsed = grp ? !!grp.meta.collapsed : !chat.expandedProjects.has(pid);
+    if (isCollapsed) { chat.collapsedProjects.delete(pid); chat.expandedProjects.add(pid); }
+    else { chat.expandedProjects.delete(pid); chat.collapsedProjects.add(pid); }
     _persistExpanded(chat.expandedProjects);
+    _persistCollapsed(chat.collapsedProjects);
     rebuildGroups(chat);
   },
 

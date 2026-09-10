@@ -166,6 +166,13 @@ html.native .m-tabbar {
 .m-comp-handle .pill .t { font-size: 11.5px; color: var(--mut); }
 .m-comp-handle .pill .up { color: var(--faint); font-size: 10px; }
 
+/* ---- top status dock (working banner + plan tracker + progress bars) ------ */
+.m-status-dock { flex: none; display: flex; flex-direction: column; background: var(--bg); }
+.m-status-dock:empty { display: none; }
+.m-status-dock .chat-strip { margin: 6px 12px 0; }
+.m-status-dock .oc-task-rows { display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 0; }
+.m-status-dock .oc-task-rows:empty { display: none; }
+
 /* ---- chat thread ---------------------------------------------------------- */
 .m-thread { padding: 14px 16px 16px; }
 .m-thread.empty { display: flex; align-items: center; justify-content: center; }
@@ -230,18 +237,17 @@ html.native .m-tabbar {
 .tok-kw { color: var(--violet); } .tok-fn { color: var(--gold); } .tok-str { color: var(--green); }
 
 /* jump-to-latest button (shown only when the thread is scrolled up; toggled by
-   app.js render() + the scroll listener). Position is set inline per focus state. */
-/* RIDER B: `bottom` used to be set inline on the element itself (its resting
-   position depends on env(safe-area-inset-bottom), computed per-device) —
-   an inline declaration ALWAYS wins over any stylesheet rule regardless of
-   specificity (short of !important), so the .kb-up override below could
-   never take effect while the keyboard was up; the button just stayed
-   parked at its resting spot, overlapping the lifted composer. Fix: the
-   inline style now only sets a CUSTOM PROPERTY (--m-scroll-btm-y) — that's
-   not the same as declaring `bottom` inline, so `bottom` itself is only
-   ever set here in the stylesheet, and normal cascade/specificity decides
-   between this rule and .kb-up's below. */
-.m-scroll-btm { position: absolute; right: 14px; z-index: var(--z-row-raised); width: 38px; height: 38px; border-radius: 50%; background: var(--panel); border: 1px solid var(--bd); color: var(--fg); align-items: center; justify-content: center; box-shadow: 0 5px 16px rgba(0,0,0,.45); cursor: pointer; bottom: var(--m-scroll-btm-y, 20px); }
+   app.js render() + the scroll listener).
+   It now lives INSIDE .m-composer (position:relative) and is anchored to the
+   composer's top edge (`bottom:100%` + a small gap) instead of a guessed
+   distance from the screen bottom. That guarantees it floats just above the
+   composer no matter how tall the composer grows (chat strip, doc pill,
+   attach chips, multi-line draft) and never sits over the Send button — the
+   old fixed `env(safe-area-inset-bottom)+122px` resting spot overlapped both
+   Send and the retired mic in too many states. Anchoring to the composer top
+   also means it lifts with the composer when the keyboard is up, so the
+   separate .kb-up bottom override is no longer needed. */
+.m-scroll-btm { position: absolute; right: 14px; bottom: calc(100% + 10px); z-index: var(--z-row-raised); width: 38px; height: 38px; border-radius: 50%; background: var(--panel); border: 1px solid var(--bd); color: var(--fg); align-items: center; justify-content: center; box-shadow: 0 5px 16px rgba(0,0,0,.45); cursor: pointer; }
 
 /* ---- composing layout (keyboard up) --------------------------------------
    Driven by a `.kb-up` class on .m-app toggled in app.js (setMobileKb) rather
@@ -289,7 +295,6 @@ html.native .m-tabbar {
    full layout height on browsers without visualViewport. */
 .m-app.kb-up { height: var(--vvh, 100%); }
 .m-app.kb-up .m-composer .bar { border-color: color-mix(in srgb, var(--fg) 16%, transparent); border-radius: 20px; align-items: flex-end; padding: 9px 9px 9px 14px; }
-.m-app.kb-up .m-scroll-btm { bottom: 78px; }
 
 /* queued message banner (a send fired while a turn was still streaming) */
 .m-queued { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 7px 9px 7px 12px; background: color-mix(in srgb, var(--gold, #e0b341) 13%, var(--panel)); border: 1px solid color-mix(in srgb, var(--gold, #e0b341) 35%, transparent); border-radius: 12px; font-size: 12.5px; color: var(--mut); }

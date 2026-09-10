@@ -111,6 +111,17 @@ test('the project holding the active thread is expanded; expanded set expands ot
   assert.equal(g.find((x) => x.meta.id === 'p2').meta.collapsed, false);
 });
 
+test('an explicit collapse wins over the active-thread auto-expand', () => {
+  const projects = [{ id: 'p1', name: 'A' }];
+  const sessions = [S('a', { folder: 'p1', opened: null }), S('b', { folder: 'p1', opened: null })];
+  const g = build({ sessions, projects, activeId: 'a', collapsed: new Set(['p1']) });
+  const p1 = g.find((x) => x.meta.id === 'p1');
+  assert.equal(p1.meta.collapsed, true, 'holding the active thread must not force the group open');
+  assert.equal(p1.meta.count, 2, 'roll-up still counts every filed thread');
+  // The active thread stays reachable on the OPEN shelf.
+  assert.deepEqual(ids(g.find((x) => x.kind === 'open')), ['a']);
+});
+
 test('forks nest under their parent within a project; pinned float first; cycles do not hang', () => {
   const rows = [
     { id: 'c', parentId: 'p', important: false }, { id: 'p', parentId: null, important: false },

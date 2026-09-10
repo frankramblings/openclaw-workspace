@@ -416,14 +416,29 @@ function findOrMakeSpine(msgEl) {
 
 let _globalObs = null;
 
+// The live progress bars mount into the top status dock (the same pinned zone
+// as the working banner and the plan/step tracker), NOT inside the message
+// bubble. Tasks are already scoped to the active chat by taskBelongsToThisChat,
+// so a single dock-level rows container is the right home. Returns null until
+// the dock exists in the DOM (the 1s ticker retries).
+function dockRowsContainer() {
+  const dock = document.querySelector('.oc-status-dock, .m-status-dock');
+  if (!dock) return null;
+  let c = dock.querySelector(':scope > .oc-task-rows');
+  if (!c) {
+    c = document.createElement('div');
+    c.className = 'oc-task-rows';
+    dock.appendChild(c); // below the working banner + strip already in the dock
+  }
+  return c;
+}
+
 function reinjectAll() {
+  const c = dockRowsContainer();
+  if (!c) return;                          // dock gone (re-render) — retry next tick
   for (const [, state] of _tasks) {
-    if (!state.domMsgId) continue;         // never pinned yet — the 1s ticker retries renderOrUpdateRow
-    const msgEl = findMsgEl(state);
-    if (!msgEl) continue;                  // pinned bubble not currently in DOM
-    if (!msgEl.contains(state.row) || !document.body.contains(state.row)) {
-      const { spine } = findOrMakeSpine(msgEl);
-      spine.appendChild(state.row);
+    if (state.row.parentNode !== c || !document.body.contains(state.row)) {
+      c.appendChild(state.row);
     }
   }
 }
@@ -455,37 +470,15 @@ function renderOrUpdateRow(task) {
     _tasks.set(task.id, state);
     ensureGlobalObserver();
   }
-  // First injection: pin to the exact bubble, then append via the spine.
-  // Both anchor paths below fall through to the same lookup + append code —
-  // only HOW domMsgId gets its first value differs.
-  if (!state.domMsgId) {
-    // Deterministic anchor: the record knows its originating ledger turn and
-    // that turn is live right now — pin to its exact bubble, no heuristic.
-    const lt = liveTurn();
-    if (lt && anchorMode({ turn_id: task._recTurnId }, lt.turnId) === 'turn'
-        && lt.sessionId === activeChatId()) {
-      state.domMsgId = lt.msgId;
-    }
-    // Heuristic fallback: "newest asst bubble" (findMsgEl uses domMsgId when
-    // set, so this also resolves the deterministic pin above by its exact id).
-    const msgEl = findMsgEl(state);
-    if (!msgEl) {                          // no bubble yet — the 1s ticker retries
-      state.view = task;
-      return;
-    }
-    if (!state.domMsgId) state.domMsgId = msgEl.getAttribute('data-msg-id');
-    const { spine } = findOrMakeSpine(msgEl);
-    spine.appendChild(state.row);
-  } else {
-    // Subsequent polls: strictly by pinned id. No stealing.
-    const msgEl = findMsgEl(state);
-    if (msgEl && (!msgEl.contains(state.row) || !document.body.contains(state.row))) {
-      const { spine } = findOrMakeSpine(msgEl);
-      spine.appendChild(state.row);
-    }
-    // If the pinned bubble isn't rendered right now (thread switch, scrolled
-    // off, etc.), do nothing — the row waits with its bubble.
+  // Mount into the top status dock. Until the dock is in the DOM (e.g. a
+  // thread switch mid-render), park the view and let the 1s ticker retry.
+  const c = dockRowsContainer();
+  if (!c) {
+    state.view = task;
+    return;
   }
+  if (state.row.parentNode !== c) c.appendChild(state.row);
+  state.mounted = true;
   paint(state.refs, state.row, task);
   state.view = task;
 }
@@ -496,9 +489,6 @@ function reap(activeIds) {
     if (state.row.parentNode) state.row.parentNode.removeChild(state.row);
     _tasks.delete(id);
   }
-  document.querySelectorAll('.act-wrap.task-only').forEach((w) => {
-    if (!w.querySelector('.task-row')) w.remove();
-  });
   if (_tasks.size === 0 && _globalObs) {
     _globalObs.disconnect();
     _globalObs = null;
@@ -527,11 +517,10 @@ function startElapsedTicker() {
   if (_elapsedTimer) return;
   _elapsedTimer = setInterval(() => {
     for (const [, state] of _tasks) {
-      // A row whose bubble wasn't in the DOM at first sight (see the
-      // no-bubble branch in renderOrUpdateRow) parked its view here without
-      // pinning. Retry every tick instead of waiting on the next feed event
-      // — the row then appears within ~1s of its bubble showing up.
-      if (!state.domMsgId && state.view) renderOrUpdateRow(state.view);
+      // A row parked because the dock wasn't in the DOM yet (see the no-dock
+      // branch in renderOrUpdateRow) retries every tick instead of waiting on
+      // the next feed event — it appears within ~1s of the dock rendering.
+      if (!state.mounted && state.view) renderOrUpdateRow(state.view);
 
       const secs = tickElapsed(state.view, Date.now());
       if (secs == null || !state.refs) continue;

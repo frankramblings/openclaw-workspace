@@ -315,6 +315,14 @@ html.shell-mobile .oc-toast{max-width:none}
 .chat-head{height:50px;flex:none;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:1px solid var(--bd2)}
 .chat-head .ttl{font-size:15px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chat-head .sub{font-size:12.5px;color:var(--faint);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Top status dock: pinned zone between the chat header and the scrolling
+   thread. Hosts the "Gary is working" banner, the plan/step tracker (chat
+   strip) and live task progress bars — all stacked in the same place. */
+.oc-status-dock{flex:none;display:flex;flex-direction:column}
+.oc-status-dock:empty{display:none}
+.oc-status-dock .chat-strip{margin:8px 16px 0}
+.oc-task-rows{display:flex;flex-direction:column;gap:6px;padding:8px 16px 0}
+.oc-task-rows:empty{display:none}
 .chat-thread{flex:1;overflow:auto;padding:22px 26px;min-height:0}
 .welcome-surface{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;text-align:center;padding:40px 24px}
 .ws-av{width:72px;height:72px;border-radius:18px;overflow:hidden;background:var(--teal);display:flex;align-items:center;justify-content:center;margin-bottom:6px}
@@ -1218,7 +1226,9 @@ html.shell-mobile .oc-toast{max-width:none}
 /* Steering (Pillar A) */
 .btn-send.steer { background: var(--teal, #4fe3d1); color: #07131f; gap: 6px; padding-right: 10px; }
 .btn-send .send-lbl { font-size: 12px; font-weight: 600; }
-.btn-queue { font-size: 12px; opacity: .8; margin-right: 6px; }
+.btn-queue{height:32px;padding:0 12px;margin-right:6px;border-radius:9px;border:1px solid var(--bd);background:transparent;color:var(--mut);font-family:var(--sans);font-size:12.5px;font-weight:600;line-height:1;display:inline-flex;align-items:center;cursor:pointer;white-space:nowrap;flex:none;transition:background .12s,color .12s,border-color .12s}
+.btn-queue:hover{background:var(--elev);color:var(--fg);border-color:var(--teal)}
+.btn-queue:active{transform:translateY(1px)}
 .msg-steer-cap { font-size: 11px; color: var(--faint, #8a94a6); margin-top: 4px; letter-spacing: .01em; }
 .msg-steer-notice { font-size: 11px; color: var(--amber, #e0b15a); margin-top: 2px; }
 

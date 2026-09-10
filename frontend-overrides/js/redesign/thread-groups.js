@@ -89,7 +89,7 @@ export function orderWithForks(rows) {
   return out;
 }
 
-export function buildThreadGroups({ sessions, projects, running, notified, queued, now, activeId, expanded } = {}) {
+export function buildThreadGroups({ sessions, projects, running, notified, queued, now, activeId, expanded, collapsed } = {}) {
   const live = {
     running: running instanceof Set ? running : new Set(),
     notified: notified instanceof Set ? notified : new Set(),
@@ -97,6 +97,10 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
   };
   const nowMs = typeof now === 'number' ? now : Date.now();
   const exp = expanded instanceof Set ? expanded : new Set();
+  // Explicit collapse beats every auto-expand rule, including "holds the
+  // active thread" — the active row still shows on the OPEN shelf, so a
+  // collapsed project never hides where you are.
+  const forced = collapsed instanceof Set ? collapsed : new Set();
   const list = (Array.isArray(sessions) ? sessions : [])
     .filter((s) => s && s.id && !s.archived)
     .slice()
@@ -157,7 +161,7 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
         id: pid, count: bucket.all.length,
         working: bucket.all.filter((s) => live.running.has(s.id)).length,
         unseen: bucket.all.filter((s) => live.notified.has(s.id) || s.unread).length,
-        collapsed: !containsActive && !exp.has(pid),
+        collapsed: forced.has(pid) || (!containsActive && !exp.has(pid)),
         latest: bucket.all.reduce((m, s) => Math.max(m, ts(s)), 0),
       },
     });

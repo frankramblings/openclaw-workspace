@@ -35,15 +35,23 @@ test('toast dismiss is a real <button>, not a bare span', () => {
   assert.doesNotMatch(html, /<span[^>]*data-act="dismissToast"/);
 });
 
-// .m-app.kb-up .m-scroll-btm{bottom:78px} used to lose to an inline
-// `bottom:...` declaration on the button itself — an inline style ALWAYS
-// wins over a stylesheet rule regardless of specificity, so the keyboard-up
-// override could never take effect. Fix: the inline style only sets a CSS
-// custom property now; `bottom` itself is declared exclusively in the
-// stylesheet, where normal cascade lets .kb-up win.
-test('jump-to-latest button carries no inline `bottom:` declaration (a CSS var instead, so .kb-up can win)', () => {
+// The jump-to-latest button now lives INSIDE .m-composer and is anchored to
+// the composer's top edge purely in the stylesheet (bottom:100%+gap). It must
+// carry NO inline position at all — no `bottom`, no `--m-scroll-btm-y` var —
+// so the stylesheet fully owns where it sits (above the composer, clear of
+// Send in every state, no guessed screen-bottom offset to overlap chrome).
+test('jump-to-latest button carries no inline position (stylesheet-anchored above composer)', () => {
   const html = mChat({ live: { chat: { thread: [] } }, draft: '' });
   const btn = html.match(/<button class="m-scroll-btm"[^>]*>/)[0];
-  assert.match(btn, /--m-scroll-btm-y:/, 'sets the custom property');
-  assert.doesNotMatch(btn, /style="[^"]*\bbottom:/, 'no inline `bottom` declaration — that would out-precedence the .kb-up stylesheet rule');
+  assert.doesNotMatch(btn, /style="[^"]*\bbottom:/, 'no inline `bottom` declaration');
+  assert.doesNotMatch(btn, /--m-scroll-btm-y:/, 'no leftover position custom property');
+});
+
+// It renders as a child of the composer (not a loose sibling) so it can anchor
+// to the composer's top edge and lift with it when the keyboard is up.
+test('jump-to-latest button renders inside .m-composer', () => {
+  const html = mChat({ live: { chat: { thread: [] } }, draft: '' });
+  const composerAt = html.indexOf('class="m-composer');
+  const btnAt = html.indexOf('class="m-scroll-btm"');
+  assert.ok(composerAt !== -1 && btnAt > composerAt, 'button appears after the composer open tag');
 });

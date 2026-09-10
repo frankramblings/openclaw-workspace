@@ -262,10 +262,10 @@ export function mChat(s) {
     </div>
   </div>
   <div class="m-comp-handle m-hide-kb"><div class="pill" data-act="openCompanion">${icon('<path d="m4 17 6-6-6-6M12 19h8"/>', { size: 13, sw: 1.9, stroke: 'var(--gold)' })}<span class="t">Terminal · Files</span><span class="up">▲ pull up</span></div></div>
+  <div class="m-status-dock">${renderChatStrip(s.live?.chat?.chatStrip, { renderMarkdown })}</div>
   <div class="m-scroll m-thread${thread.length ? '' : ' empty'}" data-ptr="1" data-ptr-btm="1">${mPtr(s, 'Refreshing chat…')}${threadHtml}${mPtrBtm(s, 'Refreshing chat…')}</div>
-  <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none;--m-scroll-btm-y:calc(env(safe-area-inset-bottom,0px) + 122px)">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
   <div class="m-composer${focused ? ' focused' : ''}">
-    ${renderChatStrip(s.live?.chat?.chatStrip, { renderMarkdown })}
+    <button class="m-scroll-btm" data-act="scrollChatBottom" title="Jump to latest" style="display:none">${icon('<path d="M12 5v14M19 12l-7 7-7-7"/>', { size: 18, sw: 2 })}</button>
     ${docPillHtml(s, { cls: 'm-doc-pill' })}
     ${when(s.mobileEditingPending, `<div class="m-comp-edit-chip"><span class="m-comp-edit-lbl">Editing message</span><button class="m-comp-edit-cancel" data-act="cancelMobileEdit">Cancel</button></div>`)}
     ${when(s.live?.chat?.queued, `<div class="m-queued" data-act="queueRecall"><span class="q-ico">⏳</span><span class="q-txt">Queued${s.live?.chat?.queued?.text ? ` · ${esc(s.live.chat.queued.text.slice(0, 50))}` : ' · image'}</span><button class="m-q-x" data-act="queueCancel">✕</button></div>`)}

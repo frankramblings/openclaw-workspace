@@ -447,3 +447,36 @@ def test_saved_default_reads_settings_and_tolerates_absence(monkeypatch):
     monkeypatch.setattr(websearch, "load_settings",
                         lambda: {"default_chat_model": {"model": "claude-opus-5", "endpoint_id": "claude-cli"}})
     assert bridge._saved_default_model() == ("claude-cli", "claude-opus-5")
+
+
+def test_build_model_items_maps_claude_cli_runtime_back_to_its_endpoint(monkeypatch):
+    """Gateway 2026.9.3 retired `claude-cli` as a model PROVIDER: subscription
+    Claude models now report provider "anthropic" with agentRuntime.id
+    "claude-cli". Everything downstream is keyed on the old name — the hidden
+    raw-`anthropic` row, _PREFERRED_ORDER, the endpoint_id stored on ~840
+    existing threads, and steer's claude-cli gate — so the runtime folds back
+    into the group key and the picker keeps its Claude row. Without this the
+    catalog's only Claude rows are hidden as `anthropic` and the picker offers
+    OpenAI + Local only (observed live, 2026-09-09)."""
+    from backend import bridge, config
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-5"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
+    rt = {"agentRuntime": {"id": "claude-cli"}}
+    payload = {"models": [
+        {"id": "claude-fable-5-1", "provider": "anthropic", "name": "Claude Fable 5.1", **rt},
+        {"id": "claude-opus-5", "provider": "anthropic", "name": "Claude Opus 5", **rt},
+        {"id": "claude-sonnet-5", "provider": "anthropic", "name": "Claude Sonnet 5", **rt},
+        # No runtime → the raw per-token API row, still hidden.
+        {"id": "claude-api-only", "provider": "anthropic", "name": "Raw API"},
+        # openai's runtime is "codex"; its rows must stay under endpoint openai.
+        {"id": "gpt-5.6-sol", "provider": "openai", "name": "GPT-5.6-Sol",
+         "agentRuntime": {"id": "codex"}},
+    ]}
+    out = bridge._build_model_items(payload, {})
+    endpoints = [i["endpoint_id"] for i in out["items"]]
+    assert endpoints[0] == "claude-cli"
+    assert set(endpoints) == {"claude-cli", "openai"}
+    item = next(i for i in out["items"] if i["endpoint_id"] == "claude-cli")
+    # Default floats to slot 0, then the preferred order; the raw API row is gone.
+    assert item["models"] == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"]
+    assert item["endpoint_name"] == "Claude"

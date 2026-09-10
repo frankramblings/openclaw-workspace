@@ -917,10 +917,34 @@ async def steer_turn(session_key: str, message: str) -> dict:
 _PROVIDER_META = {
     "openai": {"endpoint_id": "openai", "endpoint_name": "OpenAI"},
     "anthropic": {"endpoint_id": "anthropic", "endpoint_name": "Claude"},
+    "claude-cli": {"endpoint_id": "claude-cli", "endpoint_name": "Claude"},
 }
+
+# Gateway 2026.9.3 retired `claude-cli` as a model PROVIDER: the subscription
+# Claude models now report provider "anthropic" carrying
+# agentRuntime.id == "claude-cli". Every consumer downstream of the picker is
+# keyed on the old provider name -- _PREFERRED_ORDER, _HIDDEN_ENDPOINTS (which
+# hides the raw per-token `anthropic` rows), the endpoint_id persisted on ~840
+# existing threads, and steer.STEER_ENDPOINT_IDS -- so fold the runtime back
+# into the group key instead of renaming all of them. Only anthropic is
+# remapped on purpose: openai's runtime is "codex" and its rows have always
+# ridden under endpoint_id "openai".
+_RUNTIME_PROVIDERS = {("anthropic", "claude-cli"): "claude-cli"}
+
+
+def _effective_provider(m: dict) -> str:
+    """The picker/endpoint name for a catalog row (see _RUNTIME_PROVIDERS)."""
+    provider = m.get("provider") or "other"
+    runtime = ((m.get("agentRuntime") or {}).get("id") or "").strip()
+    return _RUNTIME_PROVIDERS.get((provider, runtime), provider)
 # An auth provider counts as usable in these states (expiring still works).
 _OK_AUTH = {"ok", "expiring", "active", "valid"}
 # model.provider -> substrings to look for among authStatus provider names.
+# Deliberately no "claude-cli" entry: the gateway reports the anthropic
+# provider as status "static" (inherited credentials, not an OAuth session),
+# which is not in _OK_AUTH, so mapping claude-cli onto it would mark the whole
+# Claude row offline. With no entry the row falls through to "no auth info →
+# online", which is what it did before the runtime rename.
 _AUTH_ROOTS = {"openai": ("openai",), "anthropic": ("claude", "anthropic")}
 
 
@@ -1020,7 +1044,7 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
     # per-provider object, never a global id->name map.)
     by_provider: dict[str, list[dict]] = {}
     for m in models_payload.get("models") or []:
-        by_provider.setdefault(m.get("provider", "other"), []).append(m)
+        by_provider.setdefault(_effective_provider(m), []).append(m)
 
     # Default provider sorts first: the user's saved new-chat preference
     # (POST /api/default-chat) when there is one, else the configured primary.

@@ -17,6 +17,11 @@ not just the original maintainer's setup.
 - Usage: hover or tap an assistant message for its tokens; the thread's context pill shows session totals; Settings → Usage charts 7 or 30 days from the gateway ledger (dollars only when every entry was priced).
 - Changes review: every turn ends with a "Changes · n files · +a −r" card; expand for per-file diffs, a companion Changes tab, and a guarded Revert. Works for edits made by any tool, including shell heredocs. Settings → Changes controls the watched folders.
 
+### Gateway 2026.9.3 compatibility (2026-09-09)
+
+- Model picker: Claude models are back. The gateway update retired `claude-cli` as a model *provider* (those models now report provider `anthropic` with `agentRuntime.id = claude-cli`), and `anthropic` is hidden as the raw per-token API row, so the picker had silently narrowed to OpenAI + Local. The catalog now folds the runtime back into the endpoint name, so existing threads, the preferred-model order and the steer gate keep working unchanged.
+- Real steering: rewritten for the new gateway (`deploy/gateway-patches/claude-cli-steer2.py`). The v1 patch is a no-op on 2026.9.3+ — its anchor is gone because claude-cli became an agent runtime instead of a reply backend, which left the gateway acking steers it then silently queued. `/api/capabilities` accepts either bundle shape and requires the whole v2 patch before it reports steering as available.
+
 ### Pillar B: Thread organization (OPEN shelf + Projects, 2026-09)
 
 - Sidebar: an automatic OPEN shelf (threads you sent to in the last 48 h, running, queued, or active; cap 8) sits above PROJECTS and the date buckets, with live working/unseen pips, ⌥1..9 slot shortcuts, ⌥[ ] cycling, and a × on hover to leave the shelf. Sessions gain `opened` and `parent_id` (schema v2, migrates in place).

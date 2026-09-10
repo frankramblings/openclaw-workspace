@@ -179,3 +179,45 @@ test('renderModelSheet: a populated catalog renders the model list, not a loadin
   assert.doesNotMatch(html, /Loading models…/);
   assert.doesNotMatch(html, /tap to retry/);
 });
+
+// ---- catalog staleness: a long-lived client must re-fetch ---------------------
+
+// The loader used to fetch /api/models exactly ONCE per page load, so an
+// installed PWA left open for days kept its first catalog forever. When the
+// gateway renamed the Claude provider (2026.9.3: provider "anthropic" +
+// agentRuntime "claude-cli"), the server-side fix restored the Claude row but
+// every open client kept serving the Claude-less list until a hard reload.
+// Opening the picker after the TTL now re-fetches, and the newly-served models
+// replace the stale catalog.
+test('an open client re-fetches the catalog once it is stale, picking up new models', async () => {
+  const state = { live: {} };
+  runtime.state = state;
+  runtime.render = () => {};
+  const counter = { n: 0 };
+  const CLAUDELESS = { items: [{ endpoint_id: 'openai', endpoint_name: 'OpenAI',
+    models: ['gpt-5.6-sol'], models_display: ['GPT-5.6-Sol'] }] };
+  let serving = CLAUDELESS;
+  wireFetch(() => Promise.resolve(jsonRes(serving)), counter);
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  try {
+    await actions.loadModelOptions();
+    assert.equal(counter.n, 1);
+    assert.doesNotMatch(renderModelSheet(state), /Claude Opus 4\.8/);
+
+    // Re-opening the picker right away must NOT re-fetch: the catalog is fresh.
+    await actions.loadModelOptions();
+    assert.equal(counter.n, 1, 'a fresh catalog is reused');
+
+    // Server-side restore lands, then the client opens the picker later.
+    serving = CATALOG;
+    now += 61_000;
+    await actions.loadModelOptions();
+    assert.equal(counter.n, 2, 'a stale catalog is re-fetched');
+    assert.match(renderModelSheet(state), /Claude Opus 4\.8/, 'restored models appear without a reload');
+  } finally {
+    Date.now = realNow;
+    delete globalThis.fetch;
+  }
+});

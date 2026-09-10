@@ -2877,6 +2877,17 @@ function _semanticSearch(slot, q, apply) {
 // success/failure render covers it.
 let _modelsInFlight = false;
 
+// The catalog used to be fetched exactly ONCE per page load: the loader's guard
+// was `if (!state.live.modelGroups)`, so an installed PWA that stays open for
+// days kept whatever catalog it happened to load first. When the gateway's
+// provider names changed under us (2026.9.3 folded claude-cli into anthropic +
+// agentRuntime; see bridge._RUNTIME_PROVIDERS), the server-side fix restored the
+// Claude row immediately but every open client kept serving the Claude-less list
+// until someone hard-reloaded. Re-fetch on picker open once the catalog is older
+// than this; the stale groups keep rendering meanwhile, so there is no flash.
+const _MODELS_TTL_MS = 60_000;
+let _modelsFetchedAt = 0;
+
 // Temp ids for in-flight upload chips (task 4.2) — unique per selection so a
 // second batch picked mid-flight never claims the first batch's chips.
 let _uploadSeq = 0;
@@ -3558,7 +3569,9 @@ export const actions = {
   loadModelOptions: async () => {
     const state = runtime.state;
     if (!state) return;
-    if (!(state.live && state.live.modelGroups) && !_modelsInFlight) {
+    const _haveCatalog = !!(state.live && state.live.modelGroups);
+    const _stale = (Date.now() - _modelsFetchedAt) >= _MODELS_TTL_MS;
+    if ((!_haveCatalog || _stale) && !_modelsInFlight) {
       _modelsInFlight = true;
       state.live = state.live || {};
       if (state.live.modelsFailed) { state.live.modelsFailed = false; runtime.render(); }
@@ -3586,6 +3599,7 @@ export const actions = {
         state.live.modelGroups = groups;
         state.live.modelList = flat;
         state.live.modelsFailed = false;
+        _modelsFetchedAt = Date.now();
         runtime.render();
       } catch (_) {
         state.live.modelsFailed = true;   // surfaces render a retry state

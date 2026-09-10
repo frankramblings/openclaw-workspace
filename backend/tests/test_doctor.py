@@ -80,7 +80,7 @@ def test_missing_steer_patch_is_optional_and_does_not_fail_the_run(monkeypatch):
     steer_check = _check(res, "steer_patch")
     assert steer_check["ok"] is False
     assert steer_check["optional"] is True
-    assert "claude-cli-steer.py" in steer_check["detail"]
+    assert "claude-cli-steer2.py" in steer_check["detail"]
     assert doctor.summarize(res)["ok"] is True
 
 

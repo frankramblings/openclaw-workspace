@@ -109,7 +109,8 @@ def _check_steer_patch() -> dict:
     else:
         check = _fail("steer_patch",
                       "claude-cli steer patch missing: run deploy/gateway-patches/"
-                      "claude-cli-steer.py (see README)")
+                      "claude-cli-steer2.py (claude-cli-steer.py on pre-2026.9.3 "
+                      "gateways — see README)")
     check["optional"] = True
     return check
 

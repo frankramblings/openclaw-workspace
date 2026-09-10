@@ -47,13 +47,16 @@ case "$SCENARIO" in
 esac
 
 echo "-- scenario: $SCENARIO (steer at ${STEER_AT}s) --"
+# --form-string, NOT -F: curl parses `;` in an -F value as the start of a
+# parameter (";type=", ";filename="), so the prompt was delivered truncated at
+# its first semicolon and the turn never ran the command at all (2026-09-10).
 curl -sN -X POST "$HOST/api/chat_stream" \
-  -F "message=$PROMPT" \
-  -F "session=$SID" -F "mode=agent" > "$OUT" &
+  --form-string "message=$PROMPT" \
+  --form-string "session=$SID" --form-string "mode=agent" > "$OUT" &
 READER=$!
 sleep "$STEER_AT"
 echo "-- steering --"
-curl -s -X POST "$HOST/api/chat/steer/$SID" -F "message=The number is 42." -F "client_id=livefire-1"; echo
+curl -s -X POST "$HOST/api/chat/steer/$SID" --form-string "message=The number is 42." --form-string "client_id=livefire-1"; echo
 wait "$READER" || true
 echo "-- frames of interest --"
 grep -E '"type": ?"user_steer"|NUMBER=' "$OUT" | head -5 || true

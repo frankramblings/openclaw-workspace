@@ -1479,9 +1479,21 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
             #    reply_reset so the SPA drops the delivery and shows only the
             #    final reply — no doubling. This also makes the trailing
             #    state:"final" snapshot a no-op (content == msg_text → no re-emit).
+            #  - The frame RE-DELIVERS text already on screen inside a bigger
+            #    snapshot → reply_reset, whatever the tool state. Gateway 2026.9.3
+            #    made claude-cli an agent RUNTIME, and its trailing state:"final"
+            #    frame carries EVERY assistant block of the turn joined, not just
+            #    the current one. Such a snapshot starts with the narration while
+            #    msg_text holds only the answer, so it fails startswith() above;
+            #    when a tool item landed after the last text block (tool_since_text
+            #    still set) the commit branch appended the whole turn to itself and
+            #    the reply rendered — and persisted — twice. It ENDS with what is
+            #    already shown, which is the tell.
             full = _extract_text(payload)
             if full and not full.startswith(msg_text):
-                yield _sse({"type": "reply_commit" if tool_since_text else "reply_reset"})
+                redelivery = bool(msg_text) and full.endswith(msg_text)
+                yield _sse({"type": "reply_commit"
+                            if (tool_since_text and not redelivery) else "reply_reset"})
                 msg_text = ""
                 tool_since_text = False
             delta = payload.get("deltaText")

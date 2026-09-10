@@ -304,3 +304,57 @@ def test_textless_analysis_frames_emit_nothing():
     ])
     # run_alive fires on the first own-run frame; no text/thinking deltas expected
     assert out == [{"type": "run_alive"}]
+
+
+def test_per_turn_final_snapshot_does_not_double_the_whole_reply():
+    # Gateway 2026.9.3 regression. When claude-cli became an agent RUNTIME the
+    # trailing state:"final" frame stopped carrying just the current block and
+    # started carrying EVERY assistant block of the turn joined together. That
+    # snapshot fails the startswith() test (it begins with the narration, while
+    # msg_text holds only the answer), and because a tool ran in the turn the
+    # relay picked reply_commit — KEEPING the answer and then appending the
+    # whole turn after it. Frank saw his entire reply rendered twice, and it
+    # persisted that way (history stored "B + A + B").
+    narration = "I'll research this."
+    answer = "Here's the answer."
+    out = collect([
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "delta", "deltaText": narration,
+            "message": {"content": [{"text": narration}]}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "item",
+            "data": {"kind": "command", "name": "search", "phase": "start", "itemId": "t1"}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "item",
+            "data": {"kind": "command", "name": "search", "phase": "end",
+                     "itemId": "t1", "status": "completed"}}},
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "delta", "deltaText": answer,
+            "message": {"content": [{"text": answer}]}}},  # content RESET
+        # A tool item lands AFTER the last text block, so tool_since_text is set
+        # again by the time the snapshot below arrives. That is what tipped the
+        # branch into reply_commit and doubled the turn.
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "item",
+            "data": {"kind": "command", "name": "read", "phase": "start", "itemId": "t2"}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "item",
+            "data": {"kind": "command", "name": "read", "phase": "end",
+                     "itemId": "t2", "status": "completed"}}},
+        # The per-TURN snapshot: narration AND answer, joined.
+        {"type": "event", "event": "chat", "payload": {
+            "runId": "r1", "state": "final",
+            "message": {"content": [{"text": narration + "\n\n" + answer}]}}},
+        {"type": "event", "event": "agent", "payload": {
+            "runId": "r1", "stream": "lifecycle", "data": {"phase": "end"}}},
+    ])
+    # What the SPA ends up showing: everything after the last wipe, since a
+    # reply_reset clears the bubble and a reply_commit keeps it.
+    shown = ""
+    for f in out:
+        if f.get("type") == "reply_reset":
+            shown = ""
+        elif "delta" in f and not f.get("thinking"):
+            shown += f["delta"]
+    assert shown.count(answer) == 1, f"answer rendered {shown.count(answer)}x: {shown!r}"
+    assert shown.count(narration) == 1, f"narration rendered {shown.count(narration)}x: {shown!r}"

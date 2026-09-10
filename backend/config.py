@@ -135,20 +135,43 @@ def default_model() -> tuple[str, str]:
     return provider, model
 
 
+def _agent_id_from_openclaw() -> str | None:
+    """First agent id in the OpenClaw config, across both config shapes.
+
+    Gateway 2026.9.3 replaced `agents.list` (an ARRAY of {id, ...}) with
+    `agents.entries` (an OBJECT keyed by agent id). Reading only the old shape
+    makes this fall through to the "main" guess -- correct by luck wherever the
+    first agent happens to be called main, wrong everywhere else, and enough to
+    make doctor report agent_id as guessed."""
+    try:
+        agents = _openclaw_json()["agents"]
+    except (KeyError, TypeError):
+        return None
+    entries = agents.get("entries") if isinstance(agents, dict) else None
+    if isinstance(entries, dict):
+        # Insertion order is the gateway's own ordering; first wins, as the
+        # list shape did. An entry may carry its own id, else the key IS the id.
+        for key, value in entries.items():
+            found = (value or {}).get("id") if isinstance(value, dict) else None
+            if found or key:
+                return found or key
+    try:
+        return agents["list"][0]["id"]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
 def agent_id() -> str:
     """The OpenClaw agent id the workspace talks to. Env > connection.json >
-    OpenClaw config (agents.list[0].id) > 'main'. v1 hardcoded 'main'; other
-    installs differ."""
+    OpenClaw config (agents.entries, or legacy agents.list) > 'main'. v1
+    hardcoded 'main'; other installs differ."""
     env = os.environ.get("OPENCLAW_AGENT_ID")
     if env:
         return env
     conn = load_connection().get("agent_id")
     if conn:
         return conn
-    try:
-        return _openclaw_json()["agents"]["list"][0]["id"]
-    except (KeyError, IndexError, TypeError):
-        return "main"
+    return _agent_id_from_openclaw() or "main"
 
 
 def session_key() -> str:

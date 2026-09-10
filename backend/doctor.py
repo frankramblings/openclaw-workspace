@@ -71,11 +71,8 @@ async def _check_methods() -> dict:
 
 
 def _from_openclaw() -> bool:
-    try:
-        config._openclaw_json()["agents"]["list"][0]["id"]
-        return True
-    except (KeyError, IndexError, TypeError):
-        return False
+    """Did the agent id come from the OpenClaw config (either shape)?"""
+    return config._agent_id_from_openclaw() is not None
 
 
 def _check_agent_id() -> dict:

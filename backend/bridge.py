@@ -1655,9 +1655,15 @@ def _analysis_delta(data: dict, seen: dict) -> str:
     (scripts/probe_thinking.py, gpt-5.5, protocol v4): analysis items arrive
     as phase:start/end pairs carrying ONLY {title:"Reasoning", status} — no
     delta/text/summary field at all, so this currently returns "" and no
-    thinking frames fire. The mapping is forward-compatible for when the
-    gateway starts forwarding reasoning text; `title` is deliberately NOT a
-    fallback (it's a static label, not reasoning content)."""
+    thinking frames fire. Re-probed 2026-09-10 on the claude-cli runtime
+    (gateway 2026.9.3, opus-5) with the session set to `/reasoning stream`:
+    the turn produced NO non-tool `agent` item events at all — not even empty
+    analysis items — so reasoning visibility is not reachable from the
+    workspace on this runtime at any `/reasoning` level. Narration the model
+    writes into the reply is the only in-turn progress signal. The mapping is
+    forward-compatible for when the gateway starts forwarding reasoning text;
+    `title` is deliberately NOT a fallback (it's a static label, not
+    reasoning content)."""
     if isinstance(data.get("delta"), str) and data["delta"]:
         return data["delta"]
     text = data.get("text") or data.get("summary") or ""

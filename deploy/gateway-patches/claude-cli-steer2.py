@@ -15,21 +15,35 @@ bundle (its needle is gone) and stays only for older installs.
 
 WHAT THIS DOES - three anchored, additive edits:
 
-  A) execute.runtime-*.mjs: pass the OpenClaw session key down into the CLI
-     plugin execution context (`openclawSessionKey`). The context the runtime
-     receives carries the CLAUDE session id, not OpenClaw's, so without this
-     there is no shared key between the two sides.
+  A) execute.runtime-*.mjs: pass the OpenClaw session key and id down into the
+     CLI plugin execution context. The context the runtime receives carries the
+     CLAUDE session id, not OpenClaw's, so without this the two sides share no
+     key.
 
-  B) extensions/anthropic/cli.runtime.js: while a CLI turn is running,
-     register a `send(text)` for that session key on a process-global map, and
-     drop it in the turn's `finally`. `send` writes one stream-json user line
-     on the SAME transport the turn's own prompt uses - the exact mechanism
-     Claude Code accepts mid-turn and delivers at the next tool boundary.
+  B) extensions/anthropic/cli.runtime.js: while a CLI turn is running, register
+     a `send(text)` for that session on a process-global map, and drop it in the
+     turn's `finally`. `send` writes one stream-json user line on the SAME
+     transport the turn's own prompt uses - the mechanism Claude Code accepts
+     mid-turn and delivers at the next tool boundary.
 
-  C) builtin-openclaw-*.mjs: in the embedded run's `queueMessage`, try that
-     map FIRST. A hit writes to the live CLI stdin and records the user turn in
-     the transcript; anything else (no CLI turn, a non-CLI model, a failed
-     write) falls through to the stock queue path untouched.
+  E) reply-run-registry*.mjs: answer "yes, injectable" for a live CLI turn at
+     the top of resolveReplyMessageInjectionRejection. This is the ONE gate every
+     steer passes through (chat.send with queueMode "steer" consults it twice to
+     resolve a target and once more to begin the injection). The stock checks
+     below it describe the embedded agent loop, which for a claude-cli turn is
+     not "streaming" - so without this the steer is classified no_active_run and
+     dispatched as a brand-new run, which is what "the reply ignored my steer"
+     actually was.
+
+Earlier revisions also hooked the embedded queueMessage and
+prepareEmbeddedAgentQueueMessage. Both were measured 2026-09-10 to be dead code
+on this path (they were never reached) and were removed: fewer edits is less to
+break on the next `openclaw update`, on a bundle shared with a second tenant.
+
+CALLER CONTRACT: the workspace must send `queueMode: "steer"` on chat.send
+(backend/bridge.py steer_turn). The gateway reads the steer intent from the
+REQUEST, not from openclaw.json's messages.queue.mode; without it none of this
+is consulted.
 
 REAPPLY-SAFE: `openclaw update` rewrites and renames the bundle. Each edit
 globs for its own anchor, requires EXACTLY ONE unpatched match in EXACTLY ONE
@@ -58,16 +72,18 @@ A_TARGET = "\t\t\tmodelId: params.context.normalizedModel,\n"
 A_PATCHED = (
     "\t\t\tmodelId: params.context.normalizedModel,\n"
     "\t\t\t" + MARKER + "openclawSessionKey: params.context.params.sessionKey,\n"
+    "\t\t\t" + MARKER + "openclawSessionId: params.context.params.sessionId,\n"
 )
 
 # --- B: publish a stdin writer for the duration of a CLI turn ---------------
 B_TARGET = "\tsession.currentTurn = turn;\n"
 B_PATCHED = (
     "\tsession.currentTurn = turn;\n"
-    "\t" + MARKER + "const steerKey = context.openclawSessionKey;\n"
-    "\tif (steerKey) {\n"
+    "\t" + MARKER + "const steerKeys = [context.openclawSessionKey, context.openclawSessionId].filter(Boolean);\n"
+    "\tif (steerKeys.length) {\n"
     "\t\tconst map = globalThis.__OPENCLAW_CLI_STEER ??= new Map();\n"
-    "\t\tmap.set(steerKey, { turn, send: async (text) => {\n"
+    "\t\tconst entry = { turn, send: async (text) => {\n"
+    "\t\t\tconsole.error(`[cli-steer] send keys=${JSON.stringify(steerKeys)} len=${String(text).length}`);\n"
     "\t\t\tif (session.closed || session.currentTurn !== turn || !session.transport) {\n"
     "\t\t\t\tthrow new Error(\"Claude CLI live session has no active turn to steer\");\n"
     "\t\t\t}\n"
@@ -78,7 +94,8 @@ B_PATCHED = (
     "\t\t\t\tuuid: randomUUID(),\n"
     "\t\t\t\t...context.sessionId ? { session_id: context.sessionId } : {}\n"
     "\t\t\t});\n"
-    "\t\t} });\n"
+    "\t\t} };\n"
+    "\t\tfor (const k of steerKeys) map.set(k, entry);\n"
     "\t}\n"
 )
 # The turn's own finally already runs on every exit path (return, throw,
@@ -90,35 +107,49 @@ B_PATCHED = (
 B_FIN_TARGET = ("\t\tturn.controller.abort();\n"
                 "\t\tcontext.abortSignal?.removeEventListener(\"abort\", abort);\n")
 B_FIN_PATCHED = (
-    "\t\t" + MARKER + "const doneKey = context.openclawSessionKey;\n"
-    "\t\tif (doneKey && globalThis.__OPENCLAW_CLI_STEER?.get(doneKey)?.turn === turn) {\n"
-    "\t\t\tglobalThis.__OPENCLAW_CLI_STEER.delete(doneKey);\n"
+    "\t\t" + MARKER + "for (const k of [context.openclawSessionKey, context.openclawSessionId]) {\n"
+    "\t\t\tif (k && globalThis.__OPENCLAW_CLI_STEER?.get(k)?.turn === turn) {\n"
+    "\t\t\t\tglobalThis.__OPENCLAW_CLI_STEER.delete(k);\n"
+    "\t\t\t}\n"
     "\t\t}\n"
 ) + B_FIN_TARGET
 
-# --- C: prefer the live CLI stdin over the agent steering queue --------------
-C_TARGET = ("\t\t\treturn await steerActiveSessionWithOptionalDeliveryWait("
-            "input.activeSession, text, options, attempt.sessionKey, "
-            "canInjectMessage, questionAuthority(assertCurrent, authorityKind));\n")
-C_PATCHED = (
-    "\t\t\t" + MARKER + "const cliSteer = globalThis.__OPENCLAW_CLI_STEER?.get(attempt.sessionKey);\n"
-    "\t\t\tif (cliSteer) {\n"
-    "\t\t\t\tawait cliSteer.send(text);\n"
+# --- E: the real gate -------------------------------------------------------
+# chat.send(queueMode="steer") asks the REPLY-RUN registry whether the running
+# reply can take an injection, and that is where a claude-cli turn is refused:
+# the reply operation's attached backend is the embedded run handle, whose
+# `isAvailable()` is about the embedded agent loop, not about the CLI process
+# that is actually holding the turn open. Measured 2026-09-10: neither the
+# queueMessage hook (C) nor the embedded pre-gate (D) was ever reached, and the
+# steer came back with a fresh runId every time. So take it here, at the one
+# decision every steer passes through, keyed by the session key the CLI turn
+# registered under.
+E_TARGET = ("function resolveReplyMessageInjectionRejection(params) {\n"
+            "\tconst { operation } = params;\n")
+E_PATCHED = E_TARGET + (
+    "\t" + MARKER + "const cliLive = operation && globalThis.__OPENCLAW_CLI_STEER?.get(operation.key);\n"
+    "\tif (cliLive) return {\n"
+    "\t\tbackend: getAttachedBackend(operation) ?? {},\n"
+    "\t\tinjection: {\n"
+    "\t\t\tisAvailable: () => true,\n"
+    "\t\t\tqueueMessage: async (text, options) => {\n"
+    "\t\t\t\tawait cliLive.send(text);\n"
     "\t\t\t\tconst rec = options?.userTurnTranscriptRecorder;\n"
     "\t\t\t\tif (typeof rec?.persistApproved === \"function\") {\n"
     "\t\t\t\t\ttry { await rec.persistApproved(); } catch { /* transcript is best-effort */ }\n"
     "\t\t\t\t}\n"
     "\t\t\t\toptions?.onQueueAccepted?.(true);\n"
-    "\t\t\t\treturn;\n"
     "\t\t\t}\n"
-) + C_TARGET
+    "\t\t}\n"
+    "\t};\n"
+)
 
 # (description, glob, target, replacement) - order matters only for the log.
 EDITS = (
     ("session key -> cli runtime", "execute.runtime-*.mjs", A_TARGET, A_PATCHED),
     ("cli turn stdin writer", "extensions/anthropic/cli.runtime.js", B_TARGET, B_PATCHED),
     ("cli turn unregister", "extensions/anthropic/cli.runtime.js", B_FIN_TARGET, B_FIN_PATCHED),
-    ("embedded queueMessage hook", "builtin-openclaw-*.mjs", C_TARGET, C_PATCHED),
+    ("reply-run injection gate", "reply-run-registry*.mjs", E_TARGET, E_PATCHED),
 )
 
 

@@ -26,7 +26,7 @@ NEEDLE = "async function runClaudeLiveSessionTurn"
 MARKER2 = "/*CLI_STEER2*/"
 V2_EDITS = (
     ("extensions/anthropic/cli.runtime.js", "__OPENCLAW_CLI_STEER ??= new Map()"),
-    ("builtin-openclaw-*.mjs", "__OPENCLAW_CLI_STEER?.get("),
+    ("reply-run-registry*.mjs", "__OPENCLAW_CLI_STEER?.get("),
 )
 STEER_ENDPOINT_IDS = {"claude-cli"}
 _CACHE_TTL_S = 60.0

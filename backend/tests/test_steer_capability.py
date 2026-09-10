@@ -66,15 +66,15 @@ def test_session_can_steer():
 V2_CLI = ("async function* executeClaudeCli(context) {\n"
           "\t/*CLI_STEER2*/const steerKey = context.openclawSessionKey;\n"
           "\tglobalThis.__OPENCLAW_CLI_STEER ??= new Map();\n}\n")
-V2_BUILTIN = ("const queueMessage = async (text) => {\n"
-              "\t/*CLI_STEER2*/const cliSteer = globalThis.__OPENCLAW_CLI_STEER?.get(k);\n}\n")
+V2_BUILTIN = ("function resolveReplyMessageInjectionRejection(params) {\n"
+              "\t/*CLI_STEER2*/const cliLive = globalThis.__OPENCLAW_CLI_STEER?.get(k);\n}\n")
 
 
 def _dist_v2(tmp_path, cli=V2_CLI, builtin=V2_BUILTIN):
     d = tmp_path / "dist"
     (d / "extensions" / "anthropic").mkdir(parents=True, exist_ok=True)
     (d / "extensions" / "anthropic" / "cli.runtime.js").write_text(cli, encoding="utf-8")
-    (d / "builtin-openclaw-XyZ.mjs").write_text(builtin, encoding="utf-8")
+    (d / "reply-run-registry.registry-XyZ.mjs").write_text(builtin, encoding="utf-8")
     return str(d)
 
 
@@ -86,14 +86,14 @@ def test_v2_absent_when_only_the_runtime_edit_landed(tmp_path):
     """A half-applied patch registers a writer nobody reads: the steer would be
     accepted and silently queued, which is exactly what the gate exists to
     prevent. Report unavailable so the client keeps its own queue."""
-    d = _dist_v2(tmp_path, builtin="const queueMessage = async (text) => {};\n")
+    d = _dist_v2(tmp_path, builtin="function resolveReplyMessageInjectionRejection() {}\n")
     assert steer.patch_present(d) is False
 
 
 def test_v2_absent_on_a_stock_bundle(tmp_path):
     d = _dist_v2(tmp_path,
                  cli="async function* executeClaudeCli(context) {}\n",
-                 builtin="const queueMessage = async (text) => {};\n")
+                 builtin="function resolveReplyMessageInjectionRejection() {}\n")
     assert steer.patch_present(d) is False
 
 

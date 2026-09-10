@@ -908,6 +908,14 @@ async def steer_turn(session_key: str, message: str) -> dict:
         "message": text,
         "deliver": False,
         "idempotencyKey": uuid.uuid4().hex,
+        # REQUIRED, and easy to miss: on 2026.9.3 the gateway reads the steer
+        # intent from the REQUEST (`p.queueMode`), not from openclaw.json's
+        # messages.queue.mode. Without it chat.send never even resolves an
+        # injection target -- it dispatches the message as a brand-new run and
+        # still returns ok, so the steer looks accepted and lands as a
+        # follow-up turn (measured 2026-09-10: the ack carried a runId that was
+        # not the running turn's).
+        "queueMode": "steer",
     }
     return await gateway_call("chat.send", params, timeout=20.0)
 

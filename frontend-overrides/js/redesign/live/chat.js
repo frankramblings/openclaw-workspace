@@ -1036,19 +1036,38 @@ export function __setQuestionAnswers(m) { _qAnswers = m || {}; }
 export function isQuestionLocked(toolId) { return !!(_qAnswers[toolId] && _qAnswers[toolId].answered); }
 export function lockedChoice(toolId) { return (_qAnswers[toolId] || {}).choice || ''; }
 
-export function recordQuestionAnswer(toolId, choice) {
-  if (!toolId) return;
+// Posts the answer and returns whether the backend resolved the Gateway's
+// pending question with it (see backend/question_cards.py). `false` means
+// nothing was waiting — an expired or replayed card — so the caller still
+// needs to send the answer as an ordinary message.
+export async function recordQuestionAnswer(toolId, choice, selections) {
+  if (!toolId) return false;
   _qAnswers[toolId] = { answered: true, choice };
   const chat = runtime.state && ensureChat(runtime.state);
   const sid = chat && chat.activeId;
-  if (sid) fetch('/api/question-answer', { method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ session: sid, tool_id: toolId, choice }) }).catch(() => {});
+  if (!sid) return false;
+  try {
+    const res = await fetch('/api/question-answer', { method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session: sid, tool_id: toolId, choice,
+                             answers: selections || [] }) });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return !!(body && body.resolved);
+  } catch (_) { return false; }
 }
 
-export function answerQuestionCard(toolId, answerString) {
-  try { recordQuestionAnswer(toolId, answerString); } catch (_) {}
-  _dispatchImpl(answerString);
+// A card answer resolves the paused AskUserQuestion tool call itself; it must
+// NOT go out as a new chat message. The tool parks the turn on a Gateway
+// question (docs/gateway/cli-backends.md), so a message sent while it is
+// pending bounces off the one-turn-per-session guard and leaves the session
+// blocked for the tool's full timeout. Only fall back to sending when the
+// Gateway confirms nothing was waiting.
+export async function answerQuestionCard(toolId, answerString, selections) {
+  let resolved = false;
+  try { resolved = await recordQuestionAnswer(toolId, answerString, selections); } catch (_) {}
+  if (!resolved) _dispatchImpl(answerString);
+  return resolved;
 }
 
 // ---- activity-trail mapping (live SSE → step model) -----------------------

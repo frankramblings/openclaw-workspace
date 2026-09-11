@@ -80,7 +80,9 @@ from .attachments import (
     _prepend_text_attachments,
     _resolve_attachments,
 )
-from .question_cards import answers_for as _qc_answers_for, record_answer as _qc_record_answer
+from .question_cards import (answers_for as _qc_answers_for,
+                             record_answer as _qc_record_answer,
+                             resolve_pending as _qc_resolve_pending)
 from .secret_scrub import scrub as _scrub_secrets, system_note as _scrub_note
 # Re-export the turn-engine helpers (extracted to chat_turn.py in Task 19) on the
 # app module so every existing import site and monkeypatch seam keeps resolving
@@ -937,15 +939,26 @@ def _prepend_history_backfill(session_id: str, data: dict) -> None:
 
 @app.post("/api/question-answer")
 async def question_answer(payload: dict = Body(default=None)):
-    """Record which choice a tappable AskUserQuestion card was answered with,
-    so reload/replay can lock it (see backend/question_cards.py)."""
+    """Answer a tappable AskUserQuestion card: resolve this session's pending
+    Gateway question with the chosen options, and record the choice so
+    reload/replay can lock the card (see backend/question_cards.py).
+
+    `resolved: false` means nothing was waiting on the Gateway — a stale replay
+    of an expired card — and the client should fall back to sending the answer
+    as an ordinary message."""
     payload = payload or {}
     session_id = (payload.get("session") or "").strip()
     tool_id = (payload.get("tool_id") or "").strip()
     if not session_id or not tool_id:
         return JSONResponse(status_code=400, content={"error": "session and tool_id required"})
     _qc_record_answer(session_id, tool_id, payload.get("choice"))
-    return {"ok": True}
+    rec = sessions_store.get(session_id)
+    session_key = rec["sessionKey"] if rec else config.web_session_key()
+    selections = payload.get("answers")
+    if not isinstance(selections, list):
+        selections = []
+    status = await _qc_resolve_pending(session_key, selections)
+    return {"ok": True, "resolved": status == "resolved"}
 
 
 @app.patch("/api/session/{session_id}")

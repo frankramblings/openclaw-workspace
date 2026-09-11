@@ -373,6 +373,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .question-card__other-submit{font-size:12.5px;color:var(--faint);background:transparent;border:1px solid var(--bd2);border-radius:6px;padding:6px 11px;cursor:pointer}
 .question-card__other-submit:hover{color:var(--fg);border-color:var(--teal)}
 .question-card__send{align-self:flex-start;font-size:13px;font-weight:600;color:#08211f;background:var(--teal);border:none;border-radius:6px;padding:7px 15px;cursor:pointer}
+.question-card__send.is-disabled{background:transparent;color:var(--faint);border:1px solid var(--bd2);cursor:default}
 .question-card--locked{opacity:.7}
 .question-card__receipt{font-size:13px;color:var(--faint)}
 .msg-meta .name{font-size:14.5px;font-weight:600;color:var(--fg)}
@@ -627,6 +628,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .act-code{border:1px solid var(--bd2);background:#121317;border-radius:8px;padding:9px 11px;font-family:var(--mono);font-size:12.5px;line-height:1.7;overflow-x:auto}
 .act-code .ln{white-space:pre}
 .act-working{display:flex;align-items:center;gap:8px;padding:5px 8px;margin-left:-1px}
+.act-working.ocact{cursor:pointer}
 .act-working .file{font-family:var(--mono);font-size:12.5px;color:#aab0ba;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
 .act-spinner{flex:none;display:inline-flex;align-items:center;color:var(--teal);line-height:0}
 .act-spinner.gold{color:var(--gold)}

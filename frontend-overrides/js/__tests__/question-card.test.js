@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseQuestionCard, composeAnswer, questionCardHtml } from '../redesign/live/question-card.js';
+import { parseQuestionCard, composeAnswer, questionCardHtml, selectionLists } from '../redesign/live/question-card.js';
 
 const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -71,4 +71,29 @@ test('questionCardHtml selected multi-select option carries the selected class',
     options: [{ label: 'IPTV' }, { label: 'Cortex' }] }] };
   const html = questionCardHtml(model, esc, { toolId: 't1', selections: [['IPTV']] });
   assert.match(html, /question-card__opt is-sel" data-act="qcToggle" data-arg="[^"]*IPTV/);
+});
+
+test('questionCardHtml disables Send until every question has a selection', () => {
+  const model = { questions: [
+    { question: 'Where?', header: 'Location', multiSelect: false, options: [{ label: 'Dover' }] },
+    { question: 'What food?', header: 'Tastes', multiSelect: true, options: [{ label: 'Thai' }] },
+  ]};
+  // Nothing picked: Send must not be able to submit an empty answer (this is
+  // what wrote `{"choice": "Location: \nTastes: "}` into the sidecar).
+  const empty = questionCardHtml(model, esc, { toolId: 't1', selections: [] });
+  assert.match(empty, /question-card__send[^"]*is-disabled/);
+  assert.match(empty, /disabled/);
+  // Partially answered is still not submittable.
+  const partial = questionCardHtml(model, esc, { toolId: 't1', selections: ['Dover', []] });
+  assert.match(partial, /question-card__send[^"]*is-disabled/);
+  // Fully answered: live Send.
+  const full = questionCardHtml(model, esc, { toolId: 't1', selections: ['Dover', ['Thai']] });
+  assert.doesNotMatch(full, /is-disabled/);
+});
+
+test('selectionLists normalizes card selections into per-question label arrays', () => {
+  const qs = [{ multiSelect: false }, { multiSelect: true }, { multiSelect: false }];
+  assert.deepEqual(selectionLists(qs, ['Dover', ['Thai', 'Sushi'], null]),
+    [['Dover'], ['Thai', 'Sushi'], []]);
+  assert.deepEqual(selectionLists(qs, []), [[], [], []]);
 });

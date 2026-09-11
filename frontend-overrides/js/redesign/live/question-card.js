@@ -25,6 +25,27 @@ export function composeAnswer(questions, selections) {
   return parts.map((p) => `${p.header}: ${p.ans}`).join('\n');
 }
 
+// The Gateway's question.resolve wants one array of chosen labels per question
+// (see backend/question_cards.py), while the card stores a single-select answer
+// as a bare string and an untouched question as null/undefined. Normalize to
+// the wire shape, always one entry per question so position still lines up.
+export function selectionLists(questions, selections) {
+  return (questions || []).map((q, i) => {
+    const sel = (selections || [])[i];
+    if (Array.isArray(sel)) return sel.filter((s) => String(s || '').trim());
+    const one = String(sel == null ? '' : sel).trim();
+    return one ? [one] : [];
+  });
+}
+
+// Every question needs an answer before Send can fire. Without this the button
+// happily submitted a card nobody had touched, which is how answers like
+// "Location: \nTastes: " reached the transcript.
+export function isAnswerComplete(questions, selections) {
+  const lists = selectionLists(questions, selections);
+  return lists.length > 0 && lists.every((l) => l.length > 0);
+}
+
 // questionCardHtml builds the card as an HTML string, matching the surfaces'
 // idiom (HTML-string render + data-act delegation in app.js) rather than DOM
 // node construction. Kept dependency-free — `esc` is passed in by the caller
@@ -57,8 +78,9 @@ export function questionCardHtml(model, esc, opts = {}) {
   }).join('');
 
   const needsButton = model.questions.length > 1 || model.questions.some((q) => q.multiSelect);
+  const ready = isAnswerComplete(model.questions, selections);
   const sendHtml = needsButton
-    ? `<button type="button" class="question-card__send" data-act="qcSend" data-arg="${esc(JSON.stringify({ toolId }))}">Send</button>`
+    ? `<button type="button" class="question-card__send${ready ? '' : ' is-disabled'}"${ready ? '' : ' disabled'} data-act="qcSend" data-arg="${esc(JSON.stringify({ toolId }))}">Send</button>`
     : '';
 
   return `<div class="question-card">${qHtml}${sendHtml}</div>`;

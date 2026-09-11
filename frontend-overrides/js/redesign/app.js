@@ -22,7 +22,7 @@ import { maybeShowThreadsHint } from './mobile/threads-hint.js';
 import { startLongPress, moveLongPress, endLongPress, resetLongPress, armSwallow, shouldSwallowClick, scheduleSwallowDisarm } from './mobile/longpress.js';
 import { editPendingOnMobile, cancelMobileEdit, commitMobileEditIfPending } from './mobile/edit-flow.js';
 import { flushPending, queueForSession, answerQuestionCard, toast } from './live/chat.js';
-import { composeAnswer } from './live/question-card.js';
+import { composeAnswer, selectionLists } from './live/question-card.js';
 import { shouldSwipeDismiss, applyCloseSheet } from './mobile/sheet-close.js';
 import '../deeplink.js';  // ?action=new|search|inbox|photo|voice (self-inits on load)
 import { loadSurface } from './live/index.js';
@@ -818,7 +818,9 @@ function _qcCommit(m) {
   const sel = (qc.selections || []).map((s) => (s == null ? '' : s));
   const answer = composeAnswer(qc.model.questions, sel);
   qc.locked = true; qc.choice = answer;
-  answerQuestionCard(qc.toolId, answer);
+  // selectionLists is the per-question wire shape the backend needs to resolve
+  // the Gateway question; `answer` stays the human-readable receipt.
+  answerQuestionCard(qc.toolId, answer, selectionLists(qc.model.questions, sel));
 }
 actions.qcPick = (arg) => {
   const { p, m } = _qcFind(arg); if (!m || m.questionCard.locked) return;

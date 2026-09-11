@@ -12,7 +12,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import time
+from pathlib import Path
 import urllib.parse
 import uuid
 
@@ -495,6 +497,27 @@ async def fetch_history(session_key: str, limit: int = 200,
     return _map_history((res.get("payload") or {}).get("messages") or [])
 
 
+def _is_turn_snapshot(text: str, said_so_far: list) -> bool:
+    """True when `text` merely re-delivers every text block said so far this turn.
+
+    Gateway 2026.9.3 made claude-cli an agent RUNTIME, and it now closes a turn
+    with an EXTRA assistant message carrying every text block of that turn joined
+    together. That message is a snapshot of what the user already read, not new
+    speech, so treating it as another round renders the whole reply a second time
+    back to back on reload — the doubling Frank reported. The gateway's own
+    transcript stores the reply once; the duplicate was created here.
+
+    Matched on whitespace-squashed equality so the gateway's join separator
+    ("\\n\\n" today) isn't load-bearing, and only on the WHOLE accumulation — a
+    trailing message repeating just the last block is something else and stays.
+    """
+    squashed = " ".join(text.split())
+    if not squashed:
+        return False
+    joined = " ".join(" ".join(t.split()) for t in said_so_far if t.strip())
+    return bool(joined) and squashed == joined
+
+
 def _map_history(messages: list) -> dict:
     """Project the brain's flat transcript into the SPA's history shape.
 
@@ -529,6 +552,7 @@ def _map_history(messages: list) -> dict:
         if not has_tools:
             # Plain Q&A turn: one history entry per assistant message, exactly as
             # before — preserves per-message timestamps/usage the drawer expects.
+            said: list = []
             for m in pending:
                 if not isinstance(m, dict) or m.get("role") != "assistant":
                     continue
@@ -536,6 +560,9 @@ def _map_history(messages: list) -> dict:
                     model = m["model"]  # last assistant model wins → picker label
                 text = _content_text(m.get("content"))
                 if text.strip():
+                    if _is_turn_snapshot(text, said):
+                        continue  # trailing whole-turn re-delivery, already shown
+                    said.append(text)
                     history.append({"role": "assistant", "content": text,
                                     "metadata": _assistant_meta(m)})
             return
@@ -555,6 +582,8 @@ def _map_history(messages: list) -> dict:
                 _merge_assistant_meta(meta, m)
                 blocks = m.get("content")
                 text = _content_text(blocks)
+                if text.strip() and _is_turn_snapshot(text, round_texts):
+                    text = ""  # trailing whole-turn re-delivery, already shown
                 if text.strip():
                     # Text after a tool group starts the next round; otherwise it
                     # extends the current round's (possibly empty) text bubble.
@@ -1396,6 +1425,99 @@ _STRIP_INPUT_TOOLS = {
 _STRIP_OUTPUT_TOOLS = {"TaskCreate", "TaskList"}
 
 
+_TRACE_PATH = os.environ.get("OPENCLAW_WS_FRAME_TRACE")
+# Flag file, checked per call so tracing can be switched on for a live
+# reproduction without restarting the service (uvicorn reads env at import).
+_TRACE_FLAG = Path(__file__).resolve().parent.parent / ".data" / "frame-trace.enabled"
+
+
+def _trace_target() -> str | None:
+    if _TRACE_PATH:
+        return _TRACE_PATH
+    try:
+        if _TRACE_FLAG.exists():
+            return str(_TRACE_FLAG.with_name("frame-trace.jsonl"))
+    except OSError:
+        pass
+    return None
+
+
+def _trace_write(record: dict) -> None:
+    target = _trace_target()
+    if not target:
+        return
+    try:
+        record["t"] = round(time.monotonic(), 3)
+        with open(target, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _trace_frame(event: str, payload: dict) -> None:
+    """Append a one-line summary of a gateway frame when tracing is enabled.
+
+    Off unless OPENCLAW_WS_FRAME_TRACE names a file or the flag file exists.
+    Exists because the only honest way to know which frames the gateway sends
+    mid-tool-call is to watch a real run. Guarded so tracing can never break
+    the relay.
+    """
+    if not _trace_target():
+        return
+    data = payload.get("data") or {}
+    _trace_write({
+        "event": event,
+        "stream": payload.get("stream"),
+        "state": payload.get("state"),
+        "kind": data.get("kind"),
+        "phase": data.get("phase"),
+        "name": data.get("name"),
+        "keys": sorted(data.keys())[:12],
+        "tool_call_id": data.get("toolCallId") or data.get("itemId"),
+    })
+
+
+def _trace_chat(payload: dict, msg_text: str, tool_since_text: bool) -> None:
+    """Record the SHAPE of a chat frame and the relay's view of the turn.
+
+    The doubling bug lives entirely in how a trailing snapshot compares against
+    what is already on screen, so the trace has to carry the content block
+    layout plus both ends of each string — not a summary.
+    """
+    if not _trace_target():
+        return
+    msg = payload.get("message") or {}
+    content = msg.get("content")
+    blocks = []
+    if isinstance(content, list):
+        for b in content:
+            if isinstance(b, dict):
+                t = b.get("text")
+                blocks.append({"type": b.get("type"),
+                               "len": len(t) if isinstance(t, str) else None,
+                               "head": t[:60] if isinstance(t, str) else None,
+                               "tail": t[-60:] if isinstance(t, str) else None})
+            else:
+                blocks.append({"type": type(b).__name__})
+    full = _extract_text(payload)
+    _trace_write({
+        "event": "chat",
+        "state": payload.get("state"),
+        "deltaText": (payload.get("deltaText") or "")[:80] or None,
+        "n_blocks": len(blocks) if isinstance(content, list) else None,
+        "blocks": blocks[:8],
+        "full_len": len(full) if isinstance(full, str) else None,
+        "full_head": full[:60] if isinstance(full, str) else None,
+        "full_tail": full[-60:] if isinstance(full, str) else None,
+        "msg_text_len": len(msg_text),
+        "msg_text_head": msg_text[:60],
+        "msg_text_tail": msg_text[-60:],
+        "tool_since_text": tool_since_text,
+        "startswith": bool(full) and full.startswith(msg_text),
+        "endswith": bool(full) and bool(msg_text) and full.endswith(msg_text),
+    })
+
+
 async def _relay_events(ws, run_id, run_info: dict | None = None,
                         session_key: str | None = None):
     """Translate gateway events for `run_id` into Odysseus SSE chunks.
@@ -1452,6 +1574,7 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
             continue
         event = frame.get("event")
         payload = frame.get("payload") or {}
+        _trace_frame(event, payload)
         if _is_run_activity(payload, run_id):
             now = time.monotonic()
             if "t_first_frame" not in timing:
@@ -1512,6 +1635,7 @@ async def _relay_events(ws, run_id, run_info: dict | None = None,
             #    still set) the commit branch appended the whole turn to itself and
             #    the reply rendered — and persisted — twice. It ENDS with what is
             #    already shown, which is the tell.
+            _trace_chat(payload, msg_text, tool_since_text)
             full = _extract_text(payload)
             if full and not full.startswith(msg_text):
                 redelivery = bool(msg_text) and full.endswith(msg_text)

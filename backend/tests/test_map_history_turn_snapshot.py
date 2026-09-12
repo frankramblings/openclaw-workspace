@@ -84,3 +84,44 @@ def test_pure_text_turn_drops_the_snapshot_too():
     texts = [m["content"] for m in _map_history(msgs)["history"]
              if m["role"] == "assistant"]
     assert texts == ["First thought.", "Second thought."], texts
+
+
+def test_snapshot_spanning_earlier_turns_is_dropped():
+    """Captured real case, thread d4a3a72f1857 (2026-09-11 ~20:00).
+
+    The gateway's closing message was NOT a whole-turn snapshot. It held
+    narration blocks from three EARLIER user turns followed by this turn's
+    answer, so it equalled nothing said this turn and the equality guard let it
+    through. `_map_history` appended it to the round and the answer rendered
+    twice with the session's narration wedged between the copies (content went
+    2830 -> 6101 chars). The tell is that it ENDS with the answer already shown.
+    """
+    answer = ("**Next action: don't install any of them.** " + "x" * 200)
+    msgs = [
+        {"role": "user", "content": "is this a good fit?", "timestamp": 100},
+        {"role": "assistant", "timestamp": 101,
+         "content": [{"type": "text", "text": "Checking what thread this follows from."}]},
+        {"role": "user", "content": "what if we roll our own", "timestamp": 102},
+        {"role": "assistant", "timestamp": 103,
+         "content": [{"type": "text", "text": "Dropping the roll-your-own thread for now."}]},
+        {"role": "user", "content": "look for other projects", "timestamp": 104},
+        {"role": "assistant", "timestamp": 105, "content": [
+            {"type": "toolCall", "id": "t1", "name": "WebSearch",
+             "arguments": {"query": "openclaw memory plugins"}}]},
+        {"role": "toolResult", "toolCallId": "t1", "content": "results"},
+        {"role": "assistant", "timestamp": 106,
+         "content": [{"type": "text", "text": "Narrowing to the OpenClaw-native ones."}]},
+        {"role": "assistant", "timestamp": 107,
+         "content": [{"type": "text", "text": answer}]},
+        # The closing snapshot: earlier turns' narration, then the answer again.
+        {"role": "assistant", "timestamp": 108, "content": [{"type": "text", "text": (
+            "Checking what thread this follows from.\n\n"
+            "Dropping the roll-your-own thread for now.\n\n"
+            "Narrowing to the OpenClaw-native ones.\n\n" + answer)}]},
+    ]
+    turn = _map_history(msgs)["history"][-1]
+    # The defect was the answer appearing twice with narration between the copies.
+    assert turn["content"].count("**Next action") == 1, turn["content"][:200]
+    assert turn["content"].endswith(answer)
+    # And the narration must not be re-listed inside the answer's round.
+    assert turn["content"].count("Checking what thread this follows from.") == 0

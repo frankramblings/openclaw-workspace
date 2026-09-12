@@ -518,6 +518,42 @@ def _is_turn_snapshot(text: str, said_so_far: list) -> bool:
     return bool(joined) and squashed == joined
 
 
+# A re-delivered block is only recognised above this squashed length. Gary does
+# legitimately repeat short lines ("Done.", "On it.") across a session; he does
+# not legitimately repeat a paragraph verbatim.
+_REDELIVERY_MIN_CHARS = 80
+
+
+def _squash(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _already_said(text: str, seen: set) -> bool:
+    """True when this exact block was already shown earlier in the session.
+
+    The 2026.9.3 end-of-turn snapshot does NOT stop at the current turn: the
+    captured real case (thread d4a3a72f1857) closed with a message holding the
+    turn's answer, then narration blocks from THREE earlier user turns, then the
+    answer again. Because `_emit_turn` only splits on user messages, all of that
+    collapsed into the last turn's round and the answer rendered twice with the
+    session's narration wedged between the copies.
+
+    So the guard has to be session-wide, not turn-wide: any substantial block
+    already delivered earlier is a re-delivery, whatever turn it lands in.
+    """
+    squashed = _squash(text)
+    if len(squashed) < _REDELIVERY_MIN_CHARS:
+        return False
+    if squashed in seen:
+        return True
+    # The captured real case: the snapshot is narration blocks + the answer, so
+    # it equals nothing seen before, but it ENDS with the answer that is already
+    # on screen. That trailing overlap is the reliable tell for a re-delivery,
+    # and it is the same signal the live relay uses.
+    return any(len(b) >= _REDELIVERY_MIN_CHARS and len(squashed) > len(b)
+               and squashed.endswith(b) for b in seen)
+
+
 def _map_history(messages: list) -> dict:
     """Project the brain's flat transcript into the SPA's history shape.
 
@@ -536,6 +572,7 @@ def _map_history(messages: list) -> dict:
     history = []
     model = None
     pending: list = []  # assistant + toolResult messages of the current turn
+    seen_blocks: set = set()  # squashed assistant text already delivered, session-wide
 
     def _emit_turn():
         nonlocal model
@@ -560,9 +597,10 @@ def _map_history(messages: list) -> dict:
                     model = m["model"]  # last assistant model wins → picker label
                 text = _content_text(m.get("content"))
                 if text.strip():
-                    if _is_turn_snapshot(text, said):
-                        continue  # trailing whole-turn re-delivery, already shown
+                    if _is_turn_snapshot(text, said) or _already_said(text, seen_blocks):
+                        continue  # re-delivery of text already shown
                     said.append(text)
+                    seen_blocks.add(_squash(text))
                     history.append({"role": "assistant", "content": text,
                                     "metadata": _assistant_meta(m)})
             return
@@ -582,9 +620,11 @@ def _map_history(messages: list) -> dict:
                 _merge_assistant_meta(meta, m)
                 blocks = m.get("content")
                 text = _content_text(blocks)
-                if text.strip() and _is_turn_snapshot(text, round_texts):
-                    text = ""  # trailing whole-turn re-delivery, already shown
+                if text.strip() and (_is_turn_snapshot(text, round_texts)
+                                     or _already_said(text, seen_blocks)):
+                    text = ""  # re-delivery of text already shown
                 if text.strip():
+                    seen_blocks.add(_squash(text))
                     # Text after a tool group starts the next round; otherwise it
                     # extends the current round's (possibly empty) text bubble.
                     if cur_round_has_tools:

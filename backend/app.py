@@ -59,6 +59,7 @@ from .workspace_watch import router as workspace_watch_router
 from . import workspace_watch
 from .terminals import router as terminals_router
 from .resume_route import router as resume_router
+from .doubling_report_route import router as doubling_report_router
 from .export_pdf import router as export_pdf_router
 from .strip_state import router as strip_state_router
 from .suggest import router as suggest_router
@@ -315,6 +316,7 @@ app.include_router(workspace_files_router)
 app.include_router(workspace_watch_router)
 app.include_router(terminals_router)
 app.include_router(resume_router)
+app.include_router(doubling_report_router)
 app.include_router(export_pdf_router)
 app.include_router(strip_state_router)
 app.include_router(suggest_router)

@@ -38,6 +38,7 @@ import { buildSwitcherSections, flatRows, clampSel } from '../switcher.js';
 import { buildThreadGroups } from '../thread-groups.js';
 import { afterTurn as changesAfterTurn, attachHistory as changesAttachHistory } from './changes.js';
 import { parseMoveArg, MOVE_NEW, MOVE_NONE } from '../project-menu.js';
+import { findDoubledSpan } from './doubling.js';
 import { activeLibraryDocId, consumeAttachDetach, getSelection, applyExternalUpdate, flushBeforeSend, flushOk } from './document-editor.js';
 
 // The throttled per-token render only patches the active message bubble in
@@ -1413,6 +1414,49 @@ function stopLive() {
   }
 }
 
+// ---- doubled-bubble capture (Bug B) ----------------------------------------
+// The backend frame tracer exonerated the relay: 29 minutes, 6233 frames, and
+// the redelivery branch never fired — yet Frank's reply still rendered twice in
+// the LIVE bubble while /api/history stayed clean. What was never recorded is
+// the frame sequence the reducer APPLIED and the bubble text it produced, so
+// each occurrence left nothing to debug. These two helpers close that gap: keep
+// a compact per-turn frame log, then ship it at `done` only when the finished
+// bubble really did double. A clean turn posts nothing.
+const _FRAME_LOG_CAP = 800;
+
+function recordFrame(t, ev) {
+  if (!t) return;
+  if (!t.frameLog) t.frameLog = [];
+  if (t.frameLog.length >= _FRAME_LOG_CAP) return; // cap, don't rotate: the
+  // START of a doubled turn is the diagnostic part, not the tail.
+  const rec = { ms: Date.now(), type: ev.type || (ev.thinking ? 'thinking' : 'delta') };
+  if (typeof ev.delta === 'string') {
+    rec.len = ev.delta.length;
+    rec.head = ev.delta.slice(0, 40);
+    if (ev.thinking) rec.thinking = true;
+  }
+  if (ev.tool) rec.tool = ev.tool;
+  t.frameLog.push(rec);
+}
+
+function reportDoubling(t) {
+  try {
+    const text = t && t.asstMsg ? String(t.asstMsg.text || '') : '';
+    const detected = findDoubledSpan(text);
+    if (!detected) return;
+    const body = JSON.stringify({
+      session: t.sessionId || null,
+      turn_id: t.turnId != null ? String(t.turnId) : null,
+      detected, text, frames: t.frameLog || [],
+    });
+    // keepalive: the report must survive the tab closing right after the turn.
+    fetch('/api/debug/doubling', {
+      method: 'POST', credentials: 'include', keepalive: true,
+      headers: { 'content-type': 'application/json' }, body,
+    }).catch(() => {});
+  } catch (_) { /* a diagnostic must never break a finished turn */ }
+}
+
 // The last bubble a Stop finalized: {sessionId, msgId}. If the stop-POST
 // never landed server-side (or raced the run), the notifier re-attaches
 // ~4s later and attachTurn replays the turn from its start — it consults
@@ -1505,6 +1549,7 @@ function beginTurn(chat, modelLabel, sessionId) {
     // Every frame is proof of life — the hb-gap watchdog (reconcile) keys off
     // this timestamp, so it must update for ALL frame types, not just hb.
     turn.lastFrameMs = Date.now();
+    recordFrame(turn, ev);
     if (ev.type === 'turn_start') {
       turn.turnId = ev.turn_id;
       setLiveTurn({ sessionId: turn.sessionId, turnId: ev.turn_id, msgId: turn.msgId });
@@ -1517,6 +1562,9 @@ function beginTurn(chat, modelLabel, sessionId) {
 
     if (ev.type === 'done') {
       flushStreamBuffer();
+      // AFTER the flush (the bubble is only whole once pending text lands) and
+      // before any teardown reorders this block away from `turn`.
+      reportDoubling(turn);
       if (turn.asstMsg) turn.asstMsg.streaming = false;
       if (turn.thinkStep) finalizeStep(turn.thinkStep);
       chat.chatStrip = stripOnTurnDone(chat.chatStrip);

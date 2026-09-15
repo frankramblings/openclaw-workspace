@@ -1015,7 +1015,10 @@ def _effective_provider(m: dict) -> str:
     runtime = ((m.get("agentRuntime") or {}).get("id") or "").strip()
     return _RUNTIME_PROVIDERS.get((provider, runtime), provider)
 # An auth provider counts as usable in these states (expiring still works).
-_OK_AUTH = {"ok", "expiring", "active", "valid"}
+# "static" is a stored API key with no expiry (local/kamino, local-lms). It is
+# usable; leaving it out marked the Local row offline and the pair guard then
+# refused every new local chat with "Couldn't start the chat" (2026-09-12).
+_OK_AUTH = {"ok", "expiring", "active", "valid", "static"}
 # model.provider -> substrings to look for among authStatus provider names.
 # Deliberately no "claude-cli" entry: the gateway reports the anthropic
 # provider as status "static" (inherited credentials, not an OAuth session),

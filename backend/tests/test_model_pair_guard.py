@@ -261,3 +261,11 @@ def test_rejected_pin_not_recorded(monkeypatch):
 def test_successful_pin_recorded(monkeypatch):
     pinned = _open_turn_with_gateway(monkeypatch, {})
     assert pinned.get("k") == "claude-cli/gpt-5.6-sol"
+
+
+def test_static_api_key_provider_counts_as_online():
+    # Local (kamino) auth is a stored API key the gateway reports as "static".
+    # Treating that as offline made the pair guard refuse every new local chat.
+    from backend import bridge
+    assert bridge._provider_online("local", {"local": "static"})
+    assert not bridge._provider_online("local", {"local": "expired"})

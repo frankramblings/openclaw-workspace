@@ -133,3 +133,25 @@ test('scroll decision is applied after the thread loads', async () => {
   assert.equal(runtime.wantChatBottom, true, 'a reply landed while away: land at the bottom');
   assert.equal(runtime.restoreScrollTop, null);
 });
+
+test('returning to a recently-left thread paints its cached messages before the fetch lands', async () => {
+  const state = freshState('sess-a');
+  runtime.state = state;
+  state.live.chat.thread = [{ id: 'h0', role: 'user', text: 'cached hello' }];
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const prevFetch = globalThis.fetch;
+  const paints = [];
+  runtime.render = () => { paints.push((state.live.chat.thread || []).map((m) => m.text).join('|')); };
+  await actions.selectSession('sess-b');
+  await drain();
+  globalThis.fetch = (url) => (String(url).includes('/api/history/sess-a') ? gate.then(() => prevFetch(url)) : prevFetch(url));
+  paints.length = 0;
+  const p = actions.selectSession('sess-a');
+  await drain();
+  assert.equal(paints[0], 'cached hello', 'first paint shows the cached thread');
+  release();
+  await p;
+  globalThis.fetch = prevFetch;
+  assert.equal(state.live.chat.thread.length, 0, 'fetched history replaces the cached copy');
+});

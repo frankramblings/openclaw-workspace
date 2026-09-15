@@ -254,7 +254,24 @@ function tableAlign(sepRow) {
   });
 }
 
+// Every app render rebuilds the whole thread's HTML, so the same message text is
+// converted again and again. Output depends only on the input string, so memoize
+// top-level calls; a long thread then costs lookups, not re-parses.
+export const MD_CACHE_CAP = 600;
+const _mdCache = new Map();
+
 export function renderMarkdown(src, topLevel = true) {
+  if (!topLevel) return renderMarkdownUncached(src, false);
+  const key = String(src == null ? '' : src);
+  const hit = _mdCache.get(key);
+  if (hit !== undefined) return hit;
+  const html = renderMarkdownUncached(key, true);
+  _mdCache.set(key, html);
+  if (_mdCache.size > MD_CACHE_CAP) _mdCache.delete(_mdCache.keys().next().value);
+  return html;
+}
+
+function renderMarkdownUncached(src, topLevel) {
   let source = String(src == null ? '' : src).replace(/\r\n?/g, '\n');
   // Lift shared images out at the top level only (don't re-scan blockquote
   // recursion, where MEDIA lines would be content, not directives).

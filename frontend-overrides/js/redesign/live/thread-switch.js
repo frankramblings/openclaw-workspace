@@ -71,6 +71,18 @@ export function pushMru(list, id, cap = MRU_CAP) {
   return [id, ...base.filter((x) => x !== id)].slice(0, cap);
 }
 
+// In-memory cache of recently-left threads, most recent last (Map insertion
+// order). Re-caching an id moves it to the end; the oldest falls off past cap.
+export const THREAD_CACHE_CAP = 8;
+
+export function cacheThread(cache, id, entry, cap = THREAD_CACHE_CAP) {
+  if (!cache || !id || !entry) return cache;
+  cache.delete(id);
+  cache.set(id, entry);
+  while (cache.size > cap) cache.delete(cache.keys().next().value);
+  return cache;
+}
+
 export function loadMru(storage) {
   try {
     const raw = storage.getItem(MRU_KEY);

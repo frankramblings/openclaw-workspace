@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import {
   saveDraft, restoreDraft, dropDraft, capDrafts, loadDrafts, persistDrafts,
-  scrollSnapshot, scrollDecision, pushMru, loadMru, persistMru,
-  DRAFT_KEY, MRU_KEY, DRAFT_CAP, MRU_CAP,
+  scrollSnapshot, scrollDecision, pushMru, loadMru, persistMru, cacheThread,
+  DRAFT_KEY, MRU_KEY, DRAFT_CAP, MRU_CAP, THREAD_CACHE_CAP,
 } from '../redesign/live/thread-switch.js';
 
 function memStorage(seed = {}) {
@@ -84,4 +84,17 @@ test('mru round-trips through storage and tolerates junk', () => {
   assert.deepEqual(loadMru(st), ['a', 'b']);
   assert.deepEqual(loadMru(memStorage({ [MRU_KEY]: '{"x":1}' })), []);
   assert.deepEqual(loadMru(memStorage({ [MRU_KEY]: '["a", 5, null]' })), ['a']);
+});
+
+test('cacheThread keeps the most recent threads and refreshes order on re-cache', () => {
+  const c = new Map();
+  for (let i = 0; i < THREAD_CACHE_CAP + 2; i++) cacheThread(c, `s${i}`, { thread: [i] });
+  assert.equal(c.size, THREAD_CACHE_CAP);
+  assert.ok(!c.has('s0') && !c.has('s1'));
+  cacheThread(c, 's2', { thread: ['again'] });
+  cacheThread(c, 'new', { thread: [] });
+  assert.ok(c.has('s2'), 're-cached id survives eviction');
+  assert.ok(!c.has('s3'), 'oldest untouched id is evicted');
+  assert.deepEqual(c.get('s2').thread, ['again']);
+  assert.equal(cacheThread(c, null, {}), c);
 });

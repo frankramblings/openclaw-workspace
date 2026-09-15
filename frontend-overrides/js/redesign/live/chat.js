@@ -25,7 +25,7 @@ import { suggestGhost } from '../suggest-ghost.js';
 import { busySendMode, steerFallback } from './steer-logic.js';
 import {
   saveDraft, restoreDraft, dropDraft, loadDrafts, persistDrafts,
-  scrollSnapshot, scrollDecision, pushMru, loadMru, persistMru,
+  scrollSnapshot, scrollDecision, pushMru, loadMru, persistMru, cacheThread,
 } from './thread-switch.js';
 import { chatHash } from '../routes.js';
 import {
@@ -217,6 +217,38 @@ function _leaveThread(chat, state) {
   } catch (_) { /* no DOM */ }
   chat.drafts = saveDraft(chat.drafts, prev, state.draft);
   _persistDraftsNow(chat);
+  if (Array.isArray(chat.thread) && chat.thread.length) {
+    cacheThread(_threadCache, prev, { thread: chat.thread, title: chat.title, subtitle: chat.subtitle, model: chat.model });
+  }
+}
+
+// Threads you recently left, kept in memory so switching back paints at once
+// instead of waiting on /api/history. The cached copy is only a first paint:
+// selectSession still refetches and replaces it.
+const _threadCache = new Map();
+
+// /api/sessions is the whole session list (hundreds of KB). A switch only needs
+// the thread's name, which the local list already has, so the refetch runs in
+// the background and at most once per window.
+const SESSIONS_REFRESH_MS = 60_000;
+let _sessionsRefreshedAt = 0;
+let _sessionsRefreshing = null;
+function refreshSessionsList(chat, id) {
+  if (_sessionsRefreshing) return _sessionsRefreshing;
+  _sessionsRefreshing = (async () => {
+    try {
+      const sessions = await apiGet('/api/sessions');
+      const list = Array.isArray(sessions) ? sessions : [];
+      _sessionsRefreshedAt = Date.now();
+      if (chat.activeId === id) {
+        chat.sessions = list;
+        _mirrorSessionMeta(chat, id);
+        rebuildGroups(chat, id);
+      }
+      return list;
+    } catch (_) { return null; } finally { _sessionsRefreshing = null; }
+  })();
+  return _sessionsRefreshing;
 }
 
 function _setHash(h) {
@@ -3288,15 +3320,32 @@ export const actions = {
       state.branchPrefix = raw ? JSON.parse(raw) : null;
     } catch (_) { state.branchPrefix = null; }
     rebuildGroups(chat, id);
+    // Paint the cached copy of a recently-open thread right away; the fetch
+    // below replaces it. Without a cache hit the previous thread stays up until
+    // the fetch lands, as before.
+    const cached = _threadCache.get(id);
+    if (cached) {
+      chat.thread = cached.thread;
+      if (cached.title) chat.title = cached.title;
+      chat.subtitle = cached.subtitle;
+      if (cached.model) chat.model = cached.model;
+      const dec0 = scrollDecision(chat.scroll[id], finishedAway);
+      if (dec0.bottom) { runtime.wantChatBottom = true; runtime.restoreScrollTop = null; }
+      else { runtime.wantChatBottom = false; runtime.restoreScrollTop = dec0.top; }
+    }
     runtime.render();
 
-    let name;
-    try {
-      const sessions = await apiGet('/api/sessions');
-      const list = Array.isArray(sessions) ? sessions : [];
-      name = list.find((s) => s.id === id)?.name;
-      if (chat.activeId === id) { chat.sessions = list; _mirrorSessionMeta(chat, id); }
-    } catch (_) { /* ignore */ }
+    // Usage is independent of everything below: start it now, apply it last.
+    const usageP = fetchUsage(id).catch(() => null);
+
+    let name = (chat.sessions || []).find((s) => s && s.id === id)?.name;
+    if (name === undefined) {
+      // Not in the local list (brand-new thread): wait for the list once.
+      const list = await refreshSessionsList(chat, id);
+      name = (list || []).find((s) => s.id === id)?.name;
+    } else if (Date.now() - _sessionsRefreshedAt > SESSIONS_REFRESH_MS) {
+      refreshSessionsList(chat, id);
+    }
 
     try {
       const t = await fetchThread(id, chat.model, name);
@@ -3313,9 +3362,13 @@ export const actions = {
       // A reopened session that already has real history (e.g. another tab
       // already sent its first message) shouldn't still show carried bubbles.
       clearBranchPrefixIfStarted(state, chat);
-      const dec = scrollDecision(chat.scroll[id], finishedAway);
-      if (dec.bottom) { runtime.wantChatBottom = true; runtime.restoreScrollTop = null; }
-      else { runtime.wantChatBottom = false; runtime.restoreScrollTop = dec.top; }
+      // A cached first paint already placed the scroll; re-applying it now
+      // would yank a user who started scrolling while the fetch was out.
+      if (!cached) {
+        const dec = scrollDecision(chat.scroll[id], finishedAway);
+        if (dec.bottom) { runtime.wantChatBottom = true; runtime.restoreScrollTop = null; }
+        else { runtime.wantChatBottom = false; runtime.restoreScrollTop = dec.top; }
+      }
       changesAttachHistory(state, id, chat.thread).catch(() => {});
     } catch (_) {
       // A GENUINE failure (not a race — chat.activeId is still `id`) leaves
@@ -3333,12 +3386,14 @@ export const actions = {
     // would otherwise sit stranded in the banner forever. Fire it now; the
     // guards inside no-op when a turn re-attached above or nothing is queued.
     flushQueuedFor(chat, id);
-    // Populate resolved update_blocks that the frontend missed while away.
-    try { await hydrateThread(id, chat.thread); } catch (_) { /* non-fatal */ }
+    // Populate resolved update_blocks that the frontend missed while away, and
+    // re-attach promise warnings. They touch different fields, so run together.
+    await Promise.all([
+      hydrateThread(id, chat.thread).catch(() => {}),
+      hydrateWarnings(id, chat.thread).catch(() => {}),
+    ]);
     if (chat.activeId !== id) return;
-    try { await hydrateWarnings(id, chat.thread); } catch (_) { /* non-fatal */ }
-    if (chat.activeId !== id) return;
-    const pct = usagePctOf(await fetchUsage(id));
+    const pct = usagePctOf(await usageP);
     if (pct != null && chat.activeId === id) chat.usagePct = pct;
     runtime.render();
     // Acknowledge unseen followups for this session (fire-and-forget)

@@ -2,8 +2,8 @@
 //
 // backend/security_headers.py serves `script-src 'self'` (Report-Only today,
 // enforcing under WORKSPACE_CSP_ENFORCE=1). That blocks inline <script>
-// blocks, inline on<event>= attributes, and it blocks remote images through
-// `img-src 'self' data: blob:`. login.html, newtab.html and landing.html were
+// blocks, inline on<event>= attributes, and plain-http images through
+// `img-src 'self' data: blob: https:`. login.html, newtab.html and landing.html were
 // cleaned for that flip; this file keeps them clean.
 //
 // index-classic.html is deliberately NOT covered: it still carries seven

@@ -95,7 +95,8 @@ class TestCSPReportOnlyDefault:
         m = re.search(r"'nonce-([A-Za-z0-9_-]+)'", policy)
         assert m, f"no nonce in script-src: {policy}"
         expected_policy = (
-            "default-src 'self'; img-src 'self' data: blob:; "
+            "default-src 'self'; img-src 'self' data: blob: https:; "
+            "media-src 'self' blob: data:; "
             "style-src 'self' 'unsafe-inline'; script-src 'self' "
             f"'nonce-{m.group(1)}'; "
             "connect-src 'self' ws: wss:; worker-src 'self'; "

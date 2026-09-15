@@ -406,7 +406,7 @@ export function chatMsg(m, s, ghostCtx) {
       const hdr = `<div class="turn-update-header">↳ update, ${esc(lbl)}</div>`;
       let content = '';
       if (b.payload && b.payload.image_url) {
-        content = `<img class="turn-update-image" src="${esc(b.payload.image_url)}" alt="${esc(b.payload.alt_text || '')}" onclick="window.open(this.src,'_blank')">`;
+        content = `<img class="turn-update-image" src="${esc(b.payload.image_url)}" alt="${esc(b.payload.alt_text || '')}" data-act="imgView" data-arg="${esc(b.payload.image_url)}">`;
       } else if (b.payload && b.payload.error) {
         content = `<div class="turn-update-error">${esc(b.payload.error)}</div>`;
       }

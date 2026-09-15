@@ -23,7 +23,10 @@ _STATIC = [
     (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
 ]
 
-_CSP_HEAD = b"default-src 'self'; img-src 'self' data: blob:; " \
+# img-src allows https: because mail bodies render in the app document and
+# carry remote images; media-src allows blob: for the read-aloud player.
+_CSP_HEAD = b"default-src 'self'; img-src 'self' data: blob: https:; " \
+            b"media-src 'self' blob: data:; " \
             b"style-src 'self' 'unsafe-inline'; script-src 'self'"
 _CSP_TAIL = b"; connect-src 'self' ws: wss:; worker-src 'self'; " \
             b"frame-ancestors 'none'"

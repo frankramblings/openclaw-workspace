@@ -1296,8 +1296,64 @@ function fetchSuggestion(chat, mode, activity) {
   return true;
 }
 
+export const TAIL_POLL_MS = 700;
+export const TAIL_LINE_CAP = 200;
+
+// Fold one /api/toolstream response into a running step. Split out from the
+// polling loop so the merge rules — advance the offset, tail-trim, count what
+// was dropped — are testable without timers or fetch.
+export function applyTailChunk(st, chunk) {
+  if (!chunk || !chunk.available) return false;
+  if (typeof chunk.offset === 'number') st.tailOffset = chunk.offset;
+  const lines = chunk.lines || [];
+  if (!lines.length) return false;
+  st.tailed = true;
+  for (const line of lines) st.lines.push({ t: line, c: lineColor(line) });
+  // Same tail-keep ceiling the result path uses: show the most recent output
+  // and stay honest about how much was dropped.
+  if (st.lines.length > TAIL_LINE_CAP) {
+    const trimmed = st.lines.length - TAIL_LINE_CAP;
+    st.omitted = (st.omitted || 0) + trimmed;
+    st.lines.splice(0, trimmed);
+  }
+  if (chunk.omitted) st.omitted = (st.omitted || 0) + chunk.omitted;
+  return true;
+}
+
+// Poll a running step's tee log until the step finishes. Best-effort by
+// design: a failed poll is a missing preview, never a turn failure, so every
+// error path just schedules the next tick.
+function startToolTail(st, toolId, onUpdate, deps = {}) {
+  const doFetch = deps.fetch || ((...a) => fetch(...a));
+  const timer = deps.setTimeout || setTimeout;
+  st.tailOffset = 0;
+  st.tailed = false;
+  const tick = async () => {
+    if (st.state !== 'running') return;
+    try {
+      const url = `/api/toolstream/${encodeURIComponent(toolId)}?offset=${st.tailOffset}`;
+      const res = await doFetch(url);
+      if (res && res.ok) {
+        if (applyTailChunk(st, await res.json()) && onUpdate) onUpdate();
+      }
+    } catch { /* preview only — never surface as a turn error */ }
+    if (st.state === 'running') st.tailTimer = timer(tick, TAIL_POLL_MS);
+  };
+  st.tailTimer = timer(tick, TAIL_POLL_MS);
+}
+
+// Live tail of a still-running command (see startToolTail). The gateway
+// reports a tool call only twice — start, then result — so a long command
+// would otherwise show an empty box until it exits. The poller stops itself
+// once the step leaves 'running', but clear the pending timer too so a
+// finalized step can never append stale output over its real result.
+function stopToolTail(st) {
+  if (st && st.tailTimer) { clearTimeout(st.tailTimer); st.tailTimer = null; }
+}
+
 function finalizeStep(st) {
   if (!st || st.state !== 'running') return;
+  stopToolTail(st);
   st.state = 'done';
   st.cursor = false;
   if (st.kind === 'think') {
@@ -1828,6 +1884,7 @@ function beginTurn(chat, modelLabel, sessionId) {
       const kind = toolKind(ev.tool);
       const st = newStep(kind, ev.command || ev.file || ev.path || ev.tool || '', ev.tool_id);
       st.cursor = true;
+      if (ev.tool_id) startToolTail(st, ev.tool_id, throttledRender);
       chat.chatStrip = stripReducer(chat.chatStrip, ev);
       patchChatStrip(chat);
       throttledRender();
@@ -1838,6 +1895,10 @@ function beginTurn(chat, modelLabel, sessionId) {
       let st = (ev.tool_id != null && turn.byTid[ev.tool_id]);
       if (!st) { for (let i = (turn.activity?.steps.length || 0) - 1; i >= 0; i--) { const c = turn.activity.steps[i]; if (c.kind !== 'think' && c.state === 'running') { st = c; break; } } }
       if (st) {
+        // The result frame carries the command's FULL output, which the live
+        // tail has already been showing. Drop the tailed copy first or the
+        // step renders everything twice.
+        if (st.tailed) { stopToolTail(st); st.lines = []; st.omitted = 0; st.tailed = false; }
         if (typeof ev.output === 'string' && ev.output) {
           for (const line of ev.output.split('\n')) st.lines.push({ t: line, c: lineColor(line) });
           // Cap at the same 200-line ceiling the history path uses

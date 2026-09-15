@@ -91,13 +91,21 @@ function stepRow(st, s, { iconHtml, alwaysOpen } = {}) {
   return row + (detail && open ? `<div class="act-detail">${detail}</div>` : '');
 }
 
-// active (running) step: gold spinner + shimmer label + live output, always open
-function activeStep(st) {
-  const out = (st.lines && st.lines.length) ? `<div class="act-detail">${codeBlock(st.lines, true, st.omitted)}</div>` : '';
-  return `<div class="act-working">
+// active (running) step: gold spinner + shimmer label + live output. Unlike a
+// finished step this defaults to OPEN, so its collapse key is tri-state —
+// `undefined` means "never touched, show it", and only an explicit `false`
+// collapses it (see toggleRunStep in app.js). That keeps one shared step map
+// while letting the two states disagree about what "unset" means.
+function activeStep(st, s) {
+  const hasOut = !!(st.lines && st.lines.length);
+  const open = ((s && s.chatUI && s.chatUI.step) || {})[st.id] !== false;
+  const out = (hasOut && open) ? `<div class="act-detail">${codeBlock(st.lines, true, st.omitted)}</div>` : '';
+  return `<div class="act-working ocact" data-act="toggleRunStep" data-arg="${esc(st.id)}">
     <span class="act-spinner gold">${fortress(14)}</span>
     <span class="shimmer act-shim">${esc(st.label || 'Running')}</span>
     ${st.file ? `<span class="file">${esc(st.file)}</span>` : ''}
+    <div class="oc-spacer"></div>
+    ${hasOut ? chev(open ? '90deg' : '0deg', `step:${st.id}`) : ''}
   </div>${out}`;
 }
 
@@ -129,7 +137,7 @@ function renderItem(it, s, working) {
     return head + body;
   }
   const st = it.step;
-  if (st.state === 'running') return activeStep(st);
+  if (st.state === 'running') return activeStep(st, s);
   return working ? stepRow(st, s, { iconHtml: checkIcon(13) }) : stepRow(st, s);
 }
 

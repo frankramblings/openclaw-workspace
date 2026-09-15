@@ -37,6 +37,7 @@ from .cron import router as cron_router
 from .projects import router as projects_router
 from .documents import router as documents_router
 from .clip import router as clip_router
+from .toolstream import router as toolstream_router
 from .email_himalaya import router as email_router
 from .emoji_proxy import router as emoji_router
 from .export_route import router as export_router
@@ -305,6 +306,7 @@ app.include_router(agent_config_router)
 app.include_router(notes_router)
 app.include_router(documents_router)
 app.include_router(clip_router)
+app.include_router(toolstream_router)
 app.include_router(followup.router)
 app.include_router(pending_tokens.router)
 app.include_router(promise_guard.router)

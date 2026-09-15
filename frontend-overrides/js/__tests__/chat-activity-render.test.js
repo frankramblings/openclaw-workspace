@@ -123,3 +123,26 @@ test('a done, expanded step with omitted output shows the notice too', () => {
   const html = renderActivity(doneMsg([done]), ui({ trail: { m1: true }, step: { a: true } }));
   assert.match(html, /1 earlier line omitted/, 'singular wording for exactly one omitted line');
 });
+
+test('a running step with output is clickable and open by default', () => {
+  const running = step('c', 'run', 'running', { lines: [{ t: 'line-1', c: '#fff' }] });
+  const html = renderActivity(workingMsg([running]), ui());
+  assert.match(html, /data-act="toggleRunStep" data-arg="c"/);
+  assert.match(html, /data-chev="step:c"/);
+  assert.match(html, /rotate\(90deg\)/, 'chevron points open');
+  assert.match(html, /line-1/, 'output is visible without any click');
+});
+
+test('an explicitly collapsed running step hides its output but keeps the spinner', () => {
+  const running = step('c', 'run', 'running', { lines: [{ t: 'line-1', c: '#fff' }] });
+  const html = renderActivity(workingMsg([running]), ui({ step: { c: false } }));
+  assert.match(html, /act-spinner/, 'still shows as running');
+  assert.doesNotMatch(html, /line-1/, 'output is hidden');
+  assert.match(html, /rotate\(0deg\)/, 'chevron points closed');
+});
+
+test('a running step with no output yet renders no chevron', () => {
+  const running = step('c', 'run', 'running', { lines: [] });
+  const html = renderActivity(workingMsg([running]), ui());
+  assert.doesNotMatch(html, /data-chev="step:c"/);
+});

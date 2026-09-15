@@ -669,6 +669,10 @@ const actions = {
   // chat activity trail (UI-only collapse; default trail collapsed, steps/groups closed)
   toggleTrail: (id) => { const t = state.chatUI.trail; t[id] = !t[id]; },
   toggleStep: (id) => { const st = state.chatUI.step; st[id] = !st[id]; },
+  // running steps render open by default, so `undefined` here means open —
+  // first click must collapse, not re-open. Once the step finishes it falls
+  // back to toggleStep, where an explicit false still reads as closed.
+  toggleRunStep: (id) => { const st = state.chatUI.step; st[id] = (st[id] === undefined) ? false : !st[id]; },
   toggleGroup: (id) => { const g = state.chatUI.group; g[id] = !g[id]; },
   toggleWork: (id) => { const w = state.chatUI.work; w[id] = !w[id]; },
   stopRun: () => { /* overridden by the live chat module to abort the stream */ },

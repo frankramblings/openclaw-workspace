@@ -81,3 +81,6 @@ def test_model_ref_combinations():
     assert _model_ref({"model": "gpt-5.5"}) == "gpt-5.5"
     assert _model_ref({"endpoint_id": "openai", "model": "gpt-5.5"}) == "openai/gpt-5.5"
     assert _model_ref({"endpoint_id": "openclaw", "model": "gpt-5.5"}) == "gpt-5.5"
+    # claude-cli threads must go out under the gateway's anthropic/ prefix.
+    assert (_model_ref({"endpoint_id": "claude-cli", "model": "claude-opus-5"})
+            == "anthropic/claude-opus-5")

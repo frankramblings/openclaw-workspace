@@ -381,8 +381,8 @@ def test_openai_picker_prefers_gpt56_sol_over_alphabetical(monkeypatch):
 
 def test_claude_cli_picker_keeps_default_first_then_current_generation(monkeypatch):
     """claude-cli is the default provider, so the configured primary (opus 4.8)
-    must stay in slot 0 for new chats; after it, the current generation leads
-    and the rest keep gateway (alphabetical) order."""
+    must stay in slot 0 for new chats even though it is below the series-5
+    floor; after it, the current generation leads and other 4.x rows drop."""
     from backend import bridge, config
     monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-4-8"))
     monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
@@ -396,7 +396,7 @@ def test_claude_cli_picker_keeps_default_first_then_current_generation(monkeypat
     out = bridge._build_model_items(payload, {})
     item = next(i for i in out["items"] if i["endpoint_id"] == "claude-cli")
     assert item["models"] == [
-        "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5", "claude-fable-5-1", "claude-sonnet-4-6"]
+        "claude-opus-4-8", "claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"]
     assert item["models_display"][0] == "Opus 4.8"
 
 
@@ -437,7 +437,8 @@ def test_saved_default_chat_model_floats_to_front(monkeypatch):
     ]}
     out = bridge._build_model_items(payload, {})
     item = next(i for i in out["items"] if i["endpoint_id"] == "claude-cli")
-    assert item["models"] == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1", "claude-opus-4-8"]
+    # opus-4-8 is no longer the effective default, so the series-5 floor drops it.
+    assert item["models"] == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"]
 
 
 def test_saved_default_reads_settings_and_tolerates_absence(monkeypatch):
@@ -511,8 +512,8 @@ def test_picker_hides_claude_models_the_agent_may_not_run(monkeypatch):
     ]}
     item = next(i for i in bridge._build_model_items(payload, {})["items"]
                 if i["endpoint_id"] == "claude-cli")
-    assert item["models"] == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1",
-                              "claude-opus-4-8", "claude-sonnet-4-6"]
+    # 4.8 and 4.6 are allowed but below the series-5 floor.
+    assert item["models"] == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"]
     assert "claude-opus-4-6" not in item["models"]
     assert "claude-opus-4-7" not in item["models"]
 
@@ -529,3 +530,21 @@ def test_allowlist_filter_fails_open_rather_than_blanking_a_row(monkeypatch):
     item = next(i for i in bridge._build_model_items(payload, {})["items"]
                 if i["endpoint_id"] == "openai")
     assert item["models"] == ["gpt-5.6-sol"]
+
+
+def test_claude_row_lists_series_5_and_newer_only():
+    """The Claude row hides 4.x generations and keeps 5.x and later."""
+    from backend import bridge
+    ids = ["claude-opus-4-8", "claude-sonnet-4-6", "claude-opus-5",
+           "claude-sonnet-5", "claude-fable-5-1", "claude-opus-5-5",
+           "claude-opus-6"]
+    objs = [{"id": i} for i in ids]
+    kept = [m["id"] for m in bridge._at_min_series("claude-cli", objs)]
+    assert kept == ["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1",
+                    "claude-opus-5-5", "claude-opus-6"]
+    # Other providers are untouched.
+    assert bridge._at_min_series("openai", objs) == objs
+    # The new-chat default survives even below the floor.
+    kept = [m["id"] for m in bridge._at_min_series("claude-cli", objs,
+                                                   keep="claude-opus-4-8")]
+    assert kept[0] == "claude-opus-4-8" and "claude-sonnet-4-6" not in kept

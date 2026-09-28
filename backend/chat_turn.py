@@ -102,7 +102,8 @@ def _model_ref(rec: dict | None) -> str | None:
     def_provider, def_model = config.default_model()
     if model == def_model and (not provider or provider in (def_provider, "openclaw")):
         return None
-    return f"{provider}/{model}" if provider and provider != "openclaw" else model
+    return (config.gateway_model_ref(provider, model)
+            if provider and provider != "openclaw" else model)
 
 
 _SPEED_THINKING = {"fast": "low", "deep": "high"}

@@ -135,6 +135,22 @@ def default_model() -> tuple[str, str]:
     return provider, model
 
 
+# Gateway 2026.9.3 retired `claude-cli` as a model PROVIDER (the subscription
+# Claude models are now provider "anthropic" on agentRuntime "claude-cli"), but
+# the workspace still keys threads and the picker on endpoint_id "claude-cli"
+# (see bridge._RUNTIME_PROVIDERS). The gateway only accepts the new prefix:
+# sessions.patch rejects `claude-cli/<id>` with 'requires agent harness
+# "claude-cli", but no enabled plugin provides it', so the pin silently failed
+# and the turn ran on whatever model the session last had (2026-09-28).
+_GATEWAY_PROVIDERS = {"claude-cli": "anthropic"}
+
+
+def gateway_model_ref(provider: str, model: str) -> str:
+    """The "provider/model" ref to send the gateway for a workspace
+    endpoint_id + model id."""
+    return f"{_GATEWAY_PROVIDERS.get(provider, provider)}/{model}"
+
+
 def _agent_id_from_openclaw() -> str | None:
     """First agent id in the OpenClaw config, across both config shapes.
 
@@ -273,17 +289,17 @@ UNIT_POLL_S = _env_int("WORKSPACE_UNIT_POLL_S", 5)
 # Chat auto-titles run on a cheap model so they never race the user's real
 # turn through codex on the big one. NOT openai/* (and NOT gemini/*): those
 # stream only the first token then [DONE] through this gateway, so every new
-# thread collapsed to a one-word title (e.g. "Lex", "Casino"). claude-cli/* is
-# plan-billed and returns full titles. The dated haiku id this used to name
-# is not in the gateway allowlist (82 "model not allowed" rejections on
+# thread collapsed to a one-word title (e.g. "Lex", "Casino"). anthropic/claude-*
+# (claude-cli runtime) is plan-billed and returns full titles. The dated haiku
+# id this used to name is not in the gateway allowlist (82 "model not allowed" rejections on
 # 2026-08-26); Sonnet 5 is allowed, cheap, and always 1M. Frank's unit
 # overrides this with a kamino model via WORKSPACE_TITLE_MODEL.
 TITLE_MODEL = os.environ.get("WORKSPACE_TITLE_MODEL",
-                             "claude-cli/claude-sonnet-5")
+                             "anthropic/claude-sonnet-5")
 # Composer ghost-text suggestions run on a cheap model, same rationale as
 # titles. NOT openai/*: those return empty through this gateway.
 SUGGEST_MODEL = os.environ.get("WORKSPACE_SUGGEST_MODEL",
-                               "claude-cli/claude-sonnet-5")
+                               "anthropic/claude-sonnet-5")
 
 # Auto-file new threads into projects at title time (spec 6.1). Runs only on
 # the local title model; off = threads stay unfiled until moved by hand.

@@ -220,7 +220,8 @@ def _model_ref(settings: dict) -> str | None:
     if not model or model == "openclaw":
         return None
     provider = (settings.get("endpoint_id") or "").strip()
-    return f"{provider}/{model}" if provider and provider != "openclaw" else model
+    return (config.gateway_model_ref(provider, model)
+            if provider and provider != "openclaw" else model)
 
 
 # --- Driving the agent --------------------------------------------------------

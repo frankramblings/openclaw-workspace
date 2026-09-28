@@ -1104,13 +1104,40 @@ _PREFERRED_ORDER: dict[str, tuple[str, ...]] = {
     "openai": ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
     # The configured primary still floats to slot 0 below; this only orders
     # the rest so the current generation sits above the 4.x models.
-    "claude-cli": ("claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"),
+    "claude-cli": ("claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5-1"),
 }
 
 # Per-provider model ids to hide from the picker even if the gateway lists them.
 # `google/gemini-3.1-pro-preview` is present in the catalog but 429s on the free
 # tier — quietly drop it so users don't land on a broken row.
 _HIDDEN_MODELS = {"google": {"gemini-3.1-pro-preview"}}
+
+
+# Oldest model series each provider's picker row offers. The gateway catalog
+# keeps older Claude generations around (4.x) after the subscription has moved
+# on; the picker lists series 5 and newer only. Ids that don't parse as
+# claude-<family>-<major>[-<minor>] are kept, and so is the new-chat default
+# (the SPA puts it in slot 0; hiding it would strand every new chat on it).
+_MIN_SERIES: dict[str, int] = {"claude-cli": 5}
+
+
+def _claude_series(model_id: str) -> int | None:
+    """Major version of a claude-<family>-<major>[-...] id, else None."""
+    parts = model_id.split("-")
+    if len(parts) >= 3 and parts[0] == "claude" and parts[2].isdigit():
+        return int(parts[2])
+    return None
+
+
+def _at_min_series(provider: str, objs: list[dict],
+                   keep: str | None = None) -> list[dict]:
+    """Drop rows older than the provider's _MIN_SERIES floor, except `keep`."""
+    floor = _MIN_SERIES.get(provider)
+    if floor is None:
+        return objs
+    return [m for m in objs
+            if m["id"] == keep
+            or (series := _claude_series(m["id"])) is None or series >= floor]
 
 
 def _allowed_for_agent(provider: str, objs: list[dict]) -> list[dict]:
@@ -1160,6 +1187,9 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
         hidden = _HIDDEN_MODELS.get(provider, set())
         objs = [m for m in by_provider[provider] if m.get("id") and m["id"] not in hidden]
         objs = _allowed_for_agent(provider, objs)
+        objs = _at_min_series(
+            provider, objs,
+            keep=default_model if provider == default_provider else None)
         if not objs:
             continue
         preferred = _PREFERRED_ORDER.get(provider)

@@ -492,10 +492,12 @@ function attachChip(a) {
 }
 
 export const QUICK_CHIPS = [
-  { label: 'What can you do?', prompt: 'What can you do?' },
-  { label: 'Summarize my recent sessions', prompt: 'Summarize my recent sessions' },
-  { label: 'Help me configure a channel', prompt: 'Help me configure a channel' },
-  { label: 'Check system health', prompt: 'Check system health' },
+  { label: 'Add to Plex', prompt: 'Add to Plex: ' },
+  { label: 'What did we decide about…', prompt: 'What did we decide about ' },
+  { label: 'Local vs cloud AI usage', prompt: 'Where is my AI usage sitting, local vs cloud?' },
+  { label: 'Search the Beatles vault', prompt: 'Search the Beatles vault for ' },
+  { label: 'Grab a clip from Plex', prompt: 'Grab a clip from Plex: ' },
+  { label: 'Edit a BwG episode', prompt: 'Edit BwG ' },
 ];
 
 function chatWelcome() {

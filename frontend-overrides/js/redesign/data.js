@@ -15,6 +15,15 @@ export const SLASH_COMMANDS = [
   { glyph: '▤', name: '/split', desc: 'open a surface beside chat', color: 'var(--teal)' },
   { glyph: '▣', name: '/nano', desc: 'generate/edit with Nano Banana', color: 'var(--blue)' },
   { glyph: '✎', name: '/note', desc: 'capture a note to the vault', color: 'var(--green)' },
+  // Workspace-tool shortcuts. Like /nano, these are conventions the agent
+  // interprets (see AGENTS.md "Slash shortcuts"), not client-side handlers —
+  // the composer just completes them and sends the text.
+  { glyph: '▦', name: '/arr', desc: 'add or manage media via Sonarr/Radarr', color: 'var(--teal)' },
+  { glyph: '⇪', name: '/share', desc: 'share a file and get a link', color: 'var(--green)' },
+  { glyph: '⟲', name: '/recall', desc: 'search chat history, ramblebot, and memory', color: 'var(--violet)' },
+  { glyph: '♪', name: '/frankfm-add', desc: 'add a song to FrankFM', color: 'var(--gold)' },
+  { glyph: '▶', name: '/bwg', desc: 'run the Beer With Geeks episode pipeline', color: 'var(--blue)' },
+  { glyph: '✂', name: '/plexclip', desc: 'pull a clip, gif, or still from Plex', color: 'var(--teal)' },
 ];
 
 // Shared by the composer's render (surfaces.js) and its keyboard handling

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { filterSlashCommands } from '../redesign/data.js';
+import { filterSlashCommands, SLASH_COMMANDS } from '../redesign/data.js';
 
 // Task 4.3: once the draft is an exact slash-command token followed by typed
 // arguments ("/run ls"), the autocomplete menu must close (no matches) so
@@ -9,7 +9,7 @@ import { filterSlashCommands } from '../redesign/data.js';
 
 test('bare "/" matches every command (menu opens with the full list)', () => {
   const filtered = filterSlashCommands('/');
-  assert.equal(filtered.length, 6);
+  assert.equal(filtered.length, SLASH_COMMANDS.length);
 });
 
 test('a command prefix with no space still narrows by prefix (unchanged pick behavior)', () => {
@@ -56,12 +56,12 @@ test('an unknown command with args still yields no matches (was already true, st
 
 test('plain text (no leading slash) still matches everything, ignoring spaces', () => {
   const filtered = filterSlashCommands('hello there');
-  assert.equal(filtered.length, 6);
+  assert.equal(filtered.length, SLASH_COMMANDS.length);
 });
 
 test('empty/undefined draft matches everything', () => {
-  assert.equal(filterSlashCommands('').length, 6);
-  assert.equal(filterSlashCommands(undefined).length, 6);
+  assert.equal(filterSlashCommands('').length, SLASH_COMMANDS.length);
+  assert.equal(filterSlashCommands(undefined).length, SLASH_COMMANDS.length);
 });
 
 test('/nano is exposed as a Nano Banana shortcut', () => {

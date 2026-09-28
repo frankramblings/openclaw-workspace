@@ -400,6 +400,27 @@ def test_claude_cli_picker_keeps_default_first_then_current_generation(monkeypat
     assert item["models_display"][0] == "Opus 4.8"
 
 
+def test_picker_shows_one_row_per_model_id(monkeypatch):
+    """anthropic rows whose runtime is claude-cli fold onto the claude-cli
+    endpoint, so a model configured under both providers arrived twice and the
+    picker listed 'Claude Opus 5' twice (2026-09-24)."""
+    from backend import bridge, config
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-opus-5"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
+    payload = {"models": [
+        {"id": "claude-opus-5", "provider": "claude-cli", "name": "Opus 5"},
+        {"id": "claude-opus-5", "provider": "anthropic", "name": "Opus 5",
+         "agentRuntime": {"id": "claude-cli"}},
+        {"id": "claude-sonnet-5", "provider": "anthropic", "name": "Sonnet 5",
+         "agentRuntime": {"id": "claude-cli"}},
+        {"id": "claude-sonnet-5", "provider": "claude-cli", "name": "Sonnet 5"},
+    ]}
+    out = bridge._build_model_items(payload, {})
+    cli = next(i for i in out["items"] if i["endpoint_id"] == "claude-cli")
+    assert cli["models"] == ["claude-opus-5", "claude-sonnet-5"]
+    assert len(cli["models_display"]) == len(cli["models"])
+
+
 def test_display_name_prettifies_when_gateway_echoes_the_id(monkeypatch):
     """A config-declared model the gateway catalog doesn't know comes back with
     name == id; the picker must not show a raw slug for it."""

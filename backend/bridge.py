@@ -1186,6 +1186,14 @@ def _build_model_items(models_payload: dict, auth_payload: dict) -> dict:
             continue  # per-token API endpoint — see _HIDDEN_ENDPOINTS
         hidden = _HIDDEN_MODELS.get(provider, set())
         objs = [m for m in by_provider[provider] if m.get("id") and m["id"] not in hidden]
+        # One picker row per model id. _effective_provider folds several catalog
+        # providers onto one endpoint (anthropic + claude-cli -> claude-cli), so
+        # a model offered under both arrives twice and the picker showed "Claude
+        # Opus 5" twice, indistinguishably. Keep the first occurrence: gateway
+        # order is preserved and both copies resolve to the same endpoint·model
+        # ref anyway.
+        seen: set[str] = set()
+        objs = [m for m in objs if not (m["id"] in seen or seen.add(m["id"]))]
         objs = _allowed_for_agent(provider, objs)
         objs = _at_min_series(
             provider, objs,

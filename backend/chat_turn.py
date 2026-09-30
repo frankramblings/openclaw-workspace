@@ -32,7 +32,7 @@ import logging
 import re
 import time
 
-from . import (bridge, changes, config, draft_mode, event_store, local_llm,
+from . import (bridge, changes, config, draft_mode, event_store, gateway_label, local_llm,
                project_classify, promise_guard, push, sessions_store,
                terminals, turn_state, websearch)
 from .attachments import _terminal_attachments
@@ -641,6 +641,12 @@ async def drive_turn(*, message: str, use_web: str, allow_web_search: str,
                 _log.warning("AI title generation/sessions_store.update failed "
                              "for session %s", rec["id"], exc_info=True)
                 title_task.cancel()
+            # Mirror the final title (AI, or the first-chars fallback) into the
+            # gateway label so OpenClaw clients stop showing the raw key. Done
+            # here, after the turn, because the gateway session now exists.
+            titled = sessions_store.get(rec["id"]) or {}
+            if titled.get("name"):
+                spawn(gateway_label.sync(session_key, titled["name"]))
             # Spec 6.1: file the freshly titled thread into a project off the
             # turn's critical path. file_session reads the current title from
             # the record and never raises.

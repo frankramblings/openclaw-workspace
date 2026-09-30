@@ -25,7 +25,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from . import (branch_context, bridge, capabilities, changes, chat_search, chat_turn, config,
-                config_check, doctor, draft_mode, event_store, followup, history_display, mentions,
+                config_check, doctor, draft_mode, event_store, followup, gateway_label,
+                history_display, mentions,
                 monitor, pending_tokens, project_discovery, promise_guard, push, sessions_store,
                 steer, syschatter, task_ingest, task_registry, terminals, turn_state, websearch)
 from .auth_gate import AuthGateMiddleware
@@ -1003,8 +1004,12 @@ async def patch_session(session_id: str, name: str = Form(default=None),
     # rationale as unfile_project/close_opened). A PATCH that also touches
     # any other field keeps the normal touch=True behavior.
     touch = set(fields.keys()) != {"folder"}
-    return sessions_store.update(session_id, touch=touch, **fields) or JSONResponse(
-        status_code=404, content={"detail": "no such session"})
+    rec = sessions_store.update(session_id, touch=touch, **fields)
+    if rec is None:
+        return JSONResponse(status_code=404, content={"detail": "no such session"})
+    if "name" in fields and rec.get("sessionKey"):
+        _spawn(gateway_label.sync(rec["sessionKey"], fields["name"]))
+    return rec
 
 
 async def _delete_gateway_session(session_key: str) -> None:

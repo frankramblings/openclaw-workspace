@@ -70,6 +70,17 @@ test('provider icon follows the endpoint before the underlying model family', ()
   assert.match(providerLogo('perplexity-web', 'claude-sonnet-4-6'), /<svg/);
 });
 
+test('local catalog models inherit their model-family logos', () => {
+  const qwenDsh = providerLogo('dsh', 'qwen3.6-dsh');
+  const qwenLocal = providerLogo('local', 'mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit');
+  const glmLocal = providerLogo('local', 'mlx-community/GLM-4-9B-0414-4bit');
+
+  assert.match(qwenDsh, /<svg/);
+  assert.equal(qwenDsh, qwenLocal);
+  assert.match(glmLocal, /<svg/);
+  assert.notEqual(glmLocal, qwenLocal);
+});
+
 test('opening the mobile model sheet loads the shared model catalog', async () => {
   globalThis.location = { origin: 'http://localhost' };
   const [{ mobileActions }, { runtime }] = await Promise.all([

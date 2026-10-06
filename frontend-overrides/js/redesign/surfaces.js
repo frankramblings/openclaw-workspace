@@ -6,7 +6,7 @@ import { I, icon, fortress } from './icons.js';
 import { esc, map, when, stripMd } from './dom.js';
 import { docPillHtml } from './doc-pill.js';
 import { searchClearBtn } from './search-clear.js';
-import { cardActions, emailInviteRowHtml, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entityView, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from './live/inbox-logic.js';
+import { cardActions, emailInviteRowHtml, filterVisible, sourceCounts, cardButtonsHtml, chipRowHtml, entitySourcePath, entityView, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from './live/inbox-logic.js';
 import { detailEndpoint } from './live/inbox-detail.js';
 import { questionCardHtml } from './live/question-card.js';
 import {
@@ -881,6 +881,7 @@ function inboxSurface(s) {
   // reclassify chips, and the corner ✕ means "not an entity" (not dismiss).
   const entityCard = (it) => {
     const v = entityView(it);
+    const sourcePath = entitySourcePath(it);
     return `
     <div class="inbox-card entity-card">
       <div class="top"><span class="src-tag" style="color:${it.srcColor};background:${it.srcBg}">ENTITY</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· guessed: ${esc(v.guess)}</span><button class="inbox-x" data-act="notEntity" data-arg="${esc(it.id)}" title="Not an entity">${I.x()}</button></div>
@@ -888,7 +889,7 @@ function inboxSurface(s) {
       <div class="card-actions">
         <button class="btn-sm" data-act="confirm" data-arg="${esc(it.id)}">${esc(v.confirmLabel)}</button>
         ${v.chips.map((c) => `<button class="btn-sm ghost" data-act="reclassify" data-arg="${esc(it.id + ':' + c.type)}">${esc(c.label)}</button>`).join('')}
-        <button class="ic-btn" data-act="open" data-arg="${esc(it.id)}" title="Open source">↗</button>
+        ${sourcePath ? `<button class="ic-btn" data-act="wsOpenFile" data-arg="${esc(sourcePath)}" data-root="workspace" title="Open source">↗</button>` : ''}
         <button class="ic-btn" data-act="snooze" data-arg="${esc(it.id)}" title="Snooze">${I.clock(13)}</button>
       </div>
       ${snoozeMenu(it)}

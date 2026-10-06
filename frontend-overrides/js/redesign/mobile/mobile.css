@@ -465,6 +465,8 @@ html.native .m-tabbar {
 .m-swipe.dir-left .m-swipe-bg { background: rgba(229,97,106,.22); justify-content: flex-end; }
 .m-swipe.dir-left .m-swipe-bg .act-left { display: flex; color: var(--red, #e5616a); }
 .m-swipe-card { position: relative; background: var(--panel); border: 1px solid var(--bd); border-radius: 13px; padding: 13px 14px; touch-action: pan-y; will-change: transform; }
+.m-swipe-card .actions { margin-top: 11px; }
+.m-swipe-card.entity-card .card-actions { flex-wrap: wrap; }
 .m-swipe-card.swiping { box-shadow: -8px 0 18px rgba(0,0,0,.3); transition: none; }
 .m-swipe-card.snap { transition: transform var(--dur-panel) var(--ease-standard); }
 

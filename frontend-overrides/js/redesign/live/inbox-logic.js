@@ -117,6 +117,17 @@ export function entityView(item) {
   };
 }
 
+// Entity evidence references are stored relative to OpenClaw_Vault and may
+// carry a Markdown-style line anchor. The workspace editor needs a path
+// relative to its `workspace` root, not the raw pointer shown on the card.
+export function entitySourcePath(item) {
+  const meta = (item && item.meta) || {};
+  let ref = String(meta.file || (Array.isArray(meta.evidence) && meta.evidence[0]) || '').trim();
+  ref = ref.replace(/#L\d+(?:-L?\d+)?$/, '').replace(/^\.\//, '');
+  if (!ref || ref.startsWith('/') || ref.includes('\\') || ref.split('/').includes('..')) return null;
+  return ref.startsWith('OpenClaw_Vault/') ? ref : `OpenClaw_Vault/${ref}`;
+}
+
 // Human labels for backend action verbs. Unknown verbs are humanized
 // (snake_case → "Sentence case") so a new backend action still reads sanely.
 const ACTION_LABEL = {
@@ -160,6 +171,19 @@ export function isInvite(item) {
 
 export function cardActions(item) {
   const allowed = Array.isArray(item && item.actions) ? item.actions.map((a) => String(a).toLowerCase()) : [];
+
+  // Entity classification needs a bespoke row for the concrete type choices,
+  // but swipe still consumes this generic view model. Make its primary action
+  // explicit so a right-swipe confirms the current guess instead of falling
+  // through to dismiss.
+  if (item && String(item.source).toLowerCase() === 'entities') {
+    const view = entityView(item);
+    return [
+      { action: 'confirm', label: view.confirmLabel, role: 'primary' },
+      { action: 'snooze', label: actionLabel('snooze'), role: 'icon' },
+      { action: 'gary', label: actionLabel('gary'), role: 'icon' },
+    ];
+  }
 
   // Calendar invite: Yes / Maybe / No write the RSVP straight to Google. There
   // is no "clear verb" — the three responses ARE the actions. Dismiss stays the

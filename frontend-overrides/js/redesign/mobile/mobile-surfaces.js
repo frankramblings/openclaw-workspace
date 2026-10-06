@@ -15,7 +15,7 @@ import { renderWithMentionChips } from '../mention-core.js';
 import { providerLogo } from '../provider-logo.js';
 import { projectName } from '../project-menu.js';
 import { suggestGhost } from '../suggest-ghost.js';
-import { cardActions, cardButtonsHtml, emailInviteRowHtml, chipRowHtml, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from '../live/inbox-logic.js';
+import { cardActions, cardButtonsHtml, emailInviteRowHtml, chipRowHtml, entitySourcePath, entityView, filterVisible, isInvite, sourceCounts, triageSummary, triageSummaryText, bodyIsPath, pointerRefLabel } from '../live/inbox-logic.js';
 import { detailEndpoint } from '../live/inbox-detail.js';
 import { questionCardHtml } from '../live/question-card.js';
 import { assistantToolbar, userSheet } from './mobile-msg-tools.js';
@@ -306,16 +306,27 @@ export function mInbox(s) {
     const rightHint = isInvite(it)
       ? '📅<span>Tap Yes / Maybe / No</span>'
       : `✓<span>${esc((cardActions(it).find((a) => a.role === 'primary') || {}).label || 'Action')}</span>`;
+    const entityActions = (() => {
+      if (String(it.source).toLowerCase() !== 'entities') return null;
+      const v = entityView(it);
+      const sourcePath = entitySourcePath(it);
+      return `<div class="card-actions">
+        <button class="btn-sm" data-act="confirm" data-arg="${esc(it.id)}">${esc(v.confirmLabel)}</button>
+        ${v.chips.map((c) => `<button class="btn-sm ghost" data-act="reclassify" data-arg="${esc(it.id + ':' + c.type)}">${esc(c.label)}</button>`).join('')}
+        ${sourcePath ? `<button class="ic-btn" data-act="wsOpenFile" data-arg="${esc(sourcePath)}" data-root="workspace" title="Open source">↗</button>` : ''}
+        <button class="ic-btn" data-act="snooze" data-arg="${esc(it.id)}" title="Snooze">${I.clock(13)}</button>
+      </div>`;
+    })();
     return `
     <div class="m-swipe" data-swipe-id="${it.id}">
       <div class="m-swipe-bg">
         <div class="act act-right">${rightHint}</div>
         <div class="act act-left">✕<span>Dismiss</span></div>
       </div>
-      <div class="m-swipe-card${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
+      <div class="m-swipe-card${entityActions ? ' entity-card' : ''}${off ? ' swiping' : ' snap'}" data-swipe-card="${it.id}" style="transform:translateX(${off}px)">
         <div class="top"><span class="m-src" style="color:${it.srcColor};background:${it.srcBg}">${esc(it.src)}</span><span class="who">${esc(stripMd(it.who))}</span><span class="ago">· ${esc(it.time)}</span>${when(it.unread, '<span class="udot"></span>')}</div>
         <div class="body"${mBodyAttr(it)}>${mBodyInner(it)}</div>
-        <div class="actions">${cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}</div>
+        <div class="actions">${entityActions || cardButtonsHtml(it, esc, { moreOpen: s.inboxMoreFor === it.id })}</div>
       </div>
     </div>`;
   };

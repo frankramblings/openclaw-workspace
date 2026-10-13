@@ -6,7 +6,7 @@ import { esc, map, stripMd } from '../dom.js';
 import { searchClearBtn } from '../search-clear.js';
 import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, captureAgeLabel } from './mobile-data.js';
-import { providerLogo } from '../provider-logo.js';
+import { providerLogo, providerGlyph } from '../provider-logo.js';
 import { mruRows, mergeLiveFlags } from '../switcher.js';
 import { changesPaneHtml } from '../changes-view.js';
 
@@ -128,7 +128,7 @@ function convListHtml(s) {
     return `<div class="m-conv-grp">${esc(g.label)}</div>`;
   };
   const convRow = (r) => {
-    const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
+    const rowLogo = r.term ? '' : (providerGlyph(r.endpointId, r.model) || '');
     const badgeInner = r.term ? '∿' : (rowLogo || 'G');
     const badgeClass = 'm-conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
     return `<div class="m-conv-row ocrow${r.active ? ' active' : ''}${r.depth ? ` depth${r.depth}` : ''}" data-act="mSelectSession" data-arg="${esc(r.id)}" tabindex="${rowTabindex}" role="button">
@@ -221,7 +221,9 @@ export function renderModelSheet(s) {
   const row = (m) => {
     const active = m.id === curId;
     const isDef = m.id === defId;
+    const rowLogo = providerLogo(m.endpointId, m.mid);
     return `<div class="m-model-row${active ? ' sel' : ''}" data-act="mSetModel" data-arg="${esc(m.id)}" tabindex="0" role="button">
+      ${rowLogo ? `<span class="model-provider-logo">${rowLogo}</span>` : ''}
       <span class="m-model-name">${esc(m.name)}</span>
       ${active ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
       <span class="mstar${isDef ? ' mstar-def' : ''}" data-act="mSetDefaultModel" data-arg="${esc(m.id)}" title="Set as default">★</span>

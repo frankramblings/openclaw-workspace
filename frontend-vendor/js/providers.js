@@ -2,6 +2,8 @@
 // Uses official logos from Simple Icons where available, custom minimal SVGs otherwise
 // All SVGs use viewBox="0 0 24 24" fill="currentColor"
 
+import { ORNITH_GLYPH } from './redesign/provider-logo.js';
+
 const _PROVIDERS = [
   // Ollama
   [/ollama|:11434/i,
@@ -84,6 +86,8 @@ const _PROVIDERS = [
 // Returns an SVG string for the given model ID, or null if no match
 export function providerLogo(modelId) {
   if (!modelId) return null;
+  // Ornith (Qwen-based) — one-colour glyph so it tints like the rest; check before the Qwen regex.
+  if (/ornith/i.test(modelId)) return ORNITH_GLYPH;
   for (const [re, svg] of _PROVIDERS) {
     if (re.test(modelId)) return svg;
   }

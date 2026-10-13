@@ -99,3 +99,31 @@ test('opening the mobile model sheet loads the shared model catalog', async () =
     runtime.actions = priorActions;
   }
 });
+
+test('ornith models get the ornith logo, not qwen', () => {
+  assert.equal(providerKey('', 'ornith-1.5-dsh'), 'ornith');
+  assert.equal(providerKey('', 'ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit'), 'ornith');
+  assert.equal(providerKey('', 'qwen3.6-dsh'), 'qwen');
+  assert.match(providerLogo('', 'ornith-1.5-dsh'), /<img[^>]+src="data:image\/png;base64,/);
+  assert.doesNotMatch(providerLogo('', 'ornith-1.5-dsh'), /clipPath|url\(#/);
+});
+
+test('Ornith logo appears in the legacy session-list provider map and mobile model sheet rows', async () => {
+  const { providerLogo: legacyLogo } = await import('../../../frontend/js/providers.js');
+  assert.match(legacyLogo('ornith-1.5-dsh'), /^<svg[^>]+fill="currentColor"/);
+  assert.doesNotMatch(legacyLogo('ornith-1.5-dsh'), /<img|clipPath|url\(#|id=/);
+  assert.match(legacyLogo('qwen3.6-dsh'), /<svg/);
+  const src = await import('node:fs').then((fs) => fs.readFileSync(new URL('../redesign/mobile/mobile-sheets.js', import.meta.url), 'utf8'));
+  assert.match(src, /providerLogo\(m\.endpointId, m\.mid\)/);
+});
+
+test('conversation-row badges get the one-colour Ornith glyph, other providers unchanged', async () => {
+  const { providerGlyph, providerLogo: logo } = await import('../redesign/provider-logo.js');
+  assert.match(providerGlyph('', 'ornith-1.5-dsh'), /^<svg[^>]+fill="currentColor"/);
+  assert.doesNotMatch(providerGlyph('', 'ornith-1.5-dsh'), /<img|clipPath|url\(#|id=/);
+  assert.equal(providerGlyph('', 'qwen3.6-dsh'), logo('', 'qwen3.6-dsh'));
+  const fs = await import('node:fs');
+  for (const f of ['../redesign/surfaces.js', '../redesign/mobile/mobile-sheets.js']) {
+    assert.match(fs.readFileSync(new URL(f, import.meta.url), 'utf8'), /const rowLogo = r\.term \? '' : \(providerGlyph\(/);
+  }
+});

@@ -19,7 +19,7 @@ import { suggestGhost } from './suggest-ghost.js';
 import './task-rows.js'; // side-effect: boots the feed subscription and injects live rows
 import { renderMarkdown } from './markdown.js';
 import { renderWithMentionChips } from './mention-core.js';
-import { providerLogo } from './provider-logo.js';
+import { providerLogo, providerGlyph } from './provider-logo.js';
 import { renderChatStrip } from './chat-strip.js';
 import { renderSwitcher } from './switcher.js';
 import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
@@ -161,7 +161,7 @@ function convListBody(s) {
   const sorted = s.convSort === 'alpha' ? groups2.map((g) => ({ ...g, rows: alpha(g.rows || []) })) : groups2;
   const rowMenuOpen = s.live?.chat?.rowMenuOpen;
   const convRow = (r) => {
-    const rowLogo = r.term ? '' : (providerLogo(r.endpointId, r.model) || '');
+    const rowLogo = r.term ? '' : (providerGlyph(r.endpointId, r.model) || '');
     const badgeInner = r.term ? '∿' : (rowLogo || 'G');
     const badgeClass = 'conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
     return `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}${r.depth ? ` depth${r.depth}` : ''}" data-act="selectSession" data-arg="${esc(r.id)}" draggable="true" data-drag-session="${esc(r.id)}">`
@@ -423,7 +423,7 @@ export function chatMsg(m, s, ghostCtx) {
   })();
   const ghostHtml = (ghostCtx && ghostCtx.msgId === m.id) ? (ghostCtx.html || '') : '';
   const changesHtml = m.changes ? changesCardHtml(m.changes, { expanded: !!(s.live?.changes?.expanded && s.live.changes.expanded.has(m.changes.turn_id)) }) : '';
-  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span>${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); return line ? `<span class="usage" title="${esc((m.usage && m.usage._session ? 'session so far · ' : '') + usageTitle(m.usage, uOpts))}">${esc(line)}</span>` : ''; })()}</div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${changesHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
+  return `<div class="msg-asst${carriedCls}" data-msg-id="${esc(m.id)}"${streamAttr}><div class="msg-av"><img src="${AVATAR}" alt="__AGENT_NAME__" decoding="sync" loading="eager"></div><div class="msg-body"><div class="msg-meta"><span class="name">__AGENT_NAME__</span>${m.model ? `<span class="model">${(() => { const lg = providerLogo('', m.model); return lg ? `<span class="model-provider-logo">${lg}</span>` : ''; })()}${esc(m.model)}</span>` : ''}<span class="time">${esc(m.time || '')}</span>${(() => { const uOpts = { provider: m.provider || (m.usage && m.usage._provider) }; const line = usageLine(m.usage, null, uOpts); return line ? `<span class="usage" title="${esc((m.usage && m.usage._session ? 'session so far · ' : '') + usageTitle(m.usage, uOpts))}">${esc(line)}</span>` : ''; })()}</div>${bodyHtml}${notice}${warn}${questionCard}${updateBlocksHtml}${pendingPillHtml}${changesHtml}${hasText && !m.error ? msgTools(m, s.live?.chat?.msgMenuOpen, asstCtx) : ''}${ghostHtml}</div></div>`;
 }
 
 
@@ -446,7 +446,9 @@ export function modelPopover(s) {
   const row = (m) => {
     const active = m.id === curId;
     const isDef = m.id === defId;
+    const logo = providerLogo(m.endpointId, m.mid);
     return `<div class="model-row${active ? ' sel' : ''}" data-act="setModel" data-arg="${esc(m.id)}">`
+      + (logo ? `<span class="model-provider-logo">${logo}</span>` : '')
       + `<span class="model-name">${esc(m.name)}</span>`
       + (active ? `<svg class="model-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : '')
       + `<span class="mstar${isDef ? ' mstar-def' : ''}" data-act="setDefaultModel" data-arg="${esc(m.id)}" title="Set as default for new chats">★</span>`

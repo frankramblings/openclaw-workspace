@@ -333,7 +333,7 @@ def test_default_model_floats_to_front_of_its_provider(monkeypatch):
 
 
 def test_build_model_items_hides_anthropic_and_google_rows(monkeypatch):
-    """The picker shows Claude CLI, OpenAI and Local only. The `anthropic`
+    """The picker shows Claude CLI, OpenAI and Local (the dsh row) only. The `anthropic`
     catalog entries stay in the gateway allowlist (they route through the
     Claude CLI runtime) but were a duplicate "Claude" row; google is a cron
     fallback, not a chat pick. A thread already pinned to a hidden endpoint is
@@ -348,11 +348,14 @@ def test_build_model_items_hides_anthropic_and_google_rows(monkeypatch):
         {"id": "gemini-3-flash-preview", "provider": "google", "name": "Gemini 3 Flash"},
         {"id": "gpt-5.6-sol", "provider": "openai", "name": "GPT-5.6-Sol"},
         {"id": "mlx-community/GLM-4-9B-0414-4bit", "provider": "local", "name": "GLM-4-9B (Local)"},
+        {"id": "qwen3.6-dsh", "provider": "dsh", "name": "Qwen3.6 via DeepSeek Harness"},
     ]}
     out = bridge._build_model_items(payload, {})
     endpoints = [item["endpoint_id"] for item in out["items"]]
-    assert "anthropic" not in endpoints and "google" not in endpoints
-    assert endpoints[0] == "claude-cli" and set(endpoints) == {"claude-cli", "openai", "local"}
+    assert "anthropic" not in endpoints and "google" not in endpoints and "local" not in endpoints
+    assert endpoints[0] == "claude-cli" and set(endpoints) == {"claude-cli", "openai", "dsh"}
+    dsh = next(i for i in out["items"] if i["endpoint_id"] == "dsh")
+    assert dsh["endpoint_name"] == "Local"
     assert app_module._catalog_model_error(out, "anthropic", "claude-opus-4-8") is None
 
 def test_openai_picker_prefers_gpt56_sol_over_alphabetical(monkeypatch):

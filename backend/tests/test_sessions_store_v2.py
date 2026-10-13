@@ -18,6 +18,18 @@ def test_create_has_v2_fields_defaulting_to_none():
     assert sessions_store.SCHEMA_VERSION == 2
 
 
+def test_dsh_picker_bare_model_routes_to_light_agent():
+    rec = _mk(model="glm4.7-flash-dsh", endpoint_id="dsh")
+    assert rec["sessionKey"].startswith("agent:qwen:web-")
+    assert rec["gary_terminal"] is False
+
+
+def test_dsh_provider_prefixed_model_routes_to_light_agent():
+    rec = _mk(model="dsh/qwen3.6-dsh", endpoint_id="openclaw")
+    assert rec["sessionKey"].startswith("agent:qwen:web-")
+    assert rec["gary_terminal"] is False
+
+
 def test_v1_file_migrates_on_load(monkeypatch, tmp_path):
     f = tmp_path / "sessions.json"
     f.write_text(json.dumps({"schema_version": 1, "sessions": [

@@ -106,6 +106,12 @@ def create(name: str | None = None, model: str | None = None,
     LIGHT_LOCAL_MODELS = {"Qwen3-14B-4bit", "GLM-4-9B-0414-4bit"}
     local_chat = (model or "").startswith("local/") or (endpoint_id or "") == "local"
     light_local = local_chat and m_norm in LIGHT_LOCAL_MODELS
+    # DSH picker submissions carry a bare model id plus endpoint_id="dsh";
+    # programmatic callers may still pass a provider-prefixed dsh/* id. DSH
+    # runs its own tools + system prompt and only reads the newest user message,
+    # so Gary's bootstrap would be wasted -- ride the light `qwen` agent too.
+    if (model or "").startswith("dsh/") or (endpoint_id or "") == "dsh":
+        light_local = True
     if light_local:
         prefix = "agent:qwen:web"
     rec = {

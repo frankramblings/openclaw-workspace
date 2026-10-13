@@ -995,6 +995,9 @@ _PROVIDER_META = {
     "openai": {"endpoint_id": "openai", "endpoint_name": "OpenAI"},
     "anthropic": {"endpoint_id": "anthropic", "endpoint_name": "Claude"},
     "claude-cli": {"endpoint_id": "claude-cli", "endpoint_name": "Claude"},
+    # The DeepSeek-harness models are the only local rows in the picker now
+    # (plain `local` is hidden, see _HIDDEN_ENDPOINTS), so they wear "Local".
+    "dsh": {"endpoint_id": "dsh", "endpoint_name": "Local"},
 }
 
 # Gateway 2026.9.3 retired `claude-cli` as a model PROVIDER: the subscription
@@ -1090,10 +1093,13 @@ def _provider_online(model_provider: str, auth_status: dict[str, str]) -> bool:
 #   chat titles + composer suggestions via the direct path (backend/local_llm.py),
 #   which bypasses the picker entirely. It's a tools-less 7B and makes a poor
 #   interactive chat model, so keep it OUT of the chat model dropdown.
+# - local (raw kamino MLX models): superseded in the picker by the dsh row,
+#   which is the tool-capable local path; that row is labeled "Local" now
+#   (Frank, 2026-10-07). `local` stays configured for utilityModel + qwen agent.
 # Existing threads pinned to a hidden endpoint keep working: the pair guard
 # fails open for endpoints absent from the catalog, and the gateway allowlist
 # is untouched. Only the picker rows go away.
-_HIDDEN_ENDPOINTS = {"anthropic", "google", "local-lms"}
+_HIDDEN_ENDPOINTS = {"anthropic", "google", "local-lms", "local"}
 
 # Per-provider models that should lead their picker row. The gateway sorts a
 # provider's catalog alphabetically, so "gpt-5.4-mini" lands above the gpt-5.6

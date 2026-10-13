@@ -104,7 +104,8 @@ test('ornith models get the ornith logo, not qwen', () => {
   assert.equal(providerKey('', 'ornith-1.5-dsh'), 'ornith');
   assert.equal(providerKey('', 'ornith-ai/Ornith-1.5-35B-A3B-MLX-4bit'), 'ornith');
   assert.equal(providerKey('', 'qwen3.6-dsh'), 'qwen');
-  assert.match(providerLogo('', 'ornith-1.5-dsh'), /<img[^>]+src="data:image\/png;base64,/);
+  assert.match(providerLogo('', 'ornith-1.5-dsh'), /^<svg[^>]+fill="currentColor"/);
+  assert.doesNotMatch(providerLogo('', 'ornith-1.5-dsh'), /<img|data:image/);
   assert.doesNotMatch(providerLogo('', 'ornith-1.5-dsh'), /clipPath|url\(#/);
 });
 

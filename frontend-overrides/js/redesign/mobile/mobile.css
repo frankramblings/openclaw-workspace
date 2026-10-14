@@ -1184,6 +1184,7 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 /* ---- drawer: OPEN shelf + project sections (thread-org phase 2, task 6) --- */
 .m-conv-grp { display: flex; align-items: center; gap: 6px; }
 .m-conv-grp.open { color: var(--teal); }
+.m-conv-grp.pinned { color: var(--gold); }
 .m-conv-cnt { font-family: var(--mono); font-weight: 500; color: var(--faint); }
 .m-conv-grp.project { cursor: pointer; padding-top: 12px; }
 .m-proj-chev { display: inline-block; width: 10px; transition: transform var(--dur-micro) var(--ease-standard); transform: rotate(90deg); }

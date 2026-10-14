@@ -1279,6 +1279,8 @@ pre.diff .meta { color: var(--faint, #8a94a6); }
 /* Sidebar sections (spec 7.1/7.2) */
 .conv-group{display:flex;align-items:center;gap:6px}
 .sect-count{font-size:11px;color:var(--faint);font-family:var(--mono)}
+/* PINNED section header: gold like the .conv-fav star; count chip keeps .sect-count. */
+.conv-group.pinned .sect-label{color:var(--gold)}
 .conv-group.project{cursor:pointer;border-radius:8px}
 .conv-group.project:hover{background:var(--row-hover,color-mix(in srgb,var(--fg) 5%,transparent))}
 .proj-chev{display:inline-block;width:12px;color:var(--faint);font-size:11px;transition:transform var(--dur-micro) var(--ease-standard);transform:rotate(90deg)}

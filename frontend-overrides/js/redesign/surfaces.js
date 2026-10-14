@@ -455,19 +455,27 @@ export function modelPopover(s) {
   }
   const curId = (chat.endpointId || '') + MODEL_SEP + (chat.model || '');
   const defId = (s.live && s.live.defaultModel) || '';
+  // Pins resolve against the loaded catalog; ids that no longer resolve are
+  // skipped here (never deleted from storage).
+  const modelList = (s.live && s.live.modelList) || groups.flatMap((g) => g.models || []);
+  const pinIds = (s.live && s.live.pinnedModels) || [];
+  const pinned = pinIds.map((id) => modelList.find((m) => m.id === id)).filter(Boolean);
   const row = (m) => {
     const active = m.id === curId;
     const isDef = m.id === defId;
+    const isPinned = pinIds.includes(m.id);
     const logo = providerLogo(m.endpointId, m.mid);
     return `<div class="model-row${active ? ' sel' : ''}" data-act="setModel" data-arg="${esc(m.id)}">`
       + (logo ? `<span class="model-provider-logo">${logo}</span>` : '')
       + `<span class="model-name">${esc(m.name)}</span>`
       + (active ? `<svg class="model-check" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : '')
+      + `<span class="mpin${isPinned ? ' on' : ''}" data-act="togglePinModel" data-arg="${esc(m.id)}" title="Pin to top">${I.pin(13, isPinned)}</span>`
       + `<span class="mstar${isDef ? ' mstar-def' : ''}" data-act="setDefaultModel" data-arg="${esc(m.id)}" title="Set as default for new chats">★</span>`
       + `</div>`;
   };
   const group = (g) => `<div class="model-grp"><span class="model-ep">${esc(g.ep)}</span>${g.hasTag ? `<span class="model-tag">${esc(g.tag)}</span>` : ''}</div>${map(g.models, row)}`;
-  return `<div class="model-pop" data-act="noop">${map(groups, group)}<div class="model-foot">★ sets the default for new chats</div></div>`;
+  const pinnedGrp = pinned.length ? `<div class="model-grp"><span class="model-ep">PINNED</span></div>${map(pinned, row)}` : '';
+  return `<div class="model-pop" data-act="noop">${pinnedGrp}${map(groups, group)}<div class="model-foot">★ sets the default for new chats</div></div>`;
 }
 
 // Trigger-button label: prefer the loaded list's bare name for the current

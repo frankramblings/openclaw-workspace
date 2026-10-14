@@ -383,6 +383,8 @@ html.native .m-tabbar {
    .model-row:hover) — touch has no hover, which left an INVISIBLE tap target
    that hijacked part of the row. Always show it, with a real tap size. */
 .m-model-row .mstar { opacity: .45; padding: 8px; margin: -8px -4px -8px 0; }
+.m-model-row .mpin { opacity: .45; padding: 8px; margin: -8px -4px -8px 0; }
+.m-model-row .mpin.on { opacity: 1; }
 
 /* Real search input (email list). 16px so iOS doesn't zoom on focus. */
 .m-search input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--fg); font-family: inherit; font-size: 16px; }

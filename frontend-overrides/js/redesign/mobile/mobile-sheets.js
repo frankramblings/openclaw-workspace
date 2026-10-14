@@ -225,14 +225,21 @@ export function renderModelSheet(s) {
       : `<div style="padding:20px;color:var(--faint);font-size:13px">Loading models…</div>`;
     return `<div class="${scrimCls}" data-act="closeModelSheet" aria-hidden="true"></div><div class="${sheetCls}" role="dialog" aria-modal="true" aria-label="Model"><div class="m-grab"><div class="h"></div></div><div class="m-cap-head"><span class="t">Model</span><div class="m-spacer"></div><button class="cancel" data-act="closeModelSheet">Close</button></div>${body}</div>`;
   }
+  // Pins resolve against the loaded catalog; ids that no longer resolve are
+  // skipped here (never deleted from storage).
+  const modelList = s.live?.modelList || groups.flatMap((g) => g.models || []);
+  const pinIds = s.live?.pinnedModels || [];
+  const pinned = pinIds.map((id) => modelList.find((m) => m.id === id)).filter(Boolean);
   const row = (m) => {
     const active = m.id === curId;
     const isDef = m.id === defId;
+    const isPinned = pinIds.includes(m.id);
     const rowLogo = providerLogo(m.endpointId, m.mid);
     return `<div class="m-model-row${active ? ' sel' : ''}" data-act="mSetModel" data-arg="${esc(m.id)}" tabindex="0" role="button">
       ${rowLogo ? `<span class="model-provider-logo">${rowLogo}</span>` : ''}
       <span class="m-model-name">${esc(m.name)}</span>
       ${active ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+      <span class="mpin${isPinned ? ' on' : ''}" data-act="mTogglePinModel" data-arg="${esc(m.id)}" title="Pin to top">${I.pin(14, isPinned)}</span>
       <span class="mstar${isDef ? ' mstar-def' : ''}" data-act="mSetDefaultModel" data-arg="${esc(m.id)}" title="Set as default">★</span>
     </div>`;
   };
@@ -242,7 +249,7 @@ export function renderModelSheet(s) {
   <div class="${sheetCls}" role="dialog" aria-modal="true" aria-label="Model">
     <div class="m-grab"><div class="h"></div></div>
     <div class="m-cap-head"><span class="t">Model</span><div class="m-spacer"></div><button class="cancel" data-act="closeModelSheet">Close</button></div>
-    <div class="m-model-list">${map(groups, group)}</div>
+    <div class="m-model-list">${pinned.length ? `<div class="m-model-ep">PINNED</div>${map(pinned, row)}` : ''}${map(groups, group)}</div>
   </div>`;
 }
 

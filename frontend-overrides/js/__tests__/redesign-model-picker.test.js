@@ -16,6 +16,7 @@ const groups = [
 const state = (over = {}) => ({
   live: {
     modelGroups: groups,
+    modelList: groups.flatMap((g) => g.models),
     defaultModel: 'claude-cli·claude-opus-4-8',
     chat: { model: 'claude-sonnet-4-6', endpointId: 'claude-cli' },
     ...over,
@@ -61,6 +62,68 @@ test('default star marks exactly one row (the composite default)', () => {
 
 test('the popover wrapper swallows chrome clicks (data-act="noop")', () => {
   assert.match(modelPopover(state()), /class="model-pop" data-act="noop"/);
+});
+
+const SONNET = 'claude-cli·claude-sonnet-4-6';
+const count = (html, re) => (html.match(re) || []).length;
+
+test('pinned model renders a PINNED group first and still appears under its endpoint', () => {
+  const html = modelPopover(state({ pinnedModels: [SONNET] }));
+  const eps = [...html.matchAll(/class="model-ep">([^<]*)</g)].map((m) => m[1]);
+  assert.deepEqual(eps, ['PINNED', 'Claude CLI', 'Perplexity']);
+  assert.equal(count(html, /class="model-ep"/g), 3);
+  assert.equal(count(html, new RegExp(`data-act="setModel" data-arg="${SONNET}"`, 'g')), 2);
+  // pinned copy is listed before the endpoint groups
+  assert.ok(html.indexOf('PINNED') < html.indexOf('class="model-ep">Claude CLI<'));
+  assert.ok(html.indexOf(`data-act="setModel" data-arg="${SONNET}"`) < html.indexOf('class="model-ep">Claude CLI<'));
+});
+
+test('pinned group keeps pin order, and the selected pinned model shows its check in both places', () => {
+  const html = modelPopover(state({ pinnedModels: ['perplexity-web·claude-sonnet-4-6', SONNET] }));
+  const pinnedBlock = html.slice(html.indexOf('PINNED'), html.indexOf('class="model-ep">Claude CLI<'));
+  assert.ok(pinnedBlock.indexOf('perplexity-web·claude-sonnet-4-6') < pinnedBlock.indexOf(SONNET));
+  assert.equal(count(html, /class="model-check"/g), 2); // active = SONNET, shown in both copies
+});
+
+test('pins that do not resolve in the catalog are skipped silently (no PINNED header)', () => {
+  const html = modelPopover(state({ pinnedModels: ['ghost·nothing'] }));
+  assert.doesNotMatch(html, /PINNED/);
+  assert.equal(count(html, /class="model-ep"/g), 2);
+  // a mixed list still renders only the resolvable pin
+  const mixed = modelPopover(state({ pinnedModels: ['ghost·nothing', SONNET] }));
+  assert.match(mixed, /class="model-ep">PINNED</);
+  assert.equal(count(mixed, new RegExp(`data-act="setModel" data-arg="${SONNET}"`, 'g')), 2);
+});
+
+test('without pinnedModels the popover has no PINNED group', () => {
+  assert.doesNotMatch(modelPopover(state()), /PINNED/);
+  assert.doesNotMatch(modelPopover(state({ pinnedModels: [] })), /PINNED/);
+});
+
+test('every row has its own pin button; pinned ones are marked on', () => {
+  const html = modelPopover(state({ pinnedModels: [SONNET] }));
+  const rows = count(html, /class="model-row/g);
+  assert.equal(rows, 4); // 3 catalog rows + the pinned copy of Sonnet
+  assert.equal(count(html, /data-act="togglePinModel"/g), rows);
+  // pinned model: both copies' pin buttons are on; the others are off
+  assert.equal(count(html, new RegExp(`class="mpin on" data-act="togglePinModel" data-arg="${SONNET}"`, 'g')), 2);
+  assert.match(html, /class="mpin" data-act="togglePinModel" data-arg="claude-cli·claude-opus-4-8"/);
+  assert.match(html, /class="mpin" data-act="togglePinModel" data-arg="perplexity-web·claude-sonnet-4-6"/);
+  assert.equal(count(html, /class="mpin on"/g), 2);
+});
+
+test('the pin button is its own nested target, before the default star, and is not a setModel target', () => {
+  const html = modelPopover(state());
+  const row = html.match(/<div class="model-row[^"]*" data-act="setModel" data-arg="claude-cli·claude-opus-4-8">[\s\S]*?<\/div>/)[0];
+  assert.match(row, /<span class="mpin" data-act="togglePinModel" data-arg="claude-cli·claude-opus-4-8" title="Pin to top">/);
+  assert.ok(row.indexOf('togglePinModel') < row.indexOf('setDefaultModel'));
+  assert.equal(count(row, /data-act="setModel"/g), 1); // the row only; the pin span carries its own act
+  assert.doesNotMatch(row, /<span class="mpin[^"]*" data-act="setModel"/);
+});
+
+test('pin icon is a pin glyph, not a star', () => {
+  const html = modelPopover(state({ pinnedModels: [SONNET] }));
+  assert.match(html, /<span class="mpin on"[^>]*><svg[^>]*fill="currentColor"/);
 });
 
 test('provider icon follows the endpoint before the underlying model family', () => {

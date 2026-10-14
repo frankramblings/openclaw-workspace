@@ -516,9 +516,13 @@ html.shell-mobile .oc-toast{max-width:none}
 .model-row:hover .mstar{opacity:.5}
 .mstar:hover{opacity:1 !important;transform:scale(1.15)}
 .mstar-def{opacity:1 !important;color:var(--gold)}
+.mpin{display:inline-flex;align-items:center;color:var(--faint);opacity:0;flex:none;padding:0 2px;transition:opacity var(--dur-micro) var(--ease-standard),transform var(--dur-micro) var(--ease-standard)}
+.model-row:hover .mpin{opacity:.5}
+.mpin:hover{opacity:1 !important;transform:scale(1.15)}
+.mpin.on{opacity:1 !important;color:var(--teal)}
 .model-foot{font-size:11px;color:var(--faint);padding:8px 9px 5px;border-top:1px solid var(--bd2);margin-top:5px}
 .model-empty{padding:10px 9px;color:var(--faint);font-size:12.5px}
-@media (prefers-reduced-motion:reduce){.mstar{transition:none}}
+@media (prefers-reduced-motion:reduce){.mstar,.mpin{transition:none}}
 .mode-toggle{display:flex;background:var(--bg);border:1px solid var(--bd);border-radius:9px;padding:3px;gap:2px;flex:none}
 .mode-toggle button{height:26px;padding:0 12px;border-radius:6px;border:none;background:transparent;color:var(--mut);font-family:var(--sans);font-size:12.5px;font-weight:600;cursor:pointer}
 .mode-toggle button.active-agent{background:var(--teal);color:var(--ink)}

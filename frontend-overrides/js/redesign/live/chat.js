@@ -3799,6 +3799,13 @@ export const actions = {
       state.live.defaultModel = ((dc && dc.endpoint_id) || '') + MODEL_SEP + ((dc && dc.model) || '');
       runtime.render();
     } catch (_) { /* ignore */ }
+    // Pinned models (ordered composite ids) for the PINNED group in the picker.
+    try {
+      const pm = await apiGet('/api/pinned-models');
+      state.live = state.live || {};
+      state.live.pinnedModels = ((pm && pm.items) || []).map((p) => (p.endpoint_id || '') + MODEL_SEP + (p.model || ''));
+      runtime.render();
+    } catch (_) { state.live.pinnedModels = state.live.pinnedModels || []; }
   },
 
   // Composer model picker: open/close the desktop popover, then lazily load
@@ -3826,6 +3833,27 @@ export const actions = {
     state.live.defaultModel = id;
     runtime.render();
     try { await apiJson('/api/default-chat', { model: item.mid, endpoint_id: item.endpointId || '' }); } catch (_) {}
+  },
+
+  // Pin / unpin a model in the picker (persists via POST /api/pinned-models).
+  // `id` is the composite endpoint·model id. Optimistic; rolls back and toasts
+  // on failure. Never selects the model and never closes the menu.
+  togglePinModel: async (id) => {
+    const state = runtime.state;
+    if (!state || !id) return;
+    const item = (state.live && state.live.modelList || []).find((m) => m.id === id);
+    if (!item) return;
+    const prev = (state.live.pinnedModels || []).slice();
+    const wasPinned = prev.includes(id);
+    state.live.pinnedModels = wasPinned ? prev.filter((x) => x !== id) : prev.concat(id);
+    runtime.render();
+    try {
+      await apiJson('/api/pinned-models', { model: item.mid, endpoint_id: item.endpointId || '', pinned: !wasPinned });
+    } catch (_) {
+      state.live.pinnedModels = prev;
+      runtime.render();
+      toast('Couldn’t update the pin.');
+    }
   },
 
   // Pick the chat model. `id` is the composite endpoint·model id. For a NEW chat,

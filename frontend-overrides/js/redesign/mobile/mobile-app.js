@@ -234,6 +234,7 @@ export function mobileActions(state) {
     },
     closeModelSheet: () => { closeSheetAnimated(state, 'mModelSheetOpen', 'mModelSheetClosing'); },
     mSetModel: (id) => { state.mModelSheetOpen = false; if (runtime.actions && runtime.actions.setModel) runtime.actions.setModel(id); },
+    mTogglePinModel: (id) => { if (runtime.actions && runtime.actions.togglePinModel) runtime.actions.togglePinModel(id); },
     mSetDefaultModel: (id) => { if (runtime.actions && runtime.actions.setDefaultModel) runtime.actions.setDefaultModel(id); },
     setCaptureType: (t) => { state.captureType = t; },
     // Quick-capture submit: persist the draft as a note (kind = remind/note/task),

@@ -62,6 +62,7 @@ export const I = {
   branch: (s = 15) => icon('<path d="M6 3v6M18 9a3 3 0 100 6 3 3 0 000-6zM6 3a3 3 0 100 6 3 3 0 000-6zM6 15v6M6 15a3 3 0 100 6 3 3 0 000-6zM18 15a6 6 0 01-6 6"/>', { size: s, sw: 1.8 }),
   edit: (s = 15) => icon('<path d="M4 20h4l10-10-4-4L4 16v4z M14 6l4 4"/>', { size: s, sw: 1.8 }),
   star: (s = 13, filled = false) => icon('<path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z"/>', { size: s, sw: 1.5, fill: filled ? 'currentColor' : 'none' }),
+  pin: (s = 13, filled = false) => icon('<path d="M12 17v5M9 3h6l-1 6 4 4v2H6v-2l4-4z"/>', { size: s, sw: 1.6, fill: filled ? 'currentColor' : 'none' }),
   dots: (s = 15) => icon('<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>', { size: s, sw: 1.6, fill: 'currentColor' }),
   pencil: (s = 14) => icon('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>', { size: s, sw: 1.8 }),
   archive: (s = 14) => icon('<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>', { size: s, sw: 1.8 }),

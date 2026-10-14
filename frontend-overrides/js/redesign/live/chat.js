@@ -3047,6 +3047,12 @@ let _modelsInFlight = false;
 // than this; the stale groups keep rendering meanwhile, so there is no flash.
 const _MODELS_TTL_MS = 60_000;
 let _modelsFetchedAt = 0;
+// Pin edits race the pinned-models GET and each other. _pinSeq bumps on every
+// toggle so a GET that started earlier can tell its answer is stale;
+// _pinInFlight counts unfinished POSTs; _pinChain keeps POSTs in send order.
+let _pinSeq = 0;
+let _pinInFlight = 0;
+let _pinChain = Promise.resolve();
 
 // Temp ids for in-flight upload chips (task 4.2) — unique per selection so a
 // second batch picked mid-flight never claims the first batch's chips.
@@ -3752,6 +3758,7 @@ export const actions = {
   loadModelOptions: async () => {
     const state = runtime.state;
     if (!state) return;
+    const pinSeq0 = _pinSeq;
     const _haveCatalog = !!(state.live && state.live.modelGroups);
     const _stale = (Date.now() - _modelsFetchedAt) >= _MODELS_TTL_MS;
     if ((!_haveCatalog || _stale) && !_modelsInFlight) {
@@ -3803,8 +3810,11 @@ export const actions = {
     try {
       const pm = await apiGet('/api/pinned-models');
       state.live = state.live || {};
-      state.live.pinnedModels = ((pm && pm.items) || []).map((p) => (p.endpoint_id || '') + MODEL_SEP + (p.model || ''));
-      runtime.render();
+      // A pin toggled while this GET was in flight is newer than the answer.
+      if (_pinSeq === pinSeq0 && _pinInFlight === 0) {
+        state.live.pinnedModels = ((pm && pm.items) || []).map((p) => (p.endpoint_id || '') + MODEL_SEP + (p.model || ''));
+        runtime.render();
+      }
     } catch (_) { state.live.pinnedModels = state.live.pinnedModels || []; }
   },
 
@@ -3845,14 +3855,26 @@ export const actions = {
     if (!item) return;
     const prev = (state.live.pinnedModels || []).slice();
     const wasPinned = prev.includes(id);
+    _pinSeq += 1;
     state.live.pinnedModels = wasPinned ? prev.filter((x) => x !== id) : prev.concat(id);
     runtime.render();
+    _pinInFlight += 1;
+    const body = { model: item.mid, endpoint_id: item.endpointId || '', pinned: !wasPinned };
+    // POSTs go out one at a time so rapid pin/unpin of a model lands in order.
+    const send = _pinChain.then(() => apiJson('/api/pinned-models', body));
+    _pinChain = send.catch(() => {});
     try {
-      await apiJson('/api/pinned-models', { model: item.mid, endpoint_id: item.endpointId || '', pinned: !wasPinned });
+      await send;
     } catch (_) {
-      state.live.pinnedModels = prev;
+      // Undo only this id: a later optimistic pin on another model stays.
+      const cur = state.live.pinnedModels || [];
+      state.live.pinnedModels = wasPinned
+        ? (cur.includes(id) ? cur : cur.concat(id))
+        : cur.filter((x) => x !== id);
       runtime.render();
       toast('Couldn’t update the pin.');
+    } finally {
+      _pinInFlight -= 1;
     }
   },
 
@@ -4143,7 +4165,12 @@ export const actions = {
     const rows = (chat.groups || []).flatMap((g) => g.rows || []);
     const row = rows.find((r) => r.id === id);
     const next = !(row && row.important);
-    if (row) row.important = next; // optimistic
+    // Optimistic. A thread renders in several sections, so star the session
+    // record and rebuild: PINNED appears/disappears now, and every copy of
+    // the row agrees, instead of waiting for the reload below.
+    for (const r of rows) if (r.id === id) r.important = next;
+    const rec = (chat.sessions || []).find((x) => x && x.id === id);
+    if (rec) { rec.important = next; rebuildGroups(chat); }
     runtime.render();
     try { await apiForm(`/api/session/${id}/important`, { important: String(next) }); } catch (_) {}
     try { await load(state); } catch (_) {}

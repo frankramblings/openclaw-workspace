@@ -1251,6 +1251,8 @@ async def set_default_chat(payload: dict = Body(default=None)):
 
 def _pinned_models() -> list[dict]:
     raw = websearch.load_settings().get("pinned_models") or []
+    if not isinstance(raw, list):   # settings.json is hand-editable; never 500 on it
+        return []
     return [
         {"model": str(p.get("model") or ""), "endpoint_id": str(p.get("endpoint_id") or "")}
         for p in raw if isinstance(p, dict) and p.get("model")
@@ -1270,11 +1272,16 @@ async def set_pinned_model(payload: dict = Body(default=None)):
     the offline-endpoint pair guard: pinning a model whose endpoint is down is
     fine, and unresolved pins are skipped by the picker at render time."""
     payload = payload or {}
-    model = (payload.get("model") or "").strip()
+    model = payload.get("model")
+    model = model.strip() if isinstance(model, str) else ""
     if not model:
         return JSONResponse(status_code=400, content={"error": "model required"})
-    ep = (payload.get("endpoint_id") or "").strip()
-    want = bool(payload.get("pinned", True))
+    ep = payload.get("endpoint_id")
+    ep = ep.strip() if isinstance(ep, str) else ""
+    want = payload.get("pinned", True)
+    if isinstance(want, str):
+        want = want.strip().lower() not in ("", "0", "false", "no", "off")
+    want = bool(want)
     cur = _pinned_models()
     has = any(p["model"] == model and p["endpoint_id"] == ep for p in cur)
     if want == has:   # already in the requested state: no-op keeps pin order stable

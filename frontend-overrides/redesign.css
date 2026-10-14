@@ -520,6 +520,7 @@ html.shell-mobile .oc-toast{max-width:none}
 .model-row:hover .mpin{opacity:.5}
 .mpin:hover{opacity:1 !important;transform:scale(1.15)}
 .mpin.on{opacity:1 !important;color:var(--teal)}
+@media (hover:none){.mpin{opacity:.45}}
 .model-foot{font-size:11px;color:var(--faint);padding:8px 9px 5px;border-top:1px solid var(--bd2);margin-top:5px}
 .model-empty{padding:10px 9px;color:var(--faint);font-size:12.5px}
 @media (prefers-reduced-motion:reduce){.mstar,.mpin{transition:none}}

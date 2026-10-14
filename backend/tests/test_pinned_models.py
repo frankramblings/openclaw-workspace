@@ -54,3 +54,20 @@ def test_missing_model_is_400():
 def test_pinning_does_not_require_the_endpoint_to_be_online():
     r = TestClient(app).post("/api/pinned-models", json={"model": "m", "endpoint_id": "offline-ep", "pinned": True})
     assert r.status_code == 200
+
+
+def test_non_string_model_is_400_not_500():
+    r = TestClient(app).post("/api/pinned-models", json={"model": 5, "endpoint_id": "x", "pinned": True})
+    assert r.status_code == 400
+
+
+def test_string_false_unpins():
+    c = TestClient(app)
+    c.post("/api/pinned-models", json={"model": "m", "endpoint_id": "e", "pinned": True})
+    c.post("/api/pinned-models", json={"model": "m", "endpoint_id": "e", "pinned": "false"})
+    assert _get(c) == []
+
+
+def test_corrupt_stored_value_reads_as_empty():
+    websearch.save_settings({"pinned_models": 5})
+    assert _get(TestClient(app)) == []

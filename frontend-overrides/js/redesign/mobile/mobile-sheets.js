@@ -98,7 +98,11 @@ function convListHtml(s) {
     // Sections overlap (a pinned thread also sits in its project / date
     // bucket), so a filter lists each match once, under the highest section.
     ? dedupeGroups(allGroups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })))
-    : (recent.length ? [{ kind: 'recent', label: 'RECENT', rows: recent, meta: {} }, ...allGroups] : allGroups);
+    // PINNED always leads, so the RECENT fallback slots in right after it.
+    : (recent.length
+      ? (() => { const lead = allGroups[0] && allGroups[0].kind === 'pinned' ? 1 : 0;
+        return [...allGroups.slice(0, lead), { kind: 'recent', label: 'RECENT', rows: recent, meta: {} }, ...allGroups.slice(lead)]; })()
+      : allGroups);
   // The edge-swipe drawer (renderConvDrawer, below) stays in the DOM even
   // while closed — finger-tracked off-screen rather than removed — so its
   // rows must NOT be in the tab order while hidden, or a keyboard user could

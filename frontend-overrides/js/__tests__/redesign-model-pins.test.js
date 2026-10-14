@@ -143,3 +143,48 @@ test('mTogglePinModel delegates to togglePinModel and leaves the sheet open', as
   assert.deepEqual(seen, [OPUS]);
   assert.equal(s.mModelSheetOpen, true);
 });
+
+const GPT = 'openai·gpt-5.5';
+const CATALOG = { items: [
+  { endpoint_id: 'claude-cli', endpoint_name: 'Claude CLI', models: ['claude-opus-4-8'], models_display: ['Claude Opus 4.8'] },
+  { endpoint_id: 'openai', endpoint_name: 'ChatGPT', models: ['gpt-5.5'], models_display: ['GPT-5.5'] },
+] };
+
+test('a failed POST rolls back only its own id, not a later optimistic pin', async () => {
+  const s = { live: { modelList: LIST, pinnedModels: [] } };
+  await withEnv(s, (url, opts) => ((opts.method === 'POST' && String(opts.body).includes('claude-opus'))
+    ? jsonRes({ detail: 'nope' }, false) : jsonRes({ ok: true })), async () => {
+    const a = actions.togglePinModel(OPUS);
+    const b = actions.togglePinModel(GPT);
+    await Promise.all([a, b]);
+  });
+  assert.deepEqual(s.live.pinnedModels, [GPT]);
+});
+
+test('pin POSTs for the same model are sent in order', async () => {
+  const s = { live: { modelList: LIST, pinnedModels: [] } };
+  await withEnv(s, () => jsonRes({ ok: true }), async (calls) => {
+    const a = actions.togglePinModel(OPUS);
+    const b = actions.togglePinModel(OPUS);
+    await Promise.all([a, b]);
+    const bodies = pinCalls(calls).map((c) => JSON.parse(c.opts.body).pinned);
+    assert.deepEqual(bodies, [true, false]);
+  });
+  assert.deepEqual(s.live.pinnedModels, []);
+});
+
+test('a slow pinned-models GET does not overwrite a pin made while it was in flight', async () => {
+  const s = { live: { modelList: LIST, pinnedModels: [] } };
+  await withEnv(s, (url, opts) => {
+    if (url.includes('/api/pinned-models') && opts.method !== 'POST') {
+      return new Promise((r) => setTimeout(() => r(jsonRes({ items: [] })), 40));
+    }
+    if (url.includes('/api/models')) return jsonRes(CATALOG);
+    return jsonRes({ ok: true });
+  }, async () => {
+    const load = actions.loadModelOptions();
+    await actions.togglePinModel(OPUS);
+    await load;
+  });
+  assert.deepEqual(s.live.pinnedModels, [OPUS]);
+});

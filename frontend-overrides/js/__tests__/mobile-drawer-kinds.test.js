@@ -146,3 +146,19 @@ test('filtering lists a pinned match once, under PINNED', () => {
 test('without pinned threads there is no PINNED header', () => {
   assert.ok(!renderConvDrawer(buildState()).includes('PINNED'));
 });
+
+test('PINNED stays above the RECENT fallback when there is no OPEN section', () => {
+  const ss = [
+    { id: 'pin1', name: 'Pinned One', created: 1, updated: NOW - 90 * 3600 * 1000, opened: null, important: true },
+    { id: 'old1', name: 'Old One', created: 1, updated: NOW - 80 * 3600 * 1000, opened: null },
+  ];
+  const groups = buildThreadGroups({ sessions: ss, projects: [], running: new Set(), notified: new Set(), queued: new Set(), now: NOW, activeId: null, expanded: new Set() });
+  const html = renderConvDrawer({
+    mDrawerOpen: true, mDrawerSide: 'left', convFilter: '',
+    live: { chat: { groups, mru: ['old1'], sessions: ss, activeId: null } },
+  });
+  const pinIdx = html.indexOf('PINNED');
+  const recentIdx = html.indexOf('>RECENT<');
+  assert.ok(pinIdx >= 0 && recentIdx >= 0, 'both headers render');
+  assert.ok(pinIdx < recentIdx, 'PINNED comes before RECENT');
+});

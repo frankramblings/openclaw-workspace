@@ -1,8 +1,10 @@
 // The sidebar/drawer group model (spec 7.1). Pure: takes the raw session list
 // plus the live sets and returns ordered sections with a `kind` discriminator.
-// OPEN is the working set (activity-driven, capped), PROJECTS group filed
-// threads with roll-ups, and unfiled threads keep the classic PINNED + date
-// buckets. Both renderers consume this; nothing here touches the DOM.
+// Sections OVERLAP by design (2026-10-14 pinned-sections): a thread shows in
+// every section it qualifies for. PINNED leads and holds every starred thread;
+// OPEN is the working set (activity-driven, capped); PROJECTS group filed
+// threads with roll-ups; unfiled threads also sit in their date buckets.
+// Both renderers consume this; nothing here touches the DOM.
 
 export const OPEN_WINDOW_MS = 48 * 3600 * 1000;
 export const OPEN_CAP = 8;
@@ -107,6 +109,13 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
     .sort((a, b) => ts(b) - ts(a));
   const projById = new Map((Array.isArray(projects) ? projects : []).filter((p) => p && p.id).map((p) => [p.id, p]));
 
+  // PINNED: every starred thread, regardless of project or OPEN membership.
+  // Pinning is explicit, so an archived project does not hide a pinned thread
+  // here. Recency order, flat.
+  const groups = [];
+  const pinnedRows = list.filter((s) => s.important).map((s) => rowOf(s, activeId, live));
+  if (pinnedRows.length) groups.push({ kind: 'pinned', label: '★ PINNED', rows: pinnedRows, meta: { count: pinnedRows.length } });
+
   // OPEN: activity-driven working set. Ignores project filing entirely
   // (spec: "OPEN ignores projects") so a running or active thread always
   // surfaces here regardless of what project it is filed under.
@@ -124,8 +133,6 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
     if (idx === -1) break;   // only running/active rows left; the cap yields
     keep.splice(idx, 1);
   }
-  const openIds = new Set(keep.map((s) => s.id));
-  const groups = [];
   if (keep.length) {
     groups.push({
       kind: 'open', label: 'OPEN',
@@ -135,20 +142,19 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
   }
 
   // PROJECTS: roll-ups and ordering consider every non-archived session filed
-  // under the project, shelf rows included, so a collapsed header still
-  // reports activity; rows list only the sessions not on the shelf. Archived
-  // projects hide their threads unless OPEN claimed them; an unknown project
-  // id reads as unfiled (spec 8).
+  // under the project. Rows list every filed session, including ones also on
+  // the OPEN shelf (sections overlap). Archived projects hide their threads
+  // here; an unknown project id reads as unfiled (spec 8).
   const byProject = new Map();
   const unfiled = [];
   for (const s of list) {
     const p = s.folder ? projById.get(s.folder) : null;
-    if (!p) { if (!openIds.has(s.id)) unfiled.push(s); continue; }
+    if (!p) { unfiled.push(s); continue; }
     if (p.archived) continue;
     if (!byProject.has(p.id)) byProject.set(p.id, { all: [], rows: [] });
     const bucket = byProject.get(p.id);
     bucket.all.push(s);
-    if (!openIds.has(s.id)) bucket.rows.push(s);
+    bucket.rows.push(s);
   }
   const projGroups = [];
   for (const [pid, bucket] of byProject) {
@@ -169,12 +175,9 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
   projGroups.sort((a, b) => b.meta.latest - a.meta.latest);
   groups.push(...projGroups);
 
-  // Unfiled: PINNED shelf then date buckets, as before.
-  const pinned = unfiled.filter((s) => s.important).map((s) => rowOf(s, activeId, live));
-  if (pinned.length) groups.push({ kind: 'pinned', label: '★ PINNED', rows: pinned, meta: {} });
+  // Unfiled: date buckets. Pinned and OPEN unfiled threads appear here too.
   const byLabel = new Map();
   for (const s of unfiled) {
-    if (s.important) continue;
     const label = bucketFor(s.updated, nowMs);
     if (!byLabel.has(label)) byLabel.set(label, []);
     byLabel.get(label).push(rowOf(s, activeId, live));

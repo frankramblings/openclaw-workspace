@@ -2,6 +2,20 @@
 from backend.bridge import _map_history
 
 
+import pytest as _pytest_hidden
+from backend import bridge as _bridge_hidden
+
+_PROD_HIDDEN_MODELS = {k: set(v) for k, v in _bridge_hidden._HIDDEN_MODELS.items()}
+
+
+@_pytest_hidden.fixture(autouse=True)
+def _picker_logic_tests_use_old_hide_list(monkeypatch):
+    """The logic tests below use real Claude ids as sample rows (opus-5, sonnet-5, ...)
+    that production now hides on purpose. Keep them on the google-only list; the
+    production list has its own test (test_picker_hides_retired_claude_models)."""
+    monkeypatch.setattr(_bridge_hidden, "_HIDDEN_MODELS", {"google": {"gemini-3.1-pro-preview"}})
+
+
 def test_map_history_carries_per_message_timestamp():
     # The brain stores an epoch-ms `timestamp` on every message; the SPA renders
     # it via msg.metadata.timestamp and falls back to now() when it's missing
@@ -572,3 +586,19 @@ def test_claude_row_lists_series_5_and_newer_only():
     kept = [m["id"] for m in bridge._at_min_series("claude-cli", objs,
                                                    keep="claude-opus-4-8")]
     assert kept[0] == "claude-opus-4-8" and "claude-sonnet-4-6" not in kept
+
+
+def test_picker_hides_retired_claude_models(monkeypatch):
+    """Frank, 2026-10-14: the Claude picker row offers Opus 5.5 and Sonnet 5.5 only.
+    The older/other ids stay valid for crons and fallbacks, just not as chat choices."""
+    from backend import bridge, config
+    monkeypatch.setattr(bridge, "_HIDDEN_MODELS", _PROD_HIDDEN_MODELS)
+    monkeypatch.setattr(config, "default_model", lambda: ("claude-cli", "claude-sonnet-5-5"))
+    monkeypatch.setattr(bridge, "_saved_default_model", lambda: None)
+    ids = ["claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5-1",
+           "claude-sonnet-5-5", "claude-fable-5", "claude-mythos-5"]
+    payload = {"models": [{"id": i, "provider": "claude-cli", "name": i} for i in ids]}
+    out = bridge._build_model_items(payload, {})
+    row = next(i for i in out["items"] if i["endpoint_id"] == "claude-cli")
+    assert sorted(row["models"]) == ["claude-opus-5-5", "claude-sonnet-5-5"]
+    assert row["models"][0] == "claude-sonnet-5-5"  # configured default leads

@@ -1116,7 +1116,14 @@ _PREFERRED_ORDER: dict[str, tuple[str, ...]] = {
 # Per-provider model ids to hide from the picker even if the gateway lists them.
 # `google/gemini-3.1-pro-preview` is present in the catalog but 429s on the free
 # tier — quietly drop it so users don't land on a broken row.
-_HIDDEN_MODELS = {"google": {"gemini-3.1-pro-preview"}}
+# Picker-only: these Claude ids stay in the gateway allowlists/fallbacks (crons and
+# fallback chains still resolve them) but are not offered as chat choices
+# (Frank, 2026-10-14: picker keeps Opus 5.5 + Sonnet 5.5). Keyed by picker endpoint.
+_HIDDEN_MODELS = {
+    "google": {"gemini-3.1-pro-preview"},
+    "claude-cli": {"claude-opus-5", "claude-sonnet-5", "claude-fable-5-1",
+                   "claude-fable-5", "claude-mythos-5"},
+}
 
 
 # Oldest model series each provider's picker row offers. The gateway catalog

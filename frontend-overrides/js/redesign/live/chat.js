@@ -3195,12 +3195,12 @@ export const actions = {
   toggleProjMenu: (pid) => {
     const chat = ensureChat(runtime.state);
     chat.projMenuOpen = chat.projMenuOpen === pid ? null : pid;
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
   },
   moveToProject: async (arg) => {
     const state = runtime.state; if (!state) return;
     const chat = ensureChat(state);
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
     const { id, target } = parseMoveArg(arg);
     const rec = (chat.sessions || []).find((s) => s.id === id);
     if (!rec) return;
@@ -3329,7 +3329,7 @@ export const actions = {
     chat.sessionUsage = null;
     chat.usagePct = undefined;
     _pendingByTurnId.clear();
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
     chat.suggest = null;
     saveStripForCurrent(chat);
     chat.activeId = id;
@@ -3929,7 +3929,7 @@ export const actions = {
     if (!state) return;
     const chat = ensureChat(state);
     state.chatMenuOpen = false;
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
     const target = id || chat.activeId;
     if (!target) { runtime.render(); return; }
     let cur = chat.title || '';
@@ -3954,7 +3954,7 @@ export const actions = {
     if (!state) return;
     const chat = ensureChat(state);
     state.chatMenuOpen = false;
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
     let thread = chat.thread || [];
     if (id && id !== chat.activeId) {
       try {
@@ -4068,7 +4068,7 @@ export const actions = {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
     const wasActive = chat.activeId === id;
     try { await apiJson(`/api/session/${id}/archive`, {}); } catch (_) {}
     if (wasActive) { chat.activeId = null; storeActiveId(null); chat.thread = []; chat.title = 'New chat'; chat.subtitle = ''; }
@@ -4092,11 +4092,16 @@ export const actions = {
   },
 
   // Sidebar: open/close a single row's actions menu.
-  toggleConvMenu: (id) => {
+  // A thread can render in several sections at once (PINNED, OPEN, project,
+  // date bucket), so the menu remembers which section's row it opened from.
+  toggleConvMenu: (id, e) => {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
-    chat.rowMenuOpen = chat.rowMenuOpen === id ? null : id;
+    const secEl = e && e.target && typeof e.target.closest === 'function' ? e.target.closest('[data-sect]') : null;
+    const sect = (secEl && secEl.getAttribute('data-sect')) || null;
+    if (chat.rowMenuOpen === id && (chat.rowMenuSect ?? null) === sect) { chat.rowMenuOpen = null; chat.rowMenuSect = null; }
+    else { chat.rowMenuOpen = id; chat.rowMenuSect = sect; }
     state.chatMenuOpen = false;
     runtime.render();
   },
@@ -4106,7 +4111,7 @@ export const actions = {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
     const rows = (chat.groups || []).flatMap((g) => g.rows || []);
     const row = rows.find((r) => r.id === id);
     const next = !(row && row.important);
@@ -4126,7 +4131,7 @@ export const actions = {
     const state = runtime.state;
     if (!state || !id) return;
     const chat = ensureChat(state);
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
     chat.mobileConvSheetId = null;
     const rec = (chat.sessions || []).find((x) => x && x.id === id);
     if (!rec) return;
@@ -4349,7 +4354,7 @@ export const actions = {
     if (!state || !id) return;
     const chat = ensureChat(state);
     chat.msgMenuOpen = chat.msgMenuOpen === id ? null : id;
-    chat.rowMenuOpen = null;
+    chat.rowMenuOpen = null; chat.rowMenuSect = null;
     state.chatMenuOpen = false;
     runtime.render();
   },

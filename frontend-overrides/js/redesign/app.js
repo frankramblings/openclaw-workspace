@@ -1054,7 +1054,7 @@ root.addEventListener('click', (e) => {
       state.chatMenuOpen = false;
       state.modelMenuOpen = false;
       state.wsRootMenuOpen = false;
-      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; state.live.chat.projMenuOpen = null; }
+      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.rowMenuSect = null; state.live.chat.msgMenuOpen = null; state.live.chat.projMenuOpen = null; }
       render();
     }
     // Clicking outside a card also closes an open ⋯ overflow / snooze menu.
@@ -1657,7 +1657,7 @@ document.addEventListener('keydown', (e) => {
       state.chatMenuOpen = false;
       state.modelMenuOpen = false;
       state.wsRootMenuOpen = false;
-      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.msgMenuOpen = null; state.live.chat.projMenuOpen = null; }
+      if (state.live?.chat) { state.live.chat.rowMenuOpen = null; state.live.chat.rowMenuSect = null; state.live.chat.msgMenuOpen = null; state.live.chat.projMenuOpen = null; }
       render();
       return;
     }

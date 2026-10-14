@@ -24,6 +24,7 @@ import { renderChatStrip } from './chat-strip.js';
 import { renderSwitcher } from './switcher.js';
 import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
 import { moveMenuHtml, projectName, parentTitle } from './project-menu.js';
+import { dedupeGroups } from './thread-groups.js';
 import { usageLine, usageTitle, sessionTotalsLine } from './usage-view.js';
 import { usagePanelHtml } from './usage-panel.js';
 import { changesCardHtml } from './changes-view.js';
@@ -152,19 +153,26 @@ function convListBody(s) {
       <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Codex on Ubuntu</span></div>`;
   }
   const q = (s.convFilter || '').trim().toLowerCase();
+  // Sections overlap (a pinned thread also sits in OPEN / its project / its
+  // date bucket), so a filter must list each match once: dedupeGroups keeps
+  // the first (highest) section.
   const groups2 = q
-    ? groups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
+    ? dedupeGroups(groups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })))
     : groups;
   // Alpha sort now sorts within each section (spec 7.1) instead of flattening
   // the date groups into a single A–Z list.
   const alpha = (rows) => rows.slice().sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), undefined, { sensitivity: 'base' }));
   const sorted = s.convSort === 'alpha' ? groups2.map((g) => ({ ...g, rows: alpha(g.rows || []) })) : groups2;
   const rowMenuOpen = s.live?.chat?.rowMenuOpen;
-  const convRow = (r) => {
+  const rowMenuSect = s.live?.chat?.rowMenuSect ?? null;
+  // Which section a row is rendered in; the same thread can appear in several.
+  const sectKey = (g) => (g.kind === 'project' ? `project:${g.meta && g.meta.id}` : g.kind === 'recent' ? `recent:${g.label}` : (g.kind || ''));
+  const convRow = (r, sect) => {
+    const menuHere = rowMenuOpen === r.id && (rowMenuSect == null || rowMenuSect === sect);
     const rowLogo = r.term ? '' : (providerGlyph(r.endpointId, r.model) || '');
     const badgeInner = r.term ? '∿' : (rowLogo || 'G');
     const badgeClass = 'conv-badge' + (r.term ? ' term' : '') + (rowLogo ? ' provider' : '');
-    return `<div class="conv-row${r.active ? ' active' : ' ocrow'}${rowMenuOpen === r.id ? ' menu-open' : ''}${r.depth ? ` depth${r.depth}` : ''}" data-act="selectSession" data-arg="${esc(r.id)}" draggable="true" data-drag-session="${esc(r.id)}">`
+    return `<div class="conv-row${r.active ? ' active' : ' ocrow'}${menuHere ? ' menu-open' : ''}${r.depth ? ` depth${r.depth}` : ''}" data-sect="${esc(sect)}" data-act="selectSession" data-arg="${esc(r.id)}" draggable="true" data-drag-session="${esc(r.id)}">`
     + `<span class="${badgeClass}">${badgeInner}</span>`
     + `<span class="conv-title">${esc(r.title)}</span>`
     + (r.notify ? `<span class="conv-dot notify" title="Reply finished"></span>`
@@ -174,7 +182,7 @@ function convListBody(s) {
     + (r.slot ? `<span class="conv-slot" title="Option+${r.slot}">⌥${r.slot}</span>` : '')
     + (r.slot ? `<button class="conv-close" data-act="closeOpen" data-arg="${esc(r.id)}" title="Remove from Open" aria-label="Remove from Open">${I.x(12)}</button>` : '')
     + `<button class="conv-kebab" data-act="toggleConvMenu" data-arg="${esc(r.id)}" title="Conversation actions" aria-label="Conversation actions">${I.dots(15)}</button>`
-    + (rowMenuOpen === r.id ? convMenu(r, s) : '')
+    + (menuHere ? convMenu(r, s) : '')
     + `</div>`;
   };
   const header = (g, gi) => {
@@ -184,6 +192,10 @@ function convListBody(s) {
       // rendered (post-filter rows), not the unfiltered meta count.
       const count = q ? g.rows.length : g.meta.count;
       return `<div class="conv-group open${top}"><span class="sect-label">OPEN</span><span class="sect-count">${count}</span></div>`;
+    }
+    if (g.kind === 'pinned') {
+      const count = q ? g.rows.length : g.meta.count;
+      return `<div class="conv-group pinned${top}"><span class="sect-label">★ PINNED</span><span class="sect-count">${count}</span></div>`;
     }
     if (g.kind === 'project') {
       const m = g.meta;
@@ -210,7 +222,7 @@ function convListBody(s) {
     }
     return `<div class="conv-group${top}"><span class="sect-label">${esc(g.label)}</span></div>`;
   };
-  const titleHtml = map(sorted, (g, gi) => header(g, gi) + ((g.kind === 'project' && g.meta.collapsed && !q) ? '' : map(g.rows, convRow)));
+  const titleHtml = map(sorted, (g, gi) => header(g, gi) + ((g.kind === 'project' && g.meta.collapsed && !q) ? '' : map(g.rows, (r) => convRow(r, sectKey(g)))));
   const msgHtml = semanticHits(s, groups2);
   if (q && !groups2.length && !msgHtml) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
   return titleHtml + msgHtml;

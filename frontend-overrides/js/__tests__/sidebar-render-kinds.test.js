@@ -115,3 +115,61 @@ test('task 8: a row is draggable and carries the session id for the drop handler
   assert.ok(rowTag.includes('draggable="true"'), rowTag);
   assert.ok(rowTag.includes('data-drag-session="o1"'), rowTag);
 });
+
+// Pinned sections: sections overlap, so one thread can render several times.
+const pinSessions = [
+  { id: 'a', name: 'Alpha Pinned Open', created: 1, updated: NOW - 1000, opened: NOW - 1000, important: true },
+  { id: 'b', name: 'Beta Pinned Filed', created: 1, updated: NOW - 2000, opened: null, important: true, folder: 'projA' },
+];
+function pinState(extra = {}, top = {}) {
+  const groups = buildThreadGroups({
+    sessions: pinSessions, projects, running: new Set(), notified: new Set(), queued: new Set(),
+    now: NOW, activeId: null, expanded: new Set(['projA']),
+  });
+  return { convFilter: '', convSort: 'recent', ...top, live: { projects, chat: { cwd: '/x', rowMenuOpen: null, rowMenuSect: null, projMenuOpen: null, groups, ...extra } } };
+}
+const count = (html, re) => (html.match(re) || []).length;
+
+test('PINNED renders first with a count and the top class', () => {
+  const html = renderChatList(pinState());
+  assert.match(html, /class="conv-group pinned top"><span class="sect-label">★ PINNED<\/span><span class="sect-count">2<\/span>/);
+  assert.ok(html.indexOf('PINNED') < html.indexOf('>OPEN<'));
+});
+
+test('a pinned+open thread renders in PINNED, OPEN and its date bucket', () => {
+  const html = renderChatList(pinState());
+  assert.equal(count(html, /data-act="selectSession" data-arg="a"/g), 3);
+  assert.match(html, /data-sect="pinned"/);
+  assert.match(html, /data-sect="open"/);
+  assert.match(html, /data-sect="project:projA"/);
+});
+
+test('the row menu opens only on the section it was opened from', () => {
+  const html = renderChatList(pinState({ rowMenuOpen: 'a', rowMenuSect: 'pinned' }));
+  assert.equal(count(html, /class="conv-menu"/g), 1);
+  assert.equal(count(html, /menu-open/g), 1);
+  const idx = html.indexOf('class="conv-menu"');
+  assert.ok(html.lastIndexOf('data-sect="pinned"', idx) > html.lastIndexOf('data-sect="open"', idx));
+});
+
+test('a null rowMenuSect keeps the old behaviour: the menu renders on every copy of the row', () => {
+  const html = renderChatList(pinState({ rowMenuOpen: 'a', rowMenuSect: null }));
+  assert.equal(count(html, /class="conv-menu"/g), 3);
+});
+
+test('slot badge and close button render only in OPEN', () => {
+  const html = renderChatList(pinState());
+  assert.equal(count(html, /class="conv-slot"/g), 1);
+  assert.equal(count(html, /class="conv-close"/g), 1);
+});
+
+test('filtering lists each match once', () => {
+  const html = renderChatList(pinState({}, { convFilter: 'alpha' }));
+  assert.equal(count(html, /data-act="selectSession" data-arg="a"/g), 1);
+});
+
+test('without pinned threads there is no PINNED header and OPEN keeps the top class', () => {
+  const html = renderChatList(buildState());
+  assert.ok(!html.includes('PINNED'));
+  assert.ok(html.includes('class="conv-group open top"'));
+});

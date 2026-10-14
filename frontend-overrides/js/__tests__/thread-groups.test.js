@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { buildThreadGroups, orderWithForks, bucketFor, OPEN_WINDOW_MS, OPEN_CAP } from '../redesign/thread-groups.js';
+import { buildThreadGroups, orderWithForks, bucketFor, dedupeGroups, OPEN_WINDOW_MS, OPEN_CAP } from '../redesign/thread-groups.js';
 
 const NOW = Date.UTC(2026, 8, 1, 15, 0, 0);   // Tue 2026-09-01 15:00 UTC
 const H = 3600 * 1000;
@@ -271,4 +271,15 @@ test('no thread appears twice inside one section', () => {
   const sessions = [S('a', { important: true, opened: NOW, folder: 'p1' }), S('b', { important: true, opened: NOW })];
   const g = build({ sessions, projects: [{ id: 'p1', name: 'P' }] });
   for (const sec of g) assert.equal(new Set(ids(sec)).size, ids(sec).length, sec.kind + ' has duplicates');
+});
+
+test('dedupeGroups keeps the first occurrence of each id and drops emptied groups', () => {
+  const groups = [
+    { kind: 'pinned', label: 'P', rows: [{ id: 'a' }, { id: 'b' }], meta: {} },
+    { kind: 'open', label: 'OPEN', rows: [{ id: 'a' }], meta: { count: 1 } },
+    { kind: 'recent', label: 'TODAY', rows: [{ id: 'b' }, { id: 'c' }], meta: {} },
+  ];
+  const out = dedupeGroups(groups);
+  assert.deepEqual(out.map((g) => g.rows.map((r) => r.id)), [['a', 'b'], ['c']]);
+  assert.equal(groups[1].rows.length, 1, 'input untouched');
 });

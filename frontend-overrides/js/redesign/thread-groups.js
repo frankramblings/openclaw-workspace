@@ -185,3 +185,15 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
   for (const [label, rows] of byLabel) groups.push({ kind: 'recent', label, rows, meta: {} });
   return groups;
 }
+
+// Filtering lists a match once: first section in display order wins. Groups
+// emptied by the de-dupe are dropped. Pure; does not mutate its input.
+export function dedupeGroups(groups) {
+  const seen = new Set();
+  const out = [];
+  for (const g of (Array.isArray(groups) ? groups : [])) {
+    const rows = (g.rows || []).filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
+    if (rows.length) out.push({ ...g, rows });
+  }
+  return out;
+}

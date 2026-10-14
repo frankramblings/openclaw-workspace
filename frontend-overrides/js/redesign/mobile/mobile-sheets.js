@@ -8,6 +8,7 @@ import { AVATAR, EXT_COLOR } from '../data.js';
 import { CAPTURE_TYPES, captureAgeLabel } from './mobile-data.js';
 import { providerLogo, providerGlyph } from '../provider-logo.js';
 import { mruRows, mergeLiveFlags } from '../switcher.js';
+import { dedupeGroups } from '../thread-groups.js';
 import { changesPaneHtml } from '../changes-view.js';
 
 // compact file tree (shared FS data) for the companion sheet's Files tab
@@ -94,7 +95,9 @@ function convListHtml(s) {
   const hasOpen = allGroups.some((g) => g.kind === 'open');
   const recent = (q || hasOpen) ? [] : mergeLiveFlags(mruRows(chat.mru, chat.sessions, chat.activeId, 5), allGroups);
   const groups = q
-    ? allGroups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })).filter((g) => g.rows.length)
+    // Sections overlap (a pinned thread also sits in its project / date
+    // bucket), so a filter lists each match once, under the highest section.
+    ? dedupeGroups(allGroups.map((g) => ({ ...g, rows: (g.rows || []).filter((r) => String(r.title || '').toLowerCase().includes(q)) })))
     : (recent.length ? [{ kind: 'recent', label: 'RECENT', rows: recent, meta: {} }, ...allGroups] : allGroups);
   // The edge-swipe drawer (renderConvDrawer, below) stays in the DOM even
   // while closed — finger-tracked off-screen rather than removed — so its
@@ -111,6 +114,10 @@ function convListHtml(s) {
       // the unfiltered meta count.
       const count = q ? g.rows.length : g.meta.count;
       return `<div class="m-conv-grp open">OPEN <span class="m-conv-cnt">${count}</span></div>`;
+    }
+    if (g.kind === 'pinned') {
+      const count = q ? g.rows.length : g.meta.count;
+      return `<div class="m-conv-grp pinned">★ PINNED <span class="m-conv-cnt">${count}</span></div>`;
     }
     if (g.kind === 'project') {
       const m = g.meta;

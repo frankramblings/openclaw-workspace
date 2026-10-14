@@ -108,3 +108,41 @@ test('the trigger is out of the tab order while the drawer is closed', () => {
   const html = renderConvDrawer(s);
   assert.ok(html.includes('class="m-conv-more" data-act="openConvActions" data-arg="o1" tabindex="-1"'));
 });
+
+// Pinned sections: sections overlap, so one thread can render several times.
+const pinSessions = [
+  { id: 'a', name: 'Alpha Pinned', created: 1, updated: NOW - 1000, opened: null, important: true },
+  { id: 'z', name: 'Zed Plain', created: 1, updated: NOW - 2000, opened: null },
+];
+function pinState(opts = {}) {
+  const groups = buildThreadGroups({
+    sessions: pinSessions, projects, running: new Set(), notified: new Set(), queued: new Set(),
+    now: NOW, activeId: null, expanded: new Set(),
+  });
+  return {
+    mDrawerOpen: true, mDrawerSide: 'left', convFilter: opts.convFilter || '',
+    live: { chat: { groups, mru: [], sessions: pinSessions, activeId: null } },
+  };
+}
+const count = (html, re) => (html.match(re) || []).length;
+
+test('a pinned thread renders a PINNED header with its count, and the row under PINNED and its date bucket', () => {
+  const html = renderConvDrawer(pinState());
+  assert.ok(html.includes('<div class="m-conv-grp pinned">★ PINNED <span class="m-conv-cnt">1</span></div>'));
+  assert.equal(count(html, /data-act="mSelectSession" data-arg="a"/g), 2);
+  const pinIdx = html.indexOf('m-conv-grp pinned');
+  const firstRow = html.indexOf('data-arg="a"');
+  const todayIdx = html.indexOf('>TODAY<');
+  const lastRow = html.lastIndexOf('data-arg="a"');
+  assert.ok(pinIdx >= 0 && firstRow > pinIdx && firstRow < todayIdx && lastRow > todayIdx);
+});
+
+test('filtering lists a pinned match once, under PINNED', () => {
+  const html = renderConvDrawer(pinState({ convFilter: 'alpha' }));
+  assert.equal(count(html, /data-act="mSelectSession" data-arg="a"/g), 1);
+  assert.ok(html.includes('<div class="m-conv-grp pinned">★ PINNED <span class="m-conv-cnt">1</span></div>'));
+});
+
+test('without pinned threads there is no PINNED header', () => {
+  assert.ok(!renderConvDrawer(buildState()).includes('PINNED'));
+});

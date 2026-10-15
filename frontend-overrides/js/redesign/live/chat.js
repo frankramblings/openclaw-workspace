@@ -38,6 +38,7 @@ import { buildSwitcherSections, flatRows, clampSel } from '../switcher.js';
 import { buildThreadGroups } from '../thread-groups.js';
 import { afterTurn as changesAfterTurn, attachHistory as changesAttachHistory } from './changes.js';
 import { parseMoveArg, MOVE_NEW, MOVE_NONE } from '../project-menu.js';
+import { projectMoveRows } from '../projects-settings.js';
 import { findDoubledSpan } from './doubling.js';
 import { activeLibraryDocId, consumeAttachDetach, getSelection, applyExternalUpdate, flushBeforeSend, flushOk } from './document-editor.js';
 
@@ -149,6 +150,13 @@ function _persistCollapsed(set) { _persistIdSet(COLLAPSED_KEY, set); }
 // Rebuild the sidebar/drawer sections from the raw session list plus the live
 // sets (running turns, finished-while-away, queued sends). Cheap enough to run
 // on every notifier tick; the renderers read chat.groups as before.
+// Settings → Projects: close every inline panel (edit / merge / threads).
+function _closeProjPanels(state) {
+  state.projEditId = null; state.projEditName = ''; state.projEditHints = ''; state.projEditError = null;
+  state.projMergeId = null; state.projMoveId = null; state.projMoveFilter = '';
+  if (state.live) state.live.projSel = [];
+}
+
 function rebuildGroups(chat, activeId) {
   const state = runtime.state;
   // F1: overlay the local OPEN-shelf stamp (chat.openedLocal) on top of
@@ -3289,6 +3297,112 @@ export const actions = {
     } catch (_) { toast('Couldn’t delete the project.'); }
     runtime.render();
   },
+  // Settings → Projects management: create/edit (name + auto-sort hints),
+  // merge, and bulk re-sort. Panel state lives on `state` (data-model fields
+  // projEditName/projEditHints/projMoveFilter bind straight to it); only one
+  // panel is open at a time.
+  projectEditOpen: (arg) => {
+    const state = runtime.state; if (!state) return;
+    const p = (state.live.projects || []).find((x) => x.id === arg);
+    _closeProjPanels(state);
+    state.projEditId = arg === 'new' ? 'new' : (p ? p.id : null);
+    state.projEditName = p ? (p.name || '') : '';
+    state.projEditHints = p ? (p.hints || []).join(', ') : '';
+  },
+  projectEditCancel: () => { const state = runtime.state; if (state) _closeProjPanels(state); },
+  projectEditSave: async () => {
+    const state = runtime.state; if (!state || !state.projEditId) return;
+    const name = String(state.projEditName || '').trim();
+    const hints = String(state.projEditHints || '').split(',').map((h) => h.trim()).filter(Boolean);
+    if (!name) { state.projEditError = 'Give it a name.'; runtime.render(); return; }
+    const isNew = state.projEditId === 'new';
+    try {
+      if (isNew) {
+        const created = await apiJson('/api/projects', { name, hints });
+        if (!created || !created.id) throw new Error('create failed');
+        state.live.projects = [...(state.live.projects || []), created];
+      } else {
+        const rec = await apiJson(`/api/projects/${encodeURIComponent(state.projEditId)}`, { name, hints }, 'PATCH');
+        state.live.projects = (state.live.projects || []).map((x) => (x.id === state.projEditId ? { ...x, ...rec } : x));
+      }
+      _closeProjPanels(state);
+      rebuildGroups(ensureChat(state));
+    } catch (e) {
+      state.projEditError = e && e.status === 409 ? 'A project with that name already exists.' : 'Couldn’t save. Try again.';
+    }
+    runtime.render();
+  },
+  projectMergeOpen: (pid) => { const state = runtime.state; if (!state) return; _closeProjPanels(state); state.projMergeId = pid; },
+  projectMergeCancel: () => { const state = runtime.state; if (state) _closeProjPanels(state); },
+  projectMerge: async (arg) => {
+    const state = runtime.state; if (!state) return;
+    const [src, dst] = String(arg || '').split('>');
+    const list = state.live.projects || [];
+    const a = list.find((x) => x.id === src); const b = list.find((x) => x.id === dst);
+    if (!a || !b) return;
+    let ok = false;
+    try { ok = window.confirm(`Merge “${a.name}” into “${b.name}”? Its conversations move over and “${a.name}” is removed.`); } catch (_) { ok = false; }
+    if (!ok) return;
+    try {
+      const r = await apiJson(`/api/projects/${encodeURIComponent(src)}/merge`, { into: dst });
+      const chat = ensureChat(state);
+      (chat.sessions || []).forEach((s) => { if (s.folder === src) s.folder = dst; });
+      try { const projects = await apiGet('/api/projects'); if (Array.isArray(projects)) state.live.projects = projects; }
+      catch (_) { state.live.projects = list.filter((x) => x.id !== src); }
+      _closeProjPanels(state);
+      rebuildGroups(chat);
+      toast(`Merged ${r && r.moved != null ? r.moved : ''} conversations into ${b.name}.`.replace('  ', ' '));
+    } catch (_) { toast('Couldn’t merge those projects.'); }
+    runtime.render();
+  },
+  projectMoveOpen: async (arg) => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    _closeProjPanels(state);
+    state.projMoveId = arg; state.live.projSel = [];
+    if (!Array.isArray(chat.sessions)) {
+      runtime.render();
+      try { const all = await apiGet('/api/sessions'); chat.sessions = Array.isArray(all) ? all : []; } catch (_) { chat.sessions = []; }
+      runtime.render();
+    }
+  },
+  projectMoveClose: () => { const state = runtime.state; if (state) _closeProjPanels(state); },
+  projectMoveToggle: (sid) => {
+    const state = runtime.state; if (!state) return;
+    const sel = new Set(state.live.projSel || []);
+    if (sel.has(sid)) sel.delete(sid); else sel.add(sid);
+    state.live.projSel = [...sel];
+  },
+  projectMoveSelectAll: () => {
+    const state = runtime.state; if (!state) return;
+    const shown = projectMoveRows(state, state.projMoveId).shown.map((x) => x.id);
+    const sel = new Set(state.live.projSel || []);
+    const allOn = shown.length > 0 && shown.every((id) => sel.has(id));
+    shown.forEach((id) => (allOn ? sel.delete(id) : sel.add(id)));
+    state.live.projSel = [...sel];
+  },
+  projectBulkMove: async (arg) => {
+    const state = runtime.state; if (!state) return;
+    const ids = state.live.projSel || [];
+    if (!ids.length) return;
+    const chat = ensureChat(state);
+    const target = arg === 'none' ? null : arg;
+    const recs = (chat.sessions || []).filter((s) => ids.includes(s.id));
+    const prev = recs.map((s) => [s, s.folder || null]);
+    recs.forEach((s) => { s.folder = target; });
+    state.live.projSel = [];
+    rebuildGroups(chat); runtime.render();
+    try {
+      await apiJson('/api/projects/move-threads', { ids, project_id: target });
+      const name = target ? ((state.live.projects || []).find((x) => x.id === target) || {}).name : 'Unfiled';
+      toast(`Moved ${ids.length} to ${name || 'project'}.`);
+    } catch (_) {
+      prev.forEach(([s, f]) => { s.folder = f; });
+      rebuildGroups(chat); runtime.render();
+      toast('Couldn’t move those conversations. Try again.');
+    }
+  },
+
   runProjectBackfill: async () => {
     try {
       const r = await apiJson('/api/projects/backfill', {});

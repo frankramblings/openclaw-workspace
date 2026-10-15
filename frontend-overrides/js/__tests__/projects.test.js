@@ -209,3 +209,70 @@ test('deleteProject removes the project, clears folder on its sessions and the a
 
   globalThis.window.confirm = origConfirm;
 });
+
+test('projectEditSave creates a project with parsed hints and closes the panel', async () => {
+  const state = freshState(null);
+  actions.projectEditOpen('new');
+  state.projEditName = 'Family'; state.projEditHints = ' cece , Marissa,, ';
+  calls.length = 0;
+  await actions.projectEditSave();
+  const post = calls.find((c) => c.u.endsWith('/api/projects') && c.method === 'POST');
+  assert.deepEqual(JSON.parse(post.body), { name: 'Family', hints: ['cece', 'Marissa'] });
+  assert.ok(state.live.projects.some((p) => p.name === 'Family'));
+  assert.equal(state.projEditId, null);
+});
+
+test('projectEditSave rejects an empty name without a request', async () => {
+  const state = freshState(null);
+  actions.projectEditOpen('new');
+  state.projEditName = '   ';
+  calls.length = 0;
+  await actions.projectEditSave();
+  assert.equal(calls.length, 0);
+  assert.match(state.projEditError, /name/i);
+  assert.equal(state.projEditId, 'new');
+});
+
+test('projectBulkMove is optimistic, posts one move-threads call, and clears the selection', async () => {
+  const state = freshState(null);
+  state.live.projSel = ['a', 'b'];
+  calls.length = 0;
+  await actions.projectBulkMove('p-aaaaaaaa');
+  const post = calls.find((c) => c.u.endsWith('/api/projects/move-threads'));
+  assert.deepEqual(JSON.parse(post.body), { ids: ['a', 'b'], project_id: 'p-aaaaaaaa' });
+  assert.equal(state.live.chat.sessions.find((s) => s.id === 'a').folder, 'p-aaaaaaaa');
+  assert.deepEqual(state.live.projSel, []);
+});
+
+test('projectBulkMove "none" unfiles and a failed request reverts the local folders', async () => {
+  const state = freshState(null);
+  state.live.projSel = ['b'];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) => (String(url).endsWith('/api/projects/move-threads') ? Promise.resolve(jsonRes({}, 500)) : origFetch(url, opts));
+  try {
+    await actions.projectBulkMove('none');
+    assert.equal(state.live.chat.sessions.find((s) => s.id === 'b').folder, 'p-aaaaaaaa', 'reverted');
+  } finally { globalThis.fetch = origFetch; }
+});
+
+test('projectMerge refiles local threads and drops the source after confirm; cancel does nothing', async () => {
+  const state = freshState(null);
+  state.live.projects = [{ id: 'p-aaaaaaaa', name: 'Plex' }, { id: 'p-bbbbbbbb', name: 'Other' }];
+  window.confirm = () => false;
+  calls.length = 0;
+  await actions.projectMerge('p-aaaaaaaa>p-bbbbbbbb');
+  assert.equal(calls.length, 0);
+  window.confirm = () => true;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (url, opts) => {
+    const u = String(url);
+    if (u.endsWith('/merge')) return Promise.resolve(jsonRes({ ok: true, moved: 1, into: 'p-bbbbbbbb' }));
+    if (u.endsWith('/api/projects')) return Promise.resolve(jsonRes([{ id: 'p-bbbbbbbb', name: 'Other' }]));
+    return origFetch(url, opts);
+  };
+  try {
+    await actions.projectMerge('p-aaaaaaaa>p-bbbbbbbb');
+    assert.equal(state.live.chat.sessions.find((s) => s.id === 'b').folder, 'p-bbbbbbbb');
+    assert.deepEqual(state.live.projects.map((p) => p.id), ['p-bbbbbbbb']);
+  } finally { globalThis.fetch = origFetch; }
+});

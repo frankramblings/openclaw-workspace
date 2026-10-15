@@ -30,17 +30,17 @@ test('renderRow projects: lists active then archived projects with the right act
   const s = { surface: 'settings', setSection: 'projects', ui: {}, accent: '#4fe3d1', live };
   const html = renderCenter(s);
 
-  // Active project row: Rename / Archive / Delete, name escaped.
+  // Active project row: Edit / Archive / Delete, name escaped.
   assert.match(html, /&lt;b&gt;Active&lt;\/b&gt; Proj/);
   assert.doesNotMatch(html, /<b>Active<\/b>/);
-  assert.match(html, /data-act="renameProject" data-arg="p-active"/);
+  assert.match(html, /data-act="projectEditOpen" data-arg="p-active"/);
   assert.match(html, /data-act="archiveProject" data-arg="p-active"/);
   assert.match(html, /data-act="deleteProject" data-arg="p-active"/);
 
   // Archived project: under an "Archived" head, with Unarchive instead of Archive.
   assert.match(html, /Archived</);
   assert.match(html, /data-act="unarchiveProject" data-arg="p-arch"/);
-  assert.match(html, /data-act="renameProject" data-arg="p-arch"/);
+  assert.match(html, /data-act="projectEditOpen" data-arg="p-arch"/);
   assert.match(html, /data-act="deleteProject" data-arg="p-arch"/);
 
   // Active section must not offer Unarchive, archived section must not offer Archive.

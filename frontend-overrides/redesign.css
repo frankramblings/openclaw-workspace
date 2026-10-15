@@ -1318,6 +1318,21 @@ pre.diff .meta { color: var(--faint, #8a94a6); }
 /* Settings → Projects card (spec 6.3) */
 .set-proj-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd)}
 .set-proj-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.set-proj-row{flex-wrap:wrap}
+.set-proj-row .nm{flex:1 1 140px}
+.set-proj-row .set-btn{height:28px;padding:0 10px;font-size:12px}
+.set-proj-block{border-bottom:1px solid var(--bd)}
+.set-proj-block .set-proj-row{border-bottom:none}
+.set-proj-panel{display:flex;flex-direction:column;gap:8px;padding:4px 0 12px}
+.set-proj-input{width:100%;box-sizing:border-box;background:transparent;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;color:var(--fg);font-family:var(--sans);font-size:13px}
+.set-proj-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.set-proj-chips{display:flex;flex-wrap:wrap;gap:6px}
+.set-thread-list{max-height:260px;overflow-y:auto;border:1px solid var(--bd);border-radius:8px}
+.set-thread-row{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--bd)}
+.set-thread-row:last-child{border-bottom:none}
+.set-thread-row.on{background:rgba(79,227,209,.08)}
+.set-thread-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.set-thread-row .ck{width:16px;text-align:center;color:var(--accent)}
 
 /* Settings → Projects: suggested projects (discovery proposals) */
 .set-proposal{flex-wrap:wrap}

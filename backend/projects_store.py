@@ -39,6 +39,16 @@ def _save(data: dict) -> None:
     os.replace(tmp, _STORE_FILE)
 
 
+def clean_hints(hints) -> list[str]:
+    """Lowercase, trim, drop blanks and duplicates (order kept)."""
+    out: list[str] = []
+    for h in hints or []:
+        h = " ".join(str(h).split()).strip().lower()
+        if h and h not in out:
+            out.append(h)
+    return out
+
+
 def _norm(name: str) -> str:
     return " ".join(str(name or "").split()).strip().lower()
 
@@ -83,7 +93,7 @@ def create(name: str, hints: list[str] | None = None, archived: bool = False) ->
             "created": now,
             "updated": now,
             "archived": bool(archived),
-            "hints": [str(h).strip().lower() for h in (hints or []) if str(h).strip()],
+            "hints": clean_hints(hints),
         }
         data["projects"].append(rec)
         _save(data)
@@ -105,7 +115,7 @@ def update(pid: str, **fields) -> dict | None:
                 fields["name"] = clean
             for k, v in fields.items():
                 if k in _ALLOWED_UPDATE:
-                    p[k] = bool(v) if k == "archived" else v
+                    p[k] = bool(v) if k == "archived" else clean_hints(v) if k == "hints" else v
             p["updated"] = _now_ms()
             _save(data)
             return p

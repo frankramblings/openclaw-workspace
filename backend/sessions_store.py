@@ -236,6 +236,39 @@ def unfile_project(project_id: str) -> int:
     return n
 
 
+def refile_project(src_id: str, dst_id: str) -> int:
+    """Move every session filed under `src_id` to `dst_id` (project merge).
+    Filing is bookkeeping, so `updated` is left alone, same as unfile_project."""
+    if not src_id or not dst_id or src_id == dst_id:
+        return 0
+    n = 0
+    with _LOCK:
+        data = _load()
+        for s in data.get("sessions", []):
+            if s.get("folder") == src_id:
+                s["folder"] = dst_id
+                n += 1
+        if n:
+            _save(data)
+    return n
+
+
+def move_to_project(ids, project_id: str | None) -> int:
+    """File (or, with project_id=None, unfile) the given sessions in one write.
+    Unknown ids are skipped. Does not touch `updated`. Returns how many changed."""
+    want = set(ids or [])
+    n = 0
+    with _LOCK:
+        data = _load()
+        for s in data.get("sessions", []):
+            if s.get("id") in want and s.get("folder") != project_id:
+                s["folder"] = project_id
+                n += 1
+        if n:
+            _save(data)
+    return n
+
+
 def delete(session_id: str) -> bool:
     with _LOCK:
         data = _load()

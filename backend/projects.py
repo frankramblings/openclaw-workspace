@@ -12,6 +12,11 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _hints_from(payload) -> list[str] | None:
+    hints = (payload or {}).get("hints")
+    return hints if isinstance(hints, list) else None
+
+
 @router.get("/api/projects")
 async def list_projects():
     return projects_store.list_projects()
@@ -23,7 +28,7 @@ async def create_project(payload: dict = Body(default=None)):
     if not name:
         return JSONResponse(status_code=400, content={"detail": "name required"})
     try:
-        return projects_store.create(name)
+        return projects_store.create(name, hints=_hints_from(payload))
     except ValueError as e:
         if str(e) == "duplicate":
             return JSONResponse(status_code=409, content={"detail": "a project with that name exists"})
@@ -38,6 +43,10 @@ async def patch_project(pid: str, payload: dict = Body(default=None)):
         fields["name"] = str(payload.get("name") or "")
     if "archived" in payload:
         fields["archived"] = bool(payload.get("archived"))
+    if "hints" in payload:
+        if not isinstance(payload["hints"], list):
+            return JSONResponse(status_code=400, content={"detail": "hints must be a list"})
+        fields["hints"] = payload["hints"]
     try:
         rec = projects_store.update(pid, **fields)
     except ValueError as e:
@@ -56,6 +65,35 @@ async def delete_project(pid: str):
     unfiled = sessions_store.unfile_project(pid)
     projects_store.delete(pid)
     return {"ok": True, "unfiled": unfiled}
+
+
+@router.post("/api/projects/{pid}/merge")
+async def merge_project(pid: str, payload: dict = Body(default=None)):
+    """Fold `pid` into `into`: move its threads, union its hints, delete it."""
+    into = str((payload or {}).get("into") or "")
+    src = projects_store.get(pid)
+    dst = projects_store.get(into)
+    if src is None or dst is None:
+        return JSONResponse(status_code=404, content={"detail": "no such project"})
+    if pid == into:
+        return JSONResponse(status_code=400, content={"detail": "cannot merge a project into itself"})
+    moved = sessions_store.refile_project(pid, into)
+    projects_store.update(into, hints=list(dst.get("hints") or []) + list(src.get("hints") or []))
+    projects_store.delete(pid)
+    return {"ok": True, "moved": moved, "into": into}
+
+
+@router.post("/api/projects/move-threads")
+async def move_threads(payload: dict = Body(default=None)):
+    """Bulk filing: {ids: [...], project_id: <id> | null (unfile)}."""
+    payload = payload or {}
+    ids = payload.get("ids")
+    if not isinstance(ids, list):
+        return JSONResponse(status_code=400, content={"detail": "ids must be a list"})
+    pid = payload.get("project_id")
+    if pid is not None and projects_store.get(str(pid)) is None:
+        return JSONResponse(status_code=404, content={"detail": "no such project"})
+    return {"moved": sessions_store.move_to_project([str(i) for i in ids], None if pid is None else str(pid))}
 
 
 @router.post("/api/projects/backfill")

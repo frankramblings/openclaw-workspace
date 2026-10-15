@@ -83,3 +83,43 @@ def test_patch_session_folder_set_and_unfile(monkeypatch):
     assert client.post("/api/session/nope/unfile").status_code == 404
     assert client.patch(f"/api/session/{s['id']}", data={"name": "renamed"}).json()["name"] == "renamed"
     assert sessions_store.get(s["id"])["updated"] != before, "a PATCH touching a non-folder field still bumps updated"
+
+
+def test_create_and_patch_hints_are_normalized():
+    r = client.post("/api/projects", json={"name": "Beatles", "hints": [" Beatles ", "", "Rubber Soul", "beatles"]})
+    assert r.status_code == 201
+    assert r.json()["hints"] == ["beatles", "rubber soul"]
+    pid = r.json()["id"]
+    r = client.patch(f"/api/projects/{pid}", json={"hints": ["Abbey Road", " ", "abbey road"]})
+    assert r.status_code == 200 and r.json()["hints"] == ["abbey road"]
+    assert client.patch(f"/api/projects/{pid}", json={"hints": "nope"}).status_code == 400
+
+
+def test_merge_moves_threads_and_hints_then_removes_source():
+    a = client.post("/api/projects", json={"name": "A", "hints": ["x"]}).json()["id"]
+    b = client.post("/api/projects", json={"name": "B", "hints": ["y", "x"]}).json()["id"]
+    s = sessions_store.create(name="s", model=None, endpoint_url=None, endpoint_id=None, speed=None)
+    sessions_store.update(s["id"], folder=a)
+    r = client.post(f"/api/projects/{a}/merge", json={"into": b})
+    assert r.status_code == 200 and r.json()["moved"] == 1
+    assert sessions_store.get(s["id"])["folder"] == b
+    assert projects_store.get(a) is None
+    assert projects_store.get(b)["hints"] == ["y", "x"]
+    assert client.post(f"/api/projects/{b}/merge", json={"into": b}).status_code == 400
+    assert client.post(f"/api/projects/{b}/merge", json={"into": "p-missing"}).status_code == 404
+    assert client.post("/api/projects/p-missing/merge", json={"into": b}).status_code == 404
+
+
+def test_bulk_move_files_and_unfiles_without_touching_updated():
+    pid = client.post("/api/projects", json={"name": "Dest"}).json()["id"]
+    s1 = sessions_store.create(name="1", model=None, endpoint_url=None, endpoint_id=None, speed=None)
+    s2 = sessions_store.create(name="2", model=None, endpoint_url=None, endpoint_id=None, speed=None)
+    before = sessions_store.get(s1["id"])["updated"]
+    r = client.post("/api/projects/move-threads", json={"ids": [s1["id"], s2["id"], "missing"], "project_id": pid})
+    assert r.status_code == 200 and r.json() == {"moved": 2}
+    assert sessions_store.get(s1["id"])["folder"] == pid
+    assert sessions_store.get(s1["id"])["updated"] == before
+    r = client.post("/api/projects/move-threads", json={"ids": [s1["id"]], "project_id": None})
+    assert r.json() == {"moved": 1} and sessions_store.get(s1["id"])["folder"] is None
+    assert client.post("/api/projects/move-threads", json={"ids": [s1["id"]], "project_id": "p-missing"}).status_code == 404
+    assert client.post("/api/projects/move-threads", json={"ids": "bad", "project_id": pid}).status_code == 400

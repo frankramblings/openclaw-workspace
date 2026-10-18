@@ -42,11 +42,18 @@ function workspacePath(url) {
   return { path: s, root: 'workspace' };
 }
 
+// data-act/arg/root for a file mention. `~/…` paths get the `home` root here
+// too (not only in [label](~/…) links), else a backticked `~/x.md` opened as a
+// workspace-relative path and silently failed.
+function fileAttrs(raw) {
+  const { path, root } = workspacePath(raw);
+  const rootAttr = root === 'workspace' ? '' : ` data-root="${esc(root)}"`;
+  return `data-act="wsOpenFile" data-arg="${esc(path)}"${rootAttr}`;
+}
+
 function link(text, url) {
   if (isVaultPath(url)) {
-    const { path, root } = workspacePath(url);
-    const rootAttr = root === 'workspace' ? '' : ` data-root="${esc(root)}"`;
-    return `<span class="file-link" data-act="wsOpenFile" data-arg="${esc(path)}"${rootAttr}>${text}</span>`;
+    return `<span class="file-link" ${fileAttrs(url)}>${text}</span>`;
   }
   return `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener noreferrer">${text}</a>`;
 }
@@ -83,7 +90,7 @@ function linkifyPaths(html) {
     }
     if (inAnchor) return text;
     return text.replace(PATH_RE, (path) =>
-      `<span class="file-link" data-act="wsOpenFile" data-arg="${esc(path)}">${path}</span>`
+      `<span class="file-link" ${fileAttrs(path)}>${path}</span>`
     );
   });
 }
@@ -110,7 +117,7 @@ function restoreCodeSpans(html, codes) {
       const raw = codes[+i];
       const escaped = esc(raw);
       if (!inAnchor && isFilePath(raw.trim())) {
-        return `<code class="code-inline file-link" data-act="wsOpenFile" data-arg="${escaped}">${escaped}</code>`;
+        return `<code class="code-inline file-link" ${fileAttrs(raw.trim())}>${escaped}</code>`;
       }
       return `<code class="code-inline">${escaped}</code>`;
     });

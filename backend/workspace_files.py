@@ -749,6 +749,38 @@ def workspace_file(path: str, root_key: str = "workspace"):
                         headers={"X-Mtime-Ns": str(mtime_ns)})
 
 
+class ExistsItem(BaseModel):
+    path: str
+    root: str = "workspace"
+
+
+class ExistsBody(BaseModel):
+    items: list[ExistsItem]
+
+
+def _openable(path: str, root_key: str) -> bool:
+    """True when GET /api/workspace/file would open this path as a file."""
+    resolved_key, root = _root_for_key(root_key)
+    if resolved_key == "home":
+        try:
+            rel = _validated_home_rel(path)
+            fd, meta = _open_home_file(root, rel)
+        except (ValueError, OSError):
+            return False
+        os.close(fd)
+        return stat.S_ISREG(meta.st_mode) and _home_text_ok(root / rel, rel)
+    try:
+        return resolve_safe(root, path).is_file()
+    except (ValueError, OSError):
+        return False
+
+
+@router.post("/api/workspace/exists")
+def workspace_exists(body: ExistsBody):
+    """Batch check used by chat to un-link file mentions that can't open."""
+    return {"exists": [_openable(i.path, i.root) for i in body.items[:200]]}
+
+
 # ---------------------------------------------------------------------------
 # Task progress feed
 # ---------------------------------------------------------------------------

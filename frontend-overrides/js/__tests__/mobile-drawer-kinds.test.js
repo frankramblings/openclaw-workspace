@@ -35,7 +35,7 @@ function buildState(opts = {}) {
 
 test('the OPEN header comes first, with m-conv-cnt, and its rows follow', () => {
   const html = renderConvDrawer(buildState());
-  assert.ok(html.includes('<div class="m-conv-grp open">OPEN <span class="m-conv-cnt">2</span></div>'));
+  assert.ok(/<div class="m-conv-grp open collapsible"[^>]*><span class="m-proj-chev">▸<\/span>OPEN <span class="m-conv-cnt">2<\/span><\/div>/.test(html));
   const openIdx = html.indexOf('m-conv-grp open');
   const rowIdx = html.indexOf('data-arg="o1"');
   assert.ok(openIdx >= 0 && rowIdx > openIdx);
@@ -128,7 +128,7 @@ const count = (html, re) => (html.match(re) || []).length;
 
 test('a pinned thread renders a PINNED header with its count, and the row under PINNED and its date bucket', () => {
   const html = renderConvDrawer(pinState());
-  assert.ok(html.includes('<div class="m-conv-grp pinned">★ PINNED <span class="m-conv-cnt">1</span></div>'));
+  assert.ok(/<div class="m-conv-grp pinned collapsible"[^>]*><span class="m-proj-chev">▸<\/span>★ PINNED <span class="m-conv-cnt">1<\/span><\/div>/.test(html));
   assert.equal(count(html, /data-act="mSelectSession" data-arg="a"/g), 2);
   const pinIdx = html.indexOf('m-conv-grp pinned');
   const firstRow = html.indexOf('data-arg="a"');
@@ -140,7 +140,7 @@ test('a pinned thread renders a PINNED header with its count, and the row under 
 test('filtering lists a pinned match once, under PINNED', () => {
   const html = renderConvDrawer(pinState({ convFilter: 'alpha' }));
   assert.equal(count(html, /data-act="mSelectSession" data-arg="a"/g), 1);
-  assert.ok(html.includes('<div class="m-conv-grp pinned">★ PINNED <span class="m-conv-cnt">1</span></div>'));
+  assert.ok(/<div class="m-conv-grp pinned collapsible"[^>]*><span class="m-proj-chev">▸<\/span>★ PINNED <span class="m-conv-cnt">1<\/span><\/div>/.test(html));
 });
 
 test('without pinned threads there is no PINNED header', () => {

@@ -43,7 +43,7 @@ function buildState(opts = {}) {
 
 test('the OPEN group renders its header with the count, and the first row carries the slot hint + close button', () => {
   const html = renderChatList(buildState());
-  assert.ok(html.includes('<div class="conv-group open top"><span class="sect-label">OPEN</span><span class="sect-count">2</span></div>'));
+  assert.ok(/<div class="conv-group open top collapsible"[^>]*><span class="proj-chev">▸<\/span><span class="sect-label">OPEN<\/span><span class="sect-count">2<\/span><\/div>/.test(html));
   const rowO1 = html.slice(html.indexOf('data-arg="o1"'), html.indexOf('data-arg="o2"'));
   assert.ok(rowO1.includes('<span class="conv-slot" title="Option+1">⌥1</span>'));
   assert.ok(rowO1.includes('data-act="closeOpen" data-arg="o1"'));
@@ -132,7 +132,7 @@ const count = (html, re) => (html.match(re) || []).length;
 
 test('PINNED renders first with a count and the top class', () => {
   const html = renderChatList(pinState());
-  assert.match(html, /class="conv-group pinned top"><span class="sect-label">★ PINNED<\/span><span class="sect-count">2<\/span>/);
+  assert.match(html, /class="conv-group pinned top collapsible"[^>]*><span class="proj-chev">▸<\/span><span class="sect-label">★ PINNED<\/span><span class="sect-count">2<\/span>/);
   assert.ok(html.indexOf('PINNED') < html.indexOf('>OPEN<'));
 });
 
@@ -171,5 +171,5 @@ test('filtering lists each match once', () => {
 test('without pinned threads there is no PINNED header and OPEN keeps the top class', () => {
   const html = renderChatList(buildState());
   assert.ok(!html.includes('PINNED'));
-  assert.ok(html.includes('class="conv-group open top"'));
+  assert.ok(html.includes('class="conv-group open top collapsible"'));
 });

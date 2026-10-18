@@ -197,3 +197,22 @@ export function dedupeGroups(groups) {
   }
   return out;
 }
+
+// Collapsible sidebar sections. Projects keep their own model (meta.collapsed,
+// which has auto-expand rules); PINNED, OPEN and the date/RECENT buckets are
+// plain user toggles stored as a Set of these keys.
+export function sectionKey(g) {
+  if (!g) return null;
+  if (g.kind === 'pinned') return 'pinned';
+  if (g.kind === 'open') return 'open';
+  if (g.kind === 'recent') return `recent:${g.label}`;
+  return null;
+}
+
+// Filtering force-opens every section so a match is never hidden.
+export function isSectionCollapsed(g, collapsedSections, filtering) {
+  if (filtering || !g) return false;
+  if (g.kind === 'project') return !!(g.meta && g.meta.collapsed);
+  const key = sectionKey(g);
+  return !!(key && collapsedSections instanceof Set && collapsedSections.has(key));
+}

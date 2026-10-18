@@ -263,7 +263,15 @@ function renderDesktop(s) {
 const SCROLL_SELECTORS = [
   '.chat-thread', '.m-scroll', '.m-files',
   '.inbox-scroll', '.list-scroll', '.lib-wrap', '.set-scroll',
+  // Conversation lists (desktop sidebar + mobile drawer): toggling a section
+  // or project header re-renders, and without this the list jumped back to
+  // the top, hiding the header you just tapped.
+  '.conv-scroll', '.m-conv-list',
 ];
+// Conversation-list scroll is kept across renders only while the search text
+// is unchanged; a new filter swaps the whole result set, so it starts at top.
+const CONV_LIST_SELECTORS = new Set(['.conv-scroll', '.m-conv-list']);
+let _prevConvFilter = '';
 
 // Chevron rotation reflow-trick reconciler: render() rebuilds root.innerHTML
 // wholesale, so a `[data-chev]` element's CSS transition never has an "old"
@@ -530,8 +538,10 @@ function render() {
     }
     const saved = scrollState[sel];
     if (!saved) continue;
+    if (CONV_LIST_SELECTORS.has(sel) && (state.convFilter || '') !== _prevConvFilter) continue;
     el.scrollTop = saved.stick ? el.scrollHeight : saved.top;
   }
+  _prevConvFilter = state.convFilter || '';
   if (runtime.wantChatBottom && isChatNow) runtime.wantChatBottom = false;
   if (restoreTop != null && isChatNow) runtime.restoreScrollTop = null;
   _prevChatMounted = isChatNow;

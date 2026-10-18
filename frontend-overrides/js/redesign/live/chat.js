@@ -142,6 +142,11 @@ function _loadIdSet(key) {
 function _persistIdSet(key, set) {
   try { localStorage.setItem(key, JSON.stringify([...set])); } catch (_) { /* storage unavailable */ }
 }
+// PINNED / OPEN / date-bucket sections the user collapsed (keys from
+// thread-groups.js sectionKey). Default is all open.
+const SECT_COLLAPSED_KEY = 'oc-sect-collapsed';
+function _loadSectCollapsed() { return _loadIdSet(SECT_COLLAPSED_KEY); }
+function _persistSectCollapsed(set) { _persistIdSet(SECT_COLLAPSED_KEY, set); }
 function _loadExpanded() { return _loadIdSet(EXPANDED_KEY); }
 function _persistExpanded(set) { _persistIdSet(EXPANDED_KEY, set); }
 function _loadCollapsed() { return _loadIdSet(COLLAPSED_KEY); }
@@ -306,6 +311,7 @@ function ensureChat(state) {
   if (!Array.isArray(c.sessions)) c.sessions = [];
   if (!(c.expandedProjects instanceof Set)) c.expandedProjects = _loadExpanded();
   if (!(c.collapsedProjects instanceof Set)) c.collapsedProjects = _loadCollapsed();
+  if (!(c.collapsedSections instanceof Set)) c.collapsedSections = _loadSectCollapsed();
   // F1: optimistic OPEN-shelf overlay (session id -> epoch ms), keyed
   // independently of chat.sessions so a brand-new chat's very first send
   // survives a stale /api/sessions refetch landing before the server has
@@ -3203,6 +3209,14 @@ export const actions = {
     _persistExpanded(chat.expandedProjects);
     _persistCollapsed(chat.collapsedProjects);
     rebuildGroups(chat);
+  },
+
+  toggleSection: (key) => {
+    const state = runtime.state; if (!state || !key) return;
+    const chat = ensureChat(state);
+    if (chat.collapsedSections.has(key)) chat.collapsedSections.delete(key);
+    else chat.collapsedSections.add(key);
+    _persistSectCollapsed(chat.collapsedSections);
   },
 
   // Projects (spec 6.2, 4.2)

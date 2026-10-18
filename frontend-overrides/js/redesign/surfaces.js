@@ -24,7 +24,7 @@ import { renderChatStrip } from './chat-strip.js';
 import { renderSwitcher } from './switcher.js';
 import { steerComposerHints, steerCaptionHtml } from './steer-view.js';
 import { moveMenuHtml, projectName, parentTitle } from './project-menu.js';
-import { dedupeGroups } from './thread-groups.js';
+import { dedupeGroups, sectionKey, isSectionCollapsed } from './thread-groups.js';
 import { usageLine, usageTitle, sessionTotalsLine } from './usage-view.js';
 import { usagePanelHtml } from './usage-panel.js';
 import { changesCardHtml } from './changes-view.js';
@@ -185,17 +185,25 @@ function convListBody(s) {
     + (menuHere ? convMenu(r, s) : '')
     + `</div>`;
   };
+  const collapsedSections = s.live?.chat?.collapsedSections;
+  // Shared attrs for the click-to-collapse headers (PINNED / OPEN / date
+  // buckets). Returns the rest of the opening tag, starting at the class
+  // attribute's closing quote, so callers append their children after it.
+  const secAttrs = (g) => {
+    const collapsed = isSectionCollapsed(g, collapsedSections, !!q);
+    return ` collapsible${collapsed ? ' collapsed' : ''}" data-act="toggleSection" data-arg="${esc(sectionKey(g))}" role="button" tabindex="0" aria-expanded="${!collapsed}">`;
+  };
   const header = (g, gi) => {
     const top = gi === 0 ? ' top' : '';
     if (g.kind === 'open') {
       // Amendment D: while filtering, the count reflects what's actually
       // rendered (post-filter rows), not the unfiltered meta count.
       const count = q ? g.rows.length : g.meta.count;
-      return `<div class="conv-group open${top}"><span class="sect-label">OPEN</span><span class="sect-count">${count}</span></div>`;
+      return `<div class="conv-group open${top}${secAttrs(g)}<span class="proj-chev">▸</span><span class="sect-label">OPEN</span><span class="sect-count">${count}</span></div>`;
     }
     if (g.kind === 'pinned') {
       const count = q ? g.rows.length : g.meta.count;
-      return `<div class="conv-group pinned${top}"><span class="sect-label">★ PINNED</span><span class="sect-count">${count}</span></div>`;
+      return `<div class="conv-group pinned${top}${secAttrs(g)}<span class="proj-chev">▸</span><span class="sect-label">★ PINNED</span><span class="sect-count">${count}</span></div>`;
     }
     if (g.kind === 'project') {
       const m = g.meta;
@@ -220,9 +228,9 @@ function convListBody(s) {
           : '')
         + `</div>`;
     }
-    return `<div class="conv-group${top}"><span class="sect-label">${esc(g.label)}</span></div>`;
+    return `<div class="conv-group${top}${secAttrs(g)}<span class="proj-chev">▸</span><span class="sect-label">${esc(g.label)}</span></div>`;
   };
-  const titleHtml = map(sorted, (g, gi) => header(g, gi) + ((g.kind === 'project' && g.meta.collapsed && !q) ? '' : map(g.rows, (r) => convRow(r, sectKey(g)))));
+  const titleHtml = map(sorted, (g, gi) => header(g, gi) + (isSectionCollapsed(g, collapsedSections, !!q) ? '' : map(g.rows, (r) => convRow(r, sectKey(g)))));
   const msgHtml = semanticHits(s, groups2);
   if (q && !groups2.length && !msgHtml) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
   return titleHtml + msgHtml;

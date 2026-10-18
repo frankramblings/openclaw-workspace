@@ -1190,6 +1190,8 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-conv-cnt { font-family: var(--mono); font-weight: 500; color: var(--faint); }
 .m-conv-grp.project { cursor: pointer; padding-top: 12px; }
 .m-proj-chev { display: inline-block; width: 10px; transition: transform var(--dur-micro) var(--ease-standard); transform: rotate(90deg); }
+.m-conv-grp.collapsible { cursor: pointer; }
+.m-conv-grp.collapsible.collapsed .m-proj-chev { transform: rotate(0deg); }
 .m-conv-grp.project.collapsed .m-proj-chev { transform: rotate(0deg); }
 .m-proj-pip { font-family: var(--mono); font-size: 10px; padding: 0 5px; border-radius: 6px; }
 .m-proj-pip.working { color: var(--teal); background: var(--tealtint); }

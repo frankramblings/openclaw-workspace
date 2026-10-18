@@ -853,3 +853,26 @@ def test_workspace_root_file_route_preserves_range_requests(api_ws):
     assert response.status_code == 206
     assert response.content == b"2345"
     assert response.headers["Content-Range"] == "bytes 2-5/10"
+
+
+def test_exists_matches_what_the_file_route_would_open(ws, tmp_path, monkeypatch):
+    """POST /api/workspace/exists: true only for paths GET /file would open,
+    so chat can demote file mentions that would dead-end."""
+    fake_home = tmp_path / "home"
+    (fake_home / "code" / "proj").mkdir(parents=True)
+    (fake_home / "code" / "proj" / "README.md").write_text("hi")
+    (fake_home / ".ssh").mkdir()
+    (fake_home / ".ssh" / "id_ed25519").write_text("SECRET")
+    monkeypatch.setattr(wf, "_allowed_roots", lambda: {"workspace": ws, "home": fake_home})
+    items = [
+        {"path": "docs/note.md", "root": "workspace"},
+        {"path": "docs/missing.md", "root": "workspace"},
+        {"path": "docs", "root": "workspace"},
+        {"path": "../etc/passwd", "root": "workspace"},
+        {"path": "code/proj/README.md", "root": "home"},
+        {"path": "code/proj", "root": "home"},
+        {"path": ".ssh/id_ed25519", "root": "home"},
+    ]
+    r = client.post("/api/workspace/exists", json={"items": items})
+    assert r.status_code == 200
+    assert r.json()["exists"] == [True, False, False, False, True, False, False]

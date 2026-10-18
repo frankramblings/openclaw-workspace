@@ -384,7 +384,12 @@ html.shell-mobile .oc-toast{max-width:none}
 .msg-body p:last-child{margin-bottom:0}
 .code-inline{font-family:var(--mono);font-size:14px;background:#23252b;color:var(--teal);padding:1.5px 6px;border-radius:5px}
 .code-inline.gold{font-size:12.5px;color:var(--gold);padding:1px 6px}
-.file-link{cursor:pointer}.file-link:hover{text-decoration:underline dotted}
+/* Workspace-file links must read as links at a glance (Frank, 2026-10-18): always
+   underlined + a doc glyph, so they never look like plain code or plain text. */
+.file-link{cursor:pointer;color:var(--teal);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--teal) 55%,transparent);text-underline-offset:3px}
+.file-link::before{content:"\1F4C4\FE0E";font-size:.85em;margin-right:3px;opacity:.75;display:inline-block}
+.file-link:hover{text-decoration-color:var(--teal)}
+code.code-inline.file-link{text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--teal) 55%,transparent)}
 .code-card{border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin-bottom:13px;background:#121317}
 .code-card .bar{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:#181a1f;border-bottom:1px solid var(--bd2)}
 .code-card .bar span{font-family:var(--mono);font-size:12px;color:var(--faint)}
@@ -1287,6 +1292,9 @@ pre.diff .meta { color: var(--faint, #8a94a6); }
 /* PINNED section header: gold like the .conv-fav star; count chip keeps .sect-count. */
 .conv-group.pinned .sect-label{color:var(--gold)}
 .conv-group.project{cursor:pointer;border-radius:8px}
+.conv-group.collapsible{cursor:pointer;border-radius:8px}
+.conv-group.collapsible:hover{background:var(--row-hover,color-mix(in srgb,var(--fg) 5%,transparent))}
+.conv-group.collapsible.collapsed .proj-chev{transform:rotate(0deg)}
 .conv-group.project:hover{background:var(--row-hover,color-mix(in srgb,var(--fg) 5%,transparent))}
 .proj-chev{display:inline-block;width:12px;color:var(--faint);font-size:11px;transition:transform var(--dur-micro) var(--ease-standard);transform:rotate(90deg)}
 .conv-group.project.collapsed .proj-chev{transform:rotate(0deg)}

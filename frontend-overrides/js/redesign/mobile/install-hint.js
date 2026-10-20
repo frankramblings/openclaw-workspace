@@ -9,6 +9,7 @@
 // wholesale root.innerHTML rebuilds that render() does.
 
 import { icon } from '../icons.js';
+import { isNativeShell } from './is-native.js';
 
 const KEY = 'ws:pwa-install-hint:v1'; // 'dismissed' | 'installed'
 const SHOW_DELAY_MS = 2600; // let the app paint first — non-disruptive
@@ -132,6 +133,7 @@ function build() {
 // share the exact same breakpoint as the shell.
 export function maybeShowInstallHint(isMobile) {
   if (!isMobile || !isMobile()) return;      // mobile shell only
+  if (isNativeShell()) return;                // the native app is already installed
   if (isStandalone()) return;                 // already installed / launched from home screen
   if (alreadyHandled()) return;               // shown & dismissed before, or installed
   if (document.getElementById('pwa-install-hint')) return;

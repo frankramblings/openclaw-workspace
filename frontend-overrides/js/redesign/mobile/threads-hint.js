@@ -8,6 +8,7 @@
 // innerHTML rebuilds, easy to dismiss, and never shown again.
 
 import { icon } from '../icons.js';
+import { isNativeShell } from './is-native.js';
 
 const KEY = 'ws:threads-hint:v1'; // 'dismissed'
 const SHOW_DELAY_MS = 3400;       // let the app paint + the install-hint clear
@@ -67,6 +68,7 @@ function build() {
 // Public entry: call once after boot. Same isMobile() the shell uses.
 export function maybeShowThreadsHint(isMobile) {
   if (!isMobile || !isMobile()) return;
+  if (isNativeShell()) return;               // a browser first-run tip, not for the installed app
   if (alreadyHandled()) return;
   if (document.getElementById('threads-hint')) return;
 

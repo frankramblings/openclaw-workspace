@@ -1892,6 +1892,8 @@ mq.addEventListener('change', () => { render(); loadActive(); });
 runtime.state = state;
 runtime.render = render;
 runtime.actions = actions;
+// DevTools handle: __ocRuntime.renderStats = last paint { mode, replaced, ms, rowTracked }.
+window.__ocRuntime = runtime;
 
 // Surgically re-render ONE chat message in place — used for streaming deltas so
 // we don't rebuild the whole document on every token (which wiped text selection,

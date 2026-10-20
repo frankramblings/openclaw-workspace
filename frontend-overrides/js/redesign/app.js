@@ -10,7 +10,8 @@ import { clearSearchField } from './search-clear.js';
 import { parseHash, chatHash, SURFACES, reassertedThreadHash } from './routes.js';
 import { AVATAR, filterSlashCommands } from './data.js';
 import { DEFAULT_UI } from './settings-data.js';
-import { renderCenter, renderChatList, chatMsg, inboxToastHtml } from './surfaces.js';
+import { renderCenterParts, renderChatListParts, chatMsg, inboxToastHtml } from './surfaces.js';
+import { patchRegions, snapshotAfterFull } from './region-patch.js';
 import { suggestGhost } from './suggest-ghost.js';
 import { handleMentionKeydown } from './live/mention-picker.js';
 import { mChatMsg } from './mobile/mobile-surfaces.js';
@@ -238,21 +239,68 @@ function renderRail() {
 }
 
 // ---- desktop shell --------------------------------------------------------
-function renderDesktop(s) {
+// The shell is a list of regions, each exactly one root element (see
+// region-patch.js). No simulated window-chrome bar — the PWA renders in a real
+// browser window.
+function desktopRegions(s) {
   const showCompanion = s.surface !== 'settings' && !s.compHidden;
   const showReveal = s.surface !== 'settings' && s.compHidden;
-  // No simulated window-chrome bar — the PWA renders in a real browser window.
-  return `
-  <div class="oc-app">
-    <div class="oc-body">
-      ${renderRail()}
-      ${when(s.surface === 'chat', renderChatList(s))}
-      <div class="oc-center">${renderCenter(s)}</div>
-      ${when(showCompanion, renderCompanion(s))}
-      ${when(showReveal, renderReveal(s))}
-    </div>
-    ${inboxToastHtml(s)}
-  </div>`;
+  const regions = [{ key: 'rail', full: renderRail().trim() }];
+  if (s.surface === 'chat') {
+    const p = renderChatListParts(s);
+    regions.push({ key: 'list', full: p.full.trim(), shell: p.shell.trim(), chunks: p.chunks, slotSel: '.conv-scroll' });
+  }
+  const c = renderCenterParts(s);
+  regions.push({
+    key: 'center', full: `<div class="oc-center">${c.full}</div>`,
+    shell: c.chunks ? `<div class="oc-center">${c.shell}</div>` : undefined, chunks: c.chunks, slotSel: '.chat-thread',
+  });
+  if (showCompanion) regions.push({ key: 'companion', full: renderCompanion(s).trim() });
+  if (showReveal) regions.push({ key: 'reveal', full: renderReveal(s).trim() });
+  return regions;
+}
+
+function composeDesktop(regions, toast) {
+  return `<div class="oc-app"><div class="oc-body">${regions.map((r) => r.full).join('')}</div>${toast}</div>`;
+}
+
+function renderDesktop(s) {
+  return composeDesktop(desktopRegions(s), inboxToastHtml(s));
+}
+
+// render() used to assign root.innerHTML on every change, re-parsing the whole
+// shell (incl. the sidebar) per thread switch: ~83% of main-thread time in a
+// Chrome trace. paintDesktop patches only the regions whose HTML changed and
+// reconciles sidebar rows one by one. Anything unexpected (layout change, DOM
+// drift, a thrown error) falls back to the old full rebuild. Kill switch:
+// localStorage['oc-full-render'] = '1'. Last paint is on runtime.renderStats
+// ({ mode, replaced, ms }) for DevTools.
+let _dskSnap = null;
+function paintDesktop(s) {
+  const t0 = performance.now();
+  const regions = desktopRegions(s);
+  const toast = inboxToastHtml(s);
+  const body = root.querySelector(':scope > .oc-app > .oc-body');
+  let forced = false;
+  try { forced = localStorage.getItem('oc-full-render') === '1'; } catch (_) { /* storage blocked */ }
+  let mode = 'full';
+  let replaced = [];
+  if (_dskSnap && body && !forced && _dskSnap.toast === toast) {
+    try {
+      const res = patchRegions(body, _dskSnap.regions, regions);
+      if (res) { _dskSnap = { regions: res.snapshot, toast }; mode = 'patch'; replaced = res.replaced; }
+    } catch (e) { console.warn('[render] region patch failed, rebuilding', e); }
+  }
+  if (mode === 'full') {
+    root.innerHTML = composeDesktop(regions, toast);
+    const nb = root.querySelector(':scope > .oc-app > .oc-body');
+    const snap = nb ? snapshotAfterFull(nb, regions) : null;
+    _dskSnap = snap ? { regions: snap, toast } : null;
+  }
+  runtime.renderStats = {
+    mode, replaced, ms: Math.round((performance.now() - t0) * 10) / 10,
+    rowTracked: _dskSnap ? _dskSnap.regions.filter((r) => r.chunks).map((r) => r.key) : [],
+  };
 }
 
 // ---- shell assembly (breakpoint dispatch) ---------------------------------
@@ -395,7 +443,8 @@ function render() {
   );
   const convMenuWasOpen = !isMobile() && !!(state.live?.chat?.rowMenuOpen);
   const dlMenuWasOpen = !isMobile() && !!(state.live?.chat?.msgMenuOpen);
-  root.innerHTML = isMobile() ? renderMobile(s) : renderDesktop(s);
+  if (isMobile()) { _dskSnap = null; root.innerHTML = renderMobile(s); }
+  else paintDesktop(s);
 
   // Reflow-trick reconciler: snap each freshly-rebuilt [data-chev] element
   // back to its previous rotation, force a reflow, then set the real target —

@@ -1199,3 +1199,4 @@ button.m-draft { cursor: pointer; font-family: inherit; -webkit-appearance: none
 .m-conv-row.depth1 { padding-left: 24px; }
 .m-conv-row.depth2 { padding-left: 38px; }
 .m-conv-dot.queued { background: var(--gold); }
+.m-conv-showmore { cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin: 10px 6px 14px; padding: 11px 12px; border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 10px; font-size: 13px; color: var(--muted, var(--faint)); }

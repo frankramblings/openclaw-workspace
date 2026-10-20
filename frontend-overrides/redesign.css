@@ -1346,3 +1346,7 @@ pre.diff .meta { color: var(--faint, #8a94a6); }
 .set-proposal{flex-wrap:wrap}
 .set-proposal .set-proposal-samples{flex-basis:100%;font-size:12px;margin-top:2px}
 .set-btn.primary{border-color:var(--accent)}
+
+/* Desktop sidebar row budget: "Show more" row (surfaces.js convListParts). */
+.conv-showmore { cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin: 8px 10px 14px; padding: 8px 10px; border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 8px; font-size: 12px; color: var(--muted, var(--faint)); }
+.conv-showmore:hover { background: var(--hover, rgba(255,255,255,.05)); }

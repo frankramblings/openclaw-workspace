@@ -90,12 +90,13 @@ test('projects group filed threads, roll up live state, sort by latest activity,
   // l2 is running, so it also sits on the OPEN shelf; sections overlap, so
   // its project still lists it alongside the roll-up.
   const g = build({ sessions, projects, running: new Set(['l2']), notified: new Set(['l1']) });
-  assert.deepEqual(kinds(g), ['open', 'project', 'project', 'recent']);
+  assert.deepEqual(kinds(g).slice(0, 3), ['open', 'project', 'project']);
   assert.deepEqual(ids(g[0]), ['l2']);
   assert.equal(g[1].label, 'Plex'); assert.equal(g[2].label, 'Local AI');
   assert.deepEqual(g[2].meta, { id: 'p1', count: 2, working: 1, unseen: 1, collapsed: true, latest: NOW - 5 * H });
   assert.deepEqual(ids(g[2]), ['l1', 'l2']);
-  assert.deepEqual(ids(g[3]), ['ghost'], 'unknown folder id renders as unfiled; archived project threads hidden');
+  const dated = g.filter((x) => x.kind === 'recent').flatMap((x) => ids(x)).sort();
+  assert.deepEqual(dated, ['ghost', 'l1', 'l2', 'x1'], 'filed + unfiled threads all date-bucketed (unknown folder reads as unfiled); archived project threads hidden');
 });
 
 test('the project holding the active thread is expanded; expanded set expands others', () => {
@@ -104,7 +105,7 @@ test('the project holding the active thread is expanded; expanded set expands ot
   let g = build({ sessions, projects, activeId: 'a' });
   // active thread is in OPEN and also listed under its project (sections
   // overlap); the group is expanded because the roll-up sees the active session.
-  assert.deepEqual(kinds(g), ['open', 'project', 'project']);
+  assert.deepEqual(kinds(g).slice(0, 3), ['open', 'project', 'project']);
   const p1 = g.find((x) => x.meta.id === 'p1'); const p2 = g.find((x) => x.meta.id === 'p2');
   assert.equal(p1.meta.collapsed, false); assert.equal(p1.meta.count, 1); assert.deepEqual(ids(p1), ['a']);
   assert.equal(p2.meta.collapsed, true);
@@ -138,7 +139,7 @@ test('a thread appears once per section and inputs are not mutated', () => {
   const before = JSON.stringify(sessions);
   const g = build({ sessions, projects: [{ id: 'p1', name: 'P' }] });
   // a is pinned and on OPEN, and still lists under its project.
-  assert.deepEqual(kinds(g), ['pinned', 'open', 'project']);
+  assert.deepEqual(kinds(g), ['pinned', 'open', 'project', 'recent']);
   assert.equal(g[2].rows.length, 1);
   assert.equal(g[2].meta.count, 1);
   assert.equal(JSON.stringify(sessions), before);
@@ -156,7 +157,7 @@ test('a project holding the active thread expands and lists every filed thread, 
   const projects = [{ id: 'p1', name: 'P' }];
   const sessions = [S('a', { folder: 'p1', opened: null }), S('c', { folder: 'p1', updated: NOW - 3 * H })];
   const g = build({ sessions, projects, activeId: 'a' });
-  assert.deepEqual(kinds(g), ['open', 'project']);
+  assert.deepEqual(kinds(g).slice(0, 2), ['open', 'project']);
   assert.equal(g[1].meta.collapsed, false);
   assert.deepEqual(ids(g[1]), ['c', 'a']);
   assert.equal(g[1].meta.count, 2);
@@ -254,11 +255,23 @@ test('an OPEN unfiled thread also appears in its date bucket', () => {
   assert.deepEqual(secIds(g, 'recent', 'TODAY'), ['o']);
 });
 
-test('an OPEN filed thread also appears in its project, but never in a date bucket', () => {
+test('an OPEN filed thread appears in OPEN, its project, and its date bucket', () => {
   const g = build({ sessions: [S('f', { opened: NOW - H, updated: NOW - H, folder: 'p1' })], projects: [{ id: 'p1', name: 'P' }] });
   assert.deepEqual(secIds(g, 'open'), ['f']);
   assert.deepEqual(g.find((x) => x.kind === 'project').rows.map((r) => r.id), ['f']);
-  assert.ok(!kinds(g).includes('recent'));
+  assert.deepEqual(secIds(g, 'recent', 'TODAY'), ['f']);
+});
+
+test('project-filed threads sit in their date buckets; archived-project threads stay hidden', () => {
+  const sessions = [
+    S('t', { folder: 'p1', updated: NOW - H }),
+    S('y', { folder: 'p1', updated: NOW - 26 * H }),
+    S('hid', { folder: 'pa', updated: NOW - H }),
+  ];
+  const g = build({ sessions, projects: [{ id: 'p1', name: 'P' }, { id: 'pa', name: 'Old', archived: true }] });
+  assert.deepEqual(secIds(g, 'recent', 'TODAY'), ['t']);
+  assert.deepEqual(secIds(g, 'recent', 'YESTERDAY'), ['y']);
+  assert.deepEqual(g.filter((x) => x.kind === 'recent').flatMap((x) => ids(x)).sort(), ['t', 'y']);
 });
 
 test('a pinned unfiled thread appears in PINNED and in its date bucket', () => {

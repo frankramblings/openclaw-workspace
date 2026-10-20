@@ -102,6 +102,19 @@ export function capNotice(len, cap) {
 // CHAT
 // ===========================================================================
 export function renderChatList(s) {
+  return chatListHtml(s, convListParts(s).html);
+}
+
+// Same markup, but split for region patching (region-patch.js): `shell` is the
+// list with an empty scroller, `chunks` are the scroller's children (one
+// element each) or null when the body can't be chunked (filter results, empty
+// state), and `full` is exactly what renderChatList returns.
+export function renderChatListParts(s) {
+  const body = convListParts(s);
+  return { full: chatListHtml(s, body.html), shell: chatListHtml(s, ''), chunks: body.chunks };
+}
+
+function chatListHtml(s, body) {
   return `
   <div class="oc-secondary chat-list">
     <div class="chat-list-top">
@@ -109,7 +122,7 @@ export function renderChatList(s) {
       <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit">${searchClearBtn('convFilter')}</div>
       <div style="display:flex;justify-content:flex-end;margin-top:6px"><button data-act="cycleSessionSort" title="Sort order" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer">${s.convSort === 'alpha' ? 'A–Z' : 'Recent'} ⇅</button></div>
     </div>
-    <div class="conv-scroll">${convListBody(s)}</div>
+    <div class="conv-scroll">${body}</div>
     ${s.live?.chat?.cwd ? `<div class="conv-foot">${esc(s.live.chat.cwd)}</div>` : ''}
   </div>`;
 }
@@ -139,18 +152,24 @@ function convMenu(r, s) {
     + `</div>`;
 }
 
+const CONV_ROW_LIMIT = 120;  // keep in step with mobile-sheets.js + actions.showMoreConvs
+const CONV_ROW_STEP = 150;
+
 // conversation rows: live sessions (grouped) with mock fallback
-function convListBody(s) {
+// Returns { html, chunks }. `chunks` is the same markup as an array of
+// one-element strings (headers, rows, "Show more") for region patching, or null
+// when the body isn't made of such chunks (mock/empty/filter-result states).
+function convListParts(s) {
   const groups = s.live?.chat?.groups; // [{ label, rows:[{id,title,glyph,term,active}] }]
   if (!groups) {
-    return `
+    return { chunks: null, html: `
       <div class="conv-group top"><span class="sect-label">TODAY</span></div>
       <div class="conv-row active"><span class="conv-badge">G</span><span class="conv-title">Workspace Streaming Chat</span></div>
       <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">Comedy Show Misogyny Check</span></div>
       <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">help me organize these thoughts</span></div>
       <div class="conv-group"><span class="sect-label">YESTERDAY</span></div>
       <div class="conv-row ocrow"><span class="conv-badge">G</span><span class="conv-title">Punny Names for OpenClaw</span></div>
-      <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Codex on Ubuntu</span></div>`;
+      <div class="conv-row ocrow"><span class="conv-badge term">∿</span><span class="conv-title">Install Codex on Ubuntu</span></div>` };
   }
   const q = (s.convFilter || '').trim().toLowerCase();
   // Sections overlap (a pinned thread also sits in OPEN / its project / its
@@ -230,10 +249,30 @@ function convListBody(s) {
     }
     return `<div class="conv-group${top}${secAttrs(g)}<span class="proj-chev">▸</span><span class="sect-label">${esc(g.label)}</span></div>`;
   };
-  const titleHtml = map(sorted, (g, gi) => header(g, gi) + (isSectionCollapsed(g, collapsedSections, !!q) ? '' : map(g.rows, (r) => convRow(r, sectKey(g)))));
+  // render() rebuilds root.innerHTML wholesale, so every row drawn here is
+  // re-parsed on every render (a 1,700-thread list was ~18k DOM nodes and
+  // 3-20s long tasks per thread switch). Draw a budget of rows top-down;
+  // collapsed sections cost nothing; "Show more" raises it. Mirrors the mobile
+  // drawer (mobile-sheets.js convListHtml, same chat.convRowLimit field).
+  let budget = s.live?.chat?.convRowLimit || CONV_ROW_LIMIT;
+  let hiddenRows = 0;
+  const chunks = [];
+  sorted.forEach((g, gi) => {
+    chunks.push(header(g, gi).trim());
+    if (isSectionCollapsed(g, collapsedSections, !!q)) return;
+    const rows = g.rows || [];
+    const take = rows.slice(0, Math.max(budget, 0));
+    budget -= take.length;
+    hiddenRows += rows.length - take.length;
+    for (const r of take) chunks.push(convRow(r, sectKey(g)).trim());
+  });
+  if (hiddenRows) chunks.push(`<div class="conv-showmore" data-act="showMoreConvs" role="button" tabindex="0">Show ${Math.min(CONV_ROW_STEP, hiddenRows)} more <span class="sect-count">${hiddenRows} hidden</span></div>`);
+  const titleHtml = chunks.join('');
   const msgHtml = semanticHits(s, groups2);
-  if (q && !groups2.length && !msgHtml) return '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>';
-  return titleHtml + msgHtml;
+  if (q && !groups2.length && !msgHtml) return { chunks: null, html: '<div class="conv-empty" style="padding:14px;color:var(--faint);font-size:13px">No conversations match.</div>' };
+  // Filtering swaps the whole result set and carries the MESSAGES hits, which
+  // aren't one-element chunks; those renders are small, so they stay opaque.
+  return { chunks: q || msgHtml ? null : chunks, html: titleHtml + msgHtml };
 }
 
 // Semantic content matches (backend /api/search) rendered as a MESSAGES section
@@ -542,7 +581,9 @@ function chatWelcome() {
   </div>`;
 }
 
-export function chatSurface(s) {
+const THREAD_SLOT = '\u0000chat-thread-slot\u0000';
+
+export function chatSurface(s, parts) {
   const d = s.draft || '';
   const typedSlash = d.startsWith('/');
   const open = typedSlash || s.forceSlash;
@@ -593,10 +634,11 @@ export function chatSurface(s) {
     if (msgs[i].role !== 'user') { _lastAsstId = msgs[i].id; break; }
   }
   const _ghostCtx = { html: _asstGhostHtml, msgId: _lastAsstId };
-  const thread = map(msgs, (msg) => chatMsg(msg, s, _ghostCtx));
+  const threadChunks = msgs.map((msg) => chatMsg(msg, s, _ghostCtx).trim());
+  const thread = threadChunks.join('');
   const isEmpty = msgs.length === 0;
 
-  return `
+  const framed = `
   ${when(chat.switcherOpen, renderSwitcher(s))}
   <div class="chat-head">
     <div style="min-width:0;flex:1">
@@ -615,7 +657,7 @@ export function chatSurface(s) {
     </div>
   </div>
   <div class="oc-status-dock">${renderChatStrip(chat.chatStrip, { renderMarkdown })}</div>
-  <div class="chat-thread">${isEmpty ? chatWelcome() : thread}</div>
+  <div class="chat-thread">${THREAD_SLOT}</div>
   <div class="composer-wrap">
     <button class="scroll-btm ocbtn" data-act="scrollChatBottom" title="Jump to latest" style="position:absolute;right:16px;top:-44px;z-index:25;width:34px;height:34px;border-radius:50%;background:var(--panel,#1e2025);border:1px solid var(--border);color:var(--fg);cursor:pointer;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)">↓</button>
     ${when(slashOpen, `
@@ -651,6 +693,23 @@ ${esc(d)}</textarea>
       </div>
     </div>
   </div>`;
+  // The message list is spliced in after the frame is built so the same single
+  // pass can also yield the frame with an empty thread (`shell`) and the
+  // messages as separate chunks, for region patching (region-patch.js).
+  if (parts) { parts.shell = framed.replace(THREAD_SLOT, ''); parts.chunks = isEmpty ? null : threadChunks; }
+  const inner = isEmpty ? chatWelcome() : thread;
+  return framed.replace(THREAD_SLOT, () => inner);
+}
+
+// Center column for region patching: `full` is exactly renderCenter(s); for the
+// chat surface, `shell` is that markup with an empty `.chat-thread` and `chunks`
+// the messages (one element each), else both are null (opaque region).
+export function renderCenterParts(s) {
+  const other = ['email', 'inbox', 'calendar', 'research', 'library', 'notes', 'settings'];
+  if (other.includes(s.surface)) return { full: renderCenter(s), shell: null, chunks: null };
+  const parts = {};
+  const full = chatSurface(s, parts);
+  return { full, shell: parts.shell, chunks: parts.chunks };
 }
 
 // ===========================================================================

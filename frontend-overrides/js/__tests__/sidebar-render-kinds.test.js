@@ -21,6 +21,16 @@ const projects = [
   { id: 'projB', name: 'Project B' },
 ];
 
+// The slice of rendered HTML belonging to one project group (header up to the
+// next group header). Sections overlap, so a thread can also sit in a date
+// bucket; assertions about a collapsed project must look at its section only.
+function projSection(html, pid) {
+  const at = html.indexOf(`data-act="toggleProject" data-arg="${pid}"`);
+  const start = html.lastIndexOf('<div class="conv-group', at);
+  const next = html.indexOf('<div class="conv-group', at);
+  return html.slice(start, next === -1 ? html.length : next);
+}
+
 function buildState(opts = {}) {
   const groups = buildThreadGroups({
     sessions, projects, running: new Set(), notified: new Set(), queued: new Set(),
@@ -52,7 +62,8 @@ test('the OPEN group renders its header with the count, and the first row carrie
 test('a collapsed project group renders its header but none of its rows', () => {
   const html = renderChatList(buildState());
   assert.ok(html.includes('data-act="toggleProject" data-arg="projA"'));
-  assert.ok(!html.includes('data-arg="pc1"'));
+  assert.ok(!projSection(html, 'projA').includes('data-arg="pc1"'));
+  assert.ok(html.includes('data-arg="pc1"'), 'the thread is still reachable from its date bucket');
 });
 
 test('an expanded project group renders its rows', () => {
@@ -92,7 +103,7 @@ test('amendment D: filtering expands a collapsed project and shows the filtered 
   // With no filter, projA is collapsed and its rows (including pc1, the only
   // match below) are hidden; its meta.count (2) covers pc0 + pc1.
   const collapsedHtml = renderChatList(buildState());
-  assert.ok(!collapsedHtml.includes('data-arg="pc1"'));
+  assert.ok(!projSection(collapsedHtml, 'projA').includes('data-arg="pc1"'));
 
   const filteredHtml = renderChatList(buildState({ convFilter: 'Collapsed' }));
   const headerIdx = filteredHtml.indexOf('data-arg="projA"');

@@ -22,6 +22,16 @@ const projects = [
   { id: 'projB', name: 'Project B' },
 ];
 
+// The slice of rendered HTML belonging to one project group (header up to the
+// next group header). Sections overlap, so a thread can also sit in a date
+// bucket; assertions about a collapsed project must look at its section only.
+function projSection(html, pid) {
+  const at = html.indexOf(`data-act="toggleProject" data-arg="${pid}"`);
+  const start = html.lastIndexOf('<div class="m-conv-grp', at);
+  const next = html.indexOf('<div class="m-conv-grp', at);
+  return html.slice(start, next === -1 ? html.length : next);
+}
+
 function buildState(opts = {}) {
   const groups = buildThreadGroups({
     sessions, projects, running: new Set(), notified: new Set(), queued: new Set(['o2']),
@@ -44,7 +54,8 @@ test('the OPEN header comes first, with m-conv-cnt, and its rows follow', () => 
 test('a collapsed project renders header only, no rows', () => {
   const html = renderConvDrawer(buildState());
   assert.ok(html.includes('data-act="toggleProject" data-arg="projA"'));
-  assert.ok(!html.includes('data-arg="pc1"'));
+  assert.ok(!projSection(html, 'projA').includes('data-arg="pc1"'));
+  assert.ok(html.includes('data-arg="pc1"'), 'the thread is still reachable from its date bucket');
 });
 
 // Amendment F: the mobile project header gets aria-expanded like the desktop
@@ -68,7 +79,7 @@ test('amendment F: an expanded project header carries aria-expanded="true"', () 
 // open and its count to the number of rows actually shown, not meta.count.
 test('amendment E: filtering expands a collapsed project and shows the filtered count', () => {
   const collapsedHtml = renderConvDrawer(buildState());
-  assert.ok(!collapsedHtml.includes('data-arg="pc1"'));
+  assert.ok(!projSection(collapsedHtml, 'projA').includes('data-arg="pc1"'));
 
   const filteredHtml = renderConvDrawer(buildState({ convFilter: 'Collapsed' }));
   const headerIdx = filteredHtml.indexOf('data-arg="projA"');

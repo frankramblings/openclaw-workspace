@@ -3,7 +3,8 @@
 // Sections OVERLAP by design (2026-10-14 pinned-sections): a thread shows in
 // every section it qualifies for. PINNED leads and holds every starred thread;
 // OPEN is the working set (activity-driven, capped); PROJECTS group filed
-// threads with roll-ups; unfiled threads also sit in their date buckets.
+// threads with roll-ups; every visible thread, filed or not, also sits in its
+// date bucket so time-based browsing never misses a project thread.
 // Both renderers consume this; nothing here touches the DOM.
 
 export const OPEN_WINDOW_MS = 48 * 3600 * 1000;
@@ -146,11 +147,12 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
   // the OPEN shelf (sections overlap). Archived projects hide their threads
   // here; an unknown project id reads as unfiled (spec 8).
   const byProject = new Map();
-  const unfiled = [];
+  const dated = [];
   for (const s of list) {
     const p = s.folder ? projById.get(s.folder) : null;
-    if (!p) { unfiled.push(s); continue; }
+    if (!p) { dated.push(s); continue; }
     if (p.archived) continue;
+    dated.push(s);
     if (!byProject.has(p.id)) byProject.set(p.id, { all: [], rows: [] });
     const bucket = byProject.get(p.id);
     bucket.all.push(s);
@@ -175,9 +177,10 @@ export function buildThreadGroups({ sessions, projects, running, notified, queue
   projGroups.sort((a, b) => b.meta.latest - a.meta.latest);
   groups.push(...projGroups);
 
-  // Unfiled: date buckets. Pinned and OPEN unfiled threads appear here too.
+  // Date buckets: every thread not hidden by an archived project, filed or
+  // not. Pinned, OPEN and project threads appear here too.
   const byLabel = new Map();
-  for (const s of unfiled) {
+  for (const s of dated) {
     const label = bucketFor(s.updated, nowMs);
     if (!byLabel.has(label)) byLabel.set(label, []);
     byLabel.get(label).push(rowOf(s, activeId, live));

@@ -82,6 +82,9 @@ export function renderComposeSheet(s) {
 // Shared conversation list markup — used by the edge-swipe side drawer (and the
 // legacy bottom sheet). One row per session; tapping selects, swiping the drawer
 // away dismisses it.
+const CONV_ROW_LIMIT = 120;
+const CONV_ROW_STEP = 150;
+
 function convListHtml(s) {
   const chat = s.live?.chat || {};
   const allGroups = chat.groups || [];
@@ -159,7 +162,21 @@ function convListHtml(s) {
     <button class="m-conv-more" data-act="openConvActions" data-arg="${esc(r.id)}" tabindex="${rowTabindex}" title="Conversation actions" aria-label="Conversation actions">${I.dots(17)}</button>
   </div>`;
   };
-  const titleHtml = map(groups, (g) => header(g) + (isSectionCollapsed(g, collapsedSections, !!q) ? '' : map(g.rows || [], convRow)));
+  // The drawer lives in the DOM even while closed and render() rebuilds it with
+  // the whole root, so an uncapped list (1,600+ threads, ~25 nodes each) grew
+  // past what an iOS WKWebView holds and the app got killed. Render a budget of
+  // rows; "Show more" raises it.
+  let budget = chat.convRowLimit || CONV_ROW_LIMIT;
+  let hiddenRows = 0;
+  const rowsHtml = (g) => {
+    const rows = g.rows || [];
+    const take = rows.slice(0, Math.max(budget, 0));
+    budget -= take.length;
+    hiddenRows += rows.length - take.length;
+    return map(take, convRow);
+  };
+  const titleHtml = map(groups, (g) => header(g) + (isSectionCollapsed(g, collapsedSections, !!q) ? '' : rowsHtml(g)))
+    + (hiddenRows ? `<div class="m-conv-showmore" data-act="showMoreConvs" role="button" tabindex="${rowTabindex}">Show ${Math.min(CONV_ROW_STEP, hiddenRows)} more <span class="m-conv-cnt">${hiddenRows} hidden</span></div>` : '');
   const msgHtml = mConvSemanticHits(s, groups, rowTabindex);
   if (!allGroups.length) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations yet.</div>';
   if (q && !groups.length && !msgHtml) return '<div style="padding:16px;color:var(--faint);font-size:13px">No conversations match.</div>';

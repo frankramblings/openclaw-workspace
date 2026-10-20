@@ -3219,6 +3219,13 @@ export const actions = {
     _persistSectCollapsed(chat.collapsedSections);
   },
 
+  // Mobile drawer renders a capped number of rows (see convListHtml); this raises it.
+  showMoreConvs: () => {
+    const state = runtime.state; if (!state) return;
+    const chat = ensureChat(state);
+    chat.convRowLimit = (chat.convRowLimit || 120) + 150;
+  },
+
   // Projects (spec 6.2, 4.2)
   toggleProjMenu: (pid) => {
     const chat = ensureChat(runtime.state);

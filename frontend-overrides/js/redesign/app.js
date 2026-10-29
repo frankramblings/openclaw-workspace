@@ -42,6 +42,9 @@ import { clipErrorMessage, clipResultVerb, syncClipChip } from './clip-core.js';
 const state = {
   surface: 'chat',
   railExpanded: false,
+  // Conversation list (the wide panel beside the rail): collapsible to a slim
+  // strip, persisted so an iPad user who shrinks it keeps it shrunk.
+  listCollapsed: (() => { try { return localStorage.getItem('oc-chat-list-collapsed') === '1'; } catch (_) { return false; } })(),
   // chat
   draft: '', forceSlash: false, chatMode: 'agent',
   switchQuery: '', bootSessionId: null,
@@ -647,6 +650,10 @@ let _clipDraftInFlight = false;
 // ---- actions --------------------------------------------------------------
 const actions = {
   toggleRail: () => { state.railExpanded = !state.railExpanded; },
+  toggleList: () => {
+    state.listCollapsed = !state.listCollapsed;
+    try { localStorage.setItem('oc-chat-list-collapsed', state.listCollapsed ? '1' : '0'); } catch (_) {}
+  },
   go: (surface) => { state.surface = surface; state.resOpenCtl = null; },
   // Open an image fullscreen (inline shared images carry data-act="imgView").
   imgView: (src) => { openImageOverlay(src); },
@@ -1699,6 +1706,12 @@ root.addEventListener('scroll', (e) => {
   if (btn) btn.style.display = gap > 16 ? 'flex' : 'none';
 }, true);
 
+// resize-sidebars.js dispatches this when the conversation list is dragged
+// (or double-tapped) down to collapse; it can't reach `actions` itself.
+window.addEventListener('oc-sidebar-collapse', (e) => {
+  if (e.detail?.id === 'chat-list' && !state.listCollapsed) { actions.toggleList(); render(); }
+});
+
 // Global keyboard shortcuts (the Settings → Shortcuts card advertises these):
 //   ⌘K / Ctrl-K → focus the active surface's search/filter input
 //   ⌘\ / Ctrl-\ → toggle the sidebar
@@ -1801,6 +1814,13 @@ document.addEventListener('keydown', (e) => {
     if (topmostModal()) return;
     e.preventDefault();
     if (actions.newChat) { actions.newChat(); render(); }
+    return;
+  }
+  // ⌘⇧\ / Ctrl-Shift-\ → toggle the conversation list.
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === '\\' || e.key === '|')) {
+    if (topmostModal()) return;
+    e.preventDefault();
+    if (actions.toggleList) { actions.toggleList(); render(); }
     return;
   }
   // ⌘\ / Ctrl-\ → toggle the sidebar (same action the rail's own collapse

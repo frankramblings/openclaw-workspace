@@ -290,7 +290,11 @@ html.shell-mobile .oc-toast{max-width:none}
    ========================================================================== */
 .chat-list{width:280px}
 .chat-list-top{padding:14px 14px 10px}
-.new-conv{width:100%;height:38px;border-radius:10px;border:1px solid var(--teal2);background:var(--tealtint);color:var(--teal);font-family:var(--sans);font-size:14.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer}
+.new-conv-row{display:flex;gap:8px;align-items:center}
+.list-collapse,.list-reveal{flex:none;width:38px;height:38px;border-radius:10px;border:1px solid var(--bd);background:transparent;color:var(--mut);display:flex;align-items:center;justify-content:center;cursor:pointer;touch-action:manipulation}
+.list-collapse:hover,.list-reveal:hover{color:var(--fg);background:var(--row-hover,color-mix(in srgb,var(--fg) 5%,transparent))}
+.chat-list-collapsed{width:56px;align-items:center;padding:14px 0;gap:8px}
+.new-conv{flex:1;min-width:0;width:auto;height:38px;border-radius:10px;border:1px solid var(--teal2);background:var(--tealtint);color:var(--teal);font-family:var(--sans);font-size:14.5px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer}
 .new-conv .plus{font-size:17px;line-height:0}
 .conv-scroll{flex:1;overflow:auto;padding:0 8px}
 .conv-group{padding:8px 6px 6px}
@@ -975,7 +979,13 @@ code.code-inline.file-link{text-decoration:none;border-bottom:1px solid color-mi
 .companion{width:372px;flex:none;background:var(--panel);border-left:1px solid var(--bd);display:flex;flex-direction:column;min-height:0;position:relative}
 .companion .grab{position:absolute;left:-3px;top:50%;transform:translateY(-50%);width:4px;height:42px;border-radius:3px;background:var(--bd)}
 .oc-resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:3px;height:40px;border-radius:3px;background:transparent;transition:background var(--dur-micro) var(--ease-standard)}
-.oc-resize-handle:hover::after,.oc-resize-handle:active::after{background:var(--teal2)}
+.oc-resize-handle:hover::after,.oc-resize-handle:active::after,.oc-resize-handle.dragging::after{background:var(--teal2)}
+/* touch: an 8px sliver is ungrabbable with a finger. Widen the hit area and
+   show the grip all the time so it's discoverable on iPadOS. */
+.oc-resize-handle{touch-action:none}
+@media (pointer:coarse){
+  .oc-resize-handle::after{background:color-mix(in srgb,var(--fg) 22%,transparent)}
+}
 .comp-tabs{height:50px;flex:none;display:flex;align-items:center;gap:4px;padding:0 10px;border-bottom:1px solid var(--bd2)}
 .comp-tab{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:8px;border:none;background:transparent;color:var(--mut);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer}
 .comp-tab.gary{padding:0 9px 0 7px}

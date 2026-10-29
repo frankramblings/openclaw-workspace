@@ -102,7 +102,18 @@ export function capNotice(len, cap) {
 // CHAT
 // ===========================================================================
 export function renderChatList(s) {
+  if (s.listCollapsed) return collapsedListHtml();
   return chatListHtml(s, convListParts(s).html);
+}
+
+// Slim strip shown when the conversation list is collapsed. Deliberately NOT
+// `.chat-list`, so resize-sidebars.js doesn't stamp the saved width on it.
+function collapsedListHtml() {
+  return `
+  <div class="oc-secondary chat-list-collapsed">
+    <button class="list-reveal" data-act="toggleList" title="Show conversations (⌘⇧\\ / Ctrl+Shift+\\)" aria-label="Show conversations">${I.chevRight(16)}</button>
+    <button class="list-reveal" data-act="newChat" title="New conversation" aria-label="New conversation"><span style="font-size:18px;line-height:0">+</span></button>
+  </div>`;
 }
 
 // Same markup, but split for region patching (region-patch.js): `shell` is the
@@ -110,6 +121,7 @@ export function renderChatList(s) {
 // element each) or null when the body can't be chunked (filter results, empty
 // state), and `full` is exactly what renderChatList returns.
 export function renderChatListParts(s) {
+  if (s.listCollapsed) { const h = collapsedListHtml(); return { full: h, shell: h, chunks: null }; }
   const body = convListParts(s);
   return { full: chatListHtml(s, body.html), shell: chatListHtml(s, ''), chunks: body.chunks };
 }
@@ -118,7 +130,10 @@ function chatListHtml(s, body) {
   return `
   <div class="oc-secondary chat-list">
     <div class="chat-list-top">
-      <button class="new-conv" data-act="newChat" title="New conversation (⌘⇧O / Ctrl+Shift+O)"><span class="plus">+</span> New conversation</button>
+      <div class="new-conv-row">
+        <button class="new-conv" data-act="newChat" title="New conversation (⌘⇧O / Ctrl+Shift+O)"><span class="plus">+</span> New conversation</button>
+        <button class="list-collapse" data-act="toggleList" title="Collapse conversations (⌘⇧\\ / Ctrl+Shift+\\)" aria-label="Collapse conversations">${I.chevLeft(16)}</button>
+      </div>
       <div class="oc-search" style="margin-top:10px">${I.search()}<input data-model="convFilter" data-focus="convFilter" placeholder="Search all conversations…" value="${esc(s.convFilter || '')}" autocomplete="off" style="flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-family:inherit">${searchClearBtn('convFilter')}</div>
       <div style="display:flex;justify-content:flex-end;margin-top:6px"><button data-act="cycleSessionSort" title="Sort order" style="background:none;border:none;color:var(--faint);font-size:11px;cursor:pointer">${s.convSort === 'alpha' ? 'A–Z' : 'Recent'} ⇅</button></div>
     </div>
